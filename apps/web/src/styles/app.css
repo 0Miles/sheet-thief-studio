@@ -1,0 +1,33 @@
+/* Sheet Thief Studio theme on top of @karyl-chan/ui tokens. */
+
+:root {
+  --font-sans: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+
+  --accent: #c2410c;
+  --accent-bg: rgba(194, 65, 12, 0.12);
+  --accent-text: #c2410c;
+  --accent-text-strong: #9a3412;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --accent: #f97316;
+    --accent-bg: rgba(249, 115, 22, 0.16);
+    --accent-text: #fdba74;
+    --accent-text-strong: #fed7aa;
+  }
+}
+
+:root[data-theme="dark"] {
+  --accent: #f97316;
+  --accent-bg: rgba(249, 115, 22, 0.16);
+  --accent-text: #fdba74;
+  --accent-text-strong: #fed7aa;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--text);
+}

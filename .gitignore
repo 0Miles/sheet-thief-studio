@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+*.log
+.DS_Store
+# Copied from @coderline/alphatab by its Vite plugin
+apps/web/public/font/
+apps/web/public/soundfont/

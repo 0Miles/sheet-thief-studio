@@ -1,0 +1,14 @@
+{
+  "name": "@studio/score-model",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yjs": "^13.6.33"
+  }
+}

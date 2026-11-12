@@ -1,0 +1,15 @@
+{
+  "name": "@studio/score-render",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@coderline/alphatab": "1.9.0",
+    "@studio/score-model": "workspace:*"
+  }
+}
