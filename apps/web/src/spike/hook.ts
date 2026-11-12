@@ -17,6 +17,8 @@ export interface KeySample {
   key: string;
   /** When the browser made the event. */
   pressed: number;
+  /** When the page began to handle it. */
+  started: number;
   /** When the command had run and the cursor was drawn again. */
   handled: number;
   /** When the layout of the changed score was ready; null for a key that changes nothing. */
@@ -52,8 +54,13 @@ export interface StudioHook {
     position(): PlayerPosition;
     play(): void;
     pause(): void;
-    /** Regenerate the sound; resolves with how long it took, in milliseconds. */
-    reload(): Promise<number>;
+    /**
+     * Regenerate the sound. Resolves with how long the page was busy making it (`generate`)
+     * and how long until the player had taken it (`total`), in milliseconds.
+     */
+    reload(): Promise<{ generate: number; total: number }>;
+    /** Every position the player reported, with when (`performance.now()`). */
+    trace: { at: number; tick: number; state: PlayerState }[];
   };
   errors: string[];
 }

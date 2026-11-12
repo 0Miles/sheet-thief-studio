@@ -34,6 +34,7 @@ const query = (name: string): string | undefined => {
   return typeof value === "string" ? value : undefined;
 };
 const documentName = typeof route.params.name === "string" ? route.params.name : null;
+const hasPlayer = query("player") !== "0";
 
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
@@ -55,10 +56,18 @@ let started = false;
 let silent = false;
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Changes handed to the renderer and not drawn yet, oldest first. */
-const awaiting: { toJson: number; startedAt: number }[] = [];
+/** Changes handed to the renderer and not drawn yet, oldest first, numbered in order. */
+const awaiting: { toJson: number; startedAt: number; number: number }[] = [];
+let drawings = 0;
 let onNextRender: ((sample: RenderSample) => void) | undefined;
-let pendingKey: { sample: KeySample; barId: string; timer: ReturnType<typeof setTimeout> } | undefined;
+/** A key whose change is not on the page yet: `drawing` is the number of the change it made. */
+interface PendingKey {
+  sample: KeySample;
+  barId: string;
+  drawing: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+const pendingKeys = new Set<PendingKey>();
 
 const hook: StudioHook = {
   ready: false,
@@ -100,7 +109,9 @@ const hook: StudioHook = {
       const part = fretted[next(fretted.length)];
       const bar = json.bars[next(json.bars.length)];
       if (part === undefined || bar === undefined) break;
-      const at = cursorAt(doc, part.id, bar.id, 1 + next(part.tuning.length));
+      const beats = part.content[bar.id]?.["0:0"] ?? [];
+      const beatId = beats[next(beats.length)]?.id ?? null;
+      const at: Cursor = { partId: part.id, barId: bar.id, voice: "0:0", beatId, line: 1 + next(part.tuning.length) };
       const kind = next(10);
       if (kind < 7) setFret(doc, at, next(20));
       else if (kind < 9) stepDuration(doc, at, next(2) === 0 ? 1 : -1);
@@ -118,9 +129,12 @@ const hook: StudioHook = {
     pause: () => engine?.player.pause(),
     async reload() {
       const startedAt = performance.now();
-      await engine?.player.load();
-      return performance.now() - startedAt;
+      const loaded = engine?.player.load();
+      const generate = performance.now() - startedAt;
+      await loaded;
+      return { generate, total: performance.now() - startedAt };
     },
+    trace: [],
   },
   errors: [],
 };
@@ -156,7 +170,7 @@ function draw(change: ScoreChange): void {
   if (silent || engine === undefined) return;
   const startedAt = performance.now();
   const json = docToJson(doc);
-  awaiting.push({ toJson: performance.now() - startedAt, startedAt });
+  awaiting.push({ toJson: performance.now() - startedAt, startedAt, number: ++drawings });
   score.value = json;
   if (change.kind === "structure") engine.renderer.setScore(json, shownPartIds(json));
   else engine.renderer.patchBars(json, [...change.barIds]);
@@ -174,11 +188,10 @@ function finishKey(sample: KeySample): void {
   });
 }
 
-function settleKey(): void {
-  if (pendingKey === undefined) return;
-  clearTimeout(pendingKey.timer);
-  finishKey(pendingKey.sample);
-  pendingKey = undefined;
+function settleKey(pending: PendingKey): void {
+  if (!pendingKeys.delete(pending)) return;
+  clearTimeout(pending.timer);
+  finishKey(pending.sample);
 }
 
 function onRendered(event: RenderedEvent): void {
@@ -188,8 +201,11 @@ function onRendered(event: RenderedEvent): void {
   if (cursor.value) cursor.value = settleCursor(doc, cursor.value);
   updateRect();
   hook.ready = true;
-  if (pendingKey && pendingKey.sample.rendered === null && awaiting.length === 0) pendingKey.sample.rendered = performance.now();
   if (first === undefined) return;
+  // This drawing shows every change up to the one that started it.
+  for (const pending of pendingKeys) {
+    if (pending.sample.rendered === null && pending.drawing <= first.number) pending.sample.rendered = performance.now();
+  }
   const sample: RenderSample = { ...event.timings, toJson: first.toJson, partial: event.partial, total: performance.now() - first.startedAt };
   hook.renders.push(sample);
   const resolve = onNextRender;
@@ -198,9 +214,11 @@ function onRendered(event: RenderedEvent): void {
 }
 
 function onPainted(barIds: string[]): void {
-  if (pendingKey === undefined || pendingKey.sample.rendered === null || !barIds.includes(pendingKey.barId)) return;
-  pendingKey.sample.painted = performance.now();
-  settleKey();
+  for (const pending of [...pendingKeys]) {
+    if (pending.sample.rendered === null || !barIds.includes(pending.barId)) continue;
+    pending.sample.painted = performance.now();
+    settleKey(pending);
+  }
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -208,19 +226,27 @@ function onKey(event: KeyboardEvent): void {
   if (at === null || typing === undefined || score.value === null) return;
   const kind = score.value.parts.find((part) => part.id === at.partId)?.kind;
   if (kind !== "fretted" && (/^[0-9]$/.test(event.key) || event.key === "Delete")) return;
-  const drawingsBefore = awaiting.length;
+  // The key is watched from before its command runs: without a worker the renderer has
+  // finished its layout by the time the command returns.
+  const sample: KeySample = { key: event.key, pressed: event.timeStamp, started: performance.now(), handled: 0, rendered: null, painted: null, frame: 0, nextFrame: 0 };
+  const pending: PendingKey = { sample, barId: at.barId, drawing: drawings + 1 };
+  pendingKeys.add(pending);
   const next = typing.press(event, at);
-  if (next === undefined) return;
+  if (next === undefined) {
+    pendingKeys.delete(pending);
+    return;
+  }
   event.preventDefault();
   moveCursor(next);
-  const sample: KeySample = { key: event.key, pressed: event.timeStamp, handled: performance.now(), rendered: null, painted: null, frame: 0, nextFrame: 0 };
-  if (awaiting.length === drawingsBefore) {
+  sample.handled = performance.now();
+  if (drawings < pending.drawing) {
+    pendingKeys.delete(pending);
     finishKey(sample); // the key only moved the cursor
     return;
   }
-  settleKey();
+  pending.barId = next.barId;
   // The piece holding the bar is painted only when it is on screen: do not wait for ever.
-  pendingKey = { sample, barId: next.barId, timer: setTimeout(settleKey, 1500) };
+  pending.timer = setTimeout(() => settleKey(pending), 1500);
 }
 
 function onPointer(event: PointerEvent): void {
@@ -253,7 +279,7 @@ function start(): void {
   score.value = json;
   const wanted = Number(query("show"));
   shown.value = query("show") !== undefined && json.parts[wanted] ? (json.parts[wanted] as { id: string }).id : "all";
-  awaiting.push({ toJson: 0, startedAt: performance.now() });
+  awaiting.push({ toJson: 0, startedAt: performance.now(), number: ++drawings });
   engine.renderer.setScore(json, shownPartIds(json));
   stopObserving = observeScore(doc, draw);
   const part = json.parts.find((item) => shownPartIds(json).includes(item.id) && item.kind === "fretted") ?? json.parts[0];
@@ -268,15 +294,19 @@ onMounted(() => {
   window.addEventListener("unhandledrejection", (event) => hook.errors.push(String(event.reason)));
   engine = createAlphaTabEngine(host.value, {
     fontDirectory: "/font/",
-    soundFont: query("player") === "0" ? null : "/soundfont/sonivox.sf3",
+    soundFont: hasPlayer ? "/soundfont/sonivox.sf3" : null,
     useWorkers: query("workers") !== "0",
     patch: query("patch") === "project" ? "project" : "replace",
     partialLayout: query("partial") !== "0",
+    ...(query("window") ? { windowBars: Number(query("window")) } : {}),
   });
   engine.renderer.onRendered(onRendered);
   engine.renderer.onPainted(onPainted);
   engine.player.onState((state) => {
     playerState.value = state;
+  });
+  engine.player.onPosition((position) => {
+    if (hook.player.trace.length < 20_000) hook.player.trace.push({ at: performance.now(), tick: position.tick, state: engine?.player.state ?? "loading" });
   });
   if (documentName === null) {
     start();
@@ -316,7 +346,7 @@ onBeforeUnmount(() => {
           <option v-for="part in score?.parts ?? []" :key="part.id" :value="part.id">{{ part.name }}</option>
         </select>
       </label>
-      <button type="button" :disabled="playerState === 'loading'" @click="togglePlay">
+      <button v-if="hasPlayer" type="button" :disabled="playerState === 'loading'" @click="togglePlay">
         {{ playerState === "loading" ? text.playerLoading : playerState === "playing" ? text.pause : text.play }}
       </button>
       <span v-if="flagCount > 0" class="flags">{{ text.flags(flagCount) }}</span>

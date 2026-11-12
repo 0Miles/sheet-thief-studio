@@ -22,6 +22,11 @@ export interface EngineOptions {
   patch?: "replace" | "project";
   /** Tell alphaTab which bar changed first, so that it keeps the systems before it. */
   partialLayout?: boolean;
+  /**
+   * Draw only this many bars around the last changed one instead of the whole score. Spike
+   * only (the fallback of question S2): the bars outside the window are not on the page.
+   */
+  windowBars?: number;
   scale?: number;
 }
 
@@ -66,9 +71,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private states = new Listeners<PlayerState>();
   private positions = new Listeners<PlayerPosition>();
   private playerState: PlayerState = "loading";
+  private playerIsReady = false;
   private lastPosition: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
   /** Set while `load()` waits for alphaTab to take the new sound. */
   private reload: { resume: boolean; tick: number; done: () => void } | null = null;
+  /** Where playback was sent back to after a reload, until alphaTab reports from there. */
+  private resumedAt: { tick: number; at: number } | null = null;
   private destroyed = false;
 
   constructor(
@@ -103,13 +111,22 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     });
     api.error.on((error) => console.error("[score-render]", error));
     api.playerReady.on(() => {
-      if (this.playerState === "loading") this.setState("ready");
+      this.playerIsReady = true;
+      if (this.reload === null) this.setState(api.playerState === alphaTab.synth.PlayerState.Playing ? "playing" : "paused");
     });
     api.playerStateChanged.on((event) => {
-      if (this.reload) return; // stopping to take the new sound is not the member pausing
+      // Not before the player can play (alphaTab reports "paused" as soon as a listener is
+      // added), and not while it stops to take a new sound: that is not the member pausing.
+      if (!this.playerIsReady || this.reload) return;
       this.setState(event.state === alphaTab.synth.PlayerState.Playing ? "playing" : "paused");
     });
     api.playerPositionChanged.on((event) => {
+      // Taking a new sound rewinds alphaTab for a moment: not a position of the playback.
+      if (this.reload) return;
+      if (this.resumedAt !== null) {
+        if (event.currentTick < this.resumedAt.tick && performance.now() - this.resumedAt.at < 500) return;
+        this.resumedAt = null;
+      }
       this.lastPosition = { tick: event.currentTick, endTick: event.endTick, milliseconds: event.currentTime, endMilliseconds: event.endTime };
       this.positions.emit(this.lastPosition);
     });
@@ -175,7 +192,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   // --- ScorePlayer ---
 
   load(): Promise<void> {
-    if (this.options.soundFont === null || this.api.score === null) return Promise.resolve();
+    // Before the player is ready alphaTab makes the sound itself, once it is.
+    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
     return new Promise((resolve) => {
       // A reload still waiting is replaced: its promise settles with this one.
       const previous = this.reload;
@@ -287,7 +305,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     }
     if (firstChanged === null) this.projection = projectScore(score, settings, projectionTimings);
     const projection = this.projection as Projection;
-    const partial = firstChanged !== null && (this.options.partialLayout ?? true);
+    const sameWindow = this.moveWindow(firstChanged ?? 0, projection.barIds.length);
+    const partial = firstChanged !== null && sameWindow && (this.options.partialLayout ?? true);
     const hints = partial ? { firstChangedMasterBar: firstChanged as number, reuseViewport: true } : firstChanged !== null ? { reuseViewport: true } : undefined;
     this.running = {
       partial,
@@ -301,6 +320,25 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // alphaTab makes the sound of a score it has not seen and, doing so, stops playback.
     if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.reload ??= { resume: true, tick: this.api.tickPosition, done: () => {} };
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
+  }
+
+  /**
+   * Keep the drawn window of bars around a changed bar. Returns false when the window moved:
+   * what was laid out before is then of no use.
+   */
+  private moveWindow(changed: number, barCount: number): boolean {
+    const size = this.options.windowBars;
+    if (size === undefined) return true;
+    const display = this.api.settings.display;
+    // Windows start every half window, so that typing along a line does not move it at every bar.
+    const half = Math.max(Math.floor(size / 2), 1);
+    const start = Math.min(Math.max(Math.floor(changed / half) * half - half / 2, 0), Math.max(barCount - size, 0));
+    const startBar = Math.floor(start) + 1;
+    if (display.startBar === startBar && display.barCount === size) return true;
+    display.startBar = startBar;
+    display.barCount = size;
+    this.api.updateSettings();
+    return false;
   }
 
   private metrics(): StaffMetrics {
@@ -349,6 +387,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const reload = this.reload;
     if (reload === null) return;
     this.reload = null;
+    if (reload.resume || reload.tick > 0) this.resumedAt = { tick: reload.tick, at: performance.now() };
     if (reload.resume) {
       this.api.tickPosition = reload.tick;
       this.api.play();

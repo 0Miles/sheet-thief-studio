@@ -52,7 +52,8 @@ export interface ScoreRenderer {
   destroy(): void;
 }
 
-export type PlayerState = "loading" | "ready" | "playing" | "paused";
+/** "loading" until the soundfont and the sound of the score are in place. */
+export type PlayerState = "loading" | "paused" | "playing";
 
 export interface PlayerPosition {
   /** 960 ticks in a quarter note, from the start of the score. */
