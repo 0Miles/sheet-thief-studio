@@ -41,9 +41,15 @@ importers:
       '@studio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      crossws:
+        specifier: ^0.4.17
+        version: 0.4.17
       fastify:
         specifier: ^5.12.8
         version: 5.12.8
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
     devDependencies:
       '@types/node':
         specifier: ^22.20.5
@@ -54,6 +60,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@hocuspocus/provider':
+        specifier: ^4.8.0
+        version: 4.8.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
       '@iconify/vue':
         specifier: ^5.0.5
         version: 5.0.5(vue@3.5.45(typescript@6.0.3))
@@ -66,6 +75,12 @@ importers:
       '@studio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@studio/score-model':
+        specifier: workspace:*
+        version: link:../../packages/score-model
+      '@studio/score-render':
+        specifier: workspace:*
+        version: link:../../packages/score-render
       nanoid:
         specifier: ^6.0.2
         version: 6.0.2
@@ -78,7 +93,13 @@ importers:
       vue-router:
         specifier: ^5.5.0
         version: 5.5.0(@vue/compiler-sfc@3.5.45)(esbuild@0.28.2)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.45(typescript@6.0.3)))(rolldown@1.2.19)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))(vue@3.5.45(typescript@6.0.3))
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
     devDependencies:
+      '@coderline/alphatab-vite':
+        specifier: 1.9.0
+        version: 1.9.0(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
       '@playwright/test':
         specifier: ^1.65.0
         version: 1.65.0
@@ -127,10 +148,14 @@ importers:
     dependencies:
       '@coderline/alphatab':
         specifier: 1.9.0
-        version: 1.9.0
+        version: 1.9.0(@coderline/alphatab-vite@1.9.0(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)))
       '@studio/score-model':
         specifier: workspace:*
         version: link:../score-model
+    devDependencies:
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
 
 packages:
 
@@ -173,6 +198,12 @@ packages:
 
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
+
+  '@coderline/alphatab-vite@1.9.0':
+    resolution: {integrity: sha512-6tgtoD14rk72yfeAtAwACNJsRQAF/Y13PU8yLPO9ggNlV/MYcY8L9pPfPqVDaR3dV3MDgmQ6s3oOaGXMobVglw==}
+    engines: {node: '>=20.19.0'}
+    peerDependencies:
+      vite: ^6 || ^7 || ^8
 
   '@coderline/alphatab@1.9.0':
     resolution: {integrity: sha512-pG/Um03DdiTW7i9KR+rPTRRnzIW5oJBWs67altBXtCkxGvUG1RuvkgRTZO3GIaOD2vATjcw+5OevMZl9I2/T+Q==}
@@ -423,6 +454,12 @@ packages:
   '@hocuspocus/common@4.8.0':
     resolution: {integrity: sha512-UI8Vye3mds2aMUHaWfwkDq0+257JUpvKa0nyAOjXWLfyhYHsAq8eku+ynZc/PaShyOci/VD54cW/rLQJGHHPKg==}
 
+  '@hocuspocus/provider@4.8.0':
+    resolution: {integrity: sha512-WUwwu3W55n0fkMF1uYhx4WXlRjJ/t7OjsxiuzTMMQGDvvZrZA37CAysdqc7JXLVmN6A5IIWadE921pxN9/JotA==}
+    peerDependencies:
+      y-protocols: ^1.0.6
+      yjs: ^13.6.8
+
   '@hocuspocus/server@4.8.0':
     resolution: {integrity: sha512-P8U4I4R4Ft+B37d4CFs4tG8oPJ3rnJJiFx3CXBJpKSIrXTz5YDldRmv7eGqmUq4QRSoWR6FjN4DUIX1QO0PccA==}
     engines: {node: '>=22'}
@@ -496,6 +533,9 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@lifeomic/attempt@3.1.0':
+    resolution: {integrity: sha512-QZqem4QuAnAyzfz+Gj5/+SLxqwCAw2qmt7732ZXodr6VDWGeYLG6w1i/vYLa55JQM9wRuBKLmXmiZ2P0LtE5rw==}
 
   '@napi-rs/wasm-runtime@1.2.6':
     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
@@ -1941,7 +1981,14 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@coderline/alphatab@1.9.0': {}
+  '@coderline/alphatab-vite@1.9.0(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))':
+    dependencies:
+      magic-string: 1.4.5
+      vite: 8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)
+
+  '@coderline/alphatab@1.9.0(@coderline/alphatab-vite@1.9.0(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)))':
+    optionalDependencies:
+      '@coderline/alphatab-vite': 1.9.0(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
 
   '@emnapi/core@2.0.0-beta.2':
     dependencies:
@@ -2102,6 +2149,14 @@ snapshots:
     dependencies:
       lib0: 0.2.120
 
+  '@hocuspocus/provider@4.8.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)':
+    dependencies:
+      '@hocuspocus/common': 4.8.0
+      '@lifeomic/attempt': 3.1.0
+      lib0: 0.2.120
+      y-protocols: 1.0.7(yjs@13.6.33)
+      yjs: 13.6.33
+
   '@hocuspocus/server@4.8.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)':
     dependencies:
       '@hocuspocus/common': 4.8.0
@@ -2173,6 +2228,8 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@lifeomic/attempt@3.1.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:
