@@ -2,7 +2,7 @@
 
 樂團一起寫譜的線上平台：多聲部的團譜可以多人同時編輯，像樂譜版的 Google 文件。
 
-目前在 **M0（技術驗證）**：只有專案骨架，還不能使用。計畫與進度見 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+M0（技術驗證）已完成，接下來是 M1a；目前還不能使用。計畫與進度見 [`docs/ROADMAP.md`](docs/ROADMAP.md)，規格見 [`docs/spec/`](docs/spec/)。
 
 ## 目標
 
@@ -21,7 +21,7 @@
 | `packages/score-model` | 團譜文件：Yjs schema、編輯指令、檢查；前後端共用 |
 | `packages/score-render` | 譜面顯示與播放（alphaTab 只在這裡使用） |
 | `packages/contracts` | API 的資料形狀（zod） |
-| `docs/` | 詞彙表以外的文件：ADR、路線圖、技術驗證報告 |
+| `docs/` | 詞彙表以外的文件：ADR、規格附錄（`docs/spec/`）、路線圖、技術驗證報告 |
 
 詞彙見 [`CONTEXT.md`](CONTEXT.md)，設計決定見 [`docs/adr/`](docs/adr/)。
 
