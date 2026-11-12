@@ -185,6 +185,21 @@ export function setFret(doc: Y.Doc, cursor: Cursor, fret: number | null): Cursor
   return cursor;
 }
 
+/**
+ * Put a note on the beat of the cursor at the position named by `key` ("s3", "p38", "n61"),
+ * replacing the one there; null removes it. The key is not checked against the kind of the part.
+ */
+export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON | null): Cursor {
+  const beat = beatAt(doc, cursor);
+  if (beat === undefined) return cursor;
+  doc.transact(() => {
+    const notes = beat.get("notes") as Y.Map<NoteJSON>;
+    if (note === null) notes.delete(key);
+    else notes.set(key, note);
+  }, LOCAL);
+  return cursor;
+}
+
 export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: NewBeat): Cursor {
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;
@@ -193,6 +208,25 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: New
     beat.set("dots", dots);
   }, LOCAL);
   return cursor;
+}
+
+const NOTE_VALUES: readonly NoteValue[] = [1, 2, 4, 8, 16, 32, 64];
+
+/** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
+export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  const beat = beatAt(doc, cursor);
+  if (beat === undefined) return cursor;
+  const value = NOTE_VALUES[NOTE_VALUES.indexOf(beat.get("value") as NoteValue) + step];
+  if (value === undefined) return cursor;
+  doc.transact(() => {
+    beat.set("value", value);
+  }, LOCAL);
+  return cursor;
+}
+
+/** The note value of the beat of the cursor, or undefined when it stands on none. */
+export function valueAt(doc: Y.Doc, cursor: Cursor): NoteValue | undefined {
+  return beatAt(doc, cursor)?.get("value") as NoteValue | undefined;
 }
 
 /** The cursor on the first beat of a bar of a part (before it when the bar is empty). */

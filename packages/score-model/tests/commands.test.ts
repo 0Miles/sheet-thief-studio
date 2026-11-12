@@ -12,6 +12,7 @@ import {
   SCHEMA_VERSION,
   setDuration,
   setFret,
+  setNote,
   STANDARD_GUITAR,
 } from "../src/index";
 
@@ -74,6 +75,23 @@ test("a fret goes on the string of the cursor; null clears it and other strings 
   expect(notes()).toEqual({ s6: { fret: 3 }, s5: { fret: 5 } });
   setFret(doc, cursor, null);
   expect(notes()).toEqual({ s5: { fret: 5 } });
+});
+
+test("a note goes on its beat under its key, whole: a drum piece, a spelled pitch", () => {
+  const { doc, barIds } = score();
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched", program: 0 });
+  const hit = insertBeat(doc, cursorAt(doc, drums, barIds[0]!), { value: 8 });
+  setNote(doc, hit, "p36", {});
+  setNote(doc, hit, "p42", { ghost: true });
+  const pitch = insertBeat(doc, cursorAt(doc, keys, barIds[0]!), { value: 4 });
+  setNote(doc, pitch, "n61", { spell: "C#" });
+  setNote(doc, pitch, "n61", { spell: "Db" });
+  setNote(doc, pitch, "n64", {});
+  setNote(doc, pitch, "n64", null);
+  const beats = (index: number) => docToJson(doc).parts[index]!.content[barIds[0]!]!["0:0"]!;
+  expect(beats(1)[0]!.notes).toEqual({ p36: {}, p42: { ghost: true } });
+  expect(beats(2)[0]!.notes).toEqual({ n61: { spell: "Db" } });
 });
 
 test("a command on a beat that is gone changes nothing", () => {
