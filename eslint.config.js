@@ -12,4 +12,12 @@ export default defineConfigWithVueTs(
   vueTsConfigs.recommended,
   // The server, config files and scripts run in Node.
   { files: ["apps/server/**/*.ts", "**/*.config.{js,ts}", "scripts/**/*.mjs"], languageOptions: { globals: globals.node } },
+  // alphaTab stays behind the renderer's interface (docs/adr/0003). The Vite plugin that
+  // bundles its workers is a different package and is not concerned.
+  {
+    files: ["apps/**/*.{ts,vue}", "packages/contracts/**/*.ts", "packages/score-model/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", { paths: [{ name: "@coderline/alphatab", message: "alphaTab is imported only inside packages/score-render (docs/adr/0003)." }] }],
+    },
+  },
 );
