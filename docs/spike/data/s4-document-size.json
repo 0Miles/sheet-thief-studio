@@ -1,0 +1,24 @@
+{
+ "environment": {
+  "mode": "headless",
+  "browser": "chromium 158.0.8127.18",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.8127.18 Safari/537.36",
+  "hardwareConcurrency": 16,
+  "deviceMemoryGb": 32,
+  "devicePixelRatio": 1,
+  "viewport": "1280x720",
+  "measuredAt": "2026-11-12T11:29:59.136Z"
+ },
+ "seeded": {
+  "stateBytes": 501225,
+  "jsonBytes": 300533,
+  "beats": 4000
+ },
+ "edited": {
+  "stateBytes": 558187,
+  "jsonBytes": 326356,
+  "beats": 4208
+ },
+ "edits": 2000,
+ "growthBytesPerEdit": 28.481
+}

@@ -1,0 +1,308 @@
+{
+ "environment": {
+  "mode": "headless",
+  "browser": "chromium 158.0.8127.18",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.8127.18 Safari/537.36",
+  "hardwareConcurrency": 16,
+  "deviceMemoryGb": 32,
+  "devicePixelRatio": 1,
+  "viewport": "1280x720",
+  "measuredAt": "2026-11-12T11:29:58.309Z"
+ },
+ "rounds": 30,
+ "summary": {
+  "generate": {
+   "median": 8.949999988079071,
+   "p95": 16.299999952316284,
+   "max": 17.699999928474426
+  },
+  "total": {
+   "median": 23.30000001192093,
+   "p95": 32.199999928474426,
+   "max": 38.200000047683716
+  },
+  "firstPositionAfterMs": {
+   "median": 25.25,
+   "p95": 37.59999990463257,
+   "max": 39.700000047683716
+  },
+  "behindMs": {
+   "median": 75.1083333094914,
+   "p95": 94.80833335717512,
+   "max": 95.20833333333326
+  }
+ },
+ "wentBack": 0,
+ "samples": [
+  {
+   "generate": 13.300000071525574,
+   "total": 30.100000023841858,
+   "tickBefore": 2171,
+   "firstTickAfter": 2172,
+   "firstPositionAfterMs": 31.899999976158142,
+   "behindMs": 84.69166676203406,
+   "wentBack": false
+  },
+  {
+   "generate": 8.200000047683716,
+   "total": 23.600000023841858,
+   "tickBefore": 3974,
+   "firstTickAfter": 3975,
+   "firstPositionAfterMs": 24.700000047683716,
+   "behindMs": 75.20833333333326,
+   "wentBack": false
+  },
+  {
+   "generate": 8,
+   "total": 24,
+   "tickBefore": 5777,
+   "firstTickAfter": 5778,
+   "firstPositionAfterMs": 25.299999952316284,
+   "behindMs": 74.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 7.899999976158142,
+   "total": 13.299999952316284,
+   "tickBefore": 7580,
+   "firstTickAfter": 7581,
+   "firstPositionAfterMs": 23.600000023841858,
+   "behindMs": 75.72916666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 9,
+   "total": 23,
+   "tickBefore": 9342,
+   "firstTickAfter": 9343,
+   "firstPositionAfterMs": 24.299999952316284,
+   "behindMs": 74.69166676203406,
+   "wentBack": false
+  },
+  {
+   "generate": 7.100000023841858,
+   "total": 22.800000071525574,
+   "tickBefore": 11104,
+   "firstTickAfter": 11105,
+   "firstPositionAfterMs": 24,
+   "behindMs": 74.99166659514106,
+   "wentBack": false
+  },
+  {
+   "generate": 17.699999928474426,
+   "total": 32.199999928474426,
+   "tickBefore": 12887,
+   "firstTickAfter": 12888,
+   "firstPositionAfterMs": 33.5,
+   "behindMs": 85.72916666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 8.899999976158142,
+   "total": 22,
+   "tickBefore": 14628,
+   "firstTickAfter": 14629,
+   "firstPositionAfterMs": 22.700000047683716,
+   "behindMs": 86.24583335717512,
+   "wentBack": false
+  },
+  {
+   "generate": 11.200000047683716,
+   "total": 29,
+   "tickBefore": 16370,
+   "firstTickAfter": 16371,
+   "firstPositionAfterMs": 30.399999976158142,
+   "behindMs": 74.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 9.5,
+   "total": 25,
+   "tickBefore": 18132,
+   "firstTickAfter": 18133,
+   "firstPositionAfterMs": 26.300000071525574,
+   "behindMs": 64.89166669050849,
+   "wentBack": false
+  },
+  {
+   "generate": 7.099999904632568,
+   "total": 21.399999976158142,
+   "tickBefore": 19894,
+   "firstTickAfter": 19895,
+   "firstPositionAfterMs": 22.59999990463257,
+   "behindMs": 75.1083333094914,
+   "wentBack": false
+  },
+  {
+   "generate": 8.100000023841858,
+   "total": 14.200000047683716,
+   "tickBefore": 21636,
+   "firstTickAfter": 21637,
+   "firstPositionAfterMs": 14.700000047683716,
+   "behindMs": 75.30833335717512,
+   "wentBack": false
+  },
+  {
+   "generate": 14.5,
+   "total": 29.300000071525574,
+   "tickBefore": 23357,
+   "firstTickAfter": 23358,
+   "firstPositionAfterMs": 30.800000071525574,
+   "behindMs": 85.40833338101697,
+   "wentBack": false
+  },
+  {
+   "generate": 8.099999904632568,
+   "total": 24.5,
+   "tickBefore": 25078,
+   "firstTickAfter": 25079,
+   "firstPositionAfterMs": 25.59999990463257,
+   "behindMs": 74.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 16.299999952316284,
+   "total": 31.299999952316284,
+   "tickBefore": 26820,
+   "firstTickAfter": 26821,
+   "firstPositionAfterMs": 36.89999997615814,
+   "behindMs": 94.80833335717512,
+   "wentBack": false
+  },
+  {
+   "generate": 9.700000047683716,
+   "total": 24.40000009536743,
+   "tickBefore": 28562,
+   "firstTickAfter": 28563,
+   "firstPositionAfterMs": 25.600000023841858,
+   "behindMs": 74.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 7.200000047683716,
+   "total": 21.5,
+   "tickBefore": 30303,
+   "firstTickAfter": 30304,
+   "firstPositionAfterMs": 22.200000047683716,
+   "behindMs": 63.85416666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 8.800000071525574,
+   "total": 16.399999976158142,
+   "tickBefore": 32065,
+   "firstTickAfter": 32066,
+   "firstPositionAfterMs": 17,
+   "behindMs": 64.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 11.900000095367432,
+   "total": 19.5,
+   "tickBefore": 33807,
+   "firstTickAfter": 33808,
+   "firstPositionAfterMs": 20.200000047683716,
+   "behindMs": 64.69166664282477,
+   "wentBack": false
+  },
+  {
+   "generate": 9.899999976158142,
+   "total": 25.300000071525574,
+   "tickBefore": 35549,
+   "firstTickAfter": 35550,
+   "firstPositionAfterMs": 26.5,
+   "behindMs": 74.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 10.299999952316284,
+   "total": 29.59999990463257,
+   "tickBefore": 37291,
+   "firstTickAfter": 37292,
+   "firstPositionAfterMs": 32.39999997615814,
+   "behindMs": 95.20833333333326,
+   "wentBack": false
+  },
+  {
+   "generate": 13.900000095367432,
+   "total": 38.200000047683716,
+   "tickBefore": 38992,
+   "firstTickAfter": 38993,
+   "firstPositionAfterMs": 39.700000047683716,
+   "behindMs": 94.79166666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 8.100000023841858,
+   "total": 22.799999952316284,
+   "tickBefore": 40734,
+   "firstTickAfter": 40735,
+   "firstPositionAfterMs": 24,
+   "behindMs": 74.69166664282477,
+   "wentBack": false
+  },
+  {
+   "generate": 7.300000071525574,
+   "total": 24.200000047683716,
+   "tickBefore": 42455,
+   "firstTickAfter": 42456,
+   "firstPositionAfterMs": 25.200000047683716,
+   "behindMs": 74.89166669050849,
+   "wentBack": false
+  },
+  {
+   "generate": 9.5,
+   "total": 16.399999976158142,
+   "tickBefore": 44176,
+   "firstTickAfter": 44177,
+   "firstPositionAfterMs": 17.100000023841858,
+   "behindMs": 86.14583333333326,
+   "wentBack": false
+  },
+  {
+   "generate": 13.100000023841858,
+   "total": 30.799999952316284,
+   "tickBefore": 45876,
+   "firstTickAfter": 45877,
+   "firstPositionAfterMs": 31.799999952316284,
+   "behindMs": 85.72916666666663,
+   "wentBack": false
+  },
+  {
+   "generate": 8.399999976158142,
+   "total": 15.099999904632568,
+   "tickBefore": 47576,
+   "firstTickAfter": 47577,
+   "firstPositionAfterMs": 24.5,
+   "behindMs": 75.1083333094914,
+   "wentBack": false
+  },
+  {
+   "generate": 7.799999952316284,
+   "total": 18,
+   "tickBefore": 49297,
+   "firstTickAfter": 49298,
+   "firstPositionAfterMs": 31.799999952316284,
+   "behindMs": 75.40833326180768,
+   "wentBack": false
+  },
+  {
+   "generate": 12.5,
+   "total": 22.59999990463257,
+   "tickBefore": 51018,
+   "firstTickAfter": 51019,
+   "firstPositionAfterMs": 37.59999990463257,
+   "behindMs": 85.82916669050849,
+   "wentBack": false
+  },
+  {
+   "generate": 7.399999976158142,
+   "total": 13.300000071525574,
+   "tickBefore": 52739,
+   "firstTickAfter": 52740,
+   "firstPositionAfterMs": 14.300000071525574,
+   "behindMs": 75.1083333094914,
+   "wentBack": false
+  }
+ ]
+}

@@ -40,3 +40,11 @@ pnpm --filter @studio/web dev      # http://localhost:5183
 ```bash
 pnpm lint && pnpm typecheck && pnpm test
 ```
+
+兩個瀏覽器經伺服器共編的端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）：
+
+```bash
+pnpm --filter @studio/web test:e2e
+```
+
+技術驗證頁：`/spike/<名稱>`（共編）與 `/local`（只在這一頁）。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。
