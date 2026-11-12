@@ -23,7 +23,7 @@
 
 ## 增補（2026-11-13）：完整的形狀、遷移、讀取時容錯，與兩條同時修改的規定
 
-M1a–M5 的設計對質把文件的完整形狀一次定下（決策紀錄 R1-1、R1-2、R1-3、R1-5、R1-18、R2-9、R2-10）。上面的原文不改，以下是增補。
+M1a–M5 的設計對質把文件的完整形狀一次定下。上面的原文不改，以下是增補。
 
 - **完整的形狀寫在 [`docs/spec/schema.md`](../spec/schema.md)。** 程式裡唯一的真相是 `packages/score-model` 的 zod schema；TypeScript 型別由它推出，`packages/contracts` 只 re-export。理由：版本 JSON 的驗證、匯入的驗證、遷移都在 score-model 裡，而 score-model 是前後端共用、沒有 DOM 的套件，不應反過來依賴 contracts。
 - **小節內容的容器預先建好每一條聲線**（補充）。建立小節或聲部的人，在同一筆交易裡替聲部每個譜表建好兩條聲線的 `Y.Array`；伺服器的 `fillMissingContent` 也補齊缺少的聲線。理由同上面的 Consequences：兩個人同時「第一次寫進第二聲線」時，各自建立的 `Y.Array` 會互相覆蓋，一方的拍點無聲消失。

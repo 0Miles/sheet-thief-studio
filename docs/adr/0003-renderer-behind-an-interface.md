@@ -7,7 +7,7 @@
 alphaTab 有兩個讓我們不想被它綁住的地方。第一，它沒有官方的編輯 API：只能改它的模型再重排，1.9 起可以只重排改到的那一行之後。第二，授權正在變動：1.9 起譜面上會顯示它的標記；之後的版本會換成帶署名條款的授權，而且把「透過網路提供服務」也算成散布。所以：
 
 - 團譜的資料格式是我們自己的 schema（ADR 0002），不是 alphaTab 的模型，也不是 alphaTex。
-- alphaTab 只在 `packages/score-render` 裡 import。其他程式只認得 `ScoreRenderer`（畫譜、座標查詢）和 `ScorePlayer`（播放）兩個介面。唯一的例外是 `apps/web/vite.config.ts` 裡的 `@coderline/alphatab-vite`：它是建置工具，負責打包 worker、複製字型與音色庫。ESLint 擋住其他地方 import `@coderline/alphatab`，`packages/score-editor` 也在名單裡。
+- alphaTab 只在 `packages/score-render` 裡 import。其他程式只認得 `ScoreRenderer`（畫譜、座標查詢）和 `ScorePlayer`（播放）兩個介面。唯一的例外是 `apps/web/vite.config.ts` 裡的 `@coderline/alphatab-vite`：它是建置工具，負責打包 worker、複製字型與音色庫。ESLint 擋住其他地方 import `@coderline/alphatab`；建立 `packages/score-editor` 時，也要把它加進 `eslint.config.js` 的名單。
 - 團譜到 alphaTab 模型是單向的投影；游標、選取、編輯指令都以團譜的 id 定址，不依賴 alphaTab 的物件。
 - **以小節為單位就地更新。** 改到的小節在既有的 alphaTab 模型裡換掉（`replaceBars`），並帶 `RenderHints.firstChangedMasterBar`。alphaTab 看到的一直是同一份 `Score`，所以不會每按一次鍵就自己重新產生聲音、停止播放。小節、聲部或聲線數有變動時，才整份重新投影。
 - **版面用 Page，開著 `core.enableLazyLoading`。** 少了任何一個，`firstChangedMasterBar` 就無效，會退回整份重排。
