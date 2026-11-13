@@ -1,0 +1,15 @@
+{
+  "name": "@studio/score-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@studio/score-model": "workspace:*",
+    "yjs": "~13.6.33"
+  }
+}
