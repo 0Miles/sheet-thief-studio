@@ -48,7 +48,7 @@ test("with no provider, other members' changes merge in, and undo takes back onl
 test("when another member removes the beat under the cursor, the cursor settles and the presence is told", () => {
   const { doc, session, press, beats, partId, barIds } = sessionOn();
   press("5");
-  press("Insert");
+  press("ArrowRight");
   press("7");
   const [first, second] = beats().map((beat) => beat.id);
   expect(session.cursor?.beatId).toBe(second);

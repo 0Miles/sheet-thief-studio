@@ -4,17 +4,20 @@
 import {
   barsOf,
   type Cursor,
+  deleteBeat,
+  deleteNote,
   insertBeat,
+  isRestAt,
   LOCAL,
   moveByBeat,
   moveByLine,
   type PartKind,
-  partKindSchema,
+  partKindOf,
   partsOf,
+  type Selection,
   setFret,
   settleCursor,
   stepDuration,
-  valueAt,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -39,19 +42,12 @@ export interface Key {
 }
 
 /**
- * A stretch the cursor extends over, inside one part (docs/spec/commands.md, section 4). Its
- * shape is fixed here for the presence; until selecting comes (#21), the session has none.
- */
-export type Selection =
-  | { kind: "beats"; partId: string; barId: string; voice: string; anchorBeatId: string; focusBeatId: string }
-  | { kind: "bars"; partId: string; anchorBarId: string; focusBarId: string };
-
-/**
  * What this member shows the others (docs/spec/views.md, section 8). The shell writes it to the
  * awareness, next to the fields the server fills in.
  */
 export interface LocalPresence {
   cursor: Cursor | null;
+  /** Until selecting comes (#21), the session has none. */
   selection: Selection | null;
 }
 
@@ -155,12 +151,8 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         undo.captureTimeout = 0;
       }
     }
-    let next = at;
-    doc.transact(() => {
-      // In an empty bar the first digit also makes the beat it goes on.
-      if (next.beatId === null) next = insertBeat(doc, next, { value: 4 });
-      setFret(doc, next, digit);
-    }, LOCAL);
+    // In the append slot the digit also makes the beat it goes on, and the cursor moves onto it.
+    const next = setFret(doc, at, digit);
     lastDigit = { digit, at: now(), cursor: next };
     return next;
   }
@@ -181,7 +173,6 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   const noteKeys: Record<PartKind, (key: Key, previous: TypedDigit | null) => KeyCommand | undefined> = {
     fretted(key, previous) {
       if (/^[0-9]$/.test(key.key)) return change((at) => typeDigit(Number(key.key), at, previous));
-      if (key.key === "Delete") return change((at) => setFret(doc, at, null));
       return undefined;
     },
     // Drums and staves get theirs with their milestones (docs/ROADMAP.md, M2 and M3).
@@ -201,7 +192,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       case "ArrowUp":
         return move((at) => moveByLine(doc, at, -1));
       case "Insert":
-        return change((at) => insertBeat(doc, at, { value: valueAt(doc, at) ?? 4 }));
+        return change((at) => insertBeat(doc, at));
+      // The key marked delete on a Mac keyboard sends Backspace (docs/spec/keymap.md, section 2).
+      case "Delete":
+      case "Backspace":
+        return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
       case "+":
         return change((at) => stepDuration(doc, at, 1));
       case "-":
@@ -214,8 +209,8 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function commandFor(key: Key, at: Cursor, previous: TypedDigit | null): KeyCommand | undefined {
     if (key.ctrlKey === true || key.metaKey === true) return shortcut(key);
     // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
-    const kind = partKindSchema.safeParse(partsOf(doc).get(at.partId)?.get("kind"));
-    return (kind.success ? noteKeys[kind.data](key, previous) : undefined) ?? commonKey(key);
+    const kind = partKindOf(partsOf(doc).get(at.partId));
+    return (kind === undefined ? undefined : noteKeys[kind](key, previous)) ?? commonKey(key);
   }
 
   return {

@@ -35,7 +35,7 @@ export interface StaffMetrics {
 
 /** Half the width of the cursor on a beat with nothing drawn (a rest in tablature), per staff space. */
 const MIN_HALF_WIDTH = 0.9;
-/** Width of the cursor before the first beat of an empty bar, per staff space. */
+/** Width of the cursor in the append slot of an empty voice, per staff space. */
 const CARET_WIDTH = 0.35;
 
 /** Distance between two cursor lines of a part: a string for tablature, half a staff space otherwise. */
@@ -54,9 +54,10 @@ function barBoundsOf(lookup: BoundsLookup, barIndex: number, track: number, staf
 }
 
 /**
- * The rectangle of a cursor: centred on the notes of its beat and on its line. Before the first
- * beat (an empty bar) it is a thin caret at the left edge of the place of the beats. Null when
- * the bar or the part is not drawn.
+ * The rectangle of a cursor: centred on the notes of its beat and on its line. In the append
+ * slot of an empty voice it is a thin caret at the left edge of the place of the beats; in an
+ * append slot after a beat it is drawn on that beat for now (#19 draws the append slot). Null
+ * when the bar or the part is not drawn.
  */
 export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor, metrics: StaffMetrics): Rect | null {
   const track = projection.partIndex.get(cursor.partId);
@@ -124,6 +125,8 @@ export function cursorAtPoint(lookup: BoundsLookup, projection: Projection, part
     barId,
     voice: `${bar.bar.staff.index}:${nearest?.beat.beat.voice.index ?? 0}`,
     beatId: nearest?.id ?? null,
+    // A bar without beats of the score: the append slot of its empty voice.
+    at: nearest === null ? "after" : "on",
     line,
   };
 }

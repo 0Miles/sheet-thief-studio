@@ -13,13 +13,13 @@ export function keyOf(key: string, modifiers: Modifiers = {}): Key {
 }
 
 /**
- * A score of two empty bars and one part, an editor session on it with the cursor on the first
- * bar, and a clock the test moves.
+ * A score of empty bars (two unless told) and one part, an editor session on it with the cursor
+ * in the append slot of the first bar, and a clock the test moves.
  */
-export function sessionOn(kind: PartKind = "fretted") {
+export function sessionOn(kind: PartKind = "fretted", bars = 2) {
   const doc = new Y.Doc();
   createScore(doc, "Demo");
-  const barIds = insertBars(doc, { after: null, count: 2 });
+  const barIds = insertBars(doc, { after: null, count: bars });
   const partId = addPart(doc, { name: "Part", kind });
   const clock = { now: 0 };
   const session = createEditorSession(doc, { cursor: cursorAt(doc, partId, barIds[0]!, kind === "fretted" ? 6 : 4), now: () => clock.now });

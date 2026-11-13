@@ -41,7 +41,7 @@ export interface StudioHook {
   stateSize(): number;
   cursor(): Cursor | null;
   cursorRect(): Rect | null;
-  /** Put the cursor on a beat (or before the first, with -1) of a bar of a part, all by index. */
+  /** Put the cursor on a beat (or, with -1, in the append slot of an empty voice) of a bar of a part, all by index. */
   placeCursor(part: number, bar: number, beat: number, line: number): Cursor | null;
   /** Change one fret in a bar of a part (by index) as a member would, and wait for the drawing. */
   editBar(part: number, bar: number): Promise<RenderSample>;
