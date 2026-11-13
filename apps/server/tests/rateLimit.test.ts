@@ -62,3 +62,14 @@ test("a successful login does not count as an attempt", async () => {
   expect(await statuses(times(9, () => ["miles", "wrong", "10.2.0.1"]))).toEqual(times(9, () => 401));
   expect(await statuses([["miles", PASSWORD, "10.2.0.1"], ["miles", "wrong", "10.2.0.1"], ["miles", PASSWORD, "10.2.0.1"]])).toEqual([204, 401, 429]);
 });
+
+test("behind the proxy, the IP counted is the one it forwards; a client that is not the proxy cannot choose it", async () => {
+  const fromProxy = (username: string, password: string, forwardedFor: string) => login(app, username, password, { remoteAddress: "127.0.0.1", forwardedFor });
+  for (let i = 0; i < 10; i++) expect((await fromProxy(`someone-${i}`, "wrong", "203.0.113.7")).statusCode).toBe(401);
+  expect((await fromProxy("miles", PASSWORD, "203.0.113.7")).statusCode).toBe(429);
+  // Another client behind the same proxy, and the proxy's own address, are not held back.
+  expect((await fromProxy("miles", PASSWORD, "203.0.113.8")).statusCode).toBe(204);
+  expect((await login(app, "miles", PASSWORD, { remoteAddress: "127.0.0.1" })).statusCode).toBe(204);
+  // From anywhere else X-Forwarded-For is ignored: the connecting address is counted.
+  expect((await login(app, "miles", PASSWORD, { remoteAddress: "10.3.0.1", forwardedFor: "203.0.113.7" })).statusCode).toBe(204);
+});

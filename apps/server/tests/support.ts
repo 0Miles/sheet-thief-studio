@@ -61,9 +61,18 @@ export function cli(args: string[], input = ""): Promise<{ code: number | null; 
   });
 }
 
-/** Log in as the web app does: a JSON body, from our own origin. */
-export function login(app: FastifyInstance, username: string, password: string, options: { remoteAddress?: string; cookies?: Record<string, string> } = {}) {
-  return app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { username, password }, ...options });
+/**
+ * Log in as the web app does: a JSON body, from our own origin. `remoteAddress` is who connects
+ * (127.0.0.1, the trusted proxy, by default); `forwardedFor` the X-Forwarded-For it sends.
+ */
+export function login(
+  app: FastifyInstance,
+  username: string,
+  password: string,
+  { forwardedFor, ...options }: { remoteAddress?: string; forwardedFor?: string; cookies?: Record<string, string> } = {},
+) {
+  const headers = forwardedFor === undefined ? { origin: ORIGIN } : { origin: ORIGIN, "x-forwarded-for": forwardedFor };
+  return app.inject({ method: "POST", url: "/api/auth/login", headers, payload: { username, password }, ...options });
 }
 
 /** The session cookie a response sets, by its name in the test config. */
