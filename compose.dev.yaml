@@ -1,0 +1,36 @@
+# Postgres and Redis for development and for the server's tests (docs/spec/testing.md).
+# Start with `docker compose -f compose.dev.yaml up -d`. The host ports are not the default
+# ones so that they do not collide with other projects' databases on the same machine.
+name: sheet-thief-studio
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: studio
+      POSTGRES_DB: studio
+    ports:
+      - "127.0.0.1:5438:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      # Creates the databases of the server's tests and of the end-to-end tests on first start.
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6388:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres:
