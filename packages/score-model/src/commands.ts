@@ -189,17 +189,17 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
   return index < 0 ? undefined : voice.get(index);
 }
 
-/** How long a beat is. */
+/** The duration of a beat: its note value, dots and tuplet. */
 export interface NewBeat {
   value: NoteValue;
   dots?: 0 | 1 | 2;
   tuplet?: Tuplet;
 }
 
-/** What a beat gets when there is no beat to take its length from. */
+/** What a beat gets when there is no beat to take its duration from. */
 const QUARTER: NewBeat = { value: 4 };
 
-/** How long a beat is, as stored; undefined when that cannot be read. */
+/** The duration of a beat as stored; undefined when it cannot be read. */
 export function durationOf(beat: YBeat): NewBeat | undefined {
   const value = noteValueSchema.safeParse(beat.get("value"));
   const dots = beatSchema.shape.dots.safeParse(beat.get("dots"));
@@ -209,47 +209,59 @@ export function durationOf(beat: YBeat): NewBeat | undefined {
   return { value: value.data, dots: dots.data, ...(tuplet.success ? { tuplet: tuplet.data } : {}) };
 }
 
-/**
- * Where a beat made at the cursor goes in its voice, and the beat it takes its length from: on a
- * beat, just before it; in the append slot, just after the anchor (first in an empty voice, last
- * when the anchor is gone). Undefined when the cursor's beat or voice is gone.
- */
-function placeFor(doc: Y.Doc, cursor: Cursor): { voice: YVoice; index: number; model: YBeat | undefined } | undefined {
-  const voice = voiceAt(doc, cursor);
-  if (voice === undefined) return undefined;
-  const at = indexOfBeat(voice, cursor.beatId);
-  if (cursor.at === "on") return at < 0 ? undefined : { voice, index: at, model: voice.get(at) };
-  if (cursor.beatId === null) return { voice, index: 0, model: undefined };
-  return at < 0 ? { voice, index: voice.length, model: undefined } : { voice, index: at + 1, model: voice.get(at) };
+/** Where a beat made at the cursor goes: its voice, its index there, and the beat it takes its duration from. */
+interface BeatPlace {
+  voice: YVoice;
+  index: number;
+  durationFrom: YBeat | undefined;
 }
 
-/** Make a rest at a place: inside a transaction. Returns its id. */
-function makeBeat({ voice, index, model }: { voice: YVoice; index: number; model: YBeat | undefined }, length?: NewBeat): string {
-  const { value, dots = 0, tuplet } = length ?? (model && durationOf(model)) ?? QUARTER;
+/**
+ * Where a beat made at the cursor goes: on a beat, just before it, as long as it; in the append
+ * slot, just after the anchor, as long as the anchor (first and a quarter in an empty voice; when
+ * the anchor is gone, after the last beat and as long as it, where the cursor settles).
+ * Undefined when the cursor's beat or voice is gone.
+ */
+function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+  const voice = voiceAt(doc, cursor);
+  if (voice === undefined) return undefined;
+  const found = indexOfBeat(voice, cursor.beatId);
+  if (cursor.at === "on") return found < 0 ? undefined : { voice, index: found, durationFrom: voice.get(found) };
+  if (cursor.beatId === null) return { voice, index: 0, durationFrom: undefined };
+  const anchor = found < 0 ? voice.length - 1 : found;
+  return { voice, index: anchor + 1, durationFrom: anchor < 0 ? undefined : voice.get(anchor) };
+}
+
+/**
+ * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
+ * rest of `duration` (else as long as its place says), then `fill` puts its notes on it.
+ */
+function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, duration?: NewBeat, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
+  const { value, dots = 0, tuplet } = duration ?? (place.durationFrom && durationOf(place.durationFrom)) ?? QUARTER;
   const id = newId();
-  const beat: YBeat = new Y.Map();
-  beat.set("id", id);
-  beat.set("value", value);
-  beat.set("dots", dots);
-  if (tuplet !== undefined) beat.set("tuplet", { ...tuplet });
-  beat.set("notes", new Y.Map());
-  voice.insert(index, [beat]);
-  return id;
+  doc.transact(() => {
+    const beat: YBeat = new Y.Map();
+    const notes = new Y.Map<NoteJSON>();
+    beat.set("id", id);
+    beat.set("value", value);
+    beat.set("dots", dots);
+    if (tuplet !== undefined) beat.set("tuplet", { ...tuplet });
+    beat.set("notes", notes);
+    place.voice.insert(place.index, [beat]);
+    fill?.(notes);
+  }, LOCAL);
+  return { ...cursor, beatId: id, at: "on" };
 }
 
 /**
  * Insert a rest before the beat of the cursor, or append one in the append slot, and move the
- * cursor onto it. It is as long as `length`, else as the beat of the cursor or the anchor, else a
- * quarter (docs/spec/commands.md, 5.1 and 5.2). Changes nothing when the cursor's beat is gone.
+ * cursor onto it. It lasts `duration`, else as long as the beat of the cursor or the anchor,
+ * else a quarter (docs/spec/commands.md, 5.1 and 5.2). Changes nothing when the cursor's beat is
+ * gone.
  */
-export function insertBeat(doc: Y.Doc, cursor: Cursor, length?: NewBeat): Cursor {
+export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: NewBeat): Cursor {
   const place = placeFor(doc, cursor);
-  if (place === undefined) return cursor;
-  let id = "";
-  doc.transact(() => {
-    id = makeBeat(place, length);
-  }, LOCAL);
-  return { ...cursor, beatId: id, at: "on" };
+  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration);
 }
 
 /**
@@ -262,12 +274,7 @@ function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: Note
     const note = write(undefined);
     const place = placeFor(doc, cursor);
     if (note === null || place === undefined) return cursor;
-    let id = "";
-    doc.transact(() => {
-      id = makeBeat(place);
-      (place.voice.get(place.index).get("notes") as Y.Map<NoteJSON>).set(key, note);
-    }, LOCAL);
-    return { ...cursor, beatId: id, at: "on" };
+    return makeBeat(doc, cursor, place, undefined, (notes) => notes.set(key, note));
   }
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;

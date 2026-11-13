@@ -209,11 +209,14 @@ test("a command on a beat that is gone changes nothing", () => {
   expect(transactions.count).toBe(0);
 });
 
-test("an append slot whose anchor is gone appends at the end of its voice", () => {
+test("an append slot whose anchor is gone appends after the last beat of its voice, as long as it", () => {
   const { doc, barIds, partId } = score();
-  const first = insertBeat(doc, cursorAt(doc, partId, barIds[0]!));
+  const first = insertBeat(doc, cursorAt(doc, partId, barIds[0]!), { value: 8 });
   const added = insertBeat(doc, { ...first, beatId: "gone", at: "after" });
-  expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([first.beatId, added.beatId]);
+  expect(beatsOf(doc, barIds[0]!).map(([id, value]) => [id, value])).toEqual([
+    [first.beatId, 8],
+    [added.beatId, 8],
+  ]);
 });
 
 test("a voice that does not fill its bar is flagged; an empty or a full one is not", () => {

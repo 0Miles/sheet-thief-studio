@@ -3,7 +3,7 @@
 import type * as Y from "yjs";
 
 import { type Cursor, durationOf } from "./commands";
-import { barTicks, beatTicks } from "./flags";
+import { barTicks, beatTicks, fillOf } from "./flags";
 import { barsOf, COMMON_TIME, contentOf, ordered, type PartKind, partsOf, timeSigSchema, type YVoice } from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
@@ -21,30 +21,24 @@ function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
   let held = 0;
   // A beat whose length cannot be read is left out, as reading leaves it out.
   voiceOf(doc, cursor)?.forEach((beat) => {
-    const length = durationOf(beat);
-    if (length !== undefined) held += beatTicks({ dots: 0, ...length });
+    const duration = durationOf(beat);
+    if (duration !== undefined) held += beatTicks({ dots: 0, ...duration });
   });
-  return barTicks(timeSig.success ? timeSig.data : COMMON_TIME) - held >= 0.5;
+  return fillOf(held, barTicks(timeSig.success ? timeSig.data : COMMON_TIME)) === "underfull";
 }
 
-/** The first place of a bar, for the cursor's voice: its first beat, or the append slot of an empty voice. */
-function firstPlace(doc: Y.Doc, cursor: Cursor, barId: string): Cursor {
-  const first = beatIds(voiceOf(doc, cursor, barId))[0];
-  return first === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId: first, at: "on" };
-}
-
-/** Where ← lands in a bar from the bar after it: its last beat, or the append slot of an empty voice. */
-function lastBeat(doc: Y.Doc, cursor: Cursor, barId: string): Cursor {
-  const last = beatIds(voiceOf(doc, cursor, barId)).at(-1);
-  return last === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId: last, at: "on" };
-}
-
-/** The first place of the bar after (`step` 1) or the last beat of the one before (-1); the cursor itself at either end of the score. */
+/**
+ * Where the cursor enters the bar after (`step` 1) or before (-1) its own: the first beat of its
+ * voice there, or the last; the append slot of an empty voice. The cursor itself at either end
+ * of the score.
+ */
 function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   const order = ordered(barsOf(doc));
   const barId = order[order.indexOf(cursor.barId) + step];
   if (barId === undefined) return cursor;
-  return step === 1 ? firstPlace(doc, cursor, barId) : lastBeat(doc, cursor, barId);
+  const ids = beatIds(voiceOf(doc, cursor, barId));
+  const beatId = step === 1 ? ids[0] : ids.at(-1);
+  return beatId === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId, at: "on" };
 }
 
 /** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */
