@@ -2,9 +2,9 @@
 // document: no move opens a transaction.
 import * as Y from "yjs";
 
-import { type Cursor, durationOf } from "./commands";
+import type { Cursor } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
-import { barsOf, COMMON_TIME, contentOf, ordered, type PartKind, partsOf, timeSigSchema, type YVoice } from "./schema";
+import { barsOf, COMMON_TIME, contentOf, durationOf, ordered, type PartKind, partsOf, timeSigSchema, type YVoice } from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
   const part = partsOf(doc).get(cursor.partId);

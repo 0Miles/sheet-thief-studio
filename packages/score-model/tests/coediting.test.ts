@@ -21,6 +21,7 @@ import {
   setFret,
   settleCursor,
 } from "../src/index";
+import { appendBeat } from "./support";
 
 /** A score and copies of it for each member, all in the same state. */
 function members(count: number, bars = 2) {
@@ -51,7 +52,7 @@ test("beats typed by two members in the same bar at the same time are all kept, 
   const typed = (doc: Y.Doc, frets: number[]) => {
     let cursor = cursorAt(doc, partId, barIds[0]!, 6);
     for (const fret of frets) {
-      cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
+      cursor = appendBeat(doc, cursor, { value: 8 });
       setFret(doc, cursor, fret);
     }
   };
@@ -216,7 +217,7 @@ test("whatever three members do, in whatever order their changes arrive, they en
         }
         const doc = docs[item.member]!;
         const cursor = cursors[item.member]![item.bar]!;
-        if (item.kind === "beat") cursors[item.member]![item.bar] = insertBeat(doc, { ...cursor, at: "after" }, { value: item.value });
+        if (item.kind === "beat") cursors[item.member]![item.bar] = appendBeat(doc, cursor, { value: item.value });
         else if (item.kind === "fret") setFret(doc, { ...cursor, at: "on", line: item.line }, item.fret);
         else setDuration(doc, { ...cursor, at: "on" }, { value: item.value });
       }

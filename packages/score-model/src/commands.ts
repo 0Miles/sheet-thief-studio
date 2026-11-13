@@ -8,14 +8,14 @@ import {
   barsOf,
   COMMON_TIME,
   contentOf,
+  type Duration,
+  durationOf,
   emptyBarContent,
   KIND_DEFAULTS,
   LOCAL,
   MAIN_VOICE,
   metaOf,
-  beatSchema,
   NOTE_VALUES,
-  type BeatJSON,
   type NoteJSON,
   type NoteValue,
   ordered,
@@ -27,7 +27,6 @@ import {
   staffCountOf,
   contentMapOf,
   type TimeSignature,
-  type Tuplet,
   type YBar,
   type YBeat,
   type YPart,
@@ -193,36 +192,18 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
   return found?.voice.get(found.index);
 }
 
-/** The duration of a beat: its note value, dots and tuplet. */
-export interface NewBeat {
-  value: NoteValue;
-  dots?: 0 | 1 | 2;
-  tuplet?: Tuplet;
-}
-
-/** The duration of a beat as stored. */
-type Duration = Pick<BeatJSON, "value" | "dots" | "tuplet">;
-
 /** What a beat gets when there is no beat to take its duration from. */
 const QUARTER: Duration = { value: 4, dots: 0 };
-
-const durationSchema = beatSchema.pick({ value: true, dots: true, tuplet: true });
-
-/** The duration of a beat as stored; undefined when it cannot be read. */
-export function durationOf(beat: YBeat): Duration | undefined {
-  const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
-  return duration.success ? duration.data : undefined;
-}
 
 /** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
 interface BeatPlace {
   voice: YVoice;
   index: number;
-  duration: NewBeat;
+  duration: Duration;
 }
 
 /** The duration a beat made at a place takes from `beat`: as long as it, else a quarter. */
-function durationFrom(beat: YBeat | undefined): NewBeat {
+function durationFrom(beat: YBeat | undefined): Duration {
   return (beat && durationOf(beat)) ?? QUARTER;
 }
 
@@ -249,7 +230,7 @@ function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
  * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
  * rest of `duration`, then `fill` puts its notes on it.
  */
-function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 0, tuplet }: NewBeat, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
+function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 0, tuplet }: Duration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
   const id = newId();
   doc.transact(() => {
     const beat: YBeat = new Y.Map();
@@ -271,7 +252,7 @@ function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 
  * else a quarter (docs/spec/commands.md, 5.1 and 5.2). Changes nothing when the cursor's beat is
  * gone.
  */
-export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: NewBeat): Cursor {
+export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cursor {
   const place = placeFor(doc, cursor);
   return place === undefined ? cursor : makeBeat(doc, cursor, place, duration ?? place.duration);
 }
@@ -343,7 +324,8 @@ export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
   return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };
 }
 
-export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: NewBeat): Cursor {
+/** Give the beat of the cursor a note value and dots; its tuplet stays. */
+export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omit<Duration, "tuplet">): Cursor {
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;
   doc.transact(() => {
@@ -365,10 +347,6 @@ export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   return cursor;
 }
 
-/** The note value of the beat of the cursor, or undefined when it stands on none. */
-export function valueAt(doc: Y.Doc, cursor: Cursor): NoteValue | undefined {
-  return beatAt(doc, cursor)?.get("value") as NoteValue | undefined;
-}
 
 /** The cursor at the first place of the first voice of a bar of a part: its first beat, or the append slot of an empty voice. */
 export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = 1): Cursor {

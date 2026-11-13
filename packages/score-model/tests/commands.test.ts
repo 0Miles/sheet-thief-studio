@@ -24,6 +24,7 @@ import {
   setNote,
   STANDARD_GUITAR,
 } from "../src/index";
+import { appendBeat } from "./support";
 
 function score(bars = 2) {
   const doc = new Y.Doc();
@@ -92,7 +93,7 @@ test("in the append slot a beat is appended after the anchor, as long as the anc
   expect(empty).toMatchObject({ beatId: null, at: "after" });
   const first = insertBeat(doc, empty);
   setDuration(doc, first, { value: 16, dots: 2 });
-  const second = insertBeat(doc, { ...first, at: "after" });
+  const second = appendBeat(doc, first);
   expect(second.at).toBe("on");
   expect(beatsOf(doc, barIds[0]!)).toEqual([
     [first.beatId, 16, 2, undefined, {}],
@@ -155,8 +156,8 @@ test("deleting a beat moves the cursor onto the beat that takes its place, or in
   const { doc, barIds, partId } = score();
   const undo = undoOf(doc);
   const a = insertBeat(doc, cursorAt(doc, partId, barIds[0]!, 6));
-  const b = insertBeat(doc, { ...a, at: "after" });
-  const c = insertBeat(doc, { ...b, at: "after" });
+  const b = appendBeat(doc, a);
+  const c = appendBeat(doc, b);
   expect(isRestAt(doc, b)).toBe(true);
   expect(deleteBeat(doc, b)).toEqual(c);
   expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([a.beatId, c.beatId]);
@@ -223,9 +224,9 @@ test("a voice that does not fill its bar is flagged; an empty or a full one is n
   const { doc, barIds, partId } = score(3);
   let cursor = insertBeat(doc, cursorAt(doc, partId, barIds[0]!), { value: 2 });
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId: barIds[0], voice: "0:0" }]);
-  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 4 });
-  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
-  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
+  cursor = appendBeat(doc, cursor, { value: 4 });
+  cursor = appendBeat(doc, cursor, { value: 8 });
+  cursor = appendBeat(doc, cursor, { value: 8 });
   expect(flagsOf(docToJson(doc))).toEqual([]);
   setDuration(doc, cursor, { value: 4, dots: 1 });
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "overfull", partId, barId: barIds[0], voice: "0:0" }]);

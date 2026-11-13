@@ -384,6 +384,21 @@ export function ordered<T>(map: Y.Map<T>): string[] {
   return keyed.sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0)).map(([, id]) => id);
 }
 
+/** The duration of a beat: its note value, its dots (none unless said) and its tuplet. */
+export interface Duration {
+  value: NoteValue;
+  dots?: 0 | 1 | 2;
+  tuplet?: Tuplet;
+}
+
+const durationSchema = beatSchema.pick({ value: true, dots: true, tuplet: true });
+
+/** The duration of a beat as stored, its dots always given; undefined when it cannot be read. */
+export function durationOf(beat: YBeat): Duration | undefined {
+  const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  return duration.success ? duration.data : undefined;
+}
+
 /** The kind of a part, or undefined when it is not a part or its kind cannot be read (docs/spec/schema.md, section 11). */
 export function partKindOf(part: unknown): PartKind | undefined {
   const kind = partKindSchema.safeParse(part instanceof Y.Map ? part.get("kind") : undefined);

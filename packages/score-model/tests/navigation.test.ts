@@ -16,7 +16,7 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
-  type NewBeat,
+  type Duration,
   observeScore,
   partsOf,
   type ScoreChange,
@@ -24,19 +24,19 @@ import {
   setFret,
   settleCursor,
   stepDuration,
-  valueAt,
 } from "../src/index";
+import { appendBeat } from "./support";
 
-/** Append beats of these durations to a bar; returns their ids. */
-function write(doc: Y.Doc, partId: string, barId: string, durations: NewBeat[]): string[] {
+/** Write beats of these durations into a bar, one after the other from its first place (its first beat, or an empty voice's append slot); returns their ids. */
+function write(doc: Y.Doc, partId: string, barId: string, durations: Duration[]): string[] {
   let cursor = cursorAt(doc, partId, barId);
   return durations.map((duration) => {
-    cursor = insertBeat(doc, { ...cursor, at: "after" }, duration);
+    cursor = appendBeat(doc, cursor, duration);
     return cursor.beatId!;
   });
 }
 
-const quarter: NewBeat = { value: 4 };
+const quarter: Duration = { value: 4 };
 
 /**
  * Five bars of 4/4: two quarters (not full), none, a dotted half and a quarter (full), a whole
@@ -115,7 +115,7 @@ test("→ at the end of the last bar stays where it is: in its append slot, or o
 
 test("a beat in a triplet counts for two thirds of its value when the cursor asks whether its bar is full", () => {
   const { doc, barIds, partId } = score();
-  const triplet: NewBeat = { value: 4, tuplet: { actual: 3, normal: 2 } };
+  const triplet: Duration = { value: 4, tuplet: { actual: 3, normal: 2 } };
   const written = write(doc, partId, barIds[1]!, [triplet, triplet, triplet, { value: 2 }]);
   // Three quarter-note triplets and a half: a whole, so → leaves the bar.
   const last: Cursor = { ...cursorAt(doc, partId, barIds[1]!), beatId: written[3]! };
@@ -151,10 +151,10 @@ test("← from an append slot goes back to its anchor, even when others have app
 test("→ from a beat just made in the append slot takes it as the new anchor, whatever others have appended after it", () => {
   const { doc, barIds, partId, beats } = score();
   const mine = insertBeat(doc, { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]!, at: "after" }, { value: 8 });
-  insertBeat(doc, { ...mine, at: "after" }, { value: 8 });
+  appendBeat(doc, mine, { value: 8 });
   expect(moveFromAppendedBeat(doc, mine)).toEqual({ ...mine, at: "after" });
   // Once the bar is full, → goes on to the next bar, as from any last beat.
-  insertBeat(doc, { ...mine, at: "after" }, { value: 4 });
+  appendBeat(doc, mine, { value: 4 });
   expect(placeOf(barIds, beats, moveFromAppendedBeat(doc, mine))).toEqual([1, -1, "after"]);
   // At the end of the score it stays.
   setDuration(doc, cursorAt(doc, partId, barIds[4]!), { value: 1 });
@@ -253,16 +253,18 @@ test("an append slot whose anchor is gone settles after the last beat of its voi
 test("a beat gets shorter or longer one note value at a time, within the values there are", () => {
   const { doc, barIds, partId } = score();
   const cursor = cursorAt(doc, partId, barIds[0]!);
+  const value = () => docToJson(doc).parts[0]!.content[barIds[0]!]!["0:0"]![0]!.value;
   stepDuration(doc, cursor, 1);
-  expect(valueAt(doc, cursor)).toBe(8);
+  expect(value()).toBe(8);
   stepDuration(doc, cursor, -1);
   stepDuration(doc, cursor, -1);
   stepDuration(doc, cursor, -1);
-  expect(valueAt(doc, cursor)).toBe(1);
+  expect(value()).toBe(1);
   const before = docToJson(doc);
   stepDuration(doc, cursor, -1);
+  // An empty voice's append slot has no beat to change.
+  stepDuration(doc, cursorAt(doc, partId, barIds[1]!), 1);
   expect(docToJson(doc)).toEqual(before);
-  expect(valueAt(doc, cursorAt(doc, partId, barIds[1]!))).toBeUndefined();
 });
 
 test("a change inside bars names those bars; anything else is a change of structure", () => {

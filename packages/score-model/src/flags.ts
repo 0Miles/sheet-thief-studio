@@ -1,14 +1,14 @@
 // What is wrong in a score but is never rewritten for the members: only pointed out.
-import type { BeatJSON, ScoreJSON, TimeSignature } from "./schema";
+import type { Duration, ScoreJSON, TimeSignature } from "./schema";
 
 /** Ticks in a whole note (960 in a quarter). */
 export const WHOLE = 3840;
 
 const DOTTED = [1, 1.5, 1.75] as const;
 
-export function beatTicks(beat: Pick<BeatJSON, "value" | "dots" | "tuplet">): number {
+export function beatTicks(beat: Duration): number {
   const tuplet = beat.tuplet ? beat.tuplet.normal / beat.tuplet.actual : 1;
-  return (WHOLE / beat.value) * DOTTED[beat.dots] * tuplet;
+  return (WHOLE / beat.value) * DOTTED[beat.dots ?? 0] * tuplet;
 }
 
 export function barTicks(timeSig: TimeSignature): number {
