@@ -9,11 +9,9 @@ import {
   barSchema,
   type BarJSON,
   type BeatJSON,
-  beatSchema,
   barsOf,
   COMMON_TIME,
   isNoteKey,
-  isPlainJson,
   isVoiceKey,
   KIND_DEFAULTS,
   kindSchemas,
@@ -119,18 +117,20 @@ function flag(place: Place, what: string): InvalidContentFlag {
 
 /** The value of a field as its schema reads it, or `fallback` and a flag when it does not fit. */
 function readField<T>(schema: z.ZodType<T>, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
-  const parsed = isPlainJson(value) ? schema.safeParse(value) : null;
-  if (parsed?.success) return parsed.data;
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
   invalid.push(flag(place, what));
   return fallback;
 }
 
 /** The fields of a beat but its notes, as they are in the document: only those present. */
-/** The fields of a beat the schema knows, but its notes: the others are ignored (section 9). */
-const BEAT_FIELDS = beatSchema.keyof().options.filter((name) => name !== "notes");
-
 function fieldsOf(beat: YBeat): Record<string, unknown> {
-  return Object.fromEntries(BEAT_FIELDS.filter((name) => beat.has(name)).map((name) => [name, beat.get(name)]));
+  const fields: [string, unknown][] = [];
+  beat.forEach((value, name) => {
+    if (name !== "notes") fields.push([name, value]);
+  });
+  // Built from entries, so that a field named __proto__ is a field like any other.
+  return Object.fromEntries(fields);
 }
 
 function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {
@@ -151,7 +151,7 @@ function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Chec
   const entries: [string, unknown][] = [];
   notes.forEach((value: unknown, key) => entries.push([key, value]));
   for (const [key, value] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const note = isNoteKey(kind, strings, key) && isPlainJson(value) ? rules.note.safeParse(value) : null;
+    const note = isNoteKey(kind, strings, key) && !(value instanceof Y.AbstractType) ? rules.note.safeParse(value) : null;
     if (note?.success) read[key] = note.data;
     else invalid.push(flag({ ...at, noteKey: key }, "note"));
   }
@@ -204,17 +204,17 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
     return null;
   }
   const shape = partSchemas[kind.data].shape;
-  const openStrings = part.get("tuning");
-  const tuning = isPlainJson(openStrings) ? shape.tuning.safeParse(openStrings) : null;
-  if (!tuning?.success) {
+  const tuning = shape.tuning.safeParse(part.get("tuning"));
+  if (!tuning.success) {
     invalid.push(flag(place, "part.tuning"));
     // Notes on a string cannot be placed without the tuning of the strings.
     if (kind.data === "fretted") return null;
   }
   const defaults = KIND_DEFAULTS[kind.data];
   const staves = readField(shape.staves, part.get("staves"), defaults.staves.map((staff) => ({ ...staff })), invalid, place, "part.staves");
-  const strings = tuning?.success ? tuning.data.length : 0;
+  const strings = tuning.success ? tuning.data.length : 0;
   const fit: Fit = { kind: kind.data, strings, key: `${kind.data}:${strings}`, reuse };
+  // Built from entries, so that a bar id __proto__ is a key like any other.
   const content: [string, Record<string, BeatJSON[]>][] = [];
   const stored = contentMapOf(part);
   if (stored !== undefined) {
@@ -231,7 +231,7 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
     id,
     name: readField(shape.name, part.get("name"), "", invalid, place, "part.name"),
     kind: kind.data,
-    tuning: tuning?.success ? tuning.data : [],
+    tuning: tuning.success ? tuning.data : [],
     capo: readField(shape.capo, part.get("capo"), 0, invalid, place, "part.capo"),
     program: readField(shape.program, part.get("program"), defaults.program, invalid, place, "part.program"),
     staves,
@@ -250,8 +250,8 @@ function readBar(id: string, bar: Y.Map<unknown>, first: boolean, invalid: Inval
     const value = bar.get(name);
     // A pickup bar anywhere but first is ignored: inserting a bar before it can make one.
     if (value === undefined || (name === "anacrusis" && !first)) continue;
-    const parsed = isPlainJson(value) ? barSchema.shape[name].safeParse(value) : null;
-    if (parsed?.success) Object.assign(read, { [name]: parsed.data });
+    const parsed = barSchema.shape[name].safeParse(value);
+    if (parsed.success) Object.assign(read, { [name]: parsed.data });
     else invalid.push(flag(place, `bar.${name}`));
   }
   return read;
@@ -299,8 +299,8 @@ export function readScore(doc: Y.Doc): ScoreRead {
     parts: [],
   };
   if (artist !== undefined) {
-    const parsed = isPlainJson(artist) ? shape.artist.safeParse(artist) : null;
-    if (parsed?.success && parsed.data !== undefined) read.artist = parsed.data;
+    const parsed = shape.artist.safeParse(artist);
+    if (parsed.success && parsed.data !== undefined) read.artist = parsed.data;
     else invalid.push(flag({}, "meta.artist"));
   }
   const placed = inOrder(barsOf(doc), "bar", invalid).filter(([id]) => {
