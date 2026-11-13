@@ -1,0 +1,31 @@
+// Password hashing: argon2id with the parameters of docs/spec/security.md, section 3. These are
+// also the library's defaults; they are spelled out so a library update cannot change them.
+import { type Algorithm, hash, verify } from "@node-rs/argon2";
+
+/** `Algorithm.Argon2id`: a const enum, which verbatimModuleSyntax cannot read as a value. */
+const ARGON2ID: Algorithm = 2;
+const PARAMETERS = { algorithm: ARGON2ID, memoryCost: 19456, timeCost: 2, parallelism: 1 };
+
+export function hashPassword(password: string): Promise<string> {
+  return hash(password, PARAMETERS);
+}
+
+/** Whether the password matches the hash; false for a hash that cannot be read. */
+export async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
+  try {
+    return await verify(passwordHash, password);
+  } catch {
+    return false;
+  }
+}
+
+let decoy: Promise<string> | undefined;
+
+/**
+ * Spend the time of a real check when there is no hash to check against (no such account), so
+ * that how long a login takes does not tell whether the account exists.
+ */
+export async function verifyNothing(password: string): Promise<void> {
+  decoy ??= hashPassword("not the password of any account");
+  await verifyPassword(await decoy, password);
+}

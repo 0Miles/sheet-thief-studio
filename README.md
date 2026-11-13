@@ -27,24 +27,48 @@ M0（技術驗證）已完成，接下來是 M1a；目前還不能使用。計�
 
 ## 開發
 
-需要 Node 22 以上與 pnpm 10。
+需要 Node 22 以上、pnpm 10 與 Docker。
 
 ```bash
 pnpm install
+docker compose -f compose.dev.yaml up -d         # Postgres（127.0.0.1:5438）與 Redis（127.0.0.1:6388）
+pnpm --filter @studio/server cli migrate         # 建立或更新資料表；每次拉下新的遷移後再跑一次
+pnpm --filter @studio/server cli create-admin <帳號名稱> <顯示名稱>   # 第一個管理者，只需要做一次
 pnpm --filter @studio/server dev   # http://localhost:8031
-pnpm --filter @studio/web dev      # http://localhost:5183
+pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管理者登入
 ```
 
-送 pull request 前：
+- `create-admin` 的密碼不放在指令列（10–256 字元）：在終端機裡會提示輸入兩次、不顯示；不是終端機時讀標準輸入的第一行，例如 `pnpm --filter @studio/server cli create-admin miles Miles < password.txt`。Git Bash（mintty）不算終端機，輸入會顯示在畫面上，建議用 PowerShell 或 Windows Terminal。
+- **開發用 cookie**：Safari（WebKit）在 http 上不收 `__Host-` cookie，手機在區網用 http 連線也一樣。這時伺服器改用不帶前綴、不帶 `Secure` 的 `studio_session`：
+
+  ```bash
+  INSECURE_COOKIES=1 pnpm --filter @studio/server dev                # bash
+  $env:INSECURE_COOKIES = "1"; pnpm --filter @studio/server dev      # PowerShell
+  ```
+
+  `NODE_ENV=production` 時這個設定無效，一律是 `__Host-studio_session`。
+
+伺服器讀的環境變數（開發時都有預設值，正式環境的前三個必須設定）：
+
+| 變數 | 開發時的預設 | 說明 |
+|---|---|---|
+| `DATABASE_URL` | `postgres://studio:studio@localhost:5438/studio` | Postgres |
+| `REDIS_URL` | `redis://localhost:6388/0` | Redis：session 與速率限制 |
+| `PUBLIC_ORIGIN` | `http://localhost:5183` | 網頁的 origin；會改動東西的 API 請求要帶這個 `Origin` |
+| `INSECURE_COOKIES` | 不設 | `1`：開發用 cookie（見上） |
+| `TRUSTED_PROXIES` | `loopback` | 前面那台 nginx 的位址，從它的 `X-Forwarded-For` 取得使用者的 IP |
+| `HOST`、`PORT` | `127.0.0.1`、`8031` | |
+
+送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著，用獨立的 `studio_test` 資料庫）：
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
-兩個瀏覽器經伺服器共編的端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）：
+端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）。它自己啟動 server 與網頁，用 `compose.dev.yaml` 裡獨立的 `studio_e2e` 資料庫，每次重建；先停掉開發中的 server：
 
 ```bash
 pnpm --filter @studio/web test:e2e
 ```
 
-技術驗證頁：`/spike/<名稱>`（共編）與 `/local`（只在這一頁）。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。
+技術驗證頁：`/spike/<名稱>`（共編）與 `/local`（只在這一頁），不需要登入。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。

@@ -20,7 +20,7 @@
 | `/admin` | 後台，只有 admin 能進 | M1a |
 | 找不到頁面 | 404 頁 | M1a |
 
-- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。
+- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/:name`、`/local` 暫時例外，和 M0 一樣不需要登入，#37 移除它們。
 - `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。
 - `/admin`：非 admin 看到 404 頁（補充）。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
@@ -50,13 +50,14 @@
 - 錯誤回應的形狀是 `{ code: string, params?: object }`。`code` 是穩定的英文代碼，介面依 `code` 顯示 `apps/web/src/strings.ts` 裡的繁中文字；伺服器不回傳給人看的句子。
 - 成功但沒有內容時回 204。
 - 所有非 GET 請求都檢查 `Origin`（[`security.md`](security.md)）。
+- **補充**：`/api/*` 的 route 預設都要 session，沒有就回 401 `unauthenticated`；不需要登入的 route（登入、登出、訪客取 ticket）要在 route 設定上明確標成 public，忘了標就是要登入（#5）。
 - 資料形狀用 zod 定義在 `packages/contracts`；團譜文件的 schema 從 `score-model` re-export。
 
 ### 3.1 登入與自己的帳號
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`；密碼正確但帳號停用時 403 `account_disabled`（補充：只在密碼正確時才透露停用）；429 `rate_limited` |
+| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
 | `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
 | `POST /api/auth/logout-all` | 刪除這個帳號所有的 session，關閉它的所有連線 |
 | `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401 |
@@ -150,8 +151,7 @@
 | code | HTTP | 意思 |
 |---|---|---|
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
-| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤 |
-| `account_disabled` | 403 | 帳號已停用 |
+| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤，或帳號已停用（三者不區分） |
 | `password_change_required` | 403 | 要先改密碼 |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
@@ -166,3 +166,4 @@
 | `limit_exceeded` | 422 | 超過聲部、小節等數量上限；`params` 帶上限名稱 |
 | `rate_limited` | 429 | |
 | `recognizer_busy` | 503 | 辨識服務忙碌中 |
+| `internal_error` | 500 | 伺服器內部錯誤（細節只進 log） |

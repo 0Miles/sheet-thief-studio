@@ -18,3 +18,69 @@ export {
 
 export const health = z.object({ status: z.literal("ok") });
 export type Health = z.infer<typeof health>;
+
+// Accounts (docs/spec/accounts.md, section 1; docs/spec/security.md, section 3).
+/** The lengths an account's fields may have, in characters. */
+export const accountLimits = {
+  username: { min: 3, max: 32 },
+  displayName: { min: 1, max: 50 },
+  password: { min: 10, max: 256 },
+} as const;
+/** Lowercase letters, digits, `-` and `_`; fixed once the account exists. */
+export const username = z.string().regex(new RegExp(`^[a-z0-9_-]{${accountLimits.username.min},${accountLimits.username.max}}$`));
+/** Trimmed. */
+export const displayName = z.string().trim().min(accountLimits.displayName.min).max(accountLimits.displayName.max);
+/** No composition rules. */
+export const password = z.string().min(accountLimits.password.min).max(accountLimits.password.max);
+
+/** What someone types on the login page: only bounded, since a wrong value is just wrong credentials. */
+export const loginRequest = z.object({
+  username: z.string().min(1).max(64),
+  password: z.string().min(1).max(256),
+});
+export type LoginRequest = z.infer<typeof loginRequest>;
+
+/** The account the session belongs to (`GET /api/me`). */
+export const me = z.object({
+  accountId: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  isAdmin: z.boolean(),
+  mustChangePassword: z.boolean(),
+});
+export type Me = z.infer<typeof me>;
+
+/** The codes of error answers (docs/spec/routes.md, section 4): a new code goes in both places. */
+export const errorCode = z.enum([
+  "unauthenticated",
+  "invalid_credentials",
+  "password_change_required",
+  "bad_origin",
+  "forbidden",
+  "not_found",
+  "account_not_found",
+  "already_member",
+  "username_taken",
+  "identity_taken",
+  "cannot_disable_self",
+  "owner_cannot_leave",
+  "revision_conflict",
+  "recognition_in_progress",
+  "payload_too_large",
+  "phrase_too_large",
+  "score_too_large",
+  "unsupported_image",
+  "invalid_request",
+  "limit_exceeded",
+  "rate_limited",
+  "recognizer_busy",
+  "internal_error",
+]);
+export type ErrorCode = z.infer<typeof errorCode>;
+
+/** Every error answer: a stable code the web app turns into text. */
+export const apiError = z.object({
+  code: errorCode,
+  params: z.record(z.string(), z.unknown()).optional(),
+});
+export type ApiErrorBody = z.infer<typeof apiError>;

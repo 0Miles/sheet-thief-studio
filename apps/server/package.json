@@ -6,15 +6,24 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
+    "cli": "tsx src/cliMain.ts",
+    "seed:e2e": "tsx tests/seedE2e.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.5",
     "@hocuspocus/server": "^4.8.0",
+    "@node-rs/argon2": "^2.2.2",
     "@studio/contracts": "workspace:*",
     "crossws": "^0.4.17",
     "fastify": "^5.12.8",
-    "yjs": "~13.6.33"
+    "ioredis": "^5.11.1",
+    "pg": "^8.23.1",
+    "sequelize": "^6.37.8",
+    "umzug": "^3.8.3",
+    "yjs": "~13.6.33",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
