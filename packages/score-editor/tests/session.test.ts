@@ -1,11 +1,12 @@
 // The editor session on its own: which keys it takes on each kind of part, and how it matches them.
+import { partsOf } from "@studio/score-model";
 import { expect, test } from "vitest";
 
-import { typingOn } from "./support";
+import { sessionOn } from "./support";
 
 test("digits and Delete enter and clear frets only on a fretted part; the other keys work on every kind", () => {
   for (const kind of ["percussion", "pitched"] as const) {
-    const { session, press, beats, cursor } = typingOn(kind);
+    const { session, press, beats, cursor } = sessionOn(kind);
     expect(press("5")).toBe(false);
     expect(beats()).toEqual([]);
     expect(press("Insert")).toBe(true);
@@ -21,7 +22,7 @@ test("digits and Delete enter and clear frets only on a fretted part; the other 
 });
 
 test("shortcuts with a modifier are matched on where the key is, not on what it types", () => {
-  const { session, press, beats } = typingOn();
+  const { session, press, beats } = sessionOn();
   press("7");
   // A Russian layout: the key in the place of Z types я.
   expect(session.press({ key: "я", code: "KeyZ", ctrlKey: true })).toBe(true);
@@ -30,4 +31,11 @@ test("shortcuts with a modifier are matched on where the key is, not on what it 
   expect(session.press({ key: "z", code: "KeyW", ctrlKey: true })).toBe(false);
   expect(session.press({ key: "y", code: "KeyY", ctrlKey: true })).toBe(true);
   expect(beats().map((beat) => beat.notes)).toEqual([{ s6: { fret: 7 } }]);
+});
+
+test("on a part whose kind cannot be read, digits are not keys and nothing throws", () => {
+  const { doc, press, partId } = sessionOn();
+  partsOf(doc).get(partId)!.set("kind", "banjo");
+  expect(press("5")).toBe(false);
+  expect(press("ArrowUp")).toBe(true);
 });

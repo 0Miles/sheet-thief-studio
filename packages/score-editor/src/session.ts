@@ -9,6 +9,7 @@ import {
   moveByBeat,
   moveByLine,
   type PartKind,
+  partKindSchema,
   partsOf,
   setFret,
   settleCursor,
@@ -35,7 +36,6 @@ export interface Key {
   ctrlKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
-  altKey?: boolean;
 }
 
 /**
@@ -92,14 +92,14 @@ export interface EditorSession {
   destroy(): void;
 }
 
-/** A key of the session: the command it runs at a cursor, and whether that changes the score. */
-interface Action {
+/** What a key does: the command it runs at a cursor, and whether that changes the score. */
+interface KeyCommand {
   changes: boolean;
   run(at: Cursor): Cursor | null;
 }
 
-const move = (run: (at: Cursor) => Cursor): Action => ({ changes: false, run });
-const change = (run: (at: Cursor) => Cursor | null): Action => ({ changes: true, run });
+const move = (run: (at: Cursor) => Cursor): KeyCommand => ({ changes: false, run });
+const change = (run: (at: Cursor) => Cursor | null): KeyCommand => ({ changes: true, run });
 
 function samePlace(a: Cursor | null, b: Cursor | null): boolean {
   if (a === null || b === null) return a === b;
@@ -165,7 +165,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   }
 
   /** Undo and redo. */
-  function shortcut(key: Key): Action | undefined {
+  function shortcut(key: Key): KeyCommand | undefined {
     if (key.code !== "KeyZ" && key.code !== "KeyY") return undefined;
     const redo = key.code === "KeyY" || key.shiftKey === true;
     return change((at) => {
@@ -176,7 +176,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   }
 
   /** The keys that enter notes, which depend on the kind of the part (docs/spec/keymap.md, section 4). */
-  const noteKeys: Record<PartKind, (key: Key, previous: TypedDigit | null) => Action | undefined> = {
+  const noteKeys: Record<PartKind, (key: Key, previous: TypedDigit | null) => KeyCommand | undefined> = {
     fretted(key, previous) {
       if (/^[0-9]$/.test(key.key)) return change((at) => typeDigit(Number(key.key), at, previous));
       if (key.key === "Delete") return change((at) => setFret(doc, at, null));
@@ -188,7 +188,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   };
 
   /** The keys of every kind of part. */
-  function commonKey(key: Key): Action | undefined {
+  function commonKey(key: Key): KeyCommand | undefined {
     switch (key.key) {
       case "ArrowRight":
         return move((at) => moveByBeat(doc, at, 1));
@@ -209,10 +209,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     }
   }
 
-  function actionFor(key: Key, at: Cursor, previous: TypedDigit | null): Action | undefined {
+  function commandFor(key: Key, at: Cursor, previous: TypedDigit | null): KeyCommand | undefined {
     if (key.ctrlKey === true || key.metaKey === true) return shortcut(key);
-    const kind = partsOf(doc).get(at.partId)?.get("kind") as PartKind | undefined;
-    return (kind && noteKeys[kind](key, previous)) ?? commonKey(key);
+    // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
+    const kind = partKindSchema.safeParse(partsOf(doc).get(at.partId)?.get("kind"));
+    return (kind.success ? noteKeys[kind.data](key, previous) : undefined) ?? commonKey(key);
   }
 
   return {
@@ -232,14 +233,14 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       // A digit waits for a second one; any other key ends the wait.
       const previous = lastDigit;
       lastDigit = null;
-      const action = actionFor(key, cursor, previous);
-      if (action === undefined) return false;
-      if (action.changes && readOnly) {
+      const command = commandFor(key, cursor, previous);
+      if (command === undefined) return false;
+      if (command.changes && readOnly) {
         if (!refused) for (const listener of refusedListeners) listener();
         refused = true;
         return true;
       }
-      moveTo(action.run(cursor));
+      moveTo(command.run(cursor));
       return true;
     },
     moveTo,

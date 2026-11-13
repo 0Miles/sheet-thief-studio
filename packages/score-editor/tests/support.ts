@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 import { createEditorSession, type Key } from "../src/index";
 
-type Modifiers = Pick<Key, "ctrlKey" | "metaKey" | "shiftKey" | "altKey">;
+type Modifiers = Pick<Key, "ctrlKey" | "metaKey" | "shiftKey">;
 
 /** A key as a US keyboard sends it: `code` names where the key is, `key` what it types. */
 export function keyOf(key: string, modifiers: Modifiers = {}): Key {
@@ -16,13 +16,13 @@ export function keyOf(key: string, modifiers: Modifiers = {}): Key {
  * A score of two empty bars and one part, an editor session on it with the cursor on the first
  * bar, and a clock the test moves.
  */
-export function typingOn(kind: PartKind = "fretted", { line = kind === "fretted" ? 6 : 4 } = {}) {
+export function sessionOn(kind: PartKind = "fretted") {
   const doc = new Y.Doc();
   createScore(doc, "Demo");
   const barIds = insertBars(doc, { after: null, count: 2 });
   const partId = addPart(doc, { name: "Part", kind });
   const clock = { now: 0 };
-  const session = createEditorSession(doc, { cursor: cursorAt(doc, partId, barIds[0]!, line), now: () => clock.now });
+  const session = createEditorSession(doc, { cursor: cursorAt(doc, partId, barIds[0]!, kind === "fretted" ? 6 : 4), now: () => clock.now });
   /** Press a key `wait` milliseconds after the one before; true when the session handled it. */
   const press = (key: string, wait = 1000, modifiers: Modifiers = {}): boolean => {
     clock.now += wait;

@@ -100,7 +100,7 @@ interface Cursor {
 | percussion | 鼓件字母、`1`–`4` | 切換：拍點上沒有這個鼓件就加上，有就移除 |
 | pitched | `A`–`G` | 在最靠近游標位置的那個八度輸入該音名的音，依調號套用升降；拍點上已經有音時，加入和弦音 |
 
-- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts:20-24,141-165`，`packages/score-editor/tests/typing.test.ts:27`）。現在的做法（暫時調大 `captureTimeout`）可以換掉。
+- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts:21-25,141-165`，`packages/score-editor/tests/typing.test.ts:27`）。現在的做法（暫時調大 `captureTimeout`）可以換掉。
 - **在附加位置輸入**：建立一個新拍點並寫入音符，是一個 Command。新拍點的時值取錨點拍點的時值（`value`、`dots`、`tuplet`）；沒有錨點時是四分音符。輸入後游標移到新拍點（`at: "on"`），下一次 `→` 以它為新的錨點。
 - 在既有拍點上輸入：游標留在原拍點（這樣才能疊和弦），fretted 與 pitched 可以接著換弦、換線再輸入。
 - **補充**：percussion 切換之後，`line` 移到該鼓件的譜表位置（[`schema.md`](schema.md) 7.1）。

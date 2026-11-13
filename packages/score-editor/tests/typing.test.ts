@@ -2,17 +2,17 @@
 import { expect, test } from "vitest";
 
 import { TWO_DIGIT_WINDOW } from "../src/index";
-import { typingOn } from "./support";
+import { sessionOn } from "./support";
 
 test("a digit in an empty bar makes a quarter beat with that fret on the cursor's string", () => {
-  const { press, beats, cursor } = typingOn();
+  const { press, beats, cursor } = sessionOn();
   press("7");
   expect(beats().map((beat) => [beat.value, beat.notes])).toEqual([[4, { s6: { fret: 7 } }]]);
   expect(cursor().beatId).toBe(beats()[0]!.id);
 });
 
 test("two digits typed quickly are one fret; typed slowly, the second replaces the first", () => {
-  const { press, beats } = typingOn();
+  const { press, beats } = sessionOn();
   press("1");
   press("2", TWO_DIGIT_WINDOW - 50);
   expect(beats()[0]!.notes.s6).toEqual({ fret: 12 });
@@ -25,7 +25,7 @@ test("two digits typed quickly are one fret; typed slowly, the second replaces t
 });
 
 test("a two-digit fret is one undo step, and so is the digit that made its beat", () => {
-  const { press, beats } = typingOn();
+  const { press, beats } = sessionOn();
   press("1");
   press("5", 100);
   press("Insert");
@@ -43,7 +43,7 @@ test("a two-digit fret is one undo step, and so is the digit that made its beat"
 });
 
 test("arrows move the cursor, Insert adds a beat of the same value, + and - change it, Delete clears the string", () => {
-  const { press, beats, cursor, barIds } = typingOn();
+  const { press, beats, cursor, barIds } = sessionOn();
   press("5");
   press("+");
   press("Insert");
@@ -64,7 +64,7 @@ test("arrows move the cursor, Insert adds a beat of the same value, + and - chan
 });
 
 test("a key that is not a typing key is left alone", () => {
-  const { press, beats, cursor } = typingOn();
+  const { press, beats, cursor } = sessionOn();
   const before = cursor();
   expect(press("a")).toBe(false);
   expect(press("F5")).toBe(false);

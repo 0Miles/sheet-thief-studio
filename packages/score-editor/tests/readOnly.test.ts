@@ -1,46 +1,54 @@
 // The read-only edit view (docs/spec/views.md, section 4): the cursor moves, the score does not change.
-import { cursorAt, docToJson, setFret } from "@studio/score-model";
+import { cursorAt, docToJson, type NoteJSON, type PartKind, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 
 import { createEditorSession } from "../src/index";
-import { keyOf, typingOn } from "./support";
+import { keyOf, sessionOn } from "./support";
 
-/** Every key that changes a fretted part, with its modifiers. */
-const CHANGING_KEYS: [string, Parameters<typeof keyOf>[1]?][] = [
-  ...[..."0123456789"].map((digit): [string] => [digit]),
+type Press = [key: string, modifiers?: Parameters<typeof keyOf>[1]];
+
+/** The keys that change a part of any kind, with their modifiers. */
+const CHANGING_KEYS: Press[] = [
   ["Insert"],
   ["+"],
   ["-"],
-  ["Delete"],
   ["z", { ctrlKey: true }],
   ["z", { metaKey: true }],
   ["y", { ctrlKey: true }],
   ["z", { ctrlKey: true, shiftKey: true }],
 ];
 
-/** Two beats typed by a member who could, then a read-only session on the same score. */
-function readOnlyScore() {
-  const { doc, press, partId, barIds, session: typing } = typingOn();
-  press("5");
+/** The keys that change a fretted part only. */
+const FRETTED_KEYS: Press[] = [...[..."0123456789"].map((digit): Press => [digit]), ["Delete"]];
+
+/** A note of each kind, by its key. */
+const NOTES: Record<PartKind, [key: string, note: NoteJSON]> = { fretted: ["s6", { fret: 9 }], percussion: ["p38", {}], pitched: ["n60", {}] };
+
+/** Two beats entered by a member who could, then a read-only session on the same score. */
+function readOnlyScore(kind: PartKind = "fretted") {
+  const { doc, press, partId, barIds, session: writer } = sessionOn(kind);
   press("Insert");
-  press("7");
-  typing.destroy();
+  press("Insert");
+  if (kind === "fretted") press("7");
+  writer.destroy();
   const session = createEditorSession(doc, { cursor: cursorAt(doc, partId, barIds[0]!, 6), readOnly: true });
-  return { doc, session, partId, barIds };
+  return { doc, session, barIds };
 }
 
-test("while read-only, no key changes the score, and the refusal is told only the first time", () => {
-  const { doc, session } = readOnlyScore();
+test.each(["fretted", "percussion", "pitched"] as const)("while read-only, no key changes a %s part, and the refusal is told only the first time", (kind) => {
+  const { doc, session, barIds } = readOnlyScore(kind);
   // Something this page did that undo could take back, if it were allowed to.
-  setFret(doc, session.cursor!, 9);
+  setNote(doc, session.cursor!, ...NOTES[kind]);
   const before = docToJson(doc);
+  expect(Object.keys(before.parts[0]!.content[barIds[0]!]!["0:0"]![0]!.notes)).toContain(NOTES[kind][0]);
   let transactions = 0;
   doc.on("afterTransaction", () => (transactions += 1));
   let refusals = 0;
   session.onRefused(() => (refusals += 1));
 
-  for (const [key, modifiers] of CHANGING_KEYS) expect(session.press(keyOf(key, modifiers))).toBe(true);
-  for (const [key, modifiers] of CHANGING_KEYS) session.press(keyOf(key, modifiers));
+  const keys = kind === "fretted" ? [...CHANGING_KEYS, ...FRETTED_KEYS] : CHANGING_KEYS;
+  for (const [key, modifiers] of keys) expect(session.press(keyOf(key, modifiers))).toBe(true);
+  for (const [key, modifiers] of keys) session.press(keyOf(key, modifiers));
 
   expect(transactions).toBe(0);
   expect(docToJson(doc)).toEqual(before);
@@ -59,4 +67,3 @@ test("while read-only, the cursor moves as usual", () => {
   expect(session.cursor).toMatchObject({ barId: barIds[1], beatId: null });
   expect(refusals).toBe(0);
 });
-
