@@ -3,12 +3,8 @@
 // does not end in `_e2e`, so that it cannot empty a real one.
 import { text } from "node:stream/consumers";
 
-import { Redis } from "ioredis";
-
 import { createAccount, type NewAccount } from "../src/accounts";
-import { connectDatabase } from "../src/db/database";
-import { migrate } from "../src/db/migrate";
-import { emptyDatabase } from "./support";
+import { freshDatabase, freshRedis } from "./support";
 
 const { DATABASE_URL, REDIS_URL, NODE_ENV } = process.env;
 if (!DATABASE_URL || !REDIS_URL || NODE_ENV === "production" || !new URL(DATABASE_URL).pathname.endsWith("_e2e")) {
@@ -17,12 +13,9 @@ if (!DATABASE_URL || !REDIS_URL || NODE_ENV === "production" || !new URL(DATABAS
 
 const accounts = JSON.parse(await text(process.stdin)) as NewAccount[];
 
-const sequelize = connectDatabase(DATABASE_URL);
-await emptyDatabase(sequelize);
-await migrate(sequelize);
+const sequelize = await freshDatabase(DATABASE_URL);
 for (const account of accounts) await createAccount(account);
 await sequelize.close();
 
-const redis = new Redis(REDIS_URL);
-await redis.flushdb();
+const redis = await freshRedis(REDIS_URL);
 await redis.quit();

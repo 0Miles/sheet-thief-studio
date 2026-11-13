@@ -20,10 +20,9 @@ let anna: string;
 beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
-  for (const username of ["anna", "ben"]) {
-    const account = await createAccount({ username, displayName: username, password: PASSWORD, isAdmin: false, mustChangePassword: false });
-    if (username === "anna") anna = account.id;
-  }
+  const account = (username: string) => createAccount({ username, displayName: username, password: PASSWORD, isAdmin: false, mustChangePassword: false });
+  anna = (await account("anna")).id;
+  await account("ben");
 });
 
 beforeEach(async () => {

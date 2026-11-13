@@ -22,7 +22,7 @@ export interface Config {
  * plain http in development and tests, `INSECURE_COOKIES=1` drops both, because WebKit refuses a
  * `__Host-` cookie there; it has no effect in production.
  */
-export function sessionCookie(env: NodeJS.ProcessEnv): CookieSettings {
+function sessionCookie(env: NodeJS.ProcessEnv): CookieSettings {
   const insecure = env.NODE_ENV !== "production" && env.INSECURE_COOKIES === "1";
   return insecure ? { name: "studio_session", secure: false } : { name: "__Host-studio_session", secure: true };
 }

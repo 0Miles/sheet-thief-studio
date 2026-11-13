@@ -60,7 +60,7 @@ async function submit(): Promise<void> {
   width: min(22rem, 100%);
   padding: 2rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   box-sizing: border-box;
 }

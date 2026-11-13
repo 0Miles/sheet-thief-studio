@@ -12,25 +12,24 @@ export class UsernameTaken extends Error {
   }
 }
 
-const newAccount = z.object({ username, displayName, password });
-
-export interface NewAccount {
-  username: string;
-  displayName: string;
-  password: string;
-  isAdmin: boolean;
+const newAccount = z.object({
+  username,
+  displayName,
+  password,
+  isAdmin: z.boolean(),
   /** True for an account an admin made with a temporary password; false when the person it is for chose it. */
-  mustChangePassword: boolean;
-}
+  mustChangePassword: z.boolean(),
+});
+
+export type NewAccount = z.input<typeof newAccount>;
 
 /**
  * Create an account and its password identity in one transaction. Throws a ZodError when a field
  * breaks the rules, and UsernameTaken when the username exists.
  */
 export async function createAccount(input: NewAccount): Promise<Account> {
-  const valid = newAccount.parse(input);
-  const fields = { username: valid.username, displayName: valid.displayName, isAdmin: input.isAdmin, mustChangePassword: input.mustChangePassword };
-  const secretHash = await hashPassword(valid.password);
+  const { password: secret, ...fields } = newAccount.parse(input);
+  const secretHash = await hashPassword(secret);
   try {
     return await Account.sequelize!.transaction(async (transaction) => {
       const account = await Account.create(fields, { transaction });
@@ -58,7 +57,10 @@ export async function checkCredentials(typedUsername: string, typedPassword: str
     include: [{ model: Identity, as: "identities", where: { provider: "password" }, required: true }],
   });
   const identity = (account?.get("identities") as Identity[] | undefined)?.[0];
-  if (!account || !identity?.secretHash) return verifyNothing(typedPassword).then(() => null);
+  if (!account || !identity?.secretHash) {
+    await verifyNothing(typedPassword);
+    return null;
+  }
   const matches = await verifyPassword(identity.secretHash, typedPassword);
   return matches && account.disabledAt === null ? account : null;
 }

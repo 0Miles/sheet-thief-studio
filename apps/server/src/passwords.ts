@@ -23,8 +23,7 @@ let decoy: Promise<string> | undefined;
  * Spend the time of a real check when there is no hash to check against (no such account), so
  * that how long a login takes does not tell whether the account exists.
  */
-export async function verifyNothing(password: string): Promise<false> {
+export async function verifyNothing(password: string): Promise<void> {
   decoy ??= hashPassword("not the password of any account");
   await verifyPassword(await decoy, password);
-  return false;
 }

@@ -25,17 +25,17 @@ export async function emptyDatabase(sequelize: Sequelize): Promise<void> {
   await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
 }
 
-/** A connection to an empty, migrated test database. */
-export async function freshDatabase(): Promise<Sequelize> {
-  const sequelize = connectDatabase(TEST_DATABASE_URL);
+/** A connection to an empty, migrated test database (the server's tests' own, unless told another). */
+export async function freshDatabase(url = TEST_DATABASE_URL): Promise<Sequelize> {
+  const sequelize = connectDatabase(url);
   await emptyDatabase(sequelize);
   await migrate(sequelize);
   return sequelize;
 }
 
-/** A connection to the emptied test Redis database. */
-export async function freshRedis(): Promise<Redis> {
-  const redis = new Redis(TEST_REDIS_URL);
+/** A connection to the emptied test Redis database (the server's tests' own, unless told another). */
+export async function freshRedis(url = TEST_REDIS_URL): Promise<Redis> {
+  const redis = new Redis(url);
   await redis.flushdb();
   return redis;
 }

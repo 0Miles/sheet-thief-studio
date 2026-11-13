@@ -5,10 +5,11 @@ import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
+import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
-import { cli, freshDatabase, freshRedis, login, testConfig } from "./support";
+import { freshDatabase, freshRedis, login, testConfig } from "./support";
 
-const PASSWORD = "the admin's own password";
+const PASSWORD = "a password long enough";
 
 let sequelize: Sequelize;
 let redis: Redis;
@@ -18,7 +19,7 @@ beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
   app = buildApp({ config: testConfig(), redis, logger: false });
-  expect((await cli(["create-admin", "miles", "Miles"], `${PASSWORD}\n`)).code).toBe(0);
+  await createAccount({ username: "miles", displayName: "Miles", password: PASSWORD, isAdmin: false, mustChangePassword: false });
 });
 
 beforeEach(async () => {
