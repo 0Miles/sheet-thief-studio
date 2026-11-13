@@ -1,6 +1,7 @@
 // The tables as Sequelize models (docs/spec/accounts.md, section 1.2; docs/spec/collab.md, 1.1). Columns are snake_case
 // in Postgres and camelCase here. The tables themselves come from the migrations, never from
 // `sync()`.
+import type { Role } from "@studio/contracts";
 import {
   type CreationOptional,
   DataTypes,
@@ -36,8 +37,7 @@ export class Identity extends Model<InferAttributes<Identity>, InferCreationAttr
   declare createdAt: CreationOptional<Date>;
 }
 
-/** A member's role in a score (docs/spec/accounts.md, section 3). */
-export type Role = "owner" | "editor" | "viewer";
+export type { Role };
 
 /** A score: its Yjs state and what the lists show of it. Members are in `score_members`. */
 export class Score extends Model<InferAttributes<Score>, InferCreationAttributes<Score>> {

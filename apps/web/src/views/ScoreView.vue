@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
     <AppHeader />
     <main class="score">
       <header class="score__toolbar">
-        <h1 class="score__title">{{ score?.title ?? details?.title ?? text.loading }}</h1>
+        <h1 class="score__title">{{ score?.title ?? details?.title ?? strings.loading }}</h1>
         <span class="score__sync" :data-sync="sync">{{ text.sync[sync] }}</span>
       </header>
       <div class="score__scroller">
@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
   font-size: 0.875rem;
 }
 .score__sync[data-sync="offline"] {
-  color: var(--danger, #b91c1c);
+  color: var(--danger);
 }
 .score__scroller {
   flex: 1;

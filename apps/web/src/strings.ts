@@ -10,7 +10,6 @@ export const strings = {
     title: "我的團譜",
     newScore: "新增團譜",
     empty: "還沒有團譜。按「新增團譜」建立第一份。",
-    loading: "載入中…",
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
   },
   newScore: {
@@ -21,7 +20,6 @@ export const strings = {
     close: "關閉",
   },
   score: {
-    loading: "載入中…",
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
   },
@@ -46,6 +44,7 @@ export const strings = {
     rate_limited: "嘗試太多次，請稍後再試。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
+  loading: "載入中…",
   // The M0 spike page. Temporary: it goes away when the real editor arrives.
   spike: {
     title: "技術驗證",

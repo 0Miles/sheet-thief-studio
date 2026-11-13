@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
+import { CollabTickets } from "../src/collabTickets";
 import { type Role, Score, ScoreMember } from "../src/db/models";
 import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, login, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionCookie, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
@@ -56,10 +57,6 @@ async function startApp(): Promise<{ app: FastifyInstance; url: string }> {
 
 async function sessionOf(app: FastifyInstance, username: string): Promise<string> {
   return sessionCookie(await login(app, username, PASSWORD))!.value;
-}
-
-async function whoAmIJson(app: FastifyInstance, session: string): Promise<unknown> {
-  return (await whoAmI(app, session)).json();
 }
 
 async function open(app: FastifyInstance, url: string, scoreId: string, session: string): Promise<OpenScore> {
@@ -110,8 +107,11 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   await refusal(mine, used);
 
   await refusal(mine, await ticketFor(app, other, session));
-  await refusal(randomUUID(), await ticketFor(app, mine, session));
-  await refusal("not-a-score", await ticketFor(app, mine, session));
+  // Tickets as the API never gives them: for a score that does not exist.
+  const accountId = (await whoAmI(app, session)).json().accountId as string;
+  for (const nowhere of [randomUUID(), "not-a-score"]) {
+    await refusal(nowhere, await new CollabTickets(redis).issue({ scoreId: nowhere, accountId, sessionId: session, role: "owner" }));
+  }
   const beforeDeletion = await ticketFor(app, deleted, session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted } });
   await refusal(deleted, beforeDeletion);
@@ -164,7 +164,7 @@ test("ending an account's sessions closes its connections and leaves another acc
   const annaClosed = socketClosed(anna.provider);
   const benClosed = closes(benScore);
 
-  const { accountId } = (await whoAmIJson(app, annaSession)) as { accountId: string };
+  const accountId = (await whoAmI(app, annaSession)).json().accountId as string;
   await app.sessions.end({ accountId });
 
   expect(await annaClosed).toBe(4401);

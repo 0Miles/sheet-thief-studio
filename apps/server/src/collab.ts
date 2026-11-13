@@ -52,9 +52,6 @@ declare module "fastify" {
   }
 }
 
-/** Raised by onAuthenticate to refuse a connection: a code and reason, no message to log. */
-const REFUSED = Forbidden;
-
 export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tickets: CollabTickets; sessions: Sessions }): Collab {
   const register = new Map<Connection<CollabContext>, CollabContext & { scoreId: string }>();
 
@@ -65,11 +62,12 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     maxDebounce: 10_000,
     async onAuthenticate({ token, documentName, connectionConfig }): Promise<CollabContext> {
       const ticket = await tickets.redeem(token);
-      if (ticket === null || ticket.scoreId !== documentName) throw REFUSED;
+      // Refused with a code and a reason only: an error with a message would be logged as a fault.
+      if (ticket === null || ticket.scoreId !== documentName) throw Forbidden;
       // The role now, not the one of the ticket: it may have changed in the last 60 seconds.
       // No member, no score (or a deleted one): refused before any document is made.
       const member = await membership(documentName, ticket.accountId);
-      if (member === null || !(await sessions.isActive(ticket.sessionId))) throw REFUSED;
+      if (member === null || !(await sessions.isActive(ticket.sessionId))) throw Forbidden;
       // Hocuspocus drops the changes a read-only connection sends.
       connectionConfig.readOnly = member.role === "viewer";
       return { accountId: ticket.accountId, sessionId: ticket.sessionId, role: member.role };

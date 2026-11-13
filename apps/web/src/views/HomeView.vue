@@ -51,7 +51,7 @@ async function create(): Promise<void> {
       <Spacer />
       <AppButton variant="primary" @click="startCreating">{{ text.newScore }}</AppButton>
     </Cluster>
-    <p v-if="scores === null" class="home__muted">{{ text.loading }}</p>
+    <p v-if="scores === null" class="home__muted">{{ strings.loading }}</p>
     <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
     <ul v-else class="home__scores">
       <li v-for="score in scores" :key="score.id">
@@ -111,7 +111,7 @@ async function create(): Promise<void> {
   color: var(--text-muted);
 }
 .home__error {
-  color: var(--danger, #b91c1c);
+  color: var(--danger);
   margin: 0;
 }
 </style>

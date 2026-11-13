@@ -36,6 +36,7 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
  */
 function startContent(doc: Y.Doc, title: string): void {
   startScore(doc, title);
+  // A fretted part's defaults are the preset 「吉他 6 弦」: standard tuning, tablature, program 25.
   addPart(doc, { name: "吉他 1", kind: "fretted" });
   insertBars(doc, { after: null, count: 8, timeSig: COMMON_TIME });
 }
@@ -47,7 +48,13 @@ export async function createScore(collab: Collab, ownerId: string, title: string
     await ScoreMember.create({ scoreId: created.id, accountId: ownerId, role: "owner" }, { transaction });
     return created;
   });
-  await collab.change(score.id, (doc) => startContent(doc, title));
+  try {
+    await collab.change(score.id, (doc) => startContent(doc, title));
+  } catch (error) {
+    // No empty score left behind for its Owner to find.
+    await score.destroy();
+    throw error;
+  }
   return score.id;
 }
 
