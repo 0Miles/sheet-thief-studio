@@ -1,8 +1,10 @@
 // Password hashing: argon2id with the parameters of docs/spec/security.md, section 3. These are
 // also the library's defaults; they are spelled out so a library update cannot change them.
-import { hash, verify } from "@node-rs/argon2";
+import { type Algorithm, hash, verify } from "@node-rs/argon2";
 
-const PARAMETERS = { memoryCost: 19456, timeCost: 2, parallelism: 1 }; // the algorithm defaults to argon2id
+/** `Algorithm.Argon2id`: a const enum, which verbatimModuleSyntax cannot read as a value. */
+const ARGON2ID: Algorithm = 2;
+const PARAMETERS = { algorithm: ARGON2ID, memoryCost: 19456, timeCost: 2, parallelism: 1 };
 
 export function hashPassword(password: string): Promise<string> {
   return hash(password, PARAMETERS);
