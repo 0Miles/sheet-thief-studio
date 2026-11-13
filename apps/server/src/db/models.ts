@@ -37,8 +37,6 @@ export class Identity extends Model<InferAttributes<Identity>, InferCreationAttr
   declare createdAt: CreationOptional<Date>;
 }
 
-export type { Role };
-
 /** A score: its Yjs state and what the lists show of it. Members are in `score_members`. */
 export class Score extends Model<InferAttributes<Score>, InferCreationAttributes<Score>> {
   declare id: CreationOptional<string>;

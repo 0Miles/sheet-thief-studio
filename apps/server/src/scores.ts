@@ -1,13 +1,13 @@
 // Scores and their members (docs/spec/routes.md, 3.3; docs/spec/collab.md, sections 2 and 3):
 // creating one, listing mine, opening one, and the collab ticket to edit it.
-import { collabTicket, createdScore, createScoreRequest, scoreDetails, scoreList } from "@studio/contracts";
-import { addPart, COMMON_TIME, createScore as startScore, insertBars, SCHEMA_VERSION } from "@studio/score-model";
+import { collabTicket, createdScore, createScoreRequest, type Role, scoreDetails, scoreList } from "@studio/contracts";
+import { addPart, COMMON_TIME, createScore, insertBars, SCHEMA_VERSION } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
-import { Account, type Role, Score, ScoreMember } from "./db/models";
+import { Account, Score, ScoreMember } from "./db/models";
 import { invalidRequest } from "./http";
 
 /** Score ids are UUIDs; anything else is no score, without asking Postgres. */
@@ -24,7 +24,8 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
   if (!SCORE_ID.test(scoreId)) return null;
   const member = await ScoreMember.findOne({
     where: { scoreId, accountId },
-    include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true }],
+    // Not the Yjs state: no caller needs it, and it is the largest column of the table.
+    include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true, attributes: ["id", "title", "artist"] }],
   });
   return member === null ? null : { score: member.get("score") as Score, role: member.role };
 }
@@ -35,14 +36,14 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
  * (docs/spec/schema.md, section 3). The dialog of #11 replaces these fixed values.
  */
 function startContent(doc: Y.Doc, title: string): void {
-  startScore(doc, title);
+  createScore(doc, title);
   // A fretted part's defaults are the preset 「吉他 6 弦」: standard tuning, tablature, program 25.
   addPart(doc, { name: "吉他 1", kind: "fretted" });
   insertBars(doc, { after: null, count: 8, timeSig: COMMON_TIME });
 }
 
 /** Make a score owned by the account, its content written as a participant; returns its id. */
-export async function createScore(collab: Collab, ownerId: string, title: string): Promise<string> {
+async function makeScore(collab: Collab, ownerId: string, title: string): Promise<string> {
   const score = await Score.sequelize!.transaction(async (transaction) => {
     const created = await Score.create({ title, docState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())), schemaVersion: SCHEMA_VERSION }, { transaction });
     await ScoreMember.create({ scoreId: created.id, accountId: ownerId, role: "owner" }, { transaction });
@@ -67,7 +68,7 @@ export function registerScores(app: FastifyInstance, { collab, tickets }: { coll
   app.post("/api/scores", async (request, reply) => {
     const body = createScoreRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
-    const id = await createScore(collab, request.account!.id, body.data.title);
+    const id = await makeScore(collab, request.account!.id, body.data.title);
     return reply.code(201).send(createdScore.parse({ id }));
   });
 

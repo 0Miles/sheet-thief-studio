@@ -4,7 +4,6 @@ import type { ErrorCode } from "@studio/contracts";
 export const strings = {
   app: {
     name: "Sheet Thief Studio",
-    tagline: "樂團一起寫譜：多聲部團譜的線上即時共編。",
   },
   home: {
     title: "我的團譜",

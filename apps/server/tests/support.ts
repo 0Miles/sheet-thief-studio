@@ -79,6 +79,13 @@ export function login(
   return app.inject({ method: "POST", url: "/api/auth/login", headers, payload: { username, password }, ...options });
 }
 
+/** The id of a new session of this account, logged in through the API. */
+export async function sessionOf(app: FastifyInstance, username: string, password: string): Promise<string> {
+  const response = await login(app, username, password);
+  if (response.statusCode !== 204) throw new Error(`logging in answered ${response.statusCode} ${response.body}`);
+  return sessionCookie(response)!.value;
+}
+
 /** The session cookie a response sets, by its name in the test config. */
 export function sessionCookie(response: { cookies: Array<{ name: string; value: string }> }, name = COOKIE) {
   return response.cookies.find((cookie) => cookie.name === name);
@@ -142,8 +149,8 @@ export function openScore(url: string, scoreId: string, token: () => Promise<str
   });
 }
 
-/** Wait for the next answer of the server to a change: true when it applied it. */
-function syncStatus(provider: HocuspocusProvider): Promise<boolean> {
+/** The answer of the server to the next change the provider sends: true when it applied it. */
+export function nextSyncStatus(provider: HocuspocusProvider): Promise<boolean> {
   return new Promise((resolve) => {
     const listener = ({ message }: { message: { decoder: decoding.Decoder } }) => {
       decoding.readVarString(message.decoder); // the document
@@ -168,12 +175,7 @@ export function insync(provider: HocuspocusProvider): Promise<void> {
     };
     provider.on("synced", listener);
   });
-  return Promise.all([synced, syncStatus(provider)]).then(() => undefined);
-}
-
-/** The answer of the server to the next change the provider sends: true when it applied it. */
-export function nextSyncStatus(provider: HocuspocusProvider): Promise<boolean> {
-  return syncStatus(provider);
+  return Promise.all([synced, nextSyncStatus(provider)]).then(() => undefined);
 }
 
 /** Resolves with the code of the next close of the provider's socket. */

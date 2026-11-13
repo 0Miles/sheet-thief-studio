@@ -2,13 +2,13 @@
 // A score (`/scores/:id`): opened on /collab and drawn read-only. M1a only shows it; typing
 // comes with the edit view in M1b. Anyone who is not a member sees the 404 page.
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { collabTicket, type ScoreDetails, scoreDetails } from "@studio/contracts";
+import { type ScoreDetails, scoreDetails } from "@studio/contracts";
 import { docToJson, flagsOf, observeScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
 import { createAlphaTabEngine, type ScoreEngine } from "@studio/score-render";
 import { onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import * as Y from "yjs";
 
-import { ApiError, get, postFor } from "../api";
+import { ApiError, collabUrl, get, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -65,11 +65,11 @@ onMounted(async () => {
     ready.value = true;
   });
   provider = new HocuspocusProvider({
-    url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`,
+    url: collabUrl(),
     name: props.id,
     document: doc,
     // A function, so that every connection, reconnections included, shows a new ticket (ADR 0005).
-    token: async () => (await postFor(`/api/scores/${props.id}/collab-ticket`, undefined, collabTicket)).ticket,
+    token: () => newCollabTicket(props.id),
     onSynced: () => {
       sync.value = "synced";
       start();

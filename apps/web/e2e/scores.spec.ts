@@ -5,7 +5,7 @@ import type { ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN, MEMBER } from "./environment";
-import { logIn, pageErrors } from "./pages";
+import { logIn, logInFromStart, pageErrors } from "./pages";
 
 /** Wait until the score is drawn, then read it. */
 async function drawnScore(page: Page): Promise<ScoreJSON> {
@@ -17,9 +17,7 @@ async function drawnScore(page: Page): Promise<ScoreJSON> {
 
 test("a score created on / opens by itself, as the server made it, the same after reloading; / lists it, and someone else gets the 404 page", async ({ page, browser }) => {
   const errors = pageErrors(page);
-  await page.goto("/login");
-  await logIn(page, ADMIN.username, ADMIN.password);
-  await expect(page).toHaveURL("/");
+  await logInFromStart(page, ADMIN);
 
   await page.getByRole("button", { name: strings.home.newScore }).click();
   await page.getByLabel(strings.newScore.scoreTitle).fill("測試團譜");

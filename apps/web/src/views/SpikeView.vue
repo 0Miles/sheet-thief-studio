@@ -4,7 +4,6 @@
 // server, by a member who is logged in (a collab ticket for every connection); without one it
 // lives in this page only (measurements and screenshots).
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { collabTicket } from "@studio/contracts";
 import { createEditorSession, type EditorSession } from "@studio/score-editor";
 import {
   type Cursor,
@@ -24,7 +23,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useRoute } from "vue-router";
 import * as Y from "yjs";
 
-import { postFor } from "../api";
+import { collabUrl, newCollabTicket } from "../api";
 import { seedDemo, seedPerf } from "../spike/demoScores";
 import type { KeySample, RenderSample, StudioHook } from "../spike/hook";
 import { strings } from "../strings";
@@ -312,10 +311,10 @@ onMounted(() => {
     return;
   }
   provider = new HocuspocusProvider({
-    url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`,
+    url: collabUrl(),
     name: documentName,
     document: doc,
-    token: async () => (await postFor(`/api/scores/${documentName}/collab-ticket`, undefined, collabTicket)).ticket,
+    token: () => newCollabTicket(documentName),
     onSynced: start,
     onStatus: ({ status }) => {
       connection.value = status === "connected" ? "connected" : status === "connecting" ? "connecting" : "disconnected";

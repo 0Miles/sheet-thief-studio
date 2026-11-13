@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, ScoreMember } from "../src/db/models";
-import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig } from "./support";
+import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -17,6 +17,7 @@ let redis: Redis;
 let app: FastifyInstance;
 let annaId: string;
 let anna: string;
+let benId: string;
 let ben: string;
 
 beforeAll(async () => {
@@ -25,14 +26,14 @@ beforeAll(async () => {
   app = buildApp({ config: testConfig(), redis, logger: false });
   const account = (username: string, displayName: string) => createAccount({ username, displayName, password: PASSWORD, isAdmin: false, mustChangePassword: false });
   annaId = (await account("anna", "安娜")).id;
-  await account("ben", "班");
+  benId = (await account("ben", "班")).id;
 });
 
 beforeEach(async () => {
   await redis.flushdb();
   await sequelize.query("TRUNCATE scores CASCADE");
-  anna = sessionCookie(await login(app, "anna", PASSWORD))!.value;
-  ben = sessionCookie(await login(app, "ben", PASSWORD))!.value;
+  anna = await sessionOf(app, "anna", PASSWORD);
+  ben = await sessionOf(app, "ben", PASSWORD);
 });
 
 afterAll(async () => {
@@ -64,7 +65,6 @@ test("anyone logged in creates a score and is its Owner; it is listed among thei
 
 test("a score is opened by its members only; anyone else, and everyone once it is deleted, gets the same 404", async () => {
   const id = await createScore(app, anna, "測試團譜");
-  const benId = (await get("/api/me", ben)).json().accountId as string;
   await ScoreMember.create({ scoreId: id, accountId: benId, role: "viewer" });
   const owner = { accountId: annaId, displayName: "安娜" };
 

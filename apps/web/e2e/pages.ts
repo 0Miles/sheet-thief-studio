@@ -7,8 +7,8 @@ import { strings } from "../src/strings";
 /** An answer the test expects the server to refuse: the browser logs it as an error, which it is not here. */
 export interface Refusal {
   status: number;
-  /** The end of the URL of the request, or a pattern for it. */
-  path: string | RegExp;
+  /** The end of the URL of the request. */
+  path: string;
 }
 
 /**
@@ -22,7 +22,7 @@ export function pageErrors(page: Page, refused: Refusal[] = [{ status: 401, path
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const url = message.location().url;
-    const expected = refused.some(({ status, path }) => message.text().includes(String(status)) && (typeof path === "string" ? url.endsWith(path) : path.test(url)));
+    const expected = refused.some(({ status, path }) => message.text().includes(String(status)) && url.endsWith(path));
     if (!expected) errors.push(message.text());
   });
   return errors;
@@ -34,12 +34,17 @@ export async function logIn(page: Page, username: string, password: string): Pro
   await page.getByRole("button", { name: strings.login.submit }).click();
 }
 
-/** A page of its own browser context, logged in as this account, on `/`. */
-export async function loggedIn(browser: Browser, account: { username: string; password: string }, options: BrowserContextOptions = {}): Promise<Page> {
-  const page = await (await browser.newContext(options)).newPage();
+/** Log in as this account from /login, and land on `/`. */
+export async function logInFromStart(page: Page, account: { username: string; password: string }): Promise<void> {
   await page.goto("/login");
   await logIn(page, account.username, account.password);
   await expect(page).toHaveURL("/");
+}
+
+/** A page of its own browser context, logged in as this account, on `/`. */
+export async function loggedIn(browser: Browser, account: { username: string; password: string }, options: BrowserContextOptions = {}): Promise<Page> {
+  const page = await (await browser.newContext(options)).newPage();
+  await logInFromStart(page, account);
   return page;
 }
 

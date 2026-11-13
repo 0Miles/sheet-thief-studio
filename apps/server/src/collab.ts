@@ -7,12 +7,13 @@ import type { Duplex } from "node:stream";
 
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
 import { type Connection, Hocuspocus } from "@hocuspocus/server";
+import type { Role } from "@studio/contracts";
 import crossws from "crossws/adapters/node";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
 import type { CollabTickets } from "./collabTickets";
-import { type Role, Score } from "./db/models";
+import { Score } from "./db/models";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
 

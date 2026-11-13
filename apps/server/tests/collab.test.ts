@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Forbidden } from "@hocuspocus/common";
+import type { Role } from "@studio/contracts";
 import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
@@ -11,9 +12,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
-import { CollabTickets } from "../src/collabTickets";
-import { type Role, Score, ScoreMember } from "../src/db/models";
-import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, login, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionCookie, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
+import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
+import { Score, ScoreMember } from "../src/db/models";
+import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -55,10 +56,6 @@ async function startApp(): Promise<{ app: FastifyInstance; url: string }> {
   return { app, url: await listen(app) };
 }
 
-async function sessionOf(app: FastifyInstance, username: string): Promise<string> {
-  return sessionCookie(await login(app, username, PASSWORD))!.value;
-}
-
 async function open(app: FastifyInstance, url: string, scoreId: string, session: string): Promise<OpenScore> {
   const score = await openScore(url, scoreId, () => ticketFor(app, scoreId, session));
   opened.push(score);
@@ -67,7 +64,7 @@ async function open(app: FastifyInstance, url: string, scoreId: string, session:
 
 test("a score created through the API, then changed, comes back the same from a new app on the same database", async () => {
   const first = await startApp();
-  const session = await sessionOf(first.app, "anna");
+  const session = await sessionOf(first.app, "anna", PASSWORD);
   const id = await createScore(first.app, session, "測試團譜");
 
   const { provider, doc } = await open(first.app, first.url, id, session);
@@ -90,14 +87,14 @@ test("a score created through the API, then changed, comes back the same from a 
 
 test("an expired, used or other score's ticket, and a score that does not exist or is deleted, are refused without making a score", async () => {
   const { app, url } = await startApp();
-  const session = await sessionOf(app, "anna");
+  const session = await sessionOf(app, "anna", PASSWORD);
   const [mine, other, deleted] = [await createScore(app, session), await createScore(app, session), await createScore(app, session)];
   const scoresBefore = await Score.count();
   const refusal = (scoreId: string, ticket: string) => expect(openScore(url, scoreId, async () => ticket)).rejects.toThrow(/refused/);
 
   // A ticket lasts 60 seconds in Redis; one that has run out is gone.
   const expired = await ticketFor(app, mine, session);
-  expect(await redis.ttl(`collab-ticket:${expired}`)).toBe(60);
+  expect(await redis.ttl(`collab-ticket:${expired}`)).toBe(TICKET_TTL_SECONDS);
   await redis.pexpire(`collab-ticket:${expired}`, 1);
   await expect.poll(() => redis.exists(`collab-ticket:${expired}`)).toBe(0);
   await refusal(mine, expired);
@@ -136,10 +133,10 @@ function closes(score: OpenScore): () => boolean {
 
 test("what a Viewer's connection sends does not change the score on the server", async () => {
   const { app, url } = await startApp();
-  const annaSession = await sessionOf(app, "anna");
+  const annaSession = await sessionOf(app, "anna", PASSWORD);
   const id = await createScore(app, annaSession);
   await addBen(id, "viewer");
-  const benSession = await sessionOf(app, "ben");
+  const benSession = await sessionOf(app, "ben", PASSWORD);
   const before = docToJson((await open(app, url, id, annaSession)).doc);
 
   const viewer = await open(app, url, id, benSession);
@@ -156,11 +153,11 @@ test("what a Viewer's connection sends does not change the score on the server",
 
 test("ending an account's sessions closes its connections and leaves another account's on the same score open", async () => {
   const { app, url } = await startApp();
-  const annaSession = await sessionOf(app, "anna");
+  const annaSession = await sessionOf(app, "anna", PASSWORD);
   const id = await createScore(app, annaSession);
   await addBen(id, "editor");
   const anna = await open(app, url, id, annaSession);
-  const benScore = await open(app, url, id, await sessionOf(app, "ben"));
+  const benScore = await open(app, url, id, await sessionOf(app, "ben", PASSWORD));
   const annaClosed = socketClosed(anna.provider);
   const benClosed = closes(benScore);
 
@@ -177,7 +174,7 @@ test("ending an account's sessions closes its connections and leaves another acc
 
 test("logging out closes the connections of that session only", async () => {
   const { app, url } = await startApp();
-  const [leaving, staying] = [await sessionOf(app, "anna"), await sessionOf(app, "anna")];
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
   const id = await createScore(app, leaving);
   const left = await open(app, url, id, leaving);
   const kept = await open(app, url, id, staying);
@@ -195,7 +192,7 @@ test("logging out closes the connections of that session only", async () => {
 
 test("a provider the server disconnects connects again with a ticket it fetched anew", async () => {
   const { app, url } = await startApp();
-  const session = await sessionOf(app, "anna");
+  const session = await sessionOf(app, "anna", PASSWORD);
   const id = await createScore(app, session);
   const tickets: string[] = [];
   const score = await openScore(url, id, async () => {
