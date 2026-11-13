@@ -7,7 +7,6 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    readonly retryAfterSeconds: number | null = null,
   ) {
     super(`${status} ${code}`);
   }
@@ -21,8 +20,7 @@ async function call(method: string, path: string, body?: unknown): Promise<Respo
   });
   if (response.ok) return response;
   const error = apiError.safeParse(await response.json().catch(() => null));
-  const retryAfter = response.headers.get("retry-after");
-  throw new ApiError(response.status, error.success ? error.data.code : "internal_error", retryAfter === null ? null : Number(retryAfter));
+  throw new ApiError(response.status, error.success ? error.data.code : "internal_error");
 }
 
 /** GET, the answer checked against its shape in @studio/contracts. */

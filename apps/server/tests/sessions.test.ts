@@ -6,8 +6,9 @@ import type { Sequelize } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createAccount } from "../src/accounts";
+import { buildApp } from "../src/app";
 import type { SessionsEnded } from "../src/sessions";
-import { buildApp, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig, whoAmI } from "./support";
+import { COOKIE, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -90,7 +91,7 @@ test("logging out goes through the same function and tells the listeners which s
   const listener = vi.fn();
   app.sessions.onEnd(listener);
 
-  await app.inject({ method: "POST", url: "/api/auth/logout", headers: { origin: ORIGIN }, cookies: { "__Host-studio_session": leaving } });
+  await app.inject({ method: "POST", url: "/api/auth/logout", headers: { origin: ORIGIN }, cookies: { [COOKIE]: leaving } });
 
   expect([await valid(leaving), await valid(staying)]).toEqual([false, true]);
   expect(listener.mock.calls).toEqual([[{ accountId: anna, sessionId: leaving }]]);

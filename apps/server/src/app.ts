@@ -6,7 +6,7 @@ import type { Redis } from "ioredis";
 import { registerAuth } from "./auth";
 import { attachCollab } from "./collab";
 import type { Config } from "./config";
-import { apiErrors, checkOrigin } from "./http";
+import { registerErrorAnswers, registerOriginCheck } from "./http";
 import { RateLimiter } from "./rateLimit";
 import { Sessions } from "./sessions";
 
@@ -23,8 +23,8 @@ export function buildApp({ config, redis, logger = true }: Dependencies): Fastif
   // X-Forwarded-For (docs/spec/security.md, 4).
   const app = Fastify({ logger, trustProxy: config.trustedProxies });
   app.register(cookie);
-  apiErrors(app);
-  checkOrigin(app, config.publicOrigin);
+  registerErrorAnswers(app);
+  registerOriginCheck(app, config.publicOrigin);
   // Liveness only: says the process answers, not that its dependencies do.
   app.get("/healthz", async () => health.parse({ status: "ok" }));
   registerAuth(app, { cookie: config.sessionCookie, sessions: new Sessions(redis, app.log), limiter: new RateLimiter(redis) });

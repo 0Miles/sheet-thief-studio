@@ -19,7 +19,7 @@ export interface NewAccount {
   displayName: string;
   password: string;
   isAdmin: boolean;
-  /** True for an account an admin made with a temporary password; false when its owner chose it. */
+  /** True for an account an admin made with a temporary password; false when the person it is for chose it. */
   mustChangePassword: boolean;
 }
 

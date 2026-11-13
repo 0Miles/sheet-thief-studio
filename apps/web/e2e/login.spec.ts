@@ -40,7 +40,7 @@ test("someone not logged in is sent to /login; the admin logs in to /, and loggi
   expect(errors).toEqual([]);
 });
 
-test("a wrong password is refused on the page, and the visitor stays on /login", async ({ page }) => {
+test("a wrong password is refused on the page, and the page stays on /login", async ({ page }) => {
   await page.goto("/login");
   await logIn(page, ADMIN.username, "not the password");
   await expect(page.getByRole("alert")).toHaveText(strings.errors.invalid_credentials!);

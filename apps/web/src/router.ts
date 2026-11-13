@@ -5,7 +5,7 @@ import HomeView from "./views/HomeView.vue";
 
 declare module "vue-router" {
   interface RouteMeta {
-    /** Open without logging in; every other page sends a visitor to /login first. */
+    /** Open without logging in; every other page sends anyone not logged in to /login first. */
     public?: boolean;
   }
 }
@@ -31,7 +31,7 @@ router.beforeEach(async (to) => {
   return { name: "login", query: to.fullPath === "/" ? {} : { redirect: to.fullPath } };
 });
 
-/** Where to go after logging in: the page that sent the visitor to /login, if it is one of ours. */
+/** Where to go after logging in: the page that sent them to /login, if it is one of ours. */
 export function afterLogin(redirect: unknown): string {
   return typeof redirect === "string" && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/";
 }

@@ -5,7 +5,8 @@ import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
-import { buildApp, cli, freshDatabase, freshRedis, login, testConfig } from "./support";
+import { buildApp } from "../src/app";
+import { cli, freshDatabase, freshRedis, login, testConfig } from "./support";
 
 const PASSWORD = "the admin's own password";
 

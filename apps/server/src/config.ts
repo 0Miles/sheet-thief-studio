@@ -6,7 +6,6 @@ export interface CookieSettings {
 }
 
 export interface Config {
-  production: boolean;
   host: string;
   port: number;
   databaseUrl: string;
@@ -38,7 +37,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     return development;
   };
   return {
-    production,
     host: env.HOST ?? "127.0.0.1",
     port: Number(env.PORT ?? 8031),
     databaseUrl: setting("DATABASE_URL", "postgres://studio:studio@localhost:5438/studio"),

@@ -11,7 +11,6 @@ export const strings = {
     logout: "登出",
   },
   login: {
-    title: "登入",
     username: "帳號名稱",
     password: "密碼",
     submit: "登入",

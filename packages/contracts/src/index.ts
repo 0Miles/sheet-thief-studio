@@ -49,4 +49,4 @@ export const apiError = z.object({
   code: z.string(),
   params: z.record(z.string(), z.unknown()).optional(),
 });
-export type ApiError = z.infer<typeof apiError>;
+export type ApiErrorBody = z.infer<typeof apiError>;

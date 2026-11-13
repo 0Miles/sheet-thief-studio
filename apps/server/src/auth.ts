@@ -36,6 +36,7 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     const account = session ? await Account.findByPk(session.accountId) : null;
     if (!session || !account || account.disabledAt !== null) {
       if (session) await sessions.end({ sessionId: session.id });
+      if (id) reply.clearCookie(cookie.name, cookieOptions);
       return reply.code(401).send({ code: "unauthenticated" });
     }
     request.session = session;

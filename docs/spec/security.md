@@ -31,7 +31,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 
 | 對象 | 限制 | 來源 |
 |---|---|---|
-| 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次失敗的登入；成功的登入不計（補充）。帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
+| 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
 | 加入成員的帳號名稱查詢（`POST /api/scores/:id/members`） | 同一帳號 15 分鐘內最多 20 次 | 補充 |
 | 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼） | 補充 |
 | 訪客取 ticket（`POST /api/s/:token`） | 同一 IP 每分鐘最多 30 次 | 補充 |
@@ -39,7 +39,8 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |
 | 其他 API | 不另設限制：平台只對登入的成員開放，辨識另有「每個帳號同時一件」的限制 | 補充 |
 
-- IP 取自 nginx 設定的 `X-Forwarded-For`；Fastify 只信任來自 nginx 的這一跳（補充）。做法是把 nginx 的位址交給 `trustProxy`（環境變數 `TRUSTED_PROXIES`，預設 `loopback`）：Fastify 5 對數字的 `trustProxy`（「信任 1 跳」）一律不信任，因為只看跳數無法確認直接連進來的是 nginx。
+- 登入的計數（#5）：照 #5 的驗收條件「第 11 次錯誤登入被擋」，只計失敗的登入，成功的登入把它用掉的兩個名額還回去；帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。這是對上表「最多 10 次」的解讀，數字不變，等 owner 確認。
+- IP 取自 nginx 設定的 `X-Forwarded-For`；Fastify 只信任來自 nginx 的這一跳（補充）。做法是把 nginx 的位址交給 `trustProxy`（環境變數 `TRUSTED_PROXIES`，預設 `loopback`）：Fastify 5 對數字的 `trustProxy`（「信任 1 跳」）一律不信任，因為只看跳數無法確認直接連進來的是 nginx。server 跑在容器裡時，nginx 連進來的位址不是 loopback，部署時要把 `TRUSTED_PROXIES` 設成它的位址，否則所有人都會被當成同一個 IP。
 
 ## 5. 大小上限
 

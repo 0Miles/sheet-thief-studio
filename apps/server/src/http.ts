@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { z } from "zod";
 
 /** Refuse a request that may change something unless the browser says it comes from our own page. */
-export function checkOrigin(app: FastifyInstance, publicOrigin: string): void {
+export function registerOriginCheck(app: FastifyInstance, publicOrigin: string): void {
   app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/api/") || request.method === "GET" || request.method === "HEAD") return;
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ code: "bad_origin" });
@@ -12,7 +12,7 @@ export function checkOrigin(app: FastifyInstance, publicOrigin: string): void {
 }
 
 /** Errors Fastify raises itself (a body that is not JSON, an unknown API path) in the same shape. */
-export function apiErrors(app: FastifyInstance): void {
+export function registerErrorAnswers(app: FastifyInstance): void {
   app.setErrorHandler((error: { statusCode?: number }, request, reply) => {
     const status = error.statusCode ?? 500;
     if (status === 413) return reply.code(413).send({ code: "payload_too_large" });

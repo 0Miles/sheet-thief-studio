@@ -5,7 +5,7 @@ import { SequelizeStorage, Umzug } from "umzug";
 
 import * as accounts from "./migrations/0001-accounts";
 
-export function migrator(sequelize: Sequelize): Umzug<QueryInterface> {
+function migrator(sequelize: Sequelize): Umzug<QueryInterface> {
   return new Umzug({
     migrations: [{ name: "0001-accounts", ...accounts }],
     context: sequelize.getQueryInterface(),

@@ -5,8 +5,9 @@ import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
+import { buildApp } from "../src/app";
 import { Account } from "../src/db/models";
-import { buildApp, cli, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig, whoAmI } from "./support";
+import { cli, COOKIE, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig, whoAmI } from "./support";
 
 const PASSWORD = "the admin's own password";
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
@@ -66,7 +67,7 @@ test("a disabled account's session no longer works", async () => {
 test("the session cookie is __Host- prefixed, HttpOnly, Secure, SameSite=Lax, on the whole site and kept 30 days", async () => {
   const response = await login(app, "miles", PASSWORD);
   expect(response.cookies).toEqual([
-    { name: "__Host-studio_session", value: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), path: "/", httpOnly: true, secure: true, sameSite: "Lax", maxAge: THIRTY_DAYS },
+    { name: COOKIE, value: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), path: "/", httpOnly: true, secure: true, sameSite: "Lax", maxAge: THIRTY_DAYS },
   ]);
 });
 
@@ -100,7 +101,7 @@ test("every use of the session moves its expiry 30 days ahead", async () => {
 test("logging out ends the session and clears the cookie", async () => {
   const session = await sessionOf("miles", PASSWORD);
   const other = await sessionOf("miles", PASSWORD);
-  const response = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { origin: ORIGIN }, cookies: { "__Host-studio_session": session } });
+  const response = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { origin: ORIGIN }, cookies: { [COOKIE]: session } });
   expect(response.statusCode).toBe(204);
   expect(sessionCookie(response)).toMatchObject({ value: "", path: "/", secure: true, maxAge: 0 });
   expect((await whoAmI(app, session)).statusCode).toBe(401);
@@ -110,17 +111,18 @@ test("logging out ends the session and clears the cookie", async () => {
 
 test("logging in again gives a new session and ends the one the browser had", async () => {
   const before = await sessionOf("miles", PASSWORD);
-  const response = await login(app, "miles", PASSWORD, { cookies: { "__Host-studio_session": before } });
+  const response = await login(app, "miles", PASSWORD, { cookies: { [COOKIE]: before } });
   const after = sessionCookie(response)!.value;
   expect(after).not.toBe(before);
   expect((await whoAmI(app, before)).statusCode).toBe(401);
   expect((await whoAmI(app, after)).statusCode).toBe(200);
 });
 
-test("a session id that does not exist is refused", async () => {
+test("a session id that does not exist is refused, and the browser told to forget it", async () => {
   const response = await whoAmI(app, "A".repeat(43));
   expect(response.statusCode).toBe(401);
   expect(response.json()).toEqual({ code: "unauthenticated" });
+  expect(sessionCookie(response)).toMatchObject({ value: "", maxAge: 0 });
 });
 
 test("INSECURE_COOKIES=1 names the cookie studio_session and drops Secure, for http in development", async () => {
@@ -136,6 +138,6 @@ test("INSECURE_COOKIES=1 names the cookie studio_session and drops Secure, for h
 test("in production INSECURE_COOKIES has no effect", async () => {
   const production = buildApp({ config: testConfig({ INSECURE_COOKIES: "1", NODE_ENV: "production" }), redis, logger: false });
   const response = await login(production, "miles", PASSWORD);
-  expect(response.cookies).toEqual([expect.objectContaining({ name: "__Host-studio_session", secure: true })]);
+  expect(response.cookies).toEqual([expect.objectContaining({ name: COOKIE, secure: true })]);
   await production.close();
 });

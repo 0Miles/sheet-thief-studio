@@ -62,5 +62,4 @@ export function initModels(sequelize: Sequelize): void {
     { sequelize, tableName: "identities", underscored: true, updatedAt: false },
   );
   Account.hasMany(Identity, { foreignKey: { name: "accountId", allowNull: false }, as: "identities" });
-  Identity.belongsTo(Account, { foreignKey: { name: "accountId", allowNull: false }, as: "account" });
 }

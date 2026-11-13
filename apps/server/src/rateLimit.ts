@@ -12,7 +12,7 @@ export const LOGIN_BY_USERNAME: Limit = { name: "login-username", max: 10, windo
 export const LOGIN_BY_IP: Limit = { name: "login-ip", max: 10, windowSeconds: 15 * 60 };
 
 /** An attempt within the limit (`giveBack` uncounts it, for limits that count failures only), or one over it. */
-export type Taken = { ok: true; giveBack(): Promise<void> } | { ok: false; retryAfterSeconds: number };
+export type Attempt = { ok: true; giveBack(): Promise<void> } | { ok: false; retryAfterSeconds: number };
 
 // Count, and on the first attempt of the window make the key vanish when the window ends.
 const COUNT = `local n = redis.call('INCR', KEYS[1])
@@ -23,14 +23,11 @@ const UNCOUNT = `if redis.call('EXISTS', KEYS[1]) == 1 then return redis.call('D
 return 0`;
 
 export class RateLimiter {
-  constructor(
-    private readonly redis: Redis,
-    private readonly now: () => number = Date.now,
-  ) {}
+  constructor(private readonly redis: Redis) {}
 
   /** Count one attempt against `limit` for `subject` (an IP, a username, an account). */
-  async take(limit: Limit, subject: string): Promise<Taken> {
-    const seconds = Math.floor(this.now() / 1000);
+  async take(limit: Limit, subject: string): Promise<Attempt> {
+    const seconds = Math.floor(Date.now() / 1000);
     const window = Math.floor(seconds / limit.windowSeconds);
     const left = (window + 1) * limit.windowSeconds - seconds;
     const key = `rate:${limit.name}:${subject}:${window}`;
