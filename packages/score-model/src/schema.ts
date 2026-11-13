@@ -39,12 +39,16 @@ const midi = z.int().min(0).max(127);
 export const partKindSchema = z.enum(["fretted", "percussion", "pitched"]);
 export type PartKind = z.infer<typeof partKindSchema>;
 
-/** A note value as the denominator of a whole note: 4 is a quarter, 8 an eighth. */
-export const noteValueSchema = z.literal([1, 2, 4, 8, 16, 32, 64]);
+/** Note values as the denominator of a whole note, longest first: 4 is a quarter, 8 an eighth. */
+export const NOTE_VALUES = [1, 2, 4, 8, 16, 32, 64] as const;
+export const noteValueSchema = z.literal(NOTE_VALUES);
 export type NoteValue = z.infer<typeof noteValueSchema>;
 
 export const timeSigSchema = z.object({ numerator: z.int().min(1).max(32), denominator: z.literal([1, 2, 4, 8, 16, 32]) });
 export type TimeSignature = z.infer<typeof timeSigSchema>;
+
+/** 4/4: what a bar gets when nothing says otherwise, and what an unreadable time signature reads as. */
+export const COMMON_TIME: TimeSignature = { numerator: 4, denominator: 4 };
 
 /** `fifths` counts sharps (positive) or flats (negative). */
 export const keySigSchema = z.object({ fifths: z.int().min(-7).max(7), mode: z.enum(["major", "minor"]) });
@@ -200,8 +204,7 @@ export function isNoteKey(kind: PartKind, strings: number, key: string): boolean
 
 /** Whether a key names a voice of a part with `staves` staves: "<staff>:<voice>", each voice 0 or 1. */
 export function isVoiceKey(key: string, staves: number): boolean {
-  const match = /^(0|[1-9]\d*):[01]$/.exec(key);
-  return match !== null && Number(match[1]) < staves;
+  return voiceKeys(staves).includes(key);
 }
 
 /** Every voice of a part with `staves` staves, in order: "0:0", "0:1", "1:0", "1:1". */
@@ -346,6 +349,12 @@ export function partsOf(doc: Y.Doc): Y.Map<YPart> {
 
 export function contentOf(part: YPart): Y.Map<YBarContent> {
   return part.get("content") as Y.Map<YBarContent>;
+}
+
+/** The content of a part as co-editing may have left it: undefined when the part or its content is not a map. */
+export function storedContentOf(part: unknown): Y.Map<unknown> | undefined {
+  const content: unknown = part instanceof Y.Map ? part.get("content") : undefined;
+  return content instanceof Y.Map ? content : undefined;
 }
 
 /**

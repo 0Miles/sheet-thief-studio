@@ -3,13 +3,13 @@
 import { afterEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { cursorAt, docToJson, jsonToDoc, kindSchemas, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
+import { type BeatJSON, cursorAt, docToJson, jsonToDoc, kindSchemas, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
 
 const BARS = ["b1", "b2", "b3"];
 
 /** A guitar and drums, four beats in every bar of both. */
 function band(): Y.Doc {
-  const beats = (prefix: string, notes: ScoreJSON["parts"][number]["content"][string][string][number]["notes"]) =>
+  const beats = (prefix: string, notes: BeatJSON["notes"]) =>
     Array.from({ length: 4 }, (_, index) => ({ id: `${prefix}${index}`, value: 4 as const, dots: 0 as const, notes }));
   const json: ScoreJSON = {
     schemaVersion: SCHEMA_VERSION,

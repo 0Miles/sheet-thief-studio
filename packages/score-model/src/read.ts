@@ -2,6 +2,7 @@
 // check what editors send, so a document may hold anything: what does not fit the schema is
 // left out, or read as its default, and reported as an invalidContent flag. Reading never throws.
 import * as Y from "yjs";
+import type { z } from "zod";
 
 import type { InvalidContentFlag } from "./flags";
 import {
@@ -9,6 +10,7 @@ import {
   type BarJSON,
   type BeatJSON,
   barsOf,
+  COMMON_TIME,
   isNoteKey,
   isVoiceKey,
   KIND_DEFAULTS,
@@ -24,6 +26,7 @@ import {
   partsOf,
   SCHEMA_VERSION,
   type ScoreJSON,
+  storedContentOf,
   type YBeat,
 } from "./schema";
 
@@ -34,11 +37,13 @@ type Place = Omit<InvalidContentFlag, "kind" | "what">;
 interface Fit {
   kind: PartKind;
   strings: number;
+  /** The fit as `kind:strings`, to tell it from another. */
+  key: string;
 }
 
 /** A beat as last checked: what it reads as (null when it cannot be read) and what was wrong in it. */
 interface Checked {
-  /** The fit it was checked for, as `kind:strings`. */
+  /** The key of the fit it was checked for. */
   checkedFor: string;
   beat: BeatJSON | null;
   invalid: InvalidContentFlag[];
@@ -55,14 +60,16 @@ function watch(doc: Y.Doc): void {
   watched.add(doc);
   const parts = partsOf(doc);
   parts.observeDeep((events) => {
+    // One transaction can change a bar many times: forget its beats once.
+    const changed = new Set<Y.Map<unknown>>();
     for (const event of events) {
       // Inside the content of a bar: ["<part>", "content", "<bar>", "<voice>", index, …].
       const [partId, field, barId] = event.path;
       if (field !== "content" || typeof partId !== "string" || typeof barId !== "string") continue;
-      const part: unknown = parts.get(partId);
-      const content: unknown = part instanceof Y.Map ? part.get("content") : undefined;
-      const voices: unknown = content instanceof Y.Map ? content.get(barId) : undefined;
-      if (!(voices instanceof Y.Map)) continue;
+      const voices: unknown = storedContentOf(parts.get(partId))?.get(barId);
+      if (voices instanceof Y.Map) changed.add(voices);
+    }
+    for (const voices of changed) {
       for (const beats of voices.values()) if (beats instanceof Y.Array) beats.forEach((beat) => beat instanceof Y.Map && checked.delete(beat));
     }
   });
@@ -73,7 +80,7 @@ function flag(place: Place, what: string): InvalidContentFlag {
 }
 
 /** The value of a field as its schema reads it, or `fallback` and a flag when it does not fit. */
-function readField<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
+function readField<T>(schema: z.ZodType<T>, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
   const parsed = schema.safeParse(value);
   if (parsed.success) return parsed.data;
   invalid.push(flag(place, what));
@@ -116,7 +123,6 @@ function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Chec
 
 /** The beats of a voice that can be read, checked once and again only after their bar changes. */
 function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: InvalidContentFlag[]): BeatJSON[] {
-  const key = `${fit.kind}:${fit.strings}`;
   const read: BeatJSON[] = [];
   beats.forEach((beat) => {
     if (!(beat instanceof Y.Map)) {
@@ -124,8 +130,8 @@ function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: Inv
       return;
     }
     let result = checked.get(beat);
-    if (result?.checkedFor !== key) {
-      result = { checkedFor: key, ...checkBeat(beat, fit, place) };
+    if (result?.checkedFor !== fit.key) {
+      result = { checkedFor: fit.key, ...checkBeat(beat, fit, place) };
       checked.set(beat, result);
     }
     invalid.push(...result.invalid);
@@ -168,10 +174,11 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
   }
   const defaults = KIND_DEFAULTS[kind.data];
   const staves = readField(shape.staves, part.get("staves"), defaults.staves, invalid, place, "part.staves");
-  const fit: Fit = { kind: kind.data, strings: tuning.success ? tuning.data.length : 0 };
+  const strings = tuning.success ? tuning.data.length : 0;
+  const fit: Fit = { kind: kind.data, strings, key: `${kind.data}:${strings}` };
   const content: PartJSON["content"] = {};
-  const stored = part.get("content");
-  if (stored instanceof Y.Map) {
+  const stored = storedContentOf(part);
+  if (stored !== undefined) {
     for (const barId of barIds) {
       const voices: unknown = stored.get(barId);
       if (voices === undefined) continue; // not filled in yet: reads as an empty bar
@@ -193,11 +200,12 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
   } as PartJSON;
 }
 
-const BAR_FIELDS = ["tempo", "keySig", "repeatStart", "repeatEnd", "voltas", "section", "anacrusis"] as const;
+/** The fields of a bar that are left out where nothing changes: all but its id and time signature. */
+const BAR_FIELDS = barSchema.keyof().options.filter((name) => name !== "id" && name !== "timeSig");
 
 function readBar(id: string, bar: Y.Map<unknown>, first: boolean, invalid: InvalidContentFlag[]): BarJSON {
   const place: Place = { barId: id };
-  const read: BarJSON = { id, timeSig: readField(barSchema.shape.timeSig, bar.get("timeSig"), { numerator: 4, denominator: 4 }, invalid, place, "bar.timeSig") };
+  const read: BarJSON = { id, timeSig: readField(barSchema.shape.timeSig, bar.get("timeSig"), { ...COMMON_TIME }, invalid, place, "bar.timeSig") };
   for (const name of BAR_FIELDS) {
     const value = bar.get(name);
     // A pickup bar anywhere but first is ignored: inserting a bar before it can make one.
@@ -211,12 +219,14 @@ function readBar(id: string, bar: Y.Map<unknown>, first: boolean, invalid: Inval
 
 /** Bars or parts in score order; flags those that cannot be placed in it (not maps, or without an ordering key). */
 function inOrder<T>(map: Y.Map<T>, what: "bar" | "part", invalid: InvalidContentFlag[]): [string, Y.Map<unknown>][] {
-  for (const [id, item] of map.entries()) {
+  const ids = ordered(map);
+  const placed = new Set(ids);
+  map.forEach((item, id) => {
+    if (placed.has(id)) return;
     const place: Place = what === "bar" ? { barId: id } : { partId: id };
-    if (!(item instanceof Y.Map)) invalid.push(flag(place, what));
-    else if (typeof item.get("order") !== "string") invalid.push(flag(place, `${what}.order`));
-  }
-  return ordered(map).map((id) => [id, map.get(id) as Y.Map<unknown>]);
+    invalid.push(flag(place, item instanceof Y.Map ? `${what}.order` : what));
+  });
+  return ids.map((id) => [id, map.get(id) as Y.Map<unknown>]);
 }
 
 export interface ScoreRead {
