@@ -1,12 +1,12 @@
 // Calls to the server's JSON API (docs/spec/routes.md, section 3). The session cookie goes along
 // by itself: the page and the API share one origin.
-import { apiError } from "@studio/contracts";
+import { apiError, type ErrorCode } from "@studio/contracts";
 
 /** An answer other than 2xx, with the stable code the server sent (`internal_error` when none). */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
-    readonly code: string,
+    readonly code: ErrorCode,
   ) {
     super(`${status} ${code}`);
   }

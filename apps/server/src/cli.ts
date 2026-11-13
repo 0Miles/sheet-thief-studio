@@ -4,6 +4,7 @@
 // A password is never an argument: arguments end up in the shell history and the process list.
 import type { Readable, Writable } from "node:stream";
 
+import { accountLimits } from "@studio/contracts";
 import type { Sequelize } from "sequelize";
 import { ZodError } from "zod";
 
@@ -41,7 +42,8 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
       const password = await readPassword(io);
       if (password === null) return 1;
       try {
-        // The admin chose the password: no forced change at the first login (ADR 0004).
+        // The admin set this password on the server, it is no temporary one: no forced change at
+        // the first login (docs/spec/accounts.md, section 2).
         await createAccount({ username, displayName, password, isAdmin: true, mustChangePassword: false });
       } catch (error) {
         if (error instanceof UsernameTaken) return fail(io, `帳號名稱 ${username} 已經有人使用。`);
@@ -71,10 +73,11 @@ function fail(io: CliIo, message: string): number {
   return 1;
 }
 
+const { username: name, displayName: shown, password: secret } = accountLimits;
 const RULES: Record<string, string> = {
-  username: "帳號名稱只能用小寫英數、- 與 _，長度 3–32。",
-  displayName: "顯示名稱長度要在 1–50 字元。",
-  password: "密碼長度要在 10–256 字元。",
+  username: `帳號名稱只能用小寫英數、- 與 _，長度 ${name.min}–${name.max}。`,
+  displayName: `顯示名稱長度要在 ${shown.min}–${shown.max} 字元。`,
+  password: `密碼長度要在 ${secret.min}–${secret.max} 字元。`,
 };
 
 function describe(error: ZodError): string {

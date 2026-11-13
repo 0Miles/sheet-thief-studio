@@ -5,7 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import { ApiError } from "../api";
 import { afterLogin } from "../router";
-import { strings } from "../strings";
+import { errorText, strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 
 const session = useSessionStore();
@@ -24,8 +24,7 @@ async function submit(): Promise<void> {
     await session.login({ username: username.value, password: password.value });
     await router.replace(afterLogin(route.query.redirect));
   } catch (failure) {
-    const code = failure instanceof ApiError ? failure.code : "unknown";
-    error.value = strings.errors[code] ?? strings.errors.unknown!;
+    error.value = failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
     password.value = "";
   } finally {
     sending.value = false;
