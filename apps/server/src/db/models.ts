@@ -1,6 +1,7 @@
-// The tables as Sequelize models (docs/spec/accounts.md, section 1.2). Columns are snake_case
+// The tables as Sequelize models (docs/spec/accounts.md, section 1.2; docs/spec/collab.md, 1.1). Columns are snake_case
 // in Postgres and camelCase here. The tables themselves come from the migrations, never from
 // `sync()`.
+import type { Role } from "@studio/contracts";
 import {
   type CreationOptional,
   DataTypes,
@@ -36,6 +37,27 @@ export class Identity extends Model<InferAttributes<Identity>, InferCreationAttr
   declare createdAt: CreationOptional<Date>;
 }
 
+/** A score: its Yjs state and what the lists show of it. Members are in `score_members`. */
+export class Score extends Model<InferAttributes<Score>, InferCreationAttributes<Score>> {
+  declare id: CreationOptional<string>;
+  declare title: string;
+  declare artist: CreationOptional<string | null>;
+  /** `Y.encodeStateAsUpdate` of the whole document. */
+  declare docState: Buffer;
+  declare schemaVersion: number;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+  /** Set when the score is deleted; a deleted score is not found by anyone (docs/spec/security.md, 8). */
+  declare deletedAt: CreationOptional<Date | null>;
+}
+
+export class ScoreMember extends Model<InferAttributes<ScoreMember>, InferCreationAttributes<ScoreMember>> {
+  declare scoreId: ForeignKey<Score["id"]>;
+  declare accountId: ForeignKey<Account["id"]>;
+  declare role: Role;
+  declare addedAt: CreationOptional<Date>;
+}
+
 /** Bind the models to a connection. The classes are shared, so a process uses one connection. */
 export function initModels(sequelize: Sequelize): void {
   Account.init(
@@ -62,4 +84,29 @@ export function initModels(sequelize: Sequelize): void {
     { sequelize, tableName: "identities", underscored: true, updatedAt: false },
   );
   Account.hasMany(Identity, { foreignKey: { name: "accountId", allowNull: false }, as: "identities" });
+  Score.init(
+    {
+      id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+      title: { type: DataTypes.STRING(100), allowNull: false },
+      artist: { type: DataTypes.STRING(100), allowNull: true },
+      docState: { type: DataTypes.BLOB, allowNull: false },
+      schemaVersion: { type: DataTypes.INTEGER, allowNull: false },
+      createdAt: DataTypes.DATE,
+      updatedAt: DataTypes.DATE,
+      deletedAt: { type: DataTypes.DATE, allowNull: true },
+    },
+    { sequelize, tableName: "scores", underscored: true },
+  );
+  ScoreMember.init(
+    {
+      scoreId: { type: DataTypes.UUID, primaryKey: true },
+      accountId: { type: DataTypes.UUID, primaryKey: true },
+      role: { type: DataTypes.STRING(8), allowNull: false },
+      addedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    },
+    { sequelize, tableName: "score_members", underscored: true, timestamps: false },
+  );
+  Score.hasMany(ScoreMember, { foreignKey: { name: "scoreId", allowNull: false }, as: "members" });
+  ScoreMember.belongsTo(Score, { foreignKey: { name: "scoreId", allowNull: false }, as: "score" });
+  ScoreMember.belongsTo(Account, { foreignKey: { name: "accountId", allowNull: false }, as: "account" });
 }

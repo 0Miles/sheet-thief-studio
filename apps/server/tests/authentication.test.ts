@@ -10,12 +10,12 @@ test("an API route that is not marked public answers 401 to a request without a 
   const redis = new Redis(TEST_REDIS_URL, { lazyConnect: true });
   const app = buildApp({ config: testConfig(), redis, logger: false });
   // Routes as a later ticket would add them, without asking for a session.
-  app.get("/api/scores", async () => ({ scores: [] }));
-  app.post("/api/scores", async () => ({ id: "new" }));
+  app.get("/api/later-things", async () => ({ things: [] }));
+  app.post("/api/later-things", async () => ({ id: "new" }));
   app.get("/api/public-thing", { config: { public: true } }, async () => ({ open: true }));
 
-  const read = await app.inject({ method: "GET", url: "/api/scores" });
-  const write = await app.inject({ method: "POST", url: "/api/scores", headers: { origin: ORIGIN }, payload: {} });
+  const read = await app.inject({ method: "GET", url: "/api/later-things" });
+  const write = await app.inject({ method: "POST", url: "/api/later-things", headers: { origin: ORIGIN }, payload: {} });
   expect([read.statusCode, read.json()]).toEqual([401, { code: "unauthenticated" }]);
   expect([write.statusCode, write.json()]).toEqual([401, { code: "unauthenticated" }]);
   expect((await app.inject({ method: "GET", url: "/api/public-thing" })).json()).toEqual({ open: true });

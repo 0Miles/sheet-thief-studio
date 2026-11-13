@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import type { SessionsEnded } from "../src/sessions";
-import { COOKIE, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, testConfig, whoAmI } from "./support";
+import { COOKIE, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -39,16 +39,13 @@ afterAll(async () => {
   await sequelize.close();
 });
 
-async function sessionOf(username: string): Promise<string> {
-  return sessionCookie(await login(app, username, PASSWORD))!.value;
-}
 
 async function valid(session: string): Promise<boolean> {
   return (await whoAmI(app, session)).statusCode === 200;
 }
 
 test("ending an account's sessions ends every one of them, keeps other accounts', and tells every listener", async () => {
-  const [annaHere, annaThere, ben] = [await sessionOf("anna"), await sessionOf("anna"), await sessionOf("ben")];
+  const [annaHere, annaThere, ben] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "ben", PASSWORD)];
   const first = vi.fn<(ended: SessionsEnded) => void>();
   const second = vi.fn<(ended: SessionsEnded) => Promise<void>>(async () => {});
   app.sessions.onEnd(first);
@@ -61,7 +58,7 @@ test("ending an account's sessions ends every one of them, keeps other accounts'
 });
 
 test("a listener that fails keeps neither the sessions alive nor the other listeners from being told", async () => {
-  const session = await sessionOf("anna");
+  const session = await sessionOf(app, "anna", PASSWORD);
   const told = vi.fn();
   app.sessions.onEnd(() => {
     throw new Error("cannot close the connections");
@@ -75,7 +72,7 @@ test("a listener that fails keeps neither the sessions alive nor the other liste
 });
 
 test("ending all but one session keeps that one, and still tells the listeners about the whole account", async () => {
-  const [kept, ended] = [await sessionOf("anna"), await sessionOf("anna")];
+  const [kept, ended] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
   const listener = vi.fn();
   app.sessions.onEnd(listener);
 
@@ -86,7 +83,7 @@ test("ending all but one session keeps that one, and still tells the listeners a
 });
 
 test("logging out goes through the same function and tells the listeners which session ended", async () => {
-  const [leaving, staying] = [await sessionOf("anna"), await sessionOf("anna")];
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
   const listener = vi.fn();
   app.sessions.onEnd(listener);
 
@@ -97,7 +94,7 @@ test("logging out goes through the same function and tells the listeners which s
 });
 
 test("a listener can stop listening", async () => {
-  await sessionOf("anna");
+  await sessionOf(app, "anna", PASSWORD);
   const listener = vi.fn();
   const stop = app.sessions.onEnd(listener);
   stop();

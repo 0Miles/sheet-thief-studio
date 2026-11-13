@@ -1,6 +1,8 @@
 // S1, S3 and S6: screenshots of what the renderer draws, for docs/spike-report.md.
 import { expect, type Page, test } from "@playwright/test";
 
+import { ADMIN } from "../environment";
+import { createScore, loggedIn } from "../pages";
 import { openScore, placeCursor } from "../studio";
 import { screenshotPath, writeData } from "./output";
 
@@ -62,16 +64,14 @@ test("S6: drum pieces and the spelling of pitches as the score has them", async 
 });
 
 test("the spike page with two members' input, for the report", async ({ browser }) => {
-  const name = `shot-${Date.now()}`;
-  const open = async (): Promise<Page> => {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 420 } });
-    const page = await context.newPage();
-    await openScore(page, `/spike/${name}?bars=4&parts=2&player=0`);
-    return page;
-  };
-  const anna = await open();
+  // Co-editing takes a score the server made, opened by a logged-in member (#6).
+  const viewport = { width: 1280, height: 420 };
+  const anna = await loggedIn(browser, ADMIN, { viewport });
+  const ben = await loggedIn(browser, ADMIN, { viewport });
+  const id = await createScore(anna, "量測");
+  await openScore(anna, `/spike/${id}?player=0`);
   await expect.poll(() => anna.evaluate(() => window.__studio!.synced())).toBe(true);
-  const ben = await open();
+  await openScore(ben, `/spike/${id}?player=0`);
   await placeCursor(anna, 0, 3, -1, 6);
   await placeCursor(ben, 0, 3, -1, 1);
   const type = async (page: Page, frets: number[]): Promise<void> => {

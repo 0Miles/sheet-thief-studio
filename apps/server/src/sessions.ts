@@ -1,9 +1,9 @@
 // Sessions in Redis (docs/spec/security.md, section 1): `session:<id>` holds the account, and
 // `account-sessions:<accountId>` lists the ids of an account so that all of them can end at once.
 // Both slide: every use moves their expiry 30 days ahead.
-import { randomBytes } from "node:crypto";
-
 import type { Redis } from "ioredis";
+
+import { isToken, newToken } from "./tokens";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -15,8 +15,9 @@ export interface Session {
 
 /**
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account
- * (`sessionId` null) — and with them every connection the account opened, those of a session
- * that was kept included.
+ * (`sessionId` null) — and with them every connection the account has in the register, those of
+ * a session that was kept included. A connection whose document is still loading is not in the
+ * register yet: it checks its own session once loaded, so one of a kept session stays open.
  */
 export interface SessionsEnded {
   accountId: string;
@@ -32,9 +33,6 @@ interface Logger {
   error(details: object, message: string): void;
 }
 
-/** 32 random bytes in base64url. */
-const SESSION_ID = /^[A-Za-z0-9_-]{43}$/;
-
 const sessionKey = (id: string) => `session:${id}`;
 const accountKey = (accountId: string) => `account-sessions:${accountId}`;
 
@@ -47,7 +45,7 @@ export class Sessions {
   ) {}
 
   async start(accountId: string): Promise<string> {
-    const id = randomBytes(32).toString("base64url");
+    const id = newToken();
     const session = { accountId, createdAt: new Date().toISOString() };
     await this.redis
       .multi()
@@ -60,7 +58,7 @@ export class Sessions {
 
   /** The session with this id, its expiry moved 30 days ahead; null when there is none. */
   async resume(id: string): Promise<Session | null> {
-    if (!SESSION_ID.test(id)) return null;
+    if (!isToken(id)) return null;
     const stored = await this.redis.getex(sessionKey(id), "EX", SESSION_TTL_SECONDS);
     if (stored === null) return null;
     const { accountId, createdAt } = JSON.parse(stored) as Omit<Session, "id">;
@@ -69,13 +67,18 @@ export class Sessions {
     return { id, accountId, createdAt };
   }
 
+  /** Whether the session with this id has not ended. Unlike `resume`, it does not move the expiry. */
+  async isActive(id: string): Promise<boolean> {
+    return isToken(id) && (await this.redis.exists(sessionKey(id))) === 1;
+  }
+
   /**
    * End sessions, then tell every listener. Every way a session stops being valid comes through
    * here: logging out, logging out everywhere, a password changed or reset, an account disabled.
    */
   async end(which: SessionsToEnd): Promise<void> {
     if ("sessionId" in which) {
-      if (!SESSION_ID.test(which.sessionId)) return;
+      if (!isToken(which.sessionId)) return;
       const stored = await this.redis.getdel(sessionKey(which.sessionId));
       if (stored === null) return;
       const { accountId } = JSON.parse(stored) as Omit<Session, "id">;

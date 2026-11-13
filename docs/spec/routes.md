@@ -20,7 +20,7 @@
 | `/admin` | 後台，只有 admin 能進 | M1a |
 | 找不到頁面 | 404 頁 | M1a |
 
-- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/:name`、`/local` 暫時例外，和 M0 一樣不需要登入，#37 移除它們。
+- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁暫時例外，#37 移除它們：`/local` 不需要登入；`/spike/<團譜 id>` 的頁面本身不擋，但共編要先登入、是那份團譜的成員，並和其他頁面一樣每次連線取一張 collab ticket（#6）。
 - `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。
 - `/admin`：非 admin 看到 404 頁（補充）。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
@@ -81,9 +81,9 @@
 
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
-| `GET /api/scores` | 我是成員的團譜：`id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
+| `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
 | `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜 | 任何帳號 |
-| `POST /api/scores` | `{ title, parts: [{ preset, count }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節） | 任何帳號 |
+| `POST /api/scores` | `{ title, parts: [{ preset, count }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。#6 先只收 `{ title }`，內容固定是一個「吉他 6 弦」聲部、4/4、8 小節（速度不寫，讀作 120）；#11 加上其他欄位 | 任何帳號 |
 | `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |

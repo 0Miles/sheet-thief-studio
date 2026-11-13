@@ -4,8 +4,9 @@ import { SERVER_ENV } from "./e2e/environment";
 
 // End-to-end tests run against the real server and the built web app, on the ports the
 // project uses in development (8031 and 5183), and against the Postgres and Redis of
-// compose.dev.yaml in databases of their own (e2e/environment.ts). A dev server already on 8031
-// would use the development database: stop it first, Playwright refuses to reuse it.
+// compose.dev.yaml in databases of their own (e2e/environment.ts). Both ports must be free: a dev
+// server on 8031 would use the development database, and a page server on 5183 may be a build
+// without VITE_E2E. Playwright refuses to reuse either.
 export default defineConfig({
   testDir: "e2e",
   testIgnore: "**/measure/**",
@@ -28,9 +29,12 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
+      // The end-to-end build: it has `window.__studioTest` (src/testHook.ts); no other build does.
       command: "pnpm build && pnpm preview",
+      env: { VITE_E2E: "1" },
       url: "http://localhost:5183",
-      reuseExistingServer: !process.env.CI,
+      // Never an older preview: it may be a build without VITE_E2E, or of other sources.
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

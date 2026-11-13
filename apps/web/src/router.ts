@@ -15,8 +15,9 @@ export const router = createRouter({
   routes: [
     { path: "/login", name: "login", component: () => import("./views/LoginView.vue"), meta: { public: true } },
     { path: "/", name: "home", component: HomeView },
-    // M0 spike: a score co-edited under a name, or one that lives in the page only. It stays
-    // open to anyone, as in M0, until the real editor replaces it (#37).
+    { path: "/scores/:id", name: "score", component: () => import("./views/ScoreView.vue"), props: true },
+    // M0 spike: a score co-edited by its id, or one that lives in the page only. The page stays
+    // open to anyone until the real editor replaces it (#37); co-editing takes a member's ticket.
     { path: "/spike/:name", name: "spike", component: () => import("./views/SpikeView.vue"), meta: { public: true } },
     { path: "/local", name: "local", component: () => import("./views/SpikeView.vue"), meta: { public: true } },
     { path: "/:unknown(.*)*", name: "not-found", component: () => import("./views/NotFoundView.vue") },

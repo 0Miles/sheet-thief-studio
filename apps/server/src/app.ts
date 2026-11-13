@@ -5,9 +5,11 @@ import type { Redis } from "ioredis";
 
 import { registerAuth } from "./auth";
 import { attachCollab } from "./collab";
+import { CollabTickets } from "./collabTickets";
 import type { Config } from "./config";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
 import { RateLimiter } from "./rateLimit";
+import { registerScores } from "./scores";
 import { Sessions } from "./sessions";
 
 export interface Dependencies {
@@ -27,7 +29,10 @@ export function buildApp({ config, redis, logger = true }: Dependencies): Fastif
   registerOriginCheck(app, config.publicOrigin);
   // Liveness only: says the process answers, not that its dependencies do.
   app.get("/healthz", async () => health.parse({ status: "ok" }));
-  registerAuth(app, { cookie: config.sessionCookie, sessions: new Sessions(redis, app.log), limiter: new RateLimiter(redis) });
-  attachCollab(app);
+  const sessions = new Sessions(redis, app.log);
+  const tickets = new CollabTickets(redis);
+  registerAuth(app, { cookie: config.sessionCookie, sessions, limiter: new RateLimiter(redis) });
+  const collab = attachCollab(app, { tickets, sessions });
+  registerScores(app, { collab, tickets });
   return app;
 }

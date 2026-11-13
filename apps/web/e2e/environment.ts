@@ -14,4 +14,13 @@ export const ADMIN = {
   mustChangePassword: false,
 };
 
-export const ACCOUNTS = [ADMIN];
+/** An account that is no member of the scores the admin creates. */
+export const OUTSIDER = {
+  username: "e2e-ben",
+  displayName: "其他帳號",
+  password: "e2e member password",
+  isAdmin: false,
+  mustChangePassword: false,
+};
+
+export const ACCOUNTS = [ADMIN, OUTSIDER];

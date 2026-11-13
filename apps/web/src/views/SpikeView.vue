@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The M0 spike page: one score, drawn by the renderer, with the member's cursor on top and
-// minimal keyboard entry. With a name in the address the score is co-edited through the server;
-// without one it lives in this page only (measurements and screenshots).
+// minimal keyboard entry. With a score id in the address the score is co-edited through the
+// server, by a member who is logged in (a collab ticket for every connection); without one it
+// lives in this page only (measurements and screenshots).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { createEditorSession, type EditorSession } from "@studio/score-editor";
 import {
@@ -22,6 +23,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useRoute } from "vue-router";
 import * as Y from "yjs";
 
+import { collabUrl, newCollabTicket } from "../api";
 import { seedDemo, seedPerf } from "../spike/demoScores";
 import type { KeySample, RenderSample, StudioHook } from "../spike/hook";
 import { strings } from "../strings";
@@ -309,9 +311,10 @@ onMounted(() => {
     return;
   }
   provider = new HocuspocusProvider({
-    url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`,
+    url: collabUrl(),
     name: documentName,
     document: doc,
+    token: () => newCollabTicket(documentName),
     onSynced: start,
     onStatus: ({ status }) => {
       connection.value = status === "connected" ? "connected" : status === "connecting" ? "connecting" : "disconnected";
