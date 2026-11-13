@@ -56,7 +56,7 @@
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`；密碼正確但帳號停用時 403 `account_disabled`（補充：只在密碼正確時才透露停用）；429 `rate_limited` |
+| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
 | `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
 | `POST /api/auth/logout-all` | 刪除這個帳號所有的 session，關閉它的所有連線 |
 | `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401 |
@@ -151,7 +151,6 @@
 |---|---|---|
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
 | `invalid_credentials` | 401 | 帳號名稱或密碼錯誤 |
-| `account_disabled` | 403 | 帳號已停用 |
 | `password_change_required` | 403 | 要先改密碼 |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
@@ -166,3 +165,4 @@
 | `limit_exceeded` | 422 | 超過聲部、小節等數量上限；`params` 帶上限名稱 |
 | `rate_limited` | 429 | |
 | `recognizer_busy` | 503 | 辨識服務忙碌中 |
+| `internal_error` | 500 | 伺服器內部錯誤（細節只進 log） |

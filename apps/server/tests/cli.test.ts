@@ -21,16 +21,24 @@ test("create-admin reads the password from stdin and makes an admin who need not
   expect(account?.toJSON()).toMatchObject({ username: "miles", displayName: "Miles", isAdmin: true, mustChangePassword: false, disabledAt: null });
 });
 
-test("create-admin refuses a password outside 10–256 characters, a bad username and a taken one", async () => {
+// Each run of the CLI starts a process: the refusals of one rule run side by side.
+test("create-admin refuses a password shorter than 10 or longer than 256 characters", async () => {
   const refusals = await Promise.all([
     cli(["create-admin", "short", "Short"], "nine char\n"),
     cli(["create-admin", "long", "Long"], `${"x".repeat(257)}\n`),
+  ]);
+  expect(refusals.map((refusal) => refusal.code)).toEqual([1, 1]);
+  expect(await checkCredentials("short", "nine char")).toBeNull();
+  expect(await checkCredentials("long", "x".repeat(257))).toBeNull();
+});
+
+test("create-admin refuses a username outside the rules and one that is taken", async () => {
+  const refusals = await Promise.all([
     cli(["create-admin", "Not Valid", "Name"], "a good enough password\n"),
     cli(["create-admin", "miles", "Someone Else"], "another password here\n"),
   ]);
-  expect(refusals.map((refusal) => refusal.code)).toEqual([1, 1, 1, 1]);
-  expect(await checkCredentials("short", "nine char")).toBeNull();
-  expect(await checkCredentials("long", "x".repeat(257))).toBeNull();
+  expect(refusals.map((refusal) => refusal.code)).toEqual([1, 1]);
+  expect(refusals[1]!.stderr).toContain("miles");
   expect(await checkCredentials("miles", "another password here")).toBeNull();
 });
 

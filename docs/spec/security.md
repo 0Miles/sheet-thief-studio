@@ -9,7 +9,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 - **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt }`；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
 - 登入成功時換一個新的 session id（避免 session fixation，補充）。
 - 停用帳號或重設密碼時，刪除該帳號所有的 Redis session，並關閉它的 `/collab` 連線（[`accounts.md`](accounts.md)）。
-- **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：名稱是 `studio_session` 與 `karyl_result`（[`karyl-login.md`](karyl-login.md) 第 5 節的 cookie 也跟著同一個設定）。
+- **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：環境變數是 `INSECURE_COOKIES=1`；名稱是 `studio_session` 與 `karyl_result`（[`karyl-login.md`](karyl-login.md) 第 5 節的 cookie 也跟著同一個設定）。
   - WebKit（Safari）在 http 上不接受 `__Host-` cookie，所以 CI 的 WebKit 打譜 smoke、在 Mac 上用 Safari 開發，以及手機的區網實機測試都要用這個設定（owner 在 2026-11-13 裁定桌面 Safari 要能打譜）。
   - Firefox 要不要用，看 [`testing.md`](testing.md) 第 5 節確認檢查 1 的結果。
   - `NODE_ENV=production` 時這個設定不生效；正式環境一律用 `__Host-` 名稱。
@@ -31,7 +31,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 
 | 對象 | 限制 | 來源 |
 |---|---|---|
-| 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
+| 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次失敗的登入；成功的登入不計（補充）。帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
 | 加入成員的帳號名稱查詢（`POST /api/scores/:id/members`） | 同一帳號 15 分鐘內最多 20 次 | 補充 |
 | 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼） | 補充 |
 | 訪客取 ticket（`POST /api/s/:token`） | 同一 IP 每分鐘最多 30 次 | 補充 |
@@ -39,7 +39,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |
 | 其他 API | 不另設限制：平台只對登入的成員開放，辨識另有「每個帳號同時一件」的限制 | 補充 |
 
-- IP 取自 nginx 設定的 `X-Forwarded-For`；Fastify 只信任來自 nginx 的這一跳（`trustProxy` 設成 1，補充）。
+- IP 取自 nginx 設定的 `X-Forwarded-For`；Fastify 只信任來自 nginx 的這一跳（補充）。做法是把 nginx 的位址交給 `trustProxy`（環境變數 `TRUSTED_PROXIES`，預設 `loopback`）：Fastify 5 對數字的 `trustProxy`（「信任 1 跳」）一律不信任，因為只看跳數無法確認直接連進來的是 nginx。
 
 ## 5. 大小上限
 

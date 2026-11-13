@@ -9,14 +9,17 @@ export const useSessionStore = defineStore("session", () => {
   const me = ref<Me | null>(null);
   let asked: Promise<void> | null = null;
 
-  /** Ask the server once per page load; later calls wait for that answer. */
+  /** Ask the server once per page load; later calls wait for that answer. A failure is asked again. */
   function load(): Promise<void> {
     asked ??= get("/api/me", meShape).then(
       (account) => {
         me.value = account;
       },
       (error: unknown) => {
-        if (!(error instanceof ApiError && error.status === 401)) throw error;
+        if (!(error instanceof ApiError && error.status === 401)) {
+          asked = null;
+          throw error;
+        }
         me.value = null;
       },
     );
