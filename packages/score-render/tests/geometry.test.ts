@@ -50,8 +50,6 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
     return null;
   }
   return {
-    lookup,
-    projection,
     mark,
     rect: (cursor: Cursor) => cursorRect(lookup, projection, parts, cursor, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),

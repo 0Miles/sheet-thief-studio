@@ -4,12 +4,11 @@
 import { text } from "node:stream/consumers";
 
 import { createAccount, type NewAccount } from "../src/accounts";
-import { freshDatabase, freshRedis } from "./support";
+import { e2eDatabaseUrl, freshDatabase, freshRedis } from "./support";
 
-const { DATABASE_URL, REDIS_URL, NODE_ENV } = process.env;
-if (!DATABASE_URL || !REDIS_URL || NODE_ENV === "production" || !new URL(DATABASE_URL).pathname.endsWith("_e2e")) {
-  throw new Error("seedE2e: DATABASE_URL must name a database ending in _e2e, and REDIS_URL must be set");
-}
+const DATABASE_URL = e2eDatabaseUrl("seedE2e");
+const { REDIS_URL } = process.env;
+if (!REDIS_URL) throw new Error("seedE2e: REDIS_URL must be set");
 
 const accounts = JSON.parse(await text(process.stdin)) as NewAccount[];
 

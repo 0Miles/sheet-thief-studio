@@ -14,11 +14,15 @@ async function synced(page: Page): Promise<void> {
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();
 }
 
-/** Open a score and wait until it is drawn and in step with the server; the score then has the keyboard. */
-async function openScore(page: Page, id: string): Promise<void> {
-  await page.goto(`/scores/${id}`);
+/** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
+async function drawn(page: Page): Promise<void> {
   await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
   await synced(page);
+}
+
+async function openScore(page: Page, id: string): Promise<void> {
+  await page.goto(`/scores/${id}`);
+  await drawn(page);
 }
 
 function scoreOf(page: Page): Promise<ScoreJSON> {
@@ -42,7 +46,7 @@ function seed(bars?: number): string {
       { username: EDITOR.username, role: "editor" },
       { username: VIEWER.username, role: "viewer" },
     ],
-    ...(bars === undefined ? {} : { bars }),
+    bars,
   });
 }
 
@@ -62,7 +66,7 @@ test("an Editor moves with the arrows, types a fret and shortens it; after reloa
   await synced(page);
 
   await page.reload();
-  await openScore(page, id);
+  await drawn(page);
   const typed = beatsIn(await scoreOf(page), 1);
   expect(typed).toHaveLength(1);
   expect(typed[0]).toMatchObject({ value: 8, dots: 0, notes: { s2: { fret: 5 } } });
@@ -132,11 +136,12 @@ test("at the top of a score of more than 10 bars, the cursor never covers an are
   const areas = await Promise.all((await reserved.all()).map((area) => area.boundingBox()));
   expect(areas).not.toContain(null);
   const scroller = page.locator("[data-scroller]");
+  const barIds = (await scoreOf(page)).bars.map((bar) => bar.id);
 
   /** The cursor is drawn where it is now, clear of every reserved area, with the page at the top. */
   async function clearAt(bar: number, at: Cursor["at"]): Promise<void> {
     expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
-    expect(await cursorOf(page)).toMatchObject({ barId: (await scoreOf(page)).bars[bar]!.id, at, line: 1 });
+    expect(await cursorOf(page)).toMatchObject({ barId: barIds[bar], at, line: 1 });
     const cursor = await page.locator("[data-cursor]").boundingBox();
     expect(cursor).not.toBeNull();
     for (const area of areas) expect(overlaps(cursor!, area!), `bar ${bar + 1}, ${at}`).toBe(false);

@@ -12,11 +12,9 @@ import * as Y from "yjs";
 import { connectDatabase } from "../src/db/database";
 import { Account, Score, ScoreMember } from "../src/db/models";
 import { startContent } from "../src/scores";
+import { e2eDatabaseUrl } from "./support";
 
-const { DATABASE_URL, NODE_ENV } = process.env;
-if (!DATABASE_URL || NODE_ENV === "production" || !new URL(DATABASE_URL).pathname.endsWith("_e2e")) {
-  throw new Error("scoreE2e: DATABASE_URL must name a database ending in _e2e");
-}
+const DATABASE_URL = e2eDatabaseUrl("scoreE2e");
 
 interface ScoreFixture {
   title: string;

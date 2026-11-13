@@ -24,6 +24,19 @@ export const COOKIE = "__Host-studio_session";
 /** The origin the test app is published under; requests that change something send it. */
 export const ORIGIN = "http://studio.test";
 
+/**
+ * The database of the end-to-end tests, for the scripts that write into it (seedE2e.ts,
+ * scoreE2e.ts): `DATABASE_URL`, refused unless it names a database ending in `_e2e` outside
+ * production, so that no script can write into a real one.
+ */
+export function e2eDatabaseUrl(script: string): string {
+  const { DATABASE_URL, NODE_ENV } = process.env;
+  if (!DATABASE_URL || NODE_ENV === "production" || !new URL(DATABASE_URL).pathname.endsWith("_e2e")) {
+    throw new Error(`${script}: DATABASE_URL must name a database ending in _e2e`);
+  }
+  return DATABASE_URL;
+}
+
 /** Drop every table of the test database, migrations included. */
 export async function emptyDatabase(sequelize: Sequelize): Promise<void> {
   await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");

@@ -39,8 +39,8 @@ const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
 /** Where the cursor is drawn, out of the reserved areas; null when its place is not drawn. */
-const cursorRect = ref<Rect | null>(null);
-/** The areas no overlay may cover; each gets an invisible marker, for the e2e tests. */
+const cursorRect = shallowRef<Rect | null>(null);
+/** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 
 const doc = new Y.Doc();
@@ -54,14 +54,19 @@ const hideFromTests = exposeForTests({
   flags: () => (score.value ? flagsOf(score.value) : []),
 });
 
-/** Draw the overlay again: after a drawing, or when the cursor moved. */
-function updateOverlay(): void {
+/** Draw the cursor again, where it is now: when it moved, or after a drawing. */
+function placeCursor(): void {
   if (engine === undefined || !editing.value) return;
-  const areas = engine.renderer.reservedRects();
-  reserved.value = areas;
   const at = session?.cursor ?? null;
   const rect = at && engine.renderer.boundsOf(at);
-  cursorRect.value = rect && clearOf(rect, areas);
+  cursorRect.value = rect && clearOf(rect, reserved.value);
+}
+
+/** Draw the overlay again after a drawing: the reserved areas change only then. */
+function updateOverlay(): void {
+  if (engine === undefined || !editing.value) return;
+  reserved.value = engine.renderer.reservedRects();
+  placeCursor();
 }
 
 /** Scroll so that the cursor is on screen, with some room around it. */
@@ -93,14 +98,14 @@ function firstCursor(json: ScoreJSON): Cursor | null {
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { cursor: firstCursor(json), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(() => {
-    updateOverlay();
+    placeCursor();
     reveal();
   });
   session.onRefused(() => {
     notice.value = text.viewerCannotEdit;
   });
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
-  updateOverlay();
+  placeCursor();
   // The score has the keyboard from the start.
   scroller.value?.focus();
 }
