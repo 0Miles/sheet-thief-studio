@@ -304,7 +304,7 @@ export function readScore(doc: Y.Doc): ScoreRead {
     else invalid.push(flag({}, "meta.artist"));
   }
   const placed = inOrder(barsOf(doc), "bar", invalid).filter(([id]) => {
-    // A bar whose id no JSON object keeps as a key could not be written back: left out of every part.
+    // A bar whose id zod's records do not keep as a key could not be written back: left out of every part.
     if (barSchema.shape.id.safeParse(id).success) return true;
     invalid.push(flag({ barId: id }, "bar"));
     return false;

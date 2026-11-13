@@ -89,8 +89,8 @@ export const metaSchema = z.object({
 
 /** A bar; `tempo`, `keySig` and the rest hold from this bar on, left out where nothing changes. */
 export const barSchema = z.object({
-  /** A key of the content of every part: never __proto__, which JSON objects do not keep as a key. */
-  id: z.string().refine((id) => id !== "__proto__", "a bar id JSON objects cannot hold"),
+  /** A key of the content of every part: never __proto__, a key zod's records and objects built by assignment do not keep. */
+  id: z.string().refine((id) => id !== "__proto__", "a bar id records cannot keep"),
   timeSig: timeSigSchema,
   /** Quarter notes per minute. */
   tempo: z.number().min(20).max(400).optional(),

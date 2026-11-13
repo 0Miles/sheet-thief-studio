@@ -9,7 +9,7 @@ import { type BarJSON, type BeatJSON, type NoteJSON, type PartJSON, SCHEMA_VERSI
 const id = fc.string({ minLength: 1, maxLength: 10 });
 const midi = fc.integer({ min: 0, max: 127 });
 const yes = fc.constant(true as const);
-/** Characters of one, two or three UTF-16 code units: ASCII, CJK, an accent, an emoji. */
+/** Characters of one or two UTF-16 code units: ASCII, CJK, a letter with a combining accent, an emoji. */
 const unit = fc.oneof({ weight: 6, arbitrary: fc.string({ minLength: 1, maxLength: 1 }) }, { weight: 1, arbitrary: fc.constantFrom("譜", "é", "😀") });
 
 /** From `min` to `max` UTF-16 code units: ASCII up to the limit, or any text within it. */

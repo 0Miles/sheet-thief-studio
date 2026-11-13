@@ -48,7 +48,7 @@ Y.Doc
 
 | 欄位 | 形狀 | 語意 |
 |---|---|---|
-| `id` | string | `bars` 的鍵，不另存成欄位。**補充**：不得是 `__proto__`：小節 id 是 `ScoreJSON` 裡每個聲部 `content` 物件的鍵，而 JSON 物件（與 zod 的 record）不保留這個鍵。讀取時略過這樣的小節（所有聲部一起），並標 `invalidContent`（`bar`） |
+| `id` | string | `bars` 的鍵，不另存成欄位。**補充**：不得是 `__proto__`：小節 id 是 `ScoreJSON` 裡每個聲部 `content` 物件的鍵，而 zod 的 `z.record` 與用賦值建立的物件都不保留這個鍵（`JSON.parse` 會保留）。讀取時略過這樣的小節（所有聲部一起），並標 `invalidContent`（`bar`） |
 | `order` | string | fractional index 排序鍵 |
 | `timeSig` | `{ numerator, denominator }` | 每個小節都有，必填 |
 | `tempo?` | number | 每分鐘幾個四分音符，「從這小節起」；不寫表示不變；第一小節沒寫時用 120（`projection.ts:16`） |
@@ -223,7 +223,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - **遷移清單**：`score-model` 裡一份依版本排序的清單，每一項是 `{ from, to, doc(doc: Y.Doc): void, json(json: unknown): unknown }`。`doc` 與 `json` 兩面的語意必須相同。
 - **`Y.Doc` 那一面**：伺服器在 `onLoadDocument` 載入狀態之後，以參與者身分、在一筆交易裡依序跑 `doc` 遷移，最後把 `meta.schemaVersion` 設成目前的版本。不要在 `onStoreDocument` 裡改文件，否則會再觸發一次儲存。
 - **`ScoreJSON` 那一面**：版本存的是 `docToJson` 的結果，帶著當時的 `schemaVersion`。讀取版本時，伺服器先依序跑 `json` 遷移，回傳目前版本的 JSON（補充：由伺服器遷移，客戶端拿到的一律是目前的版本）。還原、預覽都用遷移後的 JSON。
-- **補充**：`schemaVersion` 讀不懂（沒寫、不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時相同：不遷移，也不會因此被判定為較新。
+- **補充**：`schemaVersion` 沒寫或讀不懂（不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時（第 11 節）相同：不遷移，也不會因此被判定為較新。
 - **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
 - **`jsonToDoc`**：放在 `score-model`，把 `ScoreJSON` 寫進一份 `Y.Doc`。匯入與還原共用；保留 JSON 裡的 id，依陣列順序重新產生 `order`，建好所有內容容器。
 - **測試**（M1a）：一份假的舊版 fixture（`schemaVersion: 0`）與一個只在測試裡註冊的 0 → 1 遷移，兩面都要測：`Y.Doc` 從舊狀態遷移後的 `docToJson`，等於 JSON 遷移後的結果。正式的遷移清單在第一版是空的。
@@ -328,4 +328,4 @@ interface BeatJSON {
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |
 
-- **聲部與小節的數量上限只約束指令與匯入**（host 在 2026-11-13 裁定）：兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。
+- **補充**（host 在 2026-11-13 的裁定）：**聲部與小節的數量上限只約束指令與匯入**。兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

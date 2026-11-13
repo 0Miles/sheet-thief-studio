@@ -87,7 +87,7 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["a schema version that is not an integer", (json) => void (json.schemaVersion = 1.5)],
   // bars
   ["two bars with the same id", (json) => void (json.bars[1]!.id = "b1")],
-  // A bar id is a key of the content of every part, and JSON objects drop this one.
+  // A bar id is a key of the content of every part, and zod's records drop this one.
   [
     "a bar whose id is __proto__",
     (json) => {
