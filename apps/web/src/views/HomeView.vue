@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { AppButton } from "@karyl-chan/ui";
 
+import AppHeader from "../components/AppHeader.vue";
 import { strings } from "../strings";
 </script>
 
 <template>
+  <AppHeader />
   <main class="home">
     <h1>{{ strings.app.name }}</h1>
     <p>{{ strings.app.tagline }}</p>

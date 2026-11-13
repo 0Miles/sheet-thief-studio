@@ -1,10 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { SERVER_ENV } from "./e2e/environment";
+
 // End-to-end tests run against the real server and the built web app, on the ports the
-// project uses in development (8031 and 5183): stop a dev server before running them in CI.
+// project uses in development (8031 and 5183), and against the Postgres and Redis of
+// compose.dev.yaml in databases of their own (e2e/environment.ts). A dev server already on 8031
+// would use the development database: stop it first, Playwright refuses to reuse it.
 export default defineConfig({
   testDir: "e2e",
   testIgnore: "**/measure/**",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -17,8 +22,9 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm --filter @studio/server start",
+      env: SERVER_ENV,
       url: "http://localhost:8031/healthz",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000,
     },
     {
