@@ -6,7 +6,7 @@ import type { Cursor, Flag, ScoreJSON } from "@studio/score-model";
 export interface StudioTestHook {
   /** The open score as plain data; null before one is open. */
   scoreJson(): ScoreJSON | null;
-  /** The member's cursor; null where there is none (M1a only shows the score). */
+  /** The member's cursor; null where there is none (outside the edit views). */
   cursor(): Cursor | null;
   flags(): Flag[];
 }
