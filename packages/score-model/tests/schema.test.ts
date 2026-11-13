@@ -2,7 +2,7 @@
 import fc from "fast-check";
 import { expect, test } from "vitest";
 
-import { importedScoreSchema, MAX_BARS, MAX_IMPORT_BYTES, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "../src/index";
+import { importedScoreSchema, MAX_BARS, MAX_IMPORT_BYTES, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "../src/index";
 import { score } from "./arbitraries";
 
 test("every legal score passes the schema", () => {
@@ -86,7 +86,6 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["an empty artist", (json) => void (json.artist = "")],
   ["a schema version that is not an integer", (json) => void (json.schemaVersion = 1.5)],
   // bars
-  [`more than ${MAX_BARS} bars`, (json) => void (json.bars = Array.from({ length: MAX_BARS + 1 }, (_, index) => ({ id: `b${index}`, timeSig: { numerator: 4, denominator: 4 } })))],
   ["two bars with the same id", (json) => void (json.bars[1]!.id = "b1")],
   ["a numerator of 33", (json) => void (json.bars[0]!.timeSig.numerator = 33)],
   ["a numerator of 0", (json) => void (json.bars[0]!.timeSig.numerator = 0)],
@@ -108,8 +107,6 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["a pickup bar that is not the first", (json) => void (json.bars[1]!.anacrusis = true)],
   ["content for a bar that is not in the score", (json) => void (guitar(json).content.gone = { "0:0": [] })],
   // parts
-  ["17 parts", (json) => void json.parts.push(...copies(drums(json), 14, "d"))],
-  ["16 parts that are not drums", (json) => void (json.parts = [...copies(guitar(json), 8, "g"), ...copies(keys(json), 8, "k")])],
   ["two parts with the same id", (json) => void (json.parts[1]!.id = "gtr")],
   ["a part name of 65 characters", (json) => void (json.parts[0]!.name = "a".repeat(65))],
   ["a part of an unknown kind", (json) => void (json.parts[0]!.kind = "brass" as "fretted")],
@@ -166,6 +163,28 @@ test.each(broken)("the schema rejects %s", (_, breakIt) => {
   const json = band();
   breakIt(json);
   expect(scoreSchema.safeParse(json).success).toBe(false);
+});
+
+const crowded: [string, (json: ScoreJSON) => void][] = [
+  [`more than ${MAX_BARS} bars`, (json) => void (json.bars = Array.from({ length: MAX_BARS + 1 }, (_, index) => ({ id: `b${index}`, timeSig: { numerator: 4, denominator: 4 } })))],
+  ["17 parts", (json) => void json.parts.push(...copies(drums(json), 14, "d"))],
+  ["16 parts that are not drums", (json) => void (json.parts = [...copies(guitar(json), 8, "g"), ...copies(keys(json), 8, "k")])],
+];
+
+test.each(crowded)("a score to import may not have %s; a version may (members adding at the same time)", (_, crowd) => {
+  const json = band();
+  crowd(json);
+  expect(importedScoreSchema.safeParse(json).success).toBe(false);
+  expect(scoreSchema.safeParse(json).success).toBe(true);
+});
+
+test("the band is a legal score to import, at the limits included", () => {
+  const json = band();
+  json.parts.push(...copies(guitar(json), 12, "g"), ...copies(keys(json), 1, "k"));
+  json.bars.push(...Array.from({ length: MAX_BARS - json.bars.length }, (_, index) => ({ id: `more${index}`, timeSig: { numerator: 4, denominator: 4 as const } })));
+  expect(json.parts.filter((part) => part.kind !== "percussion")).toHaveLength(MAX_NON_PERCUSSION_PARTS);
+  expect([json.parts.length, json.bars.length]).toEqual([MAX_PARTS, MAX_BARS]);
+  expect(importedScoreSchema.safeParse(json).error?.issues ?? []).toEqual([]);
 });
 
 test("lengths are counted in UTF-16 code units, at the limit included", () => {

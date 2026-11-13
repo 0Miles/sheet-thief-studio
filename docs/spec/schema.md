@@ -324,3 +324,5 @@ interface BeatJSON {
 | 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後；`importedScoreSchema`） |
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |
+
+- **聲部與小節的數量上限只約束指令與匯入**（host 在 2026-11-13 裁定）：兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

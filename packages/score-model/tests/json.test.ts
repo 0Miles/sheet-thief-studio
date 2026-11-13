@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { addPart, contentOf, createScore, docToJson, insertBars, jsonToDoc, type PartJSON, partsOf, SCHEMA_VERSION, type ScoreJSON } from "../src/index";
+import { addPart, contentOf, createScore, docToJson, insertBars, jsonToDoc, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, migrateJson, type PartJSON, partsOf, SCHEMA_VERSION, type ScoreJSON } from "../src/index";
 import { score } from "./arbitraries";
 
 test("a score written into a document reads back the same", () => {
@@ -92,4 +92,14 @@ test("a score that is not legal, or not of the current schema, is not written", 
   createScore(doc, "Kept");
   expect(() => jsonToDoc({ ...legal, bars: [{ id: "b", timeSig: { numerator: 0, denominator: 4 } }] }, doc)).toThrow();
   expect(docToJson(doc).title).toBe("Kept");
+});
+
+test("a score past the count limits, as members adding bars and parts at the same time can make it, still migrates and restores", () => {
+  const bars = Array.from({ length: MAX_BARS + 1 }, (_, index) => ({ id: `b${index}`, timeSig: { numerator: 4, denominator: 4 as const } }));
+  const guitars = Array.from({ length: MAX_NON_PERCUSSION_PARTS + 1 }, (_, index): PartJSON => ({ id: `g${index}`, name: "Guitar", kind: "fretted", tuning: [64, 59, 55, 50, 45, 40], capo: 0, program: 25, staves: [{ clef: "tab" }], content: {} }));
+  const drums: PartJSON = { id: "d", name: "Drums", kind: "percussion", tuning: [], capo: 0, program: 0, staves: [{ clef: "neutral" }], content: {} };
+  const json: ScoreJSON = { schemaVersion: SCHEMA_VERSION, title: "Crowded", bars, parts: [...guitars, drums] };
+  expect(json.parts.length).toBeGreaterThan(MAX_PARTS);
+  const restored = docToJson(jsonToDoc(migrateJson(json)));
+  expect([restored.bars.length, restored.parts.length]).toEqual([MAX_BARS + 1, MAX_PARTS + 1]);
 });

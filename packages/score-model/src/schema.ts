@@ -291,20 +291,24 @@ export const KIND_DEFAULTS: Record<PartKind, { program: number; staves: Staff[] 
 
 // The score -------------------------------------------------------------------------------------
 
-/** The score as plain data, in score order: what versions, exports, imports and tests read and write. */
+/**
+ * The score as plain data, in score order: what versions, exports, imports and tests read and
+ * write. How many bars and parts it has is not limited here: members adding them at the same
+ * time can pass the limits, and a version of such a score must still be read and restored. The
+ * limits bind the commands and import (importedScoreSchema).
+ */
 export const scoreSchema = metaSchema
   .extend({
     /** In score order. */
-    bars: z.array(barSchema).max(MAX_BARS),
+    bars: z.array(barSchema),
     /** In score order. */
-    parts: z.array(partSchema).max(MAX_PARTS),
+    parts: z.array(partSchema),
   })
   .superRefine((score, context) => {
     const issue = (message: string, path: (string | number)[]) => context.addIssue({ code: "custom", message, path });
     const barIds = new Set(score.bars.map((bar) => bar.id));
     if (barIds.size < score.bars.length) issue("two bars with the same id", ["bars"]);
     if (new Set(score.parts.map((part) => part.id)).size < score.parts.length) issue("two parts with the same id", ["parts"]);
-    if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);
     score.bars.forEach((bar, index) => {
       if (index > 0 && bar.anacrusis) issue("a pickup bar that is not the first", ["bars", index, "anacrusis"]);
     });
@@ -324,8 +328,17 @@ function utf8Length(value: string): number {
   return bytes;
 }
 
-/** A score to import as a new one: a legal score of at most 5 MB once serialized (section 13). */
-export const importedScoreSchema = scoreSchema.refine((score) => utf8Length(JSON.stringify(score)) <= MAX_IMPORT_BYTES, `more than ${MAX_IMPORT_BYTES} bytes of JSON`);
+/**
+ * A score to import as a new one (section 13): a legal score within the limits on bars and
+ * parts, of at most 5 MB once serialized.
+ */
+export const importedScoreSchema = scoreSchema.superRefine((score, context) => {
+  const issue = (message: string, path: string[]) => context.addIssue({ code: "custom", message, path });
+  if (score.bars.length > MAX_BARS) issue(`more than ${MAX_BARS} bars`, ["bars"]);
+  if (score.parts.length > MAX_PARTS) issue(`more than ${MAX_PARTS} parts`, ["parts"]);
+  if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);
+  if (utf8Length(JSON.stringify(score)) > MAX_IMPORT_BYTES) issue(`more than ${MAX_IMPORT_BYTES} bytes of JSON`, []);
+});
 
 // The Yjs document ------------------------------------------------------------------------------
 
