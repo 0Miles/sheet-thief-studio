@@ -95,7 +95,7 @@ Y.Doc
 | `staves` | 恰好 `[{ clef: "tab" }]` | 恰好 `[{ clef: "neutral" }]` | 1–2 個（補充），clef 是 `"treble"`、`"bass"`、`"treble-8vb"` 之一 |
 | 聲線 | 每個譜表 2 條（schema 允許）；介面不提供第二聲線 | 預設一條，允許第二條（手、腳分開） | 每個譜表最多 2 條 |
 
-- `name`：1–64 字元（補充）。
+- `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
 - 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
@@ -238,10 +238,14 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲部：
   - `kind` 讀不懂：整個聲部略過，並標記。
   - fretted 的 `tuning` 讀不懂：整個聲部略過，並標記（補充：沒有調弦就無法放置音符）。
-  - `name` 讀不懂當成空字串、`capo` 當成 0、`program` 當成該種類的預設、`staves` 當成該種類的預設，各自標記（補充）。
+  - `name` 讀不懂當成空字串、`capo` 當成 0、`program` 當成該種類的預設、`staves` 當成該種類的預設，各自標記（補充）。種類的預設（補充）：`program` 是 fretted 25、percussion 0、pitched 0；`staves` 是一個譜表：`tab`、`neutral`、`treble`。非 fretted 的 `tuning` 讀不懂時當成 `[]`，並標記。
+  - `order` 不是字串：整個聲部略過，並標記（補充，和小節相同）。
+  - `content` 不是 `Y.Map`：讀成沒有內容，並標記；某個小節的內容不是 `Y.Map`：那個小節讀成沒有內容，並標記（補充）。
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
+- `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，各自標記。三者都沒寫（還沒建立團譜的空文件）時不標記。
+- 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
 - 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；`observeDeep` 回報某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。
 - 伺服器端的讀取（建立版本、鏡射標題）用同一個函式。
 - 實測（Node 24、i9 桌機）：不快取時，4,000 個拍點逐一 `safeParse` 中位數 6.5 ms、p95 7.2 ms、第一次 20 ms，是 `docToJson` 本身 1.8 ms 的 3.6 倍。
@@ -282,6 +286,8 @@ interface PartJSON {
   program: number;
   staves: { clef: "tab" | "neutral" | "treble" | "bass" | "treble-8vb" }[];
   /** 小節 id → "譜表:聲線" → 拍點。空的聲線可以省略。 */
+  // docToJson 的寫法（補充）：每個有內容容器的小節都在；每個譜表的第一條聲線（"0:0"、"1:0"）一律寫出，
+  // 空的就是 []；第二條聲線只在有拍點時寫出，所以空的第二聲線投影時不產生聲線。
   content: Record<string, Record<string, BeatJSON[]>>;
 }
 
