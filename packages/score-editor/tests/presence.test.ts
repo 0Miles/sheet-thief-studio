@@ -85,3 +85,47 @@ test("→ from a beat typed in the append slot goes on after it, even when anoth
   press("ArrowRight");
   expect(cursor()).toMatchObject({ beatId: beats()[3]!.id, at: "on" });
 });
+
+test("when another member removes the beat under the cursor in the middle of a voice, the cursor lands on the beat that took its place", () => {
+  const { doc, session, press, beats, partId, barIds } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  press("ArrowRight");
+  press("3");
+  press("ArrowRight");
+  press("4");
+  press("ArrowLeft");
+  press("ArrowLeft");
+  const [, second, third] = beats().map((beat) => beat.id);
+  expect(session.cursor?.beatId).toBe(second);
+
+  const { other, send } = otherMember(doc);
+  other.transact(() => contentOf(partsOf(other).get(partId)!).get(barIds[0]!)!.get("0:0")!.delete(1, 1));
+  send();
+  expect(session.cursor).toMatchObject({ beatId: third, at: "on" });
+});
+
+test("a key's command tells the presence once, where the cursor ends, not where it passes during the change", () => {
+  const { session, press, beats } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  const [first] = beats().map((beat) => beat.id);
+  const told: LocalPresence[] = [];
+  session.onPresence((presence) => told.push(presence));
+  press("Delete");
+  press("Delete");
+  expect(told.map((presence) => [presence.cursor?.beatId, presence.cursor?.at])).toEqual([[first, "after"]]);
+});
+
+test("→ from a rest Insert made in the append slot goes on after it, even when another member's beat arrived after it", () => {
+  const { doc, press, beats, partId, barIds, cursor } = sessionOn();
+  press("Insert");
+  const mine = beats()[0]!.id;
+  const { other, send } = otherMember(doc);
+  setFret(other, { ...cursorAt(other, partId, barIds[0]!, 1), beatId: mine, at: "after" }, 9);
+  send();
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: mine, at: "after" });
+});

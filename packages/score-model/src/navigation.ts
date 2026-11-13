@@ -1,6 +1,6 @@
 // Moving the cursor through a score (docs/spec/commands.md, section 3). Nothing here changes the
 // document: no move opens a transaction.
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 import { type Cursor, durationOf } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
@@ -97,19 +97,35 @@ export function moveByLine(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
 }
 
 /**
- * The cursor if its beat (or its anchor) still exists; otherwise the nearest place that does,
- * after an undo or another member's change. A cursor whose beat is gone moves onto the last beat
- * of its voice; an append slot whose anchor is gone, after it. Either way an empty voice leaves
- * its append slot. An append slot others have appended after stays on its anchor. Null when
- * its part, bar or voice is gone.
+ * Where the beat of the cursor stands in its voice, as Yjs keeps it through everyone's changes.
+ * Taken while the beat is there and handed to `settleCursor` later, it tells which beat took the
+ * beat's place once it is removed. Null in the append slot, or when the beat is gone.
  */
-export function settleCursor(doc: Y.Doc, cursor: Cursor): Cursor | null {
+export function beatPositionOf(doc: Y.Doc, cursor: Cursor): Y.RelativePosition | null {
+  if (cursor.at !== "on" || cursor.beatId === null) return null;
+  const voice = voiceOf(doc, cursor);
+  const index = beatIds(voice).indexOf(cursor.beatId);
+  return voice === undefined || index < 0 ? null : Y.createRelativePositionFromTypeIndex(voice, index);
+}
+
+/**
+ * The cursor if its beat (or its anchor) still exists; otherwise the nearest place that does,
+ * after an undo or another member's change (docs/spec/commands.md, section 2). A cursor whose
+ * beat is gone lands on the beat that took its place, the next one, or the one before when it
+ * was the last; that takes `position`, from `beatPositionOf` while the beat was there, and
+ * without it the cursor lands on the last beat. An append slot whose anchor is gone moves after
+ * the last beat; one others have appended after stays on its anchor. A voice left empty leaves
+ * its append slot. Null when its part, bar or voice is gone.
+ */
+export function settleCursor(doc: Y.Doc, cursor: Cursor, position: Y.RelativePosition | null = null): Cursor | null {
   const voice = voiceOf(doc, cursor);
   if (voice === undefined || barsOf(doc).has(cursor.barId) === false) return null;
   if (cursor.at === "after" && cursor.beatId === null) return cursor;
   const ids = beatIds(voice);
   if (cursor.beatId !== null && ids.includes(cursor.beatId)) return cursor;
-  const last = ids.at(-1);
-  if (last === undefined) return { ...cursor, beatId: null, at: "after" };
-  return { ...cursor, beatId: last };
+  if (ids.length === 0) return { ...cursor, beatId: null, at: "after" };
+  // A removed beat's position resolves to the index it had among the beats still there.
+  const where = cursor.at === "on" && position !== null ? Y.createAbsolutePositionFromRelativePosition(position, doc) : null;
+  const index = where?.type === voice ? Math.min(where.index, ids.length - 1) : ids.length - 1;
+  return { ...cursor, beatId: ids[index] as string };
 }

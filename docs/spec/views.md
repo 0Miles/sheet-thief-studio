@@ -124,7 +124,7 @@ interface PresenceState {
 - 唯讀編輯視圖的游標用淡色畫。
 - Read view 裡的成員：`cursor: null`，只出現在成員列表上。
 - 訪客不出現在 Presence，也看不到 Presence。
-- 其他人的游標在遠端修改後，用 `settleCursor` 重新解析位置（`navigation.ts:47-59`）。
+- 其他人的游標在遠端修改後，用 `settleCursor` 重新解析位置（`navigation.ts` 的 `settleCursor`）。
 - 名牌貼在游標旁，遵守 `reservedRects`。
 - 停用的帳號在成員列表上，名稱旁顯示「已停用」（[`accounts.md`](accounts.md)）。
 

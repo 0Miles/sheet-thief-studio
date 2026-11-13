@@ -40,13 +40,13 @@ interface Cursor {
 - 沒有「第一個拍點之前」這個位置。
 - `line`：
   - fretted：弦，1 到弦數，1 是最高音的弦。
-  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts:34-37`、`geometry.ts:42-49`）。
+  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts` 的 `lineRange`、`geometry.ts` 的 `lineOffset`）。
 
-**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8，`coediting.test.ts:46-64,138-166`）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
+**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8；`packages/score-model/tests/coediting.test.ts` 的「beats typed by two members in the same bar at the same time are all kept, each run together」、「two members typing six beats each in the append slot of the same bar keep each their beats together, in the order typed」與「whatever three members do, in whatever order their changes arrive, they end with the same score」）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
 
 - 錨點之後被別人附加了拍點：附加位置畫在錨點之後、他人拍點之前；在附加位置輸入，新拍點也插在那裡。
 - 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts` 的 `settleCursor`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
-- **補充**：游標所在的拍點被刪除：落在那條聲線目前的最後一個拍點上；聲線變空就是空聲線的附加位置。
+- 游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`（owner 在 2026-11-14 裁定）。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
 - 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
 
@@ -255,7 +255,7 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
 ## 9. 同時修改時的規定
 
-- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `coediting.test.ts:90-106`。
+- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」。
 - **放置與貼上小節段**：在既有的 `Y.Array` 上先刪再插，同時輸入的內容保留（5.7）。
 - **內容容器**：客戶端不補缺少的容器，只有伺服器補（[`collab.md`](collab.md)）。
 - **新團譜的初始內容**由伺服器建立。

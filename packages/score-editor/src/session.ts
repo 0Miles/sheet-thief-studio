@@ -3,6 +3,7 @@
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
   barsOf,
+  beatPositionOf,
   type Cursor,
   deleteBeat,
   deleteNote,
@@ -122,6 +123,10 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
    * → takes it as the new anchor (docs/spec/commands.md, 5.1).
    */
   let appended: string | null = null;
+  /** Where the cursor's beat stands, taken each time the cursor moves: a removed beat's place. */
+  let position = start && beatPositionOf(doc, start);
+  /** While a key's command runs: the cursor moves once, where the command puts it. */
+  let running = false;
   const refusedListeners = new Set<() => void>();
   let refused = false;
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
@@ -134,13 +139,28 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     if (samePlace(next, cursor)) return;
     if (next?.at !== "on" || next.beatId !== appended) appended = null;
     cursor = next;
+    position = next && beatPositionOf(doc, next);
     const told = presence();
     for (const listener of presenceListeners) listener(told);
   }
 
-  // Whatever changed the score, the cursor stays on a place that exists.
-  const settle = (): void => moveTo(cursor && settleCursor(doc, cursor));
+  /** The cursor on a place that exists, whatever changed the score. */
+  const settled = (at: Cursor | null): Cursor | null => at && settleCursor(doc, at, position);
+  const settle = (): void => {
+    if (!running) moveTo(settled(cursor));
+  };
   doc.on("afterTransaction", settle);
+
+  /**
+   * Run a command that makes a beat in the append slot (a note typed there, or Insert): when it
+   * does, the next → takes that beat as the new anchor (docs/spec/commands.md, 5.1).
+   */
+  function append(at: Cursor, make: (at: Cursor) => Cursor): Cursor {
+    const next = make(at);
+    // A command that changes nothing returns the cursor it was given.
+    if (at.at === "after" && next !== at) appended = next.beatId;
+    return next;
+  }
 
   function typeDigit(digit: number, at: Cursor, previous: TypedDigit | null): Cursor {
     const second =
@@ -159,7 +179,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       }
     }
     // In the append slot the digit also makes the beat it goes on, and the cursor moves onto it.
-    const next = setFret(doc, at, digit);
+    const next = append(at, (here) => setFret(doc, here, digit));
     lastDigit = { digit, at: now(), cursor: next };
     return next;
   }
@@ -168,11 +188,10 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function shortcut(key: Key): KeyCommand | undefined {
     if (key.code !== "KeyZ" && key.code !== "KeyY") return undefined;
     const redo = key.code === "KeyY" || key.shiftKey === true;
-    return change(() => {
+    return change((at) => {
       if (redo) undo.redo();
       else undo.undo();
-      // The undo's transaction has already settled the cursor on what is left.
-      return cursor;
+      return settled(at);
     });
   }
 
@@ -199,7 +218,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       case "ArrowUp":
         return move((at) => moveByLine(doc, at, -1));
       case "Insert":
-        return change((at) => insertBeat(doc, at));
+        return change((at) => append(at, (here) => insertBeat(doc, here)));
       // The key marked delete on a Mac keyboard sends Backspace (docs/spec/keymap.md, section 2).
       case "Delete":
       case "Backspace":
@@ -246,11 +265,14 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         }
         return true;
       }
-      const before = cursor;
-      const next = command.run(cursor);
+      running = true;
+      let next: Cursor | null;
+      try {
+        next = command.run(cursor);
+      } finally {
+        running = false;
+      }
       moveTo(next);
-      // A beat made in the append slot (a note typed there, or Insert).
-      if (command.changes && before.at === "after" && next?.at === "on") appended = next.beatId;
       return true;
     },
     moveTo,

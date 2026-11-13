@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import {
   addPart,
   barsOf,
+  beatPositionOf,
   contentOf,
   createScore,
   type Cursor,
@@ -175,16 +176,65 @@ function removeBeats(doc: Y.Doc, partId: string, barId: string, index: number, l
   contentOf(partsOf(doc).get(partId)!).get(barId)!.get("0:0")!.delete(index, length);
 }
 
-test("a cursor whose beat is gone settles on the last beat of its voice, or in its append slot once the voice is empty", () => {
+/** Another member's copy of the score: they remove beats there, and the change is handed to ours. */
+function removedByAnother(doc: Y.Doc, partId: string, barId: string, index: number, length: number): void {
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  const before = Y.encodeStateVector(other);
+  removeBeats(other, partId, barId, index, length);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, before));
+}
+
+/** A cursor on each of the five beats of the first bar, and where each stands. */
+function onEachBeat() {
+  const { doc, barIds, partId } = score();
+  write(doc, partId, barIds[0]!, [{ value: 16 }, { value: 16 }, { value: 16 }]);
+  const ids = docToJson(doc).parts[0]!.content[barIds[0]!]!["0:0"]!.map((beat) => beat.id);
+  const cursors = ids.map((beatId): Cursor => ({ ...cursorAt(doc, partId, barIds[0]!, 2), beatId }));
+  return { doc, barIds, partId, ids, cursors, positions: cursors.map((cursor) => beatPositionOf(doc, cursor)) };
+}
+
+test("a cursor whose beat another member removes lands on the beat that took its place", () => {
+  const { doc, barIds, partId, ids, cursors, positions } = onEachBeat();
+  removedByAnother(doc, partId, barIds[0]!, 2, 1);
+  expect(settleCursor(doc, cursors[2]!, positions[2])).toEqual({ ...cursors[2], beatId: ids[3] });
+  // Beats still there stay where they are.
+  expect(settleCursor(doc, cursors[1]!, positions[1])).toEqual(cursors[1]);
+});
+
+test("a cursor whose beat was the last one removed lands on the beat before", () => {
+  const { doc, barIds, partId, ids, cursors, positions } = onEachBeat();
+  removedByAnother(doc, partId, barIds[0]!, 4, 1);
+  expect(settleCursor(doc, cursors[4]!, positions[4])).toEqual({ ...cursors[4], beatId: ids[3] });
+});
+
+test("several beats removed at once: the cursor lands on the first one left after them", () => {
+  const { doc, barIds, partId, ids, cursors, positions } = onEachBeat();
+  removedByAnother(doc, partId, barIds[0]!, 1, 3);
+  expect(settleCursor(doc, cursors[2]!, positions[2])).toEqual({ ...cursors[2], beatId: ids[4] });
+});
+
+test("a cursor whose voice another member empties lands in the append slot of the empty voice", () => {
+  const { doc, barIds, partId, cursors, positions } = onEachBeat();
+  removedByAnother(doc, partId, barIds[0]!, 0, 5);
+  expect(settleCursor(doc, cursors[2]!, positions[2])).toEqual({ ...cursors[2], beatId: null, at: "after" });
+});
+
+test("a beat this member made and then undid leaves the cursor on the beat before it", () => {
   const { doc, barIds, partId, beats } = score();
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
-  const cursor = insertBeat(doc, cursorAt(doc, partId, barIds[0]!), { value: 8 });
-  expect(settleCursor(doc, cursor)).toEqual(cursor);
+  const cursor = insertBeat(doc, { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]!, at: "after" }, { value: 8 });
+  const position = beatPositionOf(doc, cursor);
+  expect(settleCursor(doc, cursor, position)).toEqual(cursor);
   undo.undo();
-  expect(settleCursor(doc, cursor)).toEqual({ ...cursor, beatId: beats[0]![1] });
-  removeBeats(doc, partId, barIds[0]!, 0, 2);
-  expect(settleCursor(doc, cursor)).toEqual({ ...cursor, beatId: null, at: "after" });
-  expect(settleCursor(doc, { ...cursor, partId: "gone" })).toBeNull();
+  expect(settleCursor(doc, cursor, position)).toEqual({ ...cursor, beatId: beats[0]![1] });
+  expect(settleCursor(doc, { ...cursor, partId: "gone" }, position)).toBeNull();
+});
+
+test("without where its beat stood, a cursor whose beat is gone lands on the last beat of its voice", () => {
+  const { doc, barIds, partId, ids, cursors } = onEachBeat();
+  removeBeats(doc, partId, barIds[0]!, 1, 1);
+  expect(settleCursor(doc, cursors[1]!)).toEqual({ ...cursors[1], beatId: ids[4] });
 });
 
 test("an append slot whose anchor is gone settles after the last beat of its voice; one whose anchor is still there stays", () => {
