@@ -11,6 +11,7 @@ import {
   LOCAL,
   moveByBeat,
   moveByLine,
+  moveFromAppendedBeat,
   type PartKind,
   partKindOf,
   partsOf,
@@ -116,6 +117,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
   let cursor = start;
   let lastDigit: TypedDigit | null = null;
+  /**
+   * The beat this member just made in the append slot, while the cursor is still on it: the next
+   * → takes it as the new anchor (docs/spec/commands.md, 5.1).
+   */
+  let appended: string | null = null;
   const refusedListeners = new Set<() => void>();
   let refused = false;
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
@@ -126,6 +132,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
 
   function moveTo(next: Cursor | null): void {
     if (samePlace(next, cursor)) return;
+    if (next?.at !== "on" || next.beatId !== appended) appended = null;
     cursor = next;
     const told = presence();
     for (const listener of presenceListeners) listener(told);
@@ -184,7 +191,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function commonKey(key: Key): KeyCommand | undefined {
     switch (key.key) {
       case "ArrowRight":
-        return move((at) => moveByBeat(doc, at, 1));
+        return move((at) => (at.beatId !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
       case "ArrowLeft":
         return move((at) => moveByBeat(doc, at, -1));
       case "ArrowDown":
@@ -239,7 +246,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         }
         return true;
       }
-      moveTo(command.run(cursor));
+      const before = cursor;
+      const next = command.run(cursor);
+      moveTo(next);
+      // A beat made in the append slot (a note typed there, or Insert).
+      if (command.changes && before.at === "after" && next?.at === "on") appended = next.beatId;
       return true;
     },
     moveTo,

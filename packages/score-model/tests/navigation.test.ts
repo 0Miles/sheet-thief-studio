@@ -14,6 +14,7 @@ import {
   LOCAL,
   moveByBeat,
   moveByLine,
+  moveFromAppendedBeat,
   type NewBeat,
   observeScore,
   partsOf,
@@ -144,6 +145,20 @@ test("← from an append slot goes back to its anchor, even when others have app
   const slot: Cursor = { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]!, at: "after" };
   insertBeat(doc, slot, quarter);
   expect(placeOf(barIds, beats, moveByBeat(doc, slot, -1))).toEqual([0, 1, "on"]);
+});
+
+test("→ from a beat just made in the append slot takes it as the new anchor, whatever others have appended after it", () => {
+  const { doc, barIds, partId, beats } = score();
+  const mine = insertBeat(doc, { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]!, at: "after" }, { value: 8 });
+  insertBeat(doc, { ...mine, at: "after" }, { value: 8 });
+  expect(moveFromAppendedBeat(doc, mine)).toEqual({ ...mine, at: "after" });
+  // Once the bar is full, → goes on to the next bar, as from any last beat.
+  insertBeat(doc, { ...mine, at: "after" }, { value: 4 });
+  expect(placeOf(barIds, beats, moveFromAppendedBeat(doc, mine))).toEqual([1, -1, "after"]);
+  // At the end of the score it stays.
+  setDuration(doc, cursorAt(doc, partId, barIds[4]!), { value: 1 });
+  const last = cursorAt(doc, partId, barIds[4]!);
+  expect(moveFromAppendedBeat(doc, last)).toEqual(last);
 });
 
 test("the cursor moves across the strings of its part and stops at the outer ones", () => {

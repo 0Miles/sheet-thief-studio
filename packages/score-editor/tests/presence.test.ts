@@ -61,3 +61,27 @@ test("when another member removes the beat under the cursor, the cursor settles 
   expect(session.cursor?.beatId).toBe(first);
   expect(told.map((presence) => presence.cursor?.beatId)).toEqual([first]);
 });
+
+test("→ from a beat typed in the append slot goes on after it, even when another member's beats arrived after it meanwhile", () => {
+  const { doc, press, beats, partId, barIds, cursor } = sessionOn();
+  press("1");
+  press("+");
+  press("ArrowRight");
+  press("2");
+  const mine = beats()[1]!.id;
+  const { other, send } = otherMember(doc);
+  setFret(other, { ...cursorAt(other, partId, barIds[0]!, 1), beatId: mine, at: "after" }, 9);
+  send();
+
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: mine, at: "after" });
+  press("3");
+  const frets = () => beats().map((beat) => beat.notes.s6?.fret ?? beat.notes.s1?.fret);
+  expect(frets()).toEqual([1, 2, 3, 9]);
+
+  // Once the cursor has left that beat, → is the plain one again: on to the next beat.
+  press("ArrowLeft");
+  press("ArrowRight");
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: beats()[3]!.id, at: "on" });
+});

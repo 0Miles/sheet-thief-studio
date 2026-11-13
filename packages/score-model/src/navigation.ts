@@ -39,6 +39,19 @@ function lastBeat(doc: Y.Doc, cursor: Cursor, barId: string): Cursor {
   return last === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId: last, at: "on" };
 }
 
+/** The first place of the bar after (`step` 1) or the last beat of the one before (-1); the cursor itself at either end of the score. */
+function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  const order = ordered(barsOf(doc));
+  const barId = order[order.indexOf(cursor.barId) + step];
+  if (barId === undefined) return cursor;
+  return step === 1 ? firstPlace(doc, cursor, barId) : lastBeat(doc, cursor, barId);
+}
+
+/** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */
+function pastLastBeat(doc: Y.Doc, cursor: Cursor): Cursor {
+  return isUnderfull(doc, cursor) ? { ...cursor, at: "after" } : toNextBar(doc, cursor, 1);
+}
+
 /**
  * The cursor one place later (`step` 1, →) or earlier (-1, ←). → goes to the next beat; from the
  * last beat into the append slot when the bar is not full, otherwise (and from the append slot)
@@ -52,18 +65,27 @@ export function moveByBeat(doc: Y.Doc, from: Cursor, step: 1 | -1): Cursor {
   const index = cursor.beatId === null ? -1 : ids.indexOf(cursor.beatId);
   if (step === 1 && cursor.at === "on") {
     const next = ids[index + 1];
-    if (next !== undefined) return { ...cursor, beatId: next };
-    if (isUnderfull(doc, cursor)) return { ...cursor, at: "after" };
+    return next === undefined ? pastLastBeat(doc, cursor) : { ...cursor, beatId: next };
   }
   if (step === -1) {
     if (cursor.at === "after" && cursor.beatId !== null) return { ...cursor, at: "on" };
     const before = ids[index - 1];
     if (cursor.at === "on" && before !== undefined) return { ...cursor, beatId: before };
   }
-  const order = ordered(barsOf(doc));
-  const barId = order[order.indexOf(cursor.barId) + step];
-  if (barId === undefined) return cursor;
-  return step === 1 ? firstPlace(doc, cursor, barId) : lastBeat(doc, cursor, barId);
+  return toNextBar(doc, cursor, step);
+}
+
+/**
+ * → from the beat just made by typing in the append slot (docs/spec/commands.md, 5.1): that
+ * beat is the new anchor, as if it were still the last of its voice, even when others have
+ * appended after it meanwhile. So a member typing beat after beat keeps them together while
+ * someone else types in the same bar. Its append slot when the bar is not full, else the first
+ * place of the next bar.
+ */
+export function moveFromAppendedBeat(doc: Y.Doc, from: Cursor): Cursor {
+  const cursor = settleCursor(doc, from);
+  if (cursor === null) return from;
+  return cursor.at === "on" ? pastLastBeat(doc, cursor) : moveByBeat(doc, cursor, 1);
 }
 
 /** How many lines the cursor can stand on in a part: its strings when fretted, else the staff positions of a five-line staff with two ledger lines each side. */
