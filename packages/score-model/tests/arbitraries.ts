@@ -146,7 +146,8 @@ export function score({ maxBars = 3, maxParts = 3 } = {}): fc.Arbitrary<ScoreJSO
       {
         title: text(0, 100),
         artist: text(1, 100),
-        barIds: fc.uniqueArray(id, { maxLength: maxBars }),
+        // fast-check likes to try __proto__, which no bar may be called.
+        barIds: fc.uniqueArray(id.filter((value) => value !== "__proto__"), { maxLength: maxBars }),
         partIds: fc.uniqueArray(id, { maxLength: maxParts }),
       },
       { requiredKeys: ["title", "barIds", "partIds"] },

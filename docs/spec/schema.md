@@ -48,7 +48,7 @@ Y.Doc
 
 | 欄位 | 形狀 | 語意 |
 |---|---|---|
-| `id` | string | `bars` 的鍵，不另存成欄位 |
+| `id` | string | `bars` 的鍵，不另存成欄位。**補充**：不得是 `__proto__`：小節 id 是 `ScoreJSON` 裡每個聲部 `content` 物件的鍵，而 JSON 物件（與 zod 的 record）不保留這個鍵。讀取時略過這樣的小節（所有聲部一起），並標 `invalidContent`（`bar`） |
 | `order` | string | fractional index 排序鍵 |
 | `timeSig` | `{ numerator, denominator }` | 每個小節都有，必填 |
 | `tempo?` | number | 每分鐘幾個四分音符，「從這小節起」；不寫表示不變；第一小節沒寫時用 120（`projection.ts:16`） |

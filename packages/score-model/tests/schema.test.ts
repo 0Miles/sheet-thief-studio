@@ -87,6 +87,14 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["a schema version that is not an integer", (json) => void (json.schemaVersion = 1.5)],
   // bars
   ["two bars with the same id", (json) => void (json.bars[1]!.id = "b1")],
+  // A bar id is a key of the content of every part, and JSON objects drop this one.
+  [
+    "a bar whose id is __proto__",
+    (json) => {
+      json.bars[1]!.id = "__proto__";
+      for (const part of json.parts) delete part.content.b2;
+    },
+  ],
   ["a numerator of 33", (json) => void (json.bars[0]!.timeSig.numerator = 33)],
   ["a numerator of 0", (json) => void (json.bars[0]!.timeSig.numerator = 0)],
   ["a denominator of 3", (json) => void (json.bars[0]!.timeSig.denominator = 3 as 4)],

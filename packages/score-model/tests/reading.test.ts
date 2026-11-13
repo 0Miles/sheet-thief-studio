@@ -287,7 +287,7 @@ test("whatever is written anywhere in a document, reading does not throw and giv
   );
 });
 
-test("a bar id or a beat field named __proto__ is read as any other name, never as a prototype", () => {
+test("a bar whose id is __proto__ is left out of every part and flagged; a beat field of that name is ignored", () => {
   const { doc, part, beat } = band();
   const bar = new Y.Map<unknown>();
   bar.set("order", "z");
@@ -297,10 +297,11 @@ test("a bar id or a beat field named __proto__ is read as any other name, never 
   beat(0).set("__proto__", { pop: true });
   const { score: json, invalid } = readScore(doc);
   const content = json.parts[0]!.content;
-  expect(json.bars.map((item) => item.id)).toEqual(["b1", "b2", "__proto__"]);
+  expect(json.bars.map((item) => item.id)).toEqual(["b1", "b2"]);
   expect(Object.getPrototypeOf(content)).toBe(Object.prototype);
-  expect(Object.keys(content)).toEqual(["b1", "b2", "__proto__"]);
-  expect(content["__proto__"]).toEqual({ "0:0": [] });
+  expect(Object.keys(content)).toEqual(["b1", "b2"]);
   expect(content.b1!["0:0"]![0]).toEqual({ id: "x1", value: 4, dots: 0, notes: { s6: { fret: 3 } } });
-  expect(invalid).toEqual([]);
+  expect(invalid).toEqual([{ kind: "invalidContent", barId: "__proto__", what: "bar" }]);
+  // What reading gives can be written back: nothing in it is lost on the way.
+  expect(docToJson(jsonToDoc(json))).toEqual(json);
 });

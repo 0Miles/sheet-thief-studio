@@ -288,7 +288,13 @@ export function readScore(doc: Y.Doc): ScoreRead {
     if (parsed.success && parsed.data !== undefined) read.artist = parsed.data;
     else invalid.push(flag({}, "meta.artist"));
   }
-  read.bars = inOrder(barsOf(doc), "bar", invalid).map(([id, bar], index) => readBar(id, bar, index === 0, invalid));
+  const placed = inOrder(barsOf(doc), "bar", invalid).filter(([id]) => {
+    // A bar whose id no JSON object keeps as a key could not be written back: left out of every part.
+    if (barSchema.shape.id.safeParse(id).success) return true;
+    invalid.push(flag({ barId: id }, "bar"));
+    return false;
+  });
+  read.bars = placed.map(([id, bar], index) => readBar(id, bar, index === 0, invalid));
   const barIds = read.bars.map((bar) => bar.id);
   const reuse = !changing.has(doc);
   read.parts = inOrder(partsOf(doc), "part", invalid).flatMap(([id, part]) => readPart(id, part, barIds, reuse, invalid) ?? []);
