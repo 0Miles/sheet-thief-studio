@@ -15,6 +15,20 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The server's tests use a real Postgres and Redis, on the ports of compose.dev.yaml.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: studio_test
+        ports: ["5438:5432"]
+        options: --health-cmd "pg_isready -U studio -d studio_test" --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6388:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,10 +51,23 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studio/web build
 
-  # Two browsers co-editing one score through the real server (docs/spike-report.md, S4).
+  # The pages through a real browser, against the real server, Postgres and Redis.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: studio_e2e
+        ports: ["5438:5432"]
+        options: --health-cmd "pg_isready -U studio -d studio_e2e" --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6388:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

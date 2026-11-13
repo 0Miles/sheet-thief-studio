@@ -13,6 +13,8 @@ export interface Config {
   redisUrl: string;
   /** The origin the web app is served from; requests that change something must come from it. */
   publicOrigin: string;
+  /** The addresses of the proxy in front (nginx), whose `X-Forwarded-For` tells the client's IP. */
+  trustedProxies: string;
   sessionCookie: CookieSettings;
 }
 
@@ -42,6 +44,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: setting("DATABASE_URL", "postgres://studio:studio@localhost:5438/studio"),
     redisUrl: setting("REDIS_URL", "redis://localhost:6388/0"),
     publicOrigin: setting("PUBLIC_ORIGIN", "http://localhost:5183"),
+    trustedProxies: env.TRUSTED_PROXIES ?? "loopback",
     sessionCookie: sessionCookie(env),
   };
 }

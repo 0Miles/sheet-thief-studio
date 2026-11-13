@@ -1,5 +1,9 @@
 // What the server's tests share: the real Postgres and Redis of compose.dev.yaml (CI starts
 // service containers on the same ports), in databases that belong to the tests only.
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+import type { FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 
@@ -39,3 +43,35 @@ export function testConfig(env: NodeJS.ProcessEnv = {}): Config {
 }
 
 export { buildApp };
+
+/** Run the CLI as the `cli` script does, with `input` piped to its stdin; returns its exit code and output. */
+export function cli(args: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const child = spawn(process.execPath, ["--import", "tsx", "src/cliMain.ts", ...args], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+  });
+  const out: string[] = [];
+  const err: string[] = [];
+  child.stdout.on("data", (chunk) => out.push(String(chunk)));
+  child.stderr.on("data", (chunk) => err.push(String(chunk)));
+  child.stdin.end(input);
+  return new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout: out.join(""), stderr: err.join("") }));
+  });
+}
+
+/** Log in as the web app does: a JSON body, from our own origin. */
+export function login(app: FastifyInstance, username: string, password: string, options: { remoteAddress?: string; cookies?: Record<string, string> } = {}) {
+  return app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { username, password }, ...options });
+}
+
+/** The session cookie a response sets, by its name in the test config. */
+export function sessionCookie(response: { cookies: Array<{ name: string; value: string }> }, name = "__Host-studio_session") {
+  return response.cookies.find((cookie) => cookie.name === name);
+}
+
+/** Who the session with this id belongs to, as `GET /api/me` answers. */
+export function whoAmI(app: FastifyInstance, sessionId: string, name = "__Host-studio_session") {
+  return app.inject({ method: "GET", url: "/api/me", cookies: { [name]: sessionId } });
+}
