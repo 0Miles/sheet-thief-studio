@@ -10,7 +10,7 @@
 | `packages/score-editor` | `EditorSession`：Cursor、Selection、`UndoManager`、按鍵 → Command、唯讀旗標、Presence 的本機狀態；三種視圖的判定函式；平台層（抽象組合、`detectKeyPlatform`、`formatChord`） | vitest 加真的 `Y.Doc`，不需要瀏覽器。判定函式窮舉所有組合（[`views.md`](views.md)）；平台層對每個綁定、兩個平台跑同一組檢查（[`keymap.md`](keymap.md) 第 1.3 節） |
 | `packages/score-render` | 投影、`replaceBars`、聲道分配、匯入、匯出 | vitest（jsdom）。聲音用 alphaTab 的 `MidiFileGenerator` 產生 MIDI 再檢查（`tests/sound.test.ts` 的寫法） |
 | `apps/server` | API、session、權限、Hocuspocus 掛鉤、版本、定時工作 | vitest，一律打**真的** Postgres 與 Redis：本機用 `compose.dev.yaml`，CI 用 service containers；不 mock 資料庫。共編測試在 Node 裡用真的 `@hocuspocus/provider` 連線（Node 22 內建 WebSocket；CI 用 Node 22，`ci.yml:23`） |
-| `apps/web` | 頁面與整合 | Playwright e2e，經由真的鍵盤與介面操作 |
+| `apps/web` | 頁面與整合 | Playwright e2e，經由真的鍵盤與介面操作。**補充**（#19）：疊層避開保留區域的純函式（`src/overlay.ts`）另外有 vitest（`tests/overlay.test.ts`） |
 | `services/recognizer` | 辨識核心、契約出口、#27 | pytest，在裝了 OCR 套件的 Docker image 裡跑 |
 | 契約 | 辨識服務的中間模型 JSON | Python 與 TypeScript 兩邊讀同一批 fixture（[`recognizer.md`](recognizer.md)） |
 

@@ -118,7 +118,8 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  // Keys that go to an input method (229: some browsers send it before `isComposing` is set).
+  // Keys that go to an input method. Safari ends a composition with a keydown whose `isComposing`
+  // is false and whose keyCode is 229 (docs/spec/keymap.md, 1.1).
   if (session === undefined || event.isComposing || event.keyCode === 229) return;
   if (session.press(event)) event.preventDefault();
 }

@@ -113,9 +113,8 @@ export interface DrawnExtent {
 /**
  * The areas no overlay may cover (docs/adr/0003, docs/spec/views.md section 9): where alphaTab
  * draws its attribution mark, above the last bar of the first system, ending at its barline.
- * The mark has no element of its own, so the whole room above that bar's top staff is reserved,
- * from the top of the system down to the first staff line, as wide as the mark at the bar's
- * right edge. None when alphaTab draws no mark: `barCount` bars in the score, `trackCount` tracks drawn.
+ * The mark has no element of its own, so the room above the right end of that bar's top staff is
+ * reserved, from the top of the system down to the first staff line, as wide as the mark. None when alphaTab draws no mark: `barCount` bars in the score, `trackCount` tracks drawn.
  */
 export function reservedRects(lookup: BoundsLookup, { barCount, trackCount }: DrawnExtent, scale: number): Rect[] {
   if (barCount <= MARK_FREE_BARS && trackCount <= MARK_FREE_TRACKS) return [];

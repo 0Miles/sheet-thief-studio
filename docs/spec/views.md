@@ -133,7 +133,7 @@ interface PresenceState {
 - `ScoreRenderer.reservedRects(): Rect[]`：疊層不得覆蓋的區域。實作是從 `boundsLookup` 取第一行譜最後一個小節上方的區域，也就是 alphaTab 標記所在的位置；名稱不提 alphaTab（`types.ts:1-2`）。
 - 所有疊層都不得畫進這些區域：游標、名牌、選取框、Flag 框、樂句預覽、固定的播放列、提示訊息（補充）。
 - 遇到衝突時，疊層移開（例如名牌改貼在游標下方），不是遮住標記。
-  - **補充**（#19）：標記沒有自己的範圍可查，所以保留區域取保守的範圍：從第一行譜的上緣到最上面那個譜表的第一條線，橫跨最後一個小節，而且至少和標記一樣寬。游標在那個小節的第一條弦上時會伸進去一點，伸進去的部分切掉（`apps/web/src/overlay.ts` 的 `clearOf`）。
+  - **補充**（#19）：標記沒有自己的範圍可查，所以保留區域取保守的範圍：在第一行譜最後一個小節的右端，和標記一樣寬（`geometry.ts` 的 `MARK_WIDTH`），從第一行譜的上緣到最上面那個譜表的第一條線。伸進這個區域的疊層，伸進去的部分切掉；整個在裡面的移到它下方（`apps/web/src/overlay.ts` 的 `clearOf`）。例如游標停在那個小節第一條弦的附加位置時，上緣會伸進去一點，那一截被切掉。
   - **補充**（#19）：疊層層裡每個保留區域放一個看不見、不接收滑鼠的 `<rect data-reserved>`，e2e 從 DOM 讀它，不必擴充 `__studioTest`。
 - e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽（[`testing.md`](testing.md)）。
 - 標記沒有自己的 DOM 元素，它和譜線畫在同一條 path 裡（`spike-report.md:54`），所以只能這樣斷言；目視確認仍是人工項目。
@@ -147,4 +147,4 @@ interface PresenceState {
 - **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。
-  - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機沒有還沒送出的修改（`provider.isSynced && provider.unsyncedChanges === 0`）；有修改還沒送出時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。
+  - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機的修改都已經由伺服器確認收到（`provider.isSynced && provider.unsyncedChanges === 0`；`unsyncedChanges` 在伺服器回覆 SyncStatus 時才減少）；還有修改沒被確認時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。
