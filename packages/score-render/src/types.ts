@@ -42,6 +42,11 @@ export interface ScoreRenderer {
   boundsOf(cursor: Cursor): Rect | null;
   /** The cursor nearest to a point of the page, or null outside any bar. */
   hitTest(x: number, y: number): Cursor | null;
+  /**
+   * Areas of the page that no overlay may cover (cursors, name tags, selections, notices...):
+   * an overlay that would reach into one moves away from it. Empty before a drawing is laid out.
+   */
+  reservedRects(): Rect[];
   /** Called every time a drawing is laid out and `boundsOf` answers for it. */
   onRendered(listener: (event: RenderedEvent) => void): Unsubscribe;
   /**
