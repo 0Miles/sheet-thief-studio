@@ -45,7 +45,7 @@ export interface Collab {
    * Returns how many were closed.
    */
   closeConnections(which: ConnectionsToClose, event: CloseEvent): number;
-  /** The ids of the scores whose documents are in memory now. */
+  /** The ids of the scores whose documents are in memory now. For diagnostics and tests only. */
   loadedScores(): string[];
 }
 
@@ -90,8 +90,14 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       register.set(connection, { ...context, scoreId: documentName });
       connection.onClose(() => register.delete(connection));
       // The document was loaded between onAuthenticate and here, and the connection was not in
-      // the register yet: a session that ended meanwhile closed nothing. Close it now.
-      if (!(await sessions.isActive(context.sessionId))) close(connection, Unauthorized);
+      // the register yet: a session that ended meanwhile closed nothing. Close it now. Closed
+      // too when the session cannot be checked: Hocuspocus would leave the connection open.
+      try {
+        if (!(await sessions.isActive(context.sessionId))) close(connection, Unauthorized);
+      } catch (error) {
+        app.log.error({ err: error }, "could not check the session of a new collab connection");
+        close(connection, Unauthorized);
+      }
     },
     async onLoadDocument({ documentName, document }) {
       // Authentication has found the score; a direct connection only ever opens one that exists.

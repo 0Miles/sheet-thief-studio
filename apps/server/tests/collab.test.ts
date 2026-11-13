@@ -3,12 +3,12 @@
 import { randomUUID } from "node:crypto";
 
 import { Forbidden } from "@hocuspocus/common";
+import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { Role } from "@studio/contracts";
 import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
-import { HocuspocusProvider } from "@hocuspocus/provider";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
@@ -40,6 +40,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const { provider } of opened) provider.destroy();
   for (const app of apps) await app.close();
   apps = [];
@@ -226,7 +227,8 @@ test("a session that ends while the document is being loaded leaves no connectio
   const id = await createScore(app, session);
   const ticket = await ticketFor(app, id, session);
   // The ticket has passed onAuthenticate's checks; the session ends while the document comes
-  // from Postgres, before the connection is in the register.
+  // from Postgres, before the connection is in the register. Loading a document is the one
+  // caller of Score.findOne (liveScore in src/scores.ts): the spy stands in that window.
   const load = Score.findOne.bind(Score);
   const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
     await app.sessions.end({ sessionId: session });
@@ -238,6 +240,20 @@ test("a session that ends while the document is being loaded leaves no connectio
   const closed = await socketClosed(provider);
 
   expect(loading).toHaveBeenCalledOnce();
-  loading.mockRestore();
   expect(closed).toBe(4401);
+});
+
+test("a connection whose session cannot be checked once its document is loaded is closed", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  const id = await createScore(app, session);
+  const ticket = await ticketFor(app, id, session);
+  // onAuthenticate's check passes; the one after the document is loaded fails (Redis down).
+  const checks = vi.spyOn(app.sessions, "isActive").mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("Redis is not answering"));
+
+  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
+  opened.push({ provider, doc: provider.document });
+
+  expect(await socketClosed(provider)).toBe(4401);
+  expect(checks).toHaveBeenCalledTimes(2);
 });
