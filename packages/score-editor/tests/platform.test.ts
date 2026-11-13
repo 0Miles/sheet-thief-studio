@@ -82,10 +82,9 @@ describe.each(PLATFORMS)("on %s", (platform) => {
   test.each(KEY_BINDINGS.map((binding) => [nameOf(binding), binding] as const))("%s is on no key the platform keeps for itself", (_, binding) => {
     const forbidden = FORBIDDEN_KEYS[platform].map((text) => comboOf(text, platform));
     for (const combo of combosOf(binding, platform)) {
-      const taken = forbidden.find((entry) =>
-        entry.code === "*" ? MODIFIER_FLAGS.every((flag) => !entry[flag] || combo[flag]) : entry.code === combo.code && MODIFIER_FLAGS.every((flag) => entry[flag] === combo[flag]),
-      );
-      expect(taken && `${comboName(combo, platform)} is kept by the platform (${comboName(taken, platform)})`).toBeUndefined();
+      const name = comboName(combo, platform);
+      const taken = forbidden.find((entry) => (entry.code === "*" ? MODIFIER_FLAGS.every((flag) => !entry[flag] || combo[flag]) : comboName(entry, platform) === name));
+      expect(taken && `${name} is kept by the platform (${comboName(taken, platform)})`).toBeUndefined();
     }
   });
 

@@ -56,6 +56,12 @@ const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
 /** The digits of a fret, on the row of digits and on the numeric keypad. */
 const FRET_KEYS = DIGITS.flatMap((digit) => [`Digit${digit}`, `Numpad${digit}`]);
 
+/** The keys of the browser's tabs and windows, with Ctrl or Cmd, and Shift or not. */
+const TAB_KEYS = ["KeyT", "KeyW", "KeyN"].flatMap((code) => [code, `Shift+${code}`]);
+
+/** The keys of the browser's zoom, with Ctrl or Cmd. */
+const ZOOM_KEYS = ["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"];
+
 /** The same keys on both platforms. */
 const both = (...keys: string[]): Record<KeyPlatform, readonly string[]> => ({ other: keys, mac: keys });
 
@@ -89,7 +95,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
  */
 export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
   other: [
-    ...["KeyT", "KeyW", "KeyN"].flatMap((code) => [`Ctrl+${code}`, `Ctrl+Shift+${code}`]),
+    ...TAB_KEYS.map((key) => `Ctrl+${key}`),
     "Ctrl+Tab",
     "Ctrl+PageUp",
     "Ctrl+PageDown",
@@ -110,7 +116,7 @@ export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
     ...["P", "F", "H", "J", "D", "E", "K", "U"].map((letter) => `Ctrl+Key${letter}`),
     "Ctrl+Shift+KeyB",
     // Zoom.
-    ...["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"].map((key) => `Ctrl+${key}`),
+    ...ZOOM_KEYS.map((key) => `Ctrl+${key}`),
     // The menus of Firefox on Windows (Alt+D is the address bar).
     ...LETTERS.map((letter) => `Alt+Key${letter}`),
     // Linux desktops switch workspaces with them; on Windows, AltGr is Ctrl+Alt.
@@ -138,7 +144,7 @@ export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
     "Cmd+Option+KeyD",
     // The browser's: tabs and windows, the address bar, reloading, back and forward, finding,
     // printing, saving, bookmarks, history, settings, zoom, the developer tools, full screen.
-    ...["KeyT", "KeyW", "KeyN"].flatMap((code) => [`Cmd+${code}`, `Cmd+Shift+${code}`]),
+    ...TAB_KEYS.map((key) => `Cmd+${key}`),
     ...DIGITS.slice(1).map((digit) => `Cmd+Digit${digit}`),
     "Cmd+Option+ArrowLeft",
     "Cmd+Option+ArrowRight",
@@ -156,7 +162,7 @@ export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
     "Cmd+Shift+KeyB",
     "Cmd+Option+KeyB",
     "Cmd+Comma",
-    ...["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0"].map((key) => `Cmd+${key}`),
+    ...ZOOM_KEYS.map((key) => `Cmd+${key}`),
     ...["I", "J", "C", "U"].map((letter) => `Cmd+Option+Key${letter}`),
     "Ctrl+Cmd+KeyF",
     // Option with a letter types a character, or is a dead key: a Mac binds none (keymap.md, 1.2).

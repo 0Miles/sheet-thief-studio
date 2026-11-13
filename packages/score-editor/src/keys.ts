@@ -183,7 +183,9 @@ function bindingsOn(platform: KeyPlatform): Map<string, KeyBinding[]> {
     for (const binding of KEY_BINDINGS) {
       for (const chord of chordsOf(binding, platform)) {
         const name = comboName(resolveChord(chord, platform), platform);
-        byKeys.set(name, [...(byKeys.get(name) ?? []), binding]);
+        const bindings = byKeys.get(name);
+        if (bindings === undefined) byKeys.set(name, [binding]);
+        else bindings.push(binding);
       }
     }
     bindingsByKeys.set(platform, byKeys);
