@@ -9,8 +9,15 @@ import { type BarJSON, type BeatJSON, type NoteJSON, type PartJSON, SCHEMA_VERSI
 const id = fc.string({ minLength: 1, maxLength: 10 });
 const midi = fc.integer({ min: 0, max: 127 });
 const yes = fc.constant(true as const);
-/** Up to `max` characters, each one UTF-16 code unit. */
-const text = (min: number, max: number) => fc.string({ minLength: min, maxLength: max });
+/** Characters of one, two or three UTF-16 code units: ASCII, CJK, an accent, an emoji. */
+const unit = fc.oneof({ weight: 6, arbitrary: fc.string({ minLength: 1, maxLength: 1 }) }, { weight: 1, arbitrary: fc.constantFrom("譜", "é", "😀") });
+
+/** From `min` to `max` UTF-16 code units: ASCII up to the limit, or any text within it. */
+const text = (min: number, max: number) =>
+  fc.oneof(
+    fc.string({ minLength: min, maxLength: max }),
+    fc.string({ unit, minLength: min, maxLength: max }).filter((value) => value.length >= min && value.length <= max),
+  );
 
 const timeSig = fc.record({ numerator: fc.integer({ min: 1, max: 32 }), denominator: fc.constantFrom(1, 2, 4, 8, 16, 32) });
 

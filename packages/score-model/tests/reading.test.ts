@@ -140,6 +140,31 @@ test("a bar that cannot be placed in the score is left out of every part, so tha
   ]);
 });
 
+test("a part that cannot be placed in the score, a part whose content is not a map, and a bar content that is not a map are flagged", () => {
+  const { doc, part } = band();
+  partsOf(doc).set("junk", "not a part" as unknown as Y.Map<unknown>);
+  part("drm").set("order", null);
+  const first = readScore(doc);
+  expect(first.score.parts.map((item) => item.id)).toEqual(["gtr"]);
+  expect(first.invalid.map((item) => [item.partId, item.what]).sort()).toEqual([
+    ["drm", "part.order"],
+    ["junk", "part"],
+  ]);
+
+  const other = band();
+  contentOf(other.part("gtr")).set("b1", [] as unknown as Y.Map<Y.Array<YBeat>>);
+  other.part("drm").set("content", "none");
+  const second = readScore(other.doc);
+  expect(second.score.parts.map((item) => [item.id, Object.keys(item.content)])).toEqual([
+    ["gtr", ["b2"]],
+    ["drm", []],
+  ]);
+  expect(second.invalid).toEqual([
+    { kind: "invalidContent", partId: "gtr", barId: "b1", what: "content" },
+    { kind: "invalidContent", partId: "drm", what: "part.content" },
+  ]);
+});
+
 test("a part of no known kind, or a fretted part with no tuning that can be read, is left out whole", () => {
   const { doc, part } = band();
   part("drm").set("kind", "brass");
