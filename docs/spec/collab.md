@@ -133,7 +133,7 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 
 - 同時正在被別人修改的內容會消失；事前存下的版本就是保險。
 - `jsonToDoc` 放在 `score-model`，和匯入共用。
-- **補充**：`/scores/:id/versions` 是團譜頁裡的一個路由，和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider；`replaceScore` 在這份文件上執行，完成後回到 `/scores/:id`。同一個分頁可以 `Ctrl+Z` 復原這次還原。
+- **補充**：`/scores/:id/versions` 是團譜頁裡的一個路由，和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider；`replaceScore` 在這份文件上執行，完成後回到 `/scores/:id`。同一個分頁可以用復原鍵（`Ctrl+Z`，Mac 是 `Cmd+Z`）復原這次還原。
 - 不做「還原成新團譜」，不做逐小節的差異比對或合併。
 
 ### 8.6 預覽（M5）

@@ -1,6 +1,6 @@
 # Command、Cursor、Selection
 
-編輯模型：游標、選取、每一個 Command 的語意、復原。鍵位見 [`keymap.md`](keymap.md)，文件的形狀見 [`schema.md`](schema.md)。標「補充」的是 spec 撰寫者保守補上的細節。
+編輯模型：游標、選取、每一個 Command 的語意、復原。鍵位見 [`keymap.md`](keymap.md)，文件的形狀見 [`schema.md`](schema.md)。標「補充」的是 spec 撰寫者保守補上的細節。這份文件提到的鍵用 Windows、Linux 的寫法；macOS 的對應鍵見 [`keymap.md`](keymap.md) 第 2 節。
 
 ## 1. 通則
 
@@ -293,7 +293,7 @@ Fretted 的調弦選項，依弦數套用：
 - **補充**：至少要選 1 個聲部；聲部上限同第 7.1 節；拍號與速度的範圍同 [`schema.md`](schema.md) 第 3 節。
 - 建立由伺服器做：伺服器以參與者身分建立文件與初始內容（[`collab.md`](collab.md)）。
 
-所有的預設值都暫定，等 owner 確認（[`README.md`](README.md) 的「等待 owner 裁定」）。
+owner 在 2026-11-13 確認了預設表與這些預設值（[`README.md`](README.md) 的「owner 的裁定」）。
 
 ## 11. 上限
 

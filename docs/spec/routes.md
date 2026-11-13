@@ -13,9 +13,9 @@
 | `/scores/:id/settings` | 成員、唯讀連結、擁有權轉移、刪除 | M1a |
 | `/scores/:id/versions` | 版本列表（預覽、命名、還原） | M5 |
 | `/s/:token` | 訪客的 Read view，網址列不換成團譜 id | M1a |
-| `/phrases` | 樂句庫，含「從圖片辨識」 | M4 |
-| `/phrases/:id` | 樂句編輯器 | M4 |
-| `/recognitions/:id` | 審核頁 | M4 |
+| `/phrases` | 樂句庫，含「從圖片辨識」；手機與平板也可以上傳（[`phrases.md`](phrases.md) 第 4 節） | M4 |
+| `/phrases/:id` | 樂句編輯器；在不能打譜的裝置上只能看 | M4 |
+| `/recognitions/:id` | 審核頁；在不能打譜的裝置上只能看 | M4 |
 | `/account` | 顯示名稱、改密碼、登出所有裝置 | M1a |
 | `/admin` | 後台，只有 admin 能進 | M1a |
 | 找不到頁面 | 404 頁 | M1a |
@@ -142,6 +142,8 @@
 | `DELETE /api/recognitions/:id` | 捨棄：刪除這筆辨識與原圖 |
 
 細節見 [`recognizer.md`](recognizer.md) 與 [`phrases.md`](phrases.md)。
+
+- 樂句與辨識的 API 不分裝置。手機與平板上「只能看」是介面上的限制（[`views.md`](views.md) 第 7 節），伺服器不分辨裝置。
 
 ## 4. 錯誤代碼一覽（補充）
 

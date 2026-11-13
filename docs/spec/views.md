@@ -16,6 +16,8 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - `isGuest` 為真時，`role` 是 `null`。
 - `canType`（能打譜）：`matchMedia("(pointer: fine)").matches` 而且視窗寬度至少 1024 px。
 - **補充**：只在載入頁面時判定一次；之後改變視窗大小不切換視圖（避免打到一半失去選取），只有重新整理才會重新判定。
+- 判定不看瀏覽器：桌面 Safari 和 Chrome、Edge、Firefox 一樣可以打譜（[`testing.md`](testing.md) 第 3 節）。
+- 同一個 `canType` 也決定樂句編輯器與審核頁能不能修改（[`phrases.md`](phrases.md) 第 5、7 節）。
 
 | 視圖 | 給誰 | 排版 |
 |---|---|---|
@@ -90,7 +92,11 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 播放列固定在底部，混音面板收在抽屜裡。
 - 捲動到頂端時，底部的播放列不能蓋住 alphaTab 的標記（見第 9 節）。
 
-手機與平板只看譜與播放，不能打譜（ROADMAP 的「不做的事」）。
+手機與平板（`canType` 為假的裝置）不能打譜（ROADMAP 的「不做的事」）。在這些裝置上可以：
+
+- 看譜與播放（這一節與第 5 節）；
+- 在 `/phrases` 上傳圖片辨識，可以直接拍照（[`phrases.md`](phrases.md) 第 4 節）；
+- 打開樂句編輯器與審核頁，但只能看、不能改；審核與編輯在桌面做（[`phrases.md`](phrases.md) 第 5、7 節）。
 
 ## 8. Presence
 
