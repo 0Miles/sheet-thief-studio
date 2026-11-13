@@ -5,13 +5,18 @@ import { expect, type Page, test } from "@playwright/test";
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
 
-/** Every error the page throws or logs, collected for the test to assert there are none. */
-function pageErrors(page: Page): string[] {
+/**
+ * Every error the page throws or logs, collected for the test to assert there are none. The
+ * browser logs each refused call too: the 401s from `refused` (by default GET /api/me, how the
+ * page learns that nobody is logged in) are what the test expects, not errors.
+ */
+function pageErrors(page: Page, refused: string[] = ["/api/me"]): string[] {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    // A 401 from GET /api/me is how the page learns that nobody is logged in.
-    if (message.type() === "error" && !message.text().includes("401")) errors.push(message.text());
+    if (message.type() !== "error") return;
+    const expected = message.text().includes("401") && refused.some((path) => message.location().url.endsWith(path));
+    if (!expected) errors.push(message.text());
   });
   return errors;
 }
@@ -41,10 +46,12 @@ test("someone not logged in is sent to /login; the admin logs in to /, and loggi
 });
 
 test("a wrong password is refused on the page, and the page stays on /login", async ({ page }) => {
+  const errors = pageErrors(page, ["/api/auth/login"]);
   await page.goto("/login");
   await logIn(page, ADMIN.username, "not the password");
-  await expect(page.getByRole("alert")).toHaveText(strings.errors.invalid_credentials!);
+  await expect(page.getByRole("alert")).toHaveText(strings.errors.invalid_credentials);
   await expect(page).toHaveURL("/login");
+  expect(errors).toEqual([]);
 });
 
 test("a page that does not exist shows the 404 page; opened before logging in, it comes after", async ({ page }) => {
