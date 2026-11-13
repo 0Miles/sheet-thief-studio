@@ -4,7 +4,7 @@ import fc from "fast-check";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { barsOf, contentOf, docToJson, jsonToDoc, metaOf, partsOf, readScore, SCHEMA_VERSION, type ScoreJSON, scoreSchema, type YBeat } from "../src/index";
+import { barsOf, contentOf, docToJson, emptyBarContent, jsonToDoc, metaOf, partsOf, readScore, SCHEMA_VERSION, type ScoreJSON, scoreSchema, type YBeat } from "../src/index";
 import { score } from "./arbitraries";
 
 /** Two bars, a six-string guitar with three beats in the first bar, and drums. */
@@ -260,4 +260,22 @@ test("whatever is written anywhere in a document, reading does not throw and giv
     }),
     { numRuns: 300 },
   );
+});
+
+test("a bar id or a beat field named __proto__ is read as any other name, never as a prototype", () => {
+  const { doc, part, beat } = band();
+  const bar = new Y.Map<unknown>();
+  bar.set("order", "z");
+  bar.set("timeSig", { numerator: 2, denominator: 4 });
+  barsOf(doc).set("__proto__", bar);
+  contentOf(part("gtr")).set("__proto__", emptyBarContent(1));
+  beat(0).set("__proto__", { pop: true });
+  const { score: json, invalid } = readScore(doc);
+  const content = json.parts[0]!.content;
+  expect(json.bars.map((item) => item.id)).toEqual(["b1", "b2", "__proto__"]);
+  expect(Object.getPrototypeOf(content)).toBe(Object.prototype);
+  expect(Object.keys(content)).toEqual(["b1", "b2", "__proto__"]);
+  expect(content["__proto__"]).toEqual({ "0:0": [] });
+  expect(content.b1!["0:0"]![0]).toEqual({ id: "x1", value: 4, dots: 0, notes: { s6: { fret: 3 } } });
+  expect(invalid).toEqual([]);
 });

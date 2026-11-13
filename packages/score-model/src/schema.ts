@@ -364,8 +364,8 @@ export function contentOf(part: YPart): Y.Map<YBarContent> {
   return part.get("content") as Y.Map<YBarContent>;
 }
 
-/** The content of a part as co-editing may have left it: undefined when the part or its content is not a map. */
-export function storedContentOf(part: unknown): Y.Map<unknown> | undefined {
+/** The content of a part only when it is a map (contentOf trusts the document): undefined when the part or its content is not one. */
+export function contentMapOf(part: unknown): Y.Map<unknown> | undefined {
   const content: unknown = part instanceof Y.Map ? part.get("content") : undefined;
   return content instanceof Y.Map ? content : undefined;
 }

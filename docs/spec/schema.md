@@ -248,7 +248,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 不認得的欄位：忽略，不標記（第 9 節）。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
-- 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；`observeDeep` 回報某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。
+- 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。**補充**：作廢在交易結束、任何 observer 被呼叫之前做（Yjs 的 `beforeObserverCalls`，依 `transaction.changed`），所以在 observer 裡讀取也看得到這次的修改；交易進行中讀取時不用快取。
 - 伺服器端的讀取（建立版本、鏡射標題）用同一個函式。
 - 實測（Node 24、i9 桌機）：不快取時，4,000 個拍點逐一 `safeParse` 中位數 6.5 ms、p95 7.2 ms、第一次 20 ms，是 `docToJson` 本身 1.8 ms 的 3.6 倍。
 

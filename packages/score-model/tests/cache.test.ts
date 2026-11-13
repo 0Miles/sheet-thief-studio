@@ -3,7 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { type BeatJSON, cursorAt, docToJson, jsonToDoc, kindSchemas, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
+import { type BeatJSON, cursorAt, docToJson, jsonToDoc, kindSchemas, partsOf, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
 
 const BARS = ["b1", "b2", "b3"];
 
@@ -74,4 +74,31 @@ test("a part whose tuning changes has its beats checked again: notes on strings 
   const { score: json, invalid } = readScore(doc);
   expect(BARS.map((bar) => json.parts[0]!.content[bar]!["0:0"]!.map((beat) => beat.notes))).toEqual(BARS.map(() => [{}, {}, {}, {}]));
   expect(invalid).toHaveLength(12);
+});
+
+test("a read inside a transaction, or from an observer that was there first, sees the change just made", () => {
+  const doc = band();
+  const fret = () => docToJson(doc).parts[0]!.content.b2!["0:0"]![1]!.notes.s6!.fret;
+  const seen: (number | undefined)[] = [];
+  // Registered before the first read, so before anything the reader listens to.
+  partsOf(doc).observeDeep(() => seen.push(fret()));
+  expect(fret()).toBe(3);
+  doc.transact(() => {
+    setFret(doc, { ...cursorAt(doc, "gtr", "b2", 6), beatId: "b2g1" }, 7);
+    seen.push(fret());
+    setFret(doc, { ...cursorAt(doc, "gtr", "b2", 6), beatId: "b2g1" }, 9);
+    seen.push(fret());
+  });
+  expect(seen).toEqual([7, 9, 9]);
+  expect(fret()).toBe(9);
+});
+
+test("a first read inside a transaction does not keep what it checked past a change later in it", () => {
+  const doc = band();
+  const fret = () => docToJson(doc).parts[0]!.content.b2!["0:0"]![1]!.notes.s6!.fret;
+  doc.transact(() => {
+    expect(fret()).toBe(3);
+    setFret(doc, { ...cursorAt(doc, "gtr", "b2", 6), beatId: "b2g1" }, 7);
+    expect(fret()).toBe(7);
+  });
 });

@@ -26,7 +26,7 @@ import {
   partsOf,
   SCHEMA_VERSION,
   type ScoreJSON,
-  storedContentOf,
+  contentMapOf,
   type YBeat,
 } from "./schema";
 
@@ -39,6 +39,8 @@ interface Fit {
   strings: number;
   /** The fit as `kind:strings`, to tell it from another. */
   key: string;
+  /** Whether beats checked before may be used: not while a transaction is changing the document. */
+  reuse: boolean;
 }
 
 /** A beat as last checked: what it reads as (null when it cannot be read) and what was wrong in it. */
@@ -54,22 +56,42 @@ const checked = new WeakMap<YBeat, Checked>();
 
 const watched = new WeakSet<Y.Doc>();
 
-/** Forget the beats checked in the content of a bar as soon as anything in it changes, whoever changes it. */
+/** Documents inside a transaction: what it changes is forgotten only once it ends. */
+const changing = new WeakSet<Y.Doc>();
+
+/** Any shared type of a document, as a transaction names the ones it changed. */
+type YType = Y.Transaction["changed"] extends Map<infer T, unknown> ? T : never;
+
+/** The content of a bar (a map in the content of a part) that holds a changed type, if any. */
+function barContentAbove(type: YType, parts: object): YType | null {
+  for (let node: YType | null = type; node !== null; node = node.parent) {
+    if (node.parent?.parent?.parent === parts) return node;
+  }
+  return null;
+}
+
+/**
+ * Forget the beats checked in the content of a bar as soon as anything in it changes, whoever
+ * changes it: when the transaction ends, before any observer is called, so that an observer
+ * reading the score sees the change. While a transaction runs, reading checks every beat.
+ */
 function watch(doc: Y.Doc): void {
   if (watched.has(doc)) return;
   watched.add(doc);
   const parts = partsOf(doc);
-  parts.observeDeep((events) => {
+  // Read first inside a transaction: it began before the reader listened.
+  if (doc._transaction !== null) changing.add(doc);
+  doc.on("beforeTransaction", () => changing.add(doc));
+  doc.on("beforeObserverCalls", (transaction: Y.Transaction) => {
+    changing.delete(doc);
     // One transaction can change a bar many times: forget its beats once.
-    const changed = new Set<Y.Map<unknown>>();
-    for (const event of events) {
-      // Inside the content of a bar: ["<part>", "content", "<bar>", "<voice>", index, …].
-      const [partId, field, barId] = event.path;
-      if (field !== "content" || typeof partId !== "string" || typeof barId !== "string") continue;
-      const voices: unknown = storedContentOf(parts.get(partId))?.get(barId);
-      if (voices instanceof Y.Map) changed.add(voices);
+    const bars = new Set<YType>();
+    for (const type of transaction.changed.keys()) {
+      const bar = barContentAbove(type, parts);
+      if (bar !== null) bars.add(bar);
     }
-    for (const voices of changed) {
+    for (const voices of bars) {
+      if (!(voices instanceof Y.Map)) continue;
       for (const beats of voices.values()) if (beats instanceof Y.Array) beats.forEach((beat) => beat instanceof Y.Map && checked.delete(beat));
     }
   });
@@ -89,11 +111,12 @@ function readField<T>(schema: z.ZodType<T>, value: unknown, fallback: T, invalid
 
 /** The fields of a beat but its notes, as they are in the document: only those present. */
 function fieldsOf(beat: YBeat): Record<string, unknown> {
-  const fields: Record<string, unknown> = {};
+  const fields: [string, unknown][] = [];
   beat.forEach((value, name) => {
-    if (name !== "notes") fields[name] = value;
+    if (name !== "notes") fields.push([name, value]);
   });
-  return fields;
+  // Built from entries, so that a field named __proto__ is a field like any other.
+  return Object.fromEntries(fields);
 }
 
 function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {
@@ -129,7 +152,7 @@ function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: Inv
       invalid.push(flag(place, "beat"));
       return;
     }
-    let result = checked.get(beat);
+    let result = fit.reuse ? checked.get(beat) : undefined;
     if (result?.checkedFor !== fit.key) {
       result = { checkedFor: fit.key, ...checkBeat(beat, fit, place) };
       checked.set(beat, result);
@@ -158,7 +181,7 @@ function readVoices(voices: Y.Map<unknown>, fit: Fit, staves: number, place: Pla
   return read;
 }
 
-function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: InvalidContentFlag[]): PartJSON | null {
+function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boolean, invalid: InvalidContentFlag[]): PartJSON | null {
   const place: Place = { partId: id };
   const kind = partKindSchema.safeParse(part.get("kind"));
   if (!kind.success) {
@@ -173,16 +196,17 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
     if (kind.data === "fretted") return null;
   }
   const defaults = KIND_DEFAULTS[kind.data];
-  const staves = readField(shape.staves, part.get("staves"), defaults.staves, invalid, place, "part.staves");
+  const staves = readField(shape.staves, part.get("staves"), defaults.staves.map((staff) => ({ ...staff })), invalid, place, "part.staves");
   const strings = tuning.success ? tuning.data.length : 0;
-  const fit: Fit = { kind: kind.data, strings, key: `${kind.data}:${strings}` };
-  const content: PartJSON["content"] = {};
-  const stored = storedContentOf(part);
+  const fit: Fit = { kind: kind.data, strings, key: `${kind.data}:${strings}`, reuse };
+  // Built from entries, so that a bar id __proto__ is a key like any other.
+  const content: [string, Record<string, BeatJSON[]>][] = [];
+  const stored = contentMapOf(part);
   if (stored !== undefined) {
     for (const barId of barIds) {
       const voices: unknown = stored.get(barId);
       if (voices === undefined) continue; // not filled in yet: reads as an empty bar
-      if (voices instanceof Y.Map) content[barId] = readVoices(voices, fit, staves.length, { ...place, barId }, invalid);
+      if (voices instanceof Y.Map) content.push([barId, readVoices(voices, fit, staves.length, { ...place, barId }, invalid)]);
       else invalid.push(flag({ ...place, barId }, "content"));
     }
   } else {
@@ -196,7 +220,8 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
     capo: readField(shape.capo, part.get("capo"), 0, invalid, place, "part.capo"),
     program: readField(shape.program, part.get("program"), defaults.program, invalid, place, "part.program"),
     staves,
-    content,
+    content: Object.fromEntries(content),
+    // Every field was read by the schema of the kind of this part: it is a part of that kind.
   } as PartJSON;
 }
 
@@ -239,8 +264,9 @@ export interface ScoreRead {
  * The score as plain data, and what in the document could not be read. A bar that cannot be
  * read is left out of every part, so that the parts stay aligned; a part of no known kind is
  * left out whole; a beat or a note that cannot be read is left out of its voice. Beats are
- * checked again only after something in their bar changed. Treat what it returns as read-only:
- * unchanged beats are the same objects from one read to the next.
+ * checked again only after something in their bar changed, and every time while a transaction
+ * runs. Treat what it returns as read-only: unchanged beats are the same objects from one read
+ * to the next.
  */
 export function readScore(doc: Y.Doc): ScoreRead {
   watch(doc);
@@ -264,7 +290,8 @@ export function readScore(doc: Y.Doc): ScoreRead {
   }
   read.bars = inOrder(barsOf(doc), "bar", invalid).map(([id, bar], index) => readBar(id, bar, index === 0, invalid));
   const barIds = read.bars.map((bar) => bar.id);
-  read.parts = inOrder(partsOf(doc), "part", invalid).flatMap(([id, part]) => readPart(id, part, barIds, invalid) ?? []);
+  const reuse = !changing.has(doc);
+  read.parts = inOrder(partsOf(doc), "part", invalid).flatMap(([id, part]) => readPart(id, part, barIds, reuse, invalid) ?? []);
   return { score: read, invalid };
 }
 

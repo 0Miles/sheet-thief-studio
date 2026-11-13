@@ -22,7 +22,7 @@ import {
   SCHEMA_VERSION,
   type Staff,
   staffCountOf,
-  storedContentOf,
+  contentMapOf,
   type TimeSignature,
   type YBar,
   type YBeat,
@@ -132,7 +132,7 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
 export function fillMissingContent(doc: Y.Doc): void {
   const gaps: (() => void)[] = [];
   for (const part of partsOf(doc).values()) {
-    const content = storedContentOf(part);
+    const content = contentMapOf(part);
     if (content === undefined) continue; // not a part that can be read: nothing to fill
     const staves = staffCountOf(part);
     const keys = voiceKeys(staves);
