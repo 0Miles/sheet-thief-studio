@@ -1,11 +1,15 @@
 // What the server's tests share: the real Postgres and Redis of compose.dev.yaml (CI starts
 // service containers on the same ports), in databases that belong to the tests only.
 import { spawn } from "node:child_process";
+import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
+import { HocuspocusProvider, MessageType } from "@hocuspocus/provider";
 import type { FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
+import * as decoding from "lib0/decoding";
 import type { Sequelize } from "sequelize";
+import * as Y from "yjs";
 
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
@@ -83,4 +87,103 @@ export function sessionCookie(response: { cookies: Array<{ name: string; value: 
 /** Who the session with this id belongs to, as `GET /api/me` answers. */
 export function whoAmI(app: FastifyInstance, sessionId: string, name = COOKIE) {
   return app.inject({ method: "GET", url: "/api/me", cookies: { [name]: sessionId } });
+}
+
+/** A new score made through the API by the account of this session; returns its id. */
+export async function createScore(app: FastifyInstance, sessionId: string, title = "測試團譜"): Promise<string> {
+  const response = await app.inject({ method: "POST", url: "/api/scores", headers: { origin: ORIGIN }, cookies: { [COOKIE]: sessionId }, payload: { title } });
+  if (response.statusCode !== 201) throw new Error(`creating a score answered ${response.statusCode} ${response.body}`);
+  return (response.json() as { id: string }).id;
+}
+
+/** Ask for a collab ticket as the web app does. */
+export function askTicket(app: FastifyInstance, scoreId: string, sessionId: string) {
+  return app.inject({ method: "POST", url: `/api/scores/${scoreId}/collab-ticket`, headers: { origin: ORIGIN }, cookies: { [COOKIE]: sessionId } });
+}
+
+/** A collab ticket for this session, or an error when the API refuses one. */
+export async function ticketFor(app: FastifyInstance, scoreId: string, sessionId: string): Promise<string> {
+  const response = await askTicket(app, scoreId, sessionId);
+  if (response.statusCode !== 200) throw new Error(`the ticket was refused: ${response.statusCode} ${response.body}`);
+  return (response.json() as { ticket: string }).ticket;
+}
+
+/** Listen on a free port of the loopback; returns the URL of /collab there. */
+export async function listen(app: FastifyInstance): Promise<string> {
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const { port } = app.server.address() as AddressInfo;
+  return `ws://127.0.0.1:${port}/collab`;
+}
+
+export interface OpenScore {
+  provider: HocuspocusProvider;
+  doc: Y.Doc;
+}
+
+/**
+ * Open a score on /collab with a real provider, as the web app does: `token` is a function, asked
+ * again at every connection. Resolves once in sync both ways (see `insync`); rejects with the
+ * reason when it is refused.
+ */
+export function openScore(url: string, scoreId: string, token: () => Promise<string>): Promise<OpenScore> {
+  const doc = new Y.Doc();
+  return new Promise((resolve, reject) => {
+    const provider = new HocuspocusProvider({
+      url,
+      name: scoreId,
+      document: doc,
+      token,
+      onAuthenticationFailed: ({ reason }) => {
+        provider.destroy();
+        reject(new Error(`refused: ${reason}`));
+      },
+    });
+    insync(provider).then(() => resolve({ provider, doc }), reject);
+  });
+}
+
+/** Wait for the next answer of the server to a change: true when it applied it. */
+function syncStatus(provider: HocuspocusProvider): Promise<boolean> {
+  return new Promise((resolve) => {
+    const listener = ({ message }: { message: { decoder: decoding.Decoder } }) => {
+      decoding.readVarString(message.decoder); // the document
+      if (decoding.readVarUint(message.decoder) !== MessageType.SyncStatus) return;
+      provider.off("message", listener);
+      resolve(decoding.readVarInt(message.decoder) === 1);
+    };
+    provider.on("message", listener);
+  });
+}
+
+/**
+ * Resolves when the provider has (re)connected and is in sync both ways: it has the server's
+ * state, and the server has answered the state it sent. After that, each answer of the server
+ * is about a change made here (`nextSyncStatus`).
+ */
+export function insync(provider: HocuspocusProvider): Promise<void> {
+  const synced = new Promise<void>((resolve) => {
+    const listener = () => {
+      provider.off("synced", listener);
+      resolve();
+    };
+    provider.on("synced", listener);
+  });
+  return Promise.all([synced, syncStatus(provider)]).then(() => undefined);
+}
+
+/** The answer of the server to the next change the provider sends: true when it applied it. */
+export function nextSyncStatus(provider: HocuspocusProvider): Promise<boolean> {
+  return syncStatus(provider);
+}
+
+/** Resolves with the code of the next close of the provider's socket. */
+export function socketClosed(provider: HocuspocusProvider): Promise<number> {
+  const socket = provider.configuration.websocketProvider;
+  return new Promise((resolve) => {
+    const listener = ({ event }: { event: { code: number } }) => {
+      socket.off("close", listener);
+      resolve(event.code);
+    };
+    socket.on("close", listener);
+  });
 }

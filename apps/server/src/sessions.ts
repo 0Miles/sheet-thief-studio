@@ -69,6 +69,11 @@ export class Sessions {
     return { id, accountId, createdAt };
   }
 
+  /** Whether the session with this id has not ended. Unlike `resume`, it does not move the expiry. */
+  async isActive(id: string): Promise<boolean> {
+    return SESSION_ID.test(id) && (await this.redis.exists(sessionKey(id))) === 1;
+  }
+
   /**
    * End sessions, then tell every listener. Every way a session stops being valid comes through
    * here: logging out, logging out everywhere, a password changed or reset, an account disabled.

@@ -50,6 +50,47 @@ export const me = z.object({
 });
 export type Me = z.infer<typeof me>;
 
+// Scores (docs/spec/routes.md, 3.3; docs/spec/collab.md, section 3).
+/** A member's role in a score (docs/spec/accounts.md, section 3). */
+export const role = z.enum(["owner", "editor", "viewer"]);
+export type Role = z.infer<typeof role>;
+
+/** A new score (`POST /api/scores`). Only the title for now; the dialog of #11 adds the parts and the rest. */
+export const createScoreRequest = z.object({
+  title: z.string().trim().min(1).max(100),
+});
+export type CreateScoreRequest = z.infer<typeof createScoreRequest>;
+
+export const createdScore = z.object({ id: z.string() });
+export type CreatedScore = z.infer<typeof createdScore>;
+
+/** One of my scores, as `/` lists them (`GET /api/scores`), most recently updated first. */
+export const scoreSummary = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string().nullable(),
+  role,
+  updatedAt: z.string(),
+});
+export type ScoreSummary = z.infer<typeof scoreSummary>;
+
+export const scoreList = z.object({ scores: z.array(scoreSummary) });
+export type ScoreList = z.infer<typeof scoreList>;
+
+/** A score I am a member of (`GET /api/scores/:id`). */
+export const scoreDetails = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string().nullable(),
+  role,
+  owner: z.object({ accountId: z.string(), displayName: z.string() }),
+});
+export type ScoreDetails = z.infer<typeof scoreDetails>;
+
+/** A one-time ticket to open the score on /collab, valid 60 seconds (`POST /api/scores/:id/collab-ticket`). */
+export const collabTicket = z.object({ ticket: z.string(), role });
+export type CollabTicket = z.infer<typeof collabTicket>;
+
 /** The codes of error answers (docs/spec/routes.md, section 4): a new code goes in both places. */
 export const errorCode = z.enum([
   "unauthenticated",
