@@ -23,4 +23,22 @@ export const OUTSIDER = {
   mustChangePassword: false,
 };
 
-export const ACCOUNTS = [ADMIN, OUTSIDER];
+/** Made an Editor of a score by the test that needs one (`seedScore` in pages.ts). */
+export const EDITOR = {
+  username: "e2e-cara",
+  displayName: "編輯者帳號",
+  password: "e2e editor password",
+  isAdmin: false,
+  mustChangePassword: false,
+};
+
+/** Made a Viewer of a score by the test that needs one. */
+export const VIEWER = {
+  username: "e2e-dan",
+  displayName: "檢視者帳號",
+  password: "e2e viewer password",
+  isAdmin: false,
+  mustChangePassword: false,
+};
+
+export const ACCOUNTS = [ADMIN, OUTSIDER, EDITOR, VIEWER];

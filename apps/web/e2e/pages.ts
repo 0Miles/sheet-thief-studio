@@ -1,8 +1,11 @@
 // Helpers for the end-to-end tests that go through the real pages: logging in, creating a score,
 // and collecting the errors a page throws or logs.
+import { spawnSync } from "node:child_process";
+
 import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
 
 import { strings } from "../src/strings";
+import { SERVER_ENV } from "./environment";
 
 /** An answer the test expects the server to refuse: the browser logs it as an error, which it is not here. */
 export interface Refusal {
@@ -54,4 +57,28 @@ export async function createScore(page: Page, title: string): Promise<string> {
   const response = await page.request.post("/api/scores", { data: { title }, headers: { origin } });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { id: string }).id;
+}
+
+/** What `seedScore` makes: account names, and how many bars the score starts with (8 when left out). */
+export interface ScoreFixture {
+  title: string;
+  owner: string;
+  members?: { username: string; role: "editor" | "viewer" }[];
+  bars?: number;
+}
+
+/**
+ * A score with its members, written straight into the tests' database by the server's own
+ * script (apps/server/tests/scoreE2e.ts): data a test needs before it starts, for which there
+ * is no page yet (adding members comes with #13). Returns its id.
+ */
+export function seedScore(fixture: ScoreFixture): string {
+  const made = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "score:e2e"], {
+    input: JSON.stringify(fixture),
+    env: { ...process.env, ...SERVER_ENV },
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (made.status !== 0) throw new Error(`Could not make the score: ${made.stderr}`);
+  return (JSON.parse(made.stdout) as { id: string }).id;
 }
