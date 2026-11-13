@@ -41,6 +41,11 @@ export interface Key {
 export interface EditorSessionOptions {
   /** Where the cursor starts. */
   cursor?: Cursor | null;
+  /**
+   * Nothing may change the score: the read-only edit view, for a Viewer. The server drops a
+   * Viewer's changes anyway; this keeps the page from showing changes that will not last.
+   */
+  readOnly?: boolean;
   /** The clock of the two-digit frets, in milliseconds. */
   now?: () => number;
 }
@@ -55,6 +60,11 @@ export interface EditorSession {
   press(key: Key): boolean;
   /** Put the cursor somewhere else (a click on the page). Never changes the score. */
   moveTo(cursor: Cursor | null): void;
+  /**
+   * Called the first time a key that would change the score is refused because the session is
+   * read-only (the shell says 「檢視者無法修改」), and never again.
+   */
+  onRefused(listener: () => void): () => void;
   destroy(): void;
 }
 
@@ -74,11 +84,13 @@ interface TypedDigit {
   cursor: Cursor;
 }
 
-export function createEditorSession(doc: Y.Doc, { cursor: start = null, now = () => Date.now() }: EditorSessionOptions = {}): EditorSession {
+export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly = false, now = () => Date.now() }: EditorSessionOptions = {}): EditorSession {
   // Only what this member did is undone (docs/adr/0001); one command, one step.
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
   let cursor = start;
   let lastDigit: TypedDigit | null = null;
+  const refusedListeners = new Set<() => void>();
+  let refused = false;
 
   function typeDigit(digit: number, at: Cursor, previous: TypedDigit | null): Cursor {
     const second =
@@ -168,13 +180,23 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, now = ()
       lastDigit = null;
       const action = actionFor(key, cursor, previous);
       if (action === undefined) return false;
+      if (action.changes && readOnly) {
+        if (!refused) for (const listener of refusedListeners) listener();
+        refused = true;
+        return true;
+      }
       cursor = action.run(cursor);
       return true;
     },
     moveTo(next) {
       cursor = next;
     },
+    onRefused(listener) {
+      refusedListeners.add(listener);
+      return () => refusedListeners.delete(listener);
+    },
     destroy() {
+      refusedListeners.clear();
       undo.destroy();
     },
   };
