@@ -8,6 +8,7 @@ import {
   barsOf,
   COMMON_TIME,
   contentOf,
+  type BeatDuration,
   type Duration,
   durationOf,
   emptyBarContent,
@@ -193,17 +194,17 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
 }
 
 /** What a beat gets when there is no beat to take its duration from. */
-const QUARTER: Duration = { value: 4, dots: 0 };
+const QUARTER: BeatDuration = { value: 4, dots: 0 };
 
 /** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
 interface BeatPlace {
   voice: YVoice;
   index: number;
-  duration: Duration;
+  duration: BeatDuration;
 }
 
 /** The duration a beat made at a place takes from `beat`: as long as it, else a quarter. */
-function durationFrom(beat: YBeat | undefined): Duration {
+function durationFrom(beat: YBeat | undefined): BeatDuration {
   return (beat && durationOf(beat)) ?? QUARTER;
 }
 
@@ -230,7 +231,7 @@ function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
  * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
  * rest of `duration`, then `fill` puts its notes on it.
  */
-function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 0, tuplet }: Duration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
+function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, tuplet }: BeatDuration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
   const id = newId();
   doc.transact(() => {
     const beat: YBeat = new Y.Map();
@@ -254,7 +255,7 @@ function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 
  */
 export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cursor {
   const place = placeFor(doc, cursor);
-  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration ?? place.duration);
+  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration === undefined ? place.duration : { dots: 0, ...duration });
 }
 
 /**
@@ -346,7 +347,6 @@ export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   }, LOCAL);
   return cursor;
 }
-
 
 /** The cursor at the first place of the first voice of a bar of a part: its first beat, or the append slot of an empty voice. */
 export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = 1): Cursor {

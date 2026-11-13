@@ -393,8 +393,11 @@ export interface Duration {
 
 const durationSchema = beatSchema.pick({ value: true, dots: true, tuplet: true });
 
-/** The duration of a beat as stored, its dots always given; undefined when it cannot be read. */
-export function durationOf(beat: YBeat): Duration | undefined {
+/** A duration as a beat holds it: its dots always given. */
+export type BeatDuration = Duration & { dots: 0 | 1 | 2 };
+
+/** The duration of a beat as stored; undefined when it cannot be read. */
+export function durationOf(beat: YBeat): BeatDuration | undefined {
   const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
   return duration.success ? duration.data : undefined;
 }

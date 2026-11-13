@@ -1,10 +1,10 @@
 // The session on a plain Y.Doc, with other members' changes arriving as updates, as a provider
 // would hand them over: the local presence, and undo of only this member's commands.
-import { contentOf, cursorAt, insertBeat, partsOf, setFret } from "@studio/score-model";
+import { addPart, contentOf, createScore, cursorAt, insertBars, insertBeat, partsOf, setFret } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import type { LocalPresence } from "../src/index";
+import { createEditorSession, type LocalPresence } from "../src/index";
 import { sessionOn } from "./support";
 
 /** Another member's copy of the score, and a way to hand their changes to ours. */
@@ -128,4 +128,23 @@ test("→ from a rest Insert made in the append slot goes on after it, even when
   send();
   press("ArrowRight");
   expect(cursor()).toMatchObject({ beatId: mine, at: "after" });
+});
+
+test("a session started on a beat that has not arrived yet still lands on the beat that took its place once it is removed", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Demo");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const partId = addPart(doc, { name: "Part", kind: "fretted" });
+  const { other, send } = otherMember(doc);
+  let typed = cursorAt(other, partId, barId!, 6);
+  const ids: string[] = [];
+  for (const fret of [1, 2, 3, 4]) {
+    typed = setFret(other, { ...typed, at: "after" }, fret);
+    ids.push(typed.beatId!);
+  }
+  const session = createEditorSession(doc, { cursor: { ...typed, beatId: ids[1]!, at: "on" } });
+  send();
+  other.transact(() => contentOf(partsOf(other).get(partId)!).get(barId!)!.get("0:0")!.delete(1, 1));
+  send();
+  expect(session.cursor).toMatchObject({ beatId: ids[2], at: "on" });
 });

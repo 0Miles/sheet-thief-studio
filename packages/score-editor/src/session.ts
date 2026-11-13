@@ -123,7 +123,10 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
    * → takes it as the new anchor (docs/spec/commands.md, 5.1).
    */
   let appended: string | null = null;
-  /** Where the cursor's beat stands, taken each time the cursor moves: a removed beat's place. */
+  /**
+   * Where the cursor's beat stands, taken each time the cursor moves, or once its beat arrives:
+   * a removed beat's place.
+   */
   let position = start && beatPositionOf(doc, start);
   /** While a key's command runs: the cursor moves once, where the command puts it. */
   let running = false;
@@ -147,18 +150,20 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   /** The cursor on a place that exists, whatever changed the score. */
   const settled = (at: Cursor | null): Cursor | null => at && settleCursor(doc, at, position);
   const settle = (): void => {
-    if (!running) moveTo(settled(cursor));
+    if (running) return;
+    // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
+    if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
+    moveTo(settled(cursor));
   };
   doc.on("afterTransaction", settle);
 
   /**
-   * Run a command that makes a beat in the append slot (a note typed there, or Insert): when it
-   * does, the next → takes that beat as the new anchor (docs/spec/commands.md, 5.1).
+   * Run a command that may make a beat in the append slot (a note typed there, or Insert): when
+   * it does, the next → takes that beat as the new anchor (docs/spec/commands.md, 5.1).
    */
-  function append(at: Cursor, make: (at: Cursor) => Cursor): Cursor {
+  function markAppended(at: Cursor, make: (at: Cursor) => Cursor): Cursor {
     const next = make(at);
-    // A command that changes nothing returns the cursor it was given.
-    if (at.at === "after" && next !== at) appended = next.beatId;
+    if (at.at === "after" && next.at === "on" && next.beatId !== at.beatId) appended = next.beatId;
     return next;
   }
 
@@ -179,7 +184,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       }
     }
     // In the append slot the digit also makes the beat it goes on, and the cursor moves onto it.
-    const next = append(at, (here) => setFret(doc, here, digit));
+    const next = markAppended(at, (here) => setFret(doc, here, digit));
     lastDigit = { digit, at: now(), cursor: next };
     return next;
   }
@@ -218,7 +223,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       case "ArrowUp":
         return move((at) => moveByLine(doc, at, -1));
       case "Insert":
-        return change((at) => append(at, (here) => insertBeat(doc, here)));
+        return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
       // The key marked delete on a Mac keyboard sends Backspace (docs/spec/keymap.md, section 2).
       case "Delete":
       case "Backspace":
