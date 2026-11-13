@@ -38,7 +38,6 @@ const hasPlayer = query("player") !== "0";
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
-const cursor = shallowRef<Cursor | null>(null);
 const rect = ref<Rect | null>(null);
 const shown = ref("all");
 const connection = ref<"local" | "connecting" | "connected" | "disconnected">(documentName === null ? "local" : "connecting");
@@ -73,7 +72,7 @@ const hook: StudioHook = {
   synced: () => provider === undefined || (provider.isSynced && provider.unsyncedChanges === 0),
   json: () => docToJson(doc),
   stateSize: () => Y.encodeStateAsUpdate(doc).byteLength,
-  cursor: () => cursor.value,
+  cursor: () => session?.cursor ?? null,
   cursorRect: () => rect.value,
   placeCursor(part, bar, beat, line) {
     const json = docToJson(doc);
@@ -82,7 +81,7 @@ const hook: StudioHook = {
     if (partJson === undefined || barId === undefined) return null;
     const beatId = beat < 0 ? null : (partJson.content[barId]?.["0:0"]?.[beat]?.id ?? null);
     moveCursor({ partId: partJson.id, barId, voice: "0:0", beatId, line });
-    return cursor.value;
+    return session?.cursor ?? null;
   },
   editBar(part, bar) {
     const json = docToJson(doc);
@@ -145,7 +144,8 @@ function shownPartIds(json: ScoreJSON): string[] {
 }
 
 function updateRect(): void {
-  rect.value = cursor.value && engine ? engine.renderer.boundsOf(cursor.value) : null;
+  const at = session?.cursor ?? null;
+  rect.value = at && engine ? engine.renderer.boundsOf(at) : null;
 }
 
 /** Scroll so that the cursor is on screen, with some room around it. */
@@ -220,7 +220,7 @@ function onPainted(barIds: string[]): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  const at = cursor.value;
+  const at = session?.cursor ?? null;
   if (at === null || session === undefined) return;
   // The key is watched from before its command runs: without a worker the renderer has
   // finished its layout by the time the command returns.
@@ -239,7 +239,7 @@ function onKey(event: KeyboardEvent): void {
     finishKey(sample); // the key only moved the cursor
     return;
   }
-  pending.barId = cursor.value?.barId ?? at.barId;
+  pending.barId = session.cursor?.barId ?? at.barId;
   // The piece holding the bar is painted only when it is on screen: do not wait for ever.
   pending.timer = setTimeout(() => settleKey(pending), 1500);
 }
@@ -270,10 +270,7 @@ function start(): void {
     else seedDemo(doc, { bars: Number(query("bars") ?? 12), parts: Number(query("parts") ?? 3) });
   }
   session = createEditorSession(doc); // after the seed, so that undo cannot take the seed back
-  session.onPresence((presence) => {
-    cursor.value = presence.cursor;
-    updateRect();
-  });
+  session.onPresence(updateRect);
   const json = docToJson(doc);
   score.value = json;
   const wanted = Number(query("show"));

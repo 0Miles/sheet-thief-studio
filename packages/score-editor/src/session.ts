@@ -102,7 +102,8 @@ const move = (run: (at: Cursor) => Cursor): KeyCommand => ({ changes: false, run
 const change = (run: (at: Cursor) => Cursor | null): KeyCommand => ({ changes: true, run });
 
 function samePlace(a: Cursor | null, b: Cursor | null): boolean {
-  if (a === null || b === null) return a === b;
+  if (a === b) return true;
+  if (a === null || b === null) return false;
   const keys = Object.keys(a) as (keyof Cursor)[];
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
@@ -168,10 +169,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function shortcut(key: Key): KeyCommand | undefined {
     if (key.code !== "KeyZ" && key.code !== "KeyY") return undefined;
     const redo = key.code === "KeyY" || key.shiftKey === true;
-    return change((at) => {
+    return change(() => {
       if (redo) undo.redo();
       else undo.undo();
-      return settleCursor(doc, at);
+      // The undo's transaction has already settled the cursor on what is left.
+      return cursor;
     });
   }
 
@@ -236,8 +238,10 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       const command = commandFor(key, cursor, previous);
       if (command === undefined) return false;
       if (command.changes && readOnly) {
-        if (!refused) for (const listener of refusedListeners) listener();
-        refused = true;
+        if (!refused) {
+          refused = true;
+          for (const listener of refusedListeners) listener();
+        }
         return true;
       }
       moveTo(command.run(cursor));

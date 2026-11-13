@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 import { createEditorSession, type Key } from "../src/index";
 
-type Modifiers = Pick<Key, "ctrlKey" | "metaKey" | "shiftKey">;
+export type Modifiers = Pick<Key, "ctrlKey" | "metaKey" | "shiftKey">;
 
 /** A key as a US keyboard sends it: `code` names where the key is, `key` what it types. */
 export function keyOf(key: string, modifiers: Modifiers = {}): Key {
