@@ -3,12 +3,15 @@ import * as Y from "yjs";
 
 import {
   addPart,
+  contentOf,
   createScore,
   cursorAt,
   docToJson,
+  fillMissingContent,
   flagsOf,
   insertBars,
   insertBeat,
+  partsOf,
   SCHEMA_VERSION,
   setDuration,
   setFret,
@@ -113,4 +116,49 @@ test("a voice that does not fill its bar is flagged; an empty or a full one is n
   expect(flagsOf(docToJson(doc))).toEqual([]);
   setDuration(doc, cursor, { value: 4, dots: 1 });
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "overfull", partId, barId: barIds[0], voice: "0:0" }]);
+});
+
+/** The voices the document holds for a bar of a part, whether or not they have beats. */
+function voicesIn(doc: Y.Doc, partId: string, barId: string): string[] {
+  return [...contentOf(partsOf(doc).get(partId)!).get(barId)!.keys()].sort();
+}
+
+test("new bars and new parts come with every voice of every staff, empty, and they read as one empty voice per staff", () => {
+  const { doc, barIds, partId } = score(1);
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const [added] = insertBars(doc, { after: barIds[0]!, count: 1 });
+  for (const barId of [barIds[0]!, added!]) {
+    expect(voicesIn(doc, partId, barId)).toEqual(["0:0", "0:1"]);
+    expect(voicesIn(doc, drums, barId)).toEqual(["0:0", "0:1"]);
+    expect(voicesIn(doc, keys, barId)).toEqual(["0:0", "0:1", "1:0", "1:1"]);
+  }
+  const json = docToJson(doc);
+  expect(json.parts.map((part) => part.content[added!])).toEqual([{ "0:0": [] }, { "0:0": [] }, { "0:0": [], "1:0": [] }]);
+  expect(json.parts.map((part) => [part.kind, part.staves, part.program])).toEqual([
+    ["fretted", [{ clef: "tab" }], 25],
+    ["percussion", [{ clef: "neutral" }], 0],
+    ["pitched", [{ clef: "treble" }, { clef: "bass" }], 0],
+  ]);
+});
+
+test("the server fills in the bars a part has no place for, and the voices a bar is missing", () => {
+  const { doc, barIds, partId } = score(2);
+  const keys = addPart(doc, { name: "Keys", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  contentOf(partsOf(doc).get(partId)!).delete(barIds[0]!);
+  contentOf(partsOf(doc).get(keys)!).get(barIds[1]!)!.delete("1:1");
+  const kept = contentOf(partsOf(doc).get(keys)!).get(barIds[1]!)!.get("0:0");
+  fillMissingContent(doc);
+  expect(voicesIn(doc, partId, barIds[0]!)).toEqual(["0:0", "0:1"]);
+  expect(voicesIn(doc, keys, barIds[1]!)).toEqual(["0:0", "0:1", "1:0", "1:1"]);
+  // What was there stays the same object: someone may be typing into it.
+  expect(contentOf(partsOf(doc).get(keys)!).get(barIds[1]!)!.get("0:0")).toBe(kept);
+});
+
+test("filling in a score that misses nothing changes nothing, not even by an empty transaction", () => {
+  const { doc } = score(2);
+  let transactions = 0;
+  doc.on("afterTransaction", () => transactions++);
+  fillMissingContent(doc);
+  expect(transactions).toBe(0);
 });

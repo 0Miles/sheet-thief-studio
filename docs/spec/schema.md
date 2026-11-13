@@ -22,15 +22,15 @@ Y.Doc
 - 拍點層級的欄位直接放在拍點的 `Y.Map` 上，各自後寫者勝。
 - 音符是整顆 JSON（`NoteJSON`），以位置為鍵，同一個音符的同時修改是後寫者勝。
 - 每個聲部、每個小節、每條聲線是一個 `Y.Array<拍點>`。
-- 小節與聲部的順序由各自的 `order` 欄位決定：fractional index 排序鍵，同鍵時依 id 排（`schema.ts:100-106` 的 `ordered`）。
-- id 用 `nanoid(10)`（`commands.ts:42-44`）。
+- 小節與聲部的順序由各自的 `order` 欄位決定：fractional index 排序鍵，同鍵時依 id 排（`schema.ts` 的 `ordered`）。
+- id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
 ### 1.1 內容容器
 
 - 每個聲部對每個小節都有一個「小節內容」`Y.Map`，鍵是 `"<譜表>:<聲線>"`，值是那條聲線的 `Y.Array`。
 - **補充**：容器預先建好聲部每個譜表的兩條聲線（`"0:0"`、`"0:1"`；兩個譜表時再加 `"1:0"`、`"1:1"`）。理由：兩個人同時「第一次寫進第二聲線」時，各自建立的 `Y.Array` 會互相覆蓋，一方的拍點無聲消失（ADR 0002 增補）。空的聲線讀起來就是整小節休止，投影時不產生第二聲線。
-- 建立小節的人，在同一筆交易裡替所有聲部建好容器；建立聲部的人，在同一筆交易裡替所有小節建好容器（ADR 0002:21，`commands.ts:78-80,111-112`）。
-- 缺少的容器（含缺少的聲線）只由伺服器補齊：在 debounce 過的 `onChange` 裡以參與者身分執行 `fillMissingContent`（`commands.ts:118-130`）。客戶端不補。見 [`collab.md`](collab.md)。
+- 建立小節的人，在同一筆交易裡替所有聲部建好容器；建立聲部的人，在同一筆交易裡替所有小節建好容器（ADR 0002:21，`commands.ts` 的 `addPart`、`insertBars`）。
+- 缺少的容器（含缺少的聲線）只由伺服器補齊：在 debounce 過的 `onChange` 裡以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補。見 [`collab.md`](collab.md)。
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建。
 
 ## 2. meta
@@ -48,7 +48,7 @@ Y.Doc
 
 | 欄位 | 形狀 | 語意 |
 |---|---|---|
-| `id` | string | `bars` 的鍵，不另存成欄位 |
+| `id` | string | `bars` 的鍵，不另存成欄位。**補充**：不得是 `__proto__`：小節 id 是 `ScoreJSON` 裡每個聲部 `content` 物件的鍵，而 zod 的 `z.record` 與用賦值建立的物件都不保留這個鍵（`JSON.parse` 會保留）。讀取時略過這樣的小節（所有聲部一起），並標 `invalidContent`（`bar`） |
 | `order` | string | fractional index 排序鍵 |
 | `timeSig` | `{ numerator, denominator }` | 每個小節都有，必填 |
 | `tempo?` | number | 每分鐘幾個四分音符，「從這小節起」；不寫表示不變；第一小節沒寫時用 120（`projection.ts:16`） |
@@ -95,7 +95,7 @@ Y.Doc
 | `staves` | 恰好 `[{ clef: "tab" }]` | 恰好 `[{ clef: "neutral" }]` | 1–2 個（補充），clef 是 `"treble"`、`"bass"`、`"treble-8vb"` 之一 |
 | 聲線 | 每個譜表 2 條（schema 允許）；介面不提供第二聲線 | 預設一條，允許第二條（手、腳分開） | 每個譜表最多 2 條 |
 
-- `name`：1–64 字元（補充）。
+- `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
 - 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
@@ -121,7 +121,7 @@ Y.Doc
 | `lyric?` | string，0–32 字元；一拍一個音節，只有一行 | pitched |
 
 - `tuplet`：`actual` integer 2–12、`normal` integer 1–12、兩者不相等（補充）。介面只提供三連音 `{ actual: 3, normal: 2 }`。
-- 時值的 tick：全音符 3840（四分音符 960）；附點倍數 1、1.5、1.75；連音乘 `normal / actual`（`flags.ts:4-12`）。
+- 時值的 tick：全音符 3840（四分音符 960）；附點倍數 1、1.5、1.75；連音乘 `normal / actual`（`flags.ts` 的 `beatTicks`）。
 - `lyric` 的空字串表示延長（melisma）。投影時空字串與沒寫都轉成 `beat.lyrics = null`，不要轉成 `[""]`。
 - 音節結尾帶 `-` 表示字還沒結束；照原樣存、照原樣投影。alphaTab 照原樣畫出 `-`（`LyricsGlyph.paint`，`alphaTab.core.mjs:57310-57315`），沒有跨音符的連字號圖形；它自己讀 GP 歌詞時也保留 `-`（:12522-12597）。
 - `text` 的空字串表示移除，所以存下來的 `text` 至少 1 個字元。
@@ -209,7 +209,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 
 ## 9. `schemaVersion` 與加法規則
 
-- 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts:6`）照用。
+- 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts` 的 `SCHEMA_VERSION`）照用。
 - 新增 optional 欄位屬於加法改動，**不升** `schemaVersion`。條件：同一個 PR 也改本檔、ADR 0002 的增補（形狀有變時）與 zod schema。
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
@@ -223,6 +223,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - **遷移清單**：`score-model` 裡一份依版本排序的清單，每一項是 `{ from, to, doc(doc: Y.Doc): void, json(json: unknown): unknown }`。`doc` 與 `json` 兩面的語意必須相同。
 - **`Y.Doc` 那一面**：伺服器在 `onLoadDocument` 載入狀態之後，以參與者身分、在一筆交易裡依序跑 `doc` 遷移，最後把 `meta.schemaVersion` 設成目前的版本。不要在 `onStoreDocument` 裡改文件，否則會再觸發一次儲存。
 - **`ScoreJSON` 那一面**：版本存的是 `docToJson` 的結果，帶著當時的 `schemaVersion`。讀取版本時，伺服器先依序跑 `json` 遷移，回傳目前版本的 JSON（補充：由伺服器遷移，客戶端拿到的一律是目前的版本）。還原、預覽都用遷移後的 JSON。
+- **補充**：`schemaVersion` 沒寫或讀不懂（不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時（第 11 節）相同：不遷移，也不會因此被判定為較新。
+- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
 - **`jsonToDoc`**：放在 `score-model`，把 `ScoreJSON` 寫進一份 `Y.Doc`。匯入與還原共用；保留 JSON 裡的 id，依陣列順序重新產生 `order`，建好所有內容容器。
 - **測試**（M1a）：一份假的舊版 fixture（`schemaVersion: 0`）與一個只在測試裡註冊的 0 → 1 遷移，兩面都要測：`Y.Doc` 從舊狀態遷移後的 `docToJson`，等於 JSON 遷移後的結果。正式的遷移清單在第一版是空的。
 
@@ -238,11 +240,15 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲部：
   - `kind` 讀不懂：整個聲部略過，並標記。
   - fretted 的 `tuning` 讀不懂：整個聲部略過，並標記（補充：沒有調弦就無法放置音符）。
-  - `name` 讀不懂當成空字串、`capo` 當成 0、`program` 當成該種類的預設、`staves` 當成該種類的預設，各自標記（補充）。
+  - `name` 讀不懂當成空字串、`capo` 當成 0、`program` 當成該種類的預設、`staves` 當成該種類的預設，各自標記（補充）。種類的預設（補充）：`program` 是 fretted 25、percussion 0、pitched 0；`staves` 是一個譜表：`tab`、`neutral`、`treble`。非 fretted 的 `tuning` 讀不懂時當成 `[]`，並標記。
+  - `order` 不是字串：整個聲部略過，並標記（補充，和小節相同）。
+  - `content` 不是 `Y.Map`：讀成沒有內容，並標記；某個小節的內容不是 `Y.Map`：那個小節讀成沒有內容，並標記（補充）。
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
-- 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；`observeDeep` 回報某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。
+- `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
+- 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
+- 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。**補充**：作廢在交易結束、任何 observer 被呼叫之前做（Yjs 的 `beforeObserverCalls`，依 `transaction.changed`），所以在 observer 裡讀取也看得到這次的修改；交易進行中讀取時不用快取。
 - 伺服器端的讀取（建立版本、鏡射標題）用同一個函式。
 - 實測（Node 24、i9 桌機）：不快取時，4,000 個拍點逐一 `safeParse` 中位數 6.5 ms、p95 7.2 ms、第一次 20 ms，是 `docToJson` 本身 1.8 ms 的 3.6 倍。
 
@@ -282,6 +288,8 @@ interface PartJSON {
   program: number;
   staves: { clef: "tab" | "neutral" | "treble" | "bass" | "treble-8vb" }[];
   /** 小節 id → "譜表:聲線" → 拍點。空的聲線可以省略。 */
+  // docToJson 的寫法（補充）：每個有內容容器的小節都在；每個譜表的第一條聲線（"0:0"、"1:0"）一律寫出，
+  // 空的就是 []；第二條聲線只在有拍點時寫出，所以空的第二聲線投影時不產生聲線。
   content: Record<string, Record<string, BeatJSON[]>>;
 }
 
@@ -315,6 +323,8 @@ interface BeatJSON {
 | 聲部的 `name`（補充） | 64 字元 |
 | 聲部 | 總共 16 個，其中非鼓聲部最多 15 個 |
 | 小節 | 1000 個。匯入用這個上限；**補充**：插入小節、放置樂句的指令也不得讓總數超過 1000 |
-| 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後） |
+| 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後；`importedScoreSchema`） |
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |
+
+- **補充**（host 在 2026-11-13 的裁定）：**聲部與小節的數量上限只約束指令與匯入**。兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

@@ -6,22 +6,29 @@ import * as Y from "yjs";
 
 import {
   barsOf,
+  COMMON_TIME,
   contentOf,
   emptyBarContent,
+  KIND_DEFAULTS,
   LOCAL,
   MAIN_VOICE,
   metaOf,
+  NOTE_VALUES,
   type NoteJSON,
   type NoteValue,
   ordered,
   type PartKind,
   partsOf,
   SCHEMA_VERSION,
+  type Staff,
+  staffCountOf,
+  contentMapOf,
   type TimeSignature,
   type YBar,
   type YBeat,
   type YPart,
   type YVoice,
+  voiceKeys,
 } from "./schema";
 
 /** Where a member is typing. `beatId` is null before the first beat of a voice. */
@@ -33,8 +40,6 @@ export interface Cursor {
   /** Fretted parts: the string (1 is the highest). Other kinds: the staff position. */
   line: number;
 }
-
-const COMMON_TIME: TimeSignature = { numerator: 4, denominator: 4 };
 
 /** Standard guitar tuning, from the first string: E4 B3 G3 D3 A2 E2. */
 export const STANDARD_GUITAR = [64, 59, 55, 50, 45, 40];
@@ -59,11 +64,14 @@ export interface NewPart {
   kind: PartKind;
   tuning?: number[];
   capo?: number;
+  /** Defaults to 25 (steel guitar), 0 for drums and pitched parts. */
   program?: number;
+  /** Defaults to one staff: tablature, the drum staff, or the treble clef. */
+  staves?: Staff[];
 }
 
 /** Add a part after the last one, with a place for the content of every bar. */
-export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = 25 }: NewPart): string {
+export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KIND_DEFAULTS[kind].program, staves = KIND_DEFAULTS[kind].staves }: NewPart): string {
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
@@ -75,8 +83,9 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = 25
     part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
     part.set("capo", capo);
     part.set("program", program);
+    part.set("staves", staves.map((staff) => ({ ...staff })));
     const content = new Y.Map();
-    for (const barId of barsOf(doc).keys()) content.set(barId, emptyBarContent());
+    for (const barId of barsOf(doc).keys()) content.set(barId, emptyBarContent(staves.length));
     part.set("content", content);
     parts.set(id, part);
   }, LOCAL);
@@ -109,24 +118,33 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
       bar.set("timeSig", { ...signature });
       bars.set(id, bar);
       // The member who makes a bar makes its place in every part, in the same transaction.
-      for (const part of partsOf(doc).values()) contentOf(part).set(id, emptyBarContent());
+      for (const part of partsOf(doc).values()) contentOf(part).set(id, emptyBarContent(staffCountOf(part)));
     });
   }, LOCAL);
   return ids;
 }
 
 /**
- * Server only: give every part a place for every bar (a bar and a part made at the same time by
- * two members miss each other). Clients never repair, so that they cannot fight over it.
+ * Server only: give every part a place for every bar, and every bar every voice of the staves
+ * of its part (a bar and a part made at the same time by two members miss each other). Clients
+ * never repair, so that they cannot fight over it. Opens no transaction when nothing is missing.
  */
 export function fillMissingContent(doc: Y.Doc): void {
-  doc.transact(() => {
-    for (const part of partsOf(doc).values()) {
-      for (const barId of barsOf(doc).keys()) {
-        if (contentOf(part).has(barId) === false) contentOf(part).set(barId, emptyBarContent());
+  const gaps: (() => void)[] = [];
+  for (const part of partsOf(doc).values()) {
+    const content = contentMapOf(part);
+    if (content === undefined) continue; // not a part that can be read: nothing to fill
+    const staves = staffCountOf(part);
+    const keys = voiceKeys(staves);
+    for (const barId of barsOf(doc).keys()) {
+      const voices: unknown = content.get(barId);
+      if (voices === undefined) gaps.push(() => content.set(barId, emptyBarContent(staves)));
+      else if (voices instanceof Y.Map) {
+        for (const voice of keys) if (!voices.has(voice)) gaps.push(() => voices.set(voice, new Y.Array<YBeat>()));
       }
     }
-  });
+  }
+  if (gaps.length > 0) doc.transact(() => gaps.forEach((fill) => fill()));
 }
 
 function voiceAt(doc: Y.Doc, cursor: Cursor): YVoice | undefined {
@@ -209,8 +227,6 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: New
   }, LOCAL);
   return cursor;
 }
-
-const NOTE_VALUES: readonly NoteValue[] = [1, 2, 4, 8, 16, 32, 64];
 
 /** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
 export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {

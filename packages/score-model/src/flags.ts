@@ -15,13 +15,31 @@ export function barTicks(timeSig: TimeSignature): number {
   return (WHOLE * timeSig.numerator) / timeSig.denominator;
 }
 
-export interface Flag {
-  /** The voice holds less, or more, than the time signature of its bar. */
+/** A voice that holds less, or more, than the time signature of its bar. */
+export interface DurationFlag {
   kind: "underfull" | "overfull";
   partId: string;
   barId: string;
   voice: string;
 }
+
+/**
+ * Invalid content: something in the document that does not fit the schema, left out when it is
+ * read or read as its default (docs/spec/schema.md section 11). It says as much of where it
+ * stands as is known.
+ */
+export interface InvalidContentFlag {
+  kind: "invalidContent";
+  partId?: string;
+  barId?: string;
+  voice?: string;
+  beatId?: string;
+  noteKey?: string;
+  /** What could not be read: "bar.timeSig", "part.kind", "voice", "beat", "note"… */
+  what: string;
+}
+
+export type Flag = DurationFlag | InvalidContentFlag;
 
 /** Voices whose beats do not add up to their bar. An empty voice is a whole-bar rest, not a flag. */
 export function flagsOf(score: ScoreJSON): Flag[] {

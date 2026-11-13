@@ -12,8 +12,8 @@ Flag 是團譜裡不合規則、但系統不會自動修改的地方：只提醒
 | `danglingLink` | 音符帶 `legato`，或 `slideOut` 是 `legato`、`shift`，但同一條弦上沒有「下一個音」 | fretted |
 | `invalidContent` | 讀不懂的節點，見 [`schema.md`](schema.md) 第 11 節 | 全部 |
 
-- 空的聲線是整小節休止，不是 Flag（`flags.ts:26-41`）。
-- 要修改 `flags.ts:27-41`：加上弱起的例外。
+- 空的聲線是整小節休止，不是 Flag（`flags.ts` 的 `flagsOf`）。
+- 要修改 `flags.ts` 的 `flagsOf`：加上弱起的例外。
 - **「前一個音」**（補充）：同一聲部、同一條聲線裡，緊接在前的那個拍點（可以是上一個小節同一條聲線的最後一個拍點）上，同一個音符鍵的音。前一個拍點是休止或沒有那個鍵，就是不存在。
 - **「下一個音」**（補充）：同一聲部、同一條聲線裡，緊接在後的那個拍點（可以是下一個小節同一條聲線的第一個拍點）上，同一條弦的音。
 - 拍點之間的「緊接」只看同一條聲線；另一條聲線或另一個聲部的音不算。
@@ -42,7 +42,7 @@ type Flag =
 - Flag 只在客戶端計算，不存進文件。
 - 每次修改都對整份 `ScoreJSON` 重算。理由：`danglingTie`、`danglingLink` 會跨小節，只算變動的小節會漏；而客戶端每次修改本來就會產生整份 `ScoreJSON`（`SpikeView.vue:172`）。
 - 只有在 S2 重跑時證明它是瓶頸，才改成增量計算（[`testing.md`](testing.md)）。
-- `invalidContent` 由 `docToJson` 在讀取時產生，和其他 Flag 合併成同一份清單。
+- `invalidContent` 由讀取時產生：`readScore` 回傳 `ScoreJSON` 與 `invalidContent` 的清單（`docToJson` 是同一個讀取、只回傳 `ScoreJSON`），和其他 Flag 合併成同一份清單。`what` 的值見 [`schema.md`](schema.md) 第 11 節。
 - 順序（補充）：依聲部順序、小節順序、聲線、拍點順序排列；`F8` 依這個順序走。
 
 ## 4. 顯示
