@@ -4,6 +4,7 @@ export * from "./build";
 export * from "./changes";
 export * from "./commands";
 export * from "./flags";
+export * from "./migrations";
 export * from "./navigation";
 export * from "./read";
 export * from "./schema";
