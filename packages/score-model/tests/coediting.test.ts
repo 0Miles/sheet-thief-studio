@@ -14,10 +14,12 @@ import {
   insertBars,
   insertBeat,
   LOCAL,
+  moveByBeat,
   type NoteValue,
   partsOf,
   setDuration,
   setFret,
+  settleCursor,
 } from "../src/index";
 
 /** A score and copies of it for each member, all in the same state. */
@@ -49,7 +51,7 @@ test("beats typed by two members in the same bar at the same time are all kept, 
   const typed = (doc: Y.Doc, frets: number[]) => {
     let cursor = cursorAt(doc, partId, barIds[0]!, 6);
     for (const fret of frets) {
-      cursor = insertBeat(doc, cursor, { value: 8 });
+      cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
       setFret(doc, cursor, fret);
     }
   };
@@ -61,6 +63,71 @@ test("beats typed by two members in the same bar at the same time are all kept, 
   const frets = beats(a, barIds[0]!).map((beat) => beat.notes.s6!.fret);
   expect([[1, 2, 3, 7, 8, 9], [7, 8, 9, 1, 2, 3]]).toContainEqual(frets);
   expect(new Set(beats(a, barIds[0]!).map((beat) => beat.id)).size).toBe(6);
+});
+
+/**
+ * Type frets one after the other on a string, from the append slot of a voice, as the keys do:
+ * a digit makes the beat, → goes on to the append slot after it. The first beat is made an
+ * eighth, and the next ones take its length. Returns the cursor, in the append slot.
+ */
+function typeInAppendSlot(doc: Y.Doc, from: Cursor, frets: number[]): Cursor {
+  let cursor = from;
+  frets.forEach((fret, index) => {
+    cursor = setFret(doc, cursor, fret);
+    if (index === 0) setDuration(doc, cursor, { value: 8 });
+    cursor = moveByBeat(doc, cursor, 1);
+    expect(cursor.at).toBe("after");
+  });
+  return cursor;
+}
+
+/** The frets on a string of a bar, with where their beats are in the bar. */
+function run(doc: Y.Doc, barId: string, string: string): { frets: number[]; indexes: number[] } {
+  const held = beats(doc, barId)
+    .map((beat, index) => ({ fret: beat.notes[string]?.fret, index }))
+    .filter((item) => item.fret !== undefined);
+  return { frets: held.map((item) => item.fret as number), indexes: held.map((item) => item.index) };
+}
+
+test("two members typing six beats each in the append slot of the same bar keep each their beats together, in the order typed", () => {
+  const { docs, barIds, partId } = members(2);
+  const [a, b] = docs as [Y.Doc, Y.Doc];
+  const annaFrets = [1, 2, 3, 4, 5, 6];
+  const benFrets = [11, 12, 13, 14, 15, 16];
+  typeInAppendSlot(a, cursorAt(a, partId, barIds[0]!, 6), annaFrets);
+  typeInAppendSlot(b, cursorAt(b, partId, barIds[0]!, 1), benFrets);
+  sync(docs);
+
+  expect(docToJson(a)).toEqual(docToJson(b));
+  const all = beats(a, barIds[0]!);
+  expect(all).toHaveLength(12);
+  expect(new Set(all.map((beat) => beat.id)).size).toBe(12);
+  const anna = run(a, barIds[0]!, "s6");
+  const ben = run(a, barIds[0]!, "s1");
+  expect(anna.frets).toEqual(annaFrets);
+  expect(ben.frets).toEqual(benFrets);
+  // Each run is together: six places in a row.
+  for (const { indexes } of [anna, ben]) expect(indexes.at(-1)! - indexes[0]!).toBe(5);
+});
+
+test("a member whose anchor another member has appended after types right after the anchor", () => {
+  const { docs, barIds, partId } = members(2);
+  const [a, b] = docs as [Y.Doc, Y.Doc];
+  const annaSlot = typeInAppendSlot(a, cursorAt(a, partId, barIds[0]!, 6), [1, 2]);
+  sync(docs);
+  // Ben goes to the end of the bar, the same append slot, and types two beats there.
+  let benSlot = moveByBeat(b, cursorAt(b, partId, barIds[0]!, 1), 1);
+  benSlot = moveByBeat(b, benSlot, 1);
+  expect(benSlot).toMatchObject({ beatId: annaSlot.beatId, at: "after" });
+  typeInAppendSlot(b, benSlot, [7, 8]);
+  sync(docs);
+
+  // Anna's append slot still stands on her anchor; her next beat goes right after it.
+  expect(settleCursor(a, annaSlot)).toEqual(annaSlot);
+  setFret(a, annaSlot, 3);
+  sync(docs);
+  expect(beats(b, barIds[0]!).map((beat) => beat.notes.s6?.fret ?? beat.notes.s1?.fret)).toEqual([1, 2, 3, 7, 8]);
+  expect(docToJson(a)).toEqual(docToJson(b));
 });
 
 test("notes put on different strings of the same beat at the same time are both kept", () => {
@@ -139,7 +206,8 @@ test("whatever three members do, in whatever order their changes arrive, they en
   fc.assert(
     fc.property(fc.array(step, { maxLength: 60 }), (steps) => {
       const { docs, barIds, partId } = members(3);
-      // Each member types at the end of each bar, as someone entering notes does.
+      // Each member types at the end of each bar, as someone entering notes does: beats go in
+      // the append slot after the member's last one, frets and lengths on that last one.
       const cursors: Cursor[][] = docs.map((doc) => barIds.map((barId) => cursorAt(doc, partId, barId, 6)));
       for (const item of steps) {
         if (item.kind === "send") {
@@ -148,9 +216,9 @@ test("whatever three members do, in whatever order their changes arrive, they en
         }
         const doc = docs[item.member]!;
         const cursor = cursors[item.member]![item.bar]!;
-        if (item.kind === "beat") cursors[item.member]![item.bar] = insertBeat(doc, cursor, { value: item.value });
-        else if (item.kind === "fret") setFret(doc, { ...cursor, line: item.line }, item.fret);
-        else setDuration(doc, cursor, { value: item.value });
+        if (item.kind === "beat") cursors[item.member]![item.bar] = insertBeat(doc, { ...cursor, at: "after" }, { value: item.value });
+        else if (item.kind === "fret") setFret(doc, { ...cursor, at: "on", line: item.line }, item.fret);
+        else setDuration(doc, { ...cursor, at: "on" }, { value: item.value });
       }
       sync(docs);
       sync(docs);

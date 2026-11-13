@@ -384,12 +384,18 @@ export function ordered<T>(map: Y.Map<T>): string[] {
   return keyed.sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0)).map(([, id]) => id);
 }
 
+/** The kind of a part, or undefined when it is not a part or its kind cannot be read (docs/spec/schema.md, section 11). */
+export function partKindOf(part: unknown): PartKind | undefined {
+  const kind = partKindSchema.safeParse(part instanceof Y.Map ? part.get("kind") : undefined);
+  return kind.success ? kind.data : undefined;
+}
+
 /** How many staves a part has: as its `staves` say, or as its kind has by default when they cannot be read. */
 export function staffCountOf(part: YPart): number {
-  const kind = partKindSchema.safeParse(part.get("kind"));
-  if (!kind.success) return 1;
-  const staves = partSchemas[kind.data].shape.staves.safeParse(part.get("staves"));
-  return staves.success ? staves.data.length : KIND_DEFAULTS[kind.data].staves.length;
+  const kind = partKindOf(part);
+  if (kind === undefined) return 1;
+  const staves = partSchemas[kind].shape.staves.safeParse(part.get("staves"));
+  return staves.success ? staves.data.length : KIND_DEFAULTS[kind].staves.length;
 }
 
 /**

@@ -6,7 +6,7 @@ export const WHOLE = 3840;
 
 const DOTTED = [1, 1.5, 1.75] as const;
 
-export function beatTicks(beat: BeatJSON): number {
+export function beatTicks(beat: Pick<BeatJSON, "value" | "dots" | "tuplet">): number {
   const tuplet = beat.tuplet ? beat.tuplet.normal / beat.tuplet.actual : 1;
   return (WHOLE / beat.value) * DOTTED[beat.dots] * tuplet;
 }

@@ -3,14 +3,20 @@ import * as Y from "yjs";
 
 import {
   addPart,
+  barsOf,
   contentOf,
   createScore,
+  type Cursor,
   cursorAt,
+  deleteBeat,
+  deleteNote,
   docToJson,
   fillMissingContent,
   flagsOf,
   insertBars,
   insertBeat,
+  isRestAt,
+  LOCAL,
   partsOf,
   SCHEMA_VERSION,
   setDuration,
@@ -51,22 +57,116 @@ test("bars inserted in the middle land between their neighbours, for every part"
   expect(json.parts.map((part) => part.id)).toContain(bass);
 });
 
-test("beats are inserted after the cursor and the cursor follows them", () => {
+/** The beats of the first voice of a bar of the first part, as [id, value, dots, tuplet, notes]. */
+function beatsOf(doc: Y.Doc, barId: string, part = 0) {
+  return docToJson(doc).parts[part]!.content[barId]!["0:0"]!.map((beat) => [beat.id, beat.value, beat.dots, beat.tuplet, beat.notes]);
+}
+
+/** Count the transactions of a document from now on. */
+function transactionsOf(doc: Y.Doc): { count: number } {
+  const counter = { count: 0 };
+  doc.on("afterTransaction", () => (counter.count += 1));
+  return counter;
+}
+
+function undoOf(doc: Y.Doc): Y.UndoManager {
+  return new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
+}
+
+const triplet = { actual: 3, normal: 2 };
+
+test("a beat is inserted before the beat of the cursor, as long as it, and the cursor moves onto it", () => {
   const { doc, barIds, partId } = score();
-  let cursor = cursorAt(doc, partId, barIds[0]!, 6);
-  expect(cursor.beatId).toBeNull();
-  cursor = insertBeat(doc, cursor, { value: 4 });
-  const first = cursor.beatId;
-  cursor = insertBeat(doc, cursor, { value: 8 });
-  const second = cursor.beatId;
-  cursor = insertBeat(doc, { ...cursor, beatId: first }, { value: 16, dots: 1 });
-  const beats = docToJson(doc).parts[0]!.content[barIds[0]!]!["0:0"]!;
-  expect(beats.map((beat) => [beat.id, beat.value, beat.dots])).toEqual([
-    [first, 4, 0],
-    [cursor.beatId, 16, 1],
-    [second, 8, 0],
+  const first = insertBeat(doc, cursorAt(doc, partId, barIds[0]!, 6), { value: 8, dots: 1, tuplet: triplet });
+  const second = insertBeat(doc, first);
+  expect(second).toEqual({ ...first, beatId: second.beatId, at: "on" });
+  expect(beatsOf(doc, barIds[0]!)).toEqual([
+    [second.beatId, 8, 1, triplet, {}],
+    [first.beatId, 8, 1, triplet, {}],
   ]);
-  expect(cursorAt(doc, partId, barIds[0]!).beatId).toBe(first);
+});
+
+test("in the append slot a beat is appended after the anchor, as long as the anchor, or a quarter in an empty voice", () => {
+  const { doc, barIds, partId } = score();
+  const empty = cursorAt(doc, partId, barIds[0]!, 6);
+  expect(empty).toMatchObject({ beatId: null, at: "after" });
+  const first = insertBeat(doc, empty);
+  setDuration(doc, first, { value: 16, dots: 2 });
+  const second = insertBeat(doc, { ...first, at: "after" });
+  expect(second.at).toBe("on");
+  expect(beatsOf(doc, barIds[0]!)).toEqual([
+    [first.beatId, 16, 2, undefined, {}],
+    [second.beatId, 16, 2, undefined, {}],
+  ]);
+  // An empty voice's append slot puts the beat first, whatever others have put there since.
+  const third = insertBeat(doc, empty);
+  expect(beatsOf(doc, barIds[0]!).map(([id, value]) => [id, value])).toEqual([
+    [third.beatId, 4],
+    [first.beatId, 16],
+    [second.beatId, 16],
+  ]);
+});
+
+test("a note typed in the append slot makes a beat with the note on it, in one undo step, and the cursor moves onto it", () => {
+  const { doc, barIds, partId } = score();
+  const undo = undoOf(doc);
+  const transactions = transactionsOf(doc);
+  const first = setFret(doc, cursorAt(doc, partId, barIds[0]!, 6), 5);
+  expect(transactions.count).toBe(1);
+  expect(first.at).toBe("on");
+  expect(beatsOf(doc, barIds[0]!)).toEqual([[first.beatId, 4, 0, undefined, { s6: { fret: 5 } }]]);
+
+  setDuration(doc, first, { value: 8, dots: 1 });
+  const second = setFret(doc, { ...first, at: "after", line: 2 }, 7);
+  expect(second).toEqual({ ...first, beatId: second.beatId, line: 2 });
+  expect(beatsOf(doc, barIds[0]!)[1]).toEqual([second.beatId, 8, 1, undefined, { s2: { fret: 7 } }]);
+  undo.undo();
+  expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([first.beatId]);
+
+  // Clearing a string in the append slot makes no beat.
+  const before = transactions.count;
+  expect(setFret(doc, { ...first, at: "after" }, null)).toEqual({ ...first, at: "after" });
+  expect(transactions.count).toBe(before);
+});
+
+test("a drum piece typed in the append slot makes its beat as well", () => {
+  const { doc, barIds } = score();
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const hit = setNote(doc, cursorAt(doc, drums, barIds[0]!), "p36", {});
+  expect(beatsOf(doc, barIds[0]!, 1)).toEqual([[hit.beatId, 4, 0, undefined, { p36: {} }]]);
+});
+
+test("deleting a note takes the note off the cursor's string, in one undo step; a string without a note changes nothing", () => {
+  const { doc, barIds, partId } = score();
+  const undo = undoOf(doc);
+  const cursor = setFret(doc, cursorAt(doc, partId, barIds[0]!, 6), 3);
+  setFret(doc, { ...cursor, line: 5 }, 5);
+  expect(isRestAt(doc, cursor)).toBe(false);
+  expect(deleteNote(doc, cursor)).toEqual(cursor);
+  expect(beatsOf(doc, barIds[0]!)[0]![4]).toEqual({ s5: { fret: 5 } });
+  const transactions = transactionsOf(doc);
+  deleteNote(doc, { ...cursor, line: 4 });
+  expect(transactions.count).toBe(0);
+  undo.undo();
+  expect(beatsOf(doc, barIds[0]!)[0]![4]).toEqual({ s6: { fret: 3 }, s5: { fret: 5 } });
+});
+
+test("deleting a beat moves the cursor onto the beat that takes its place, or into the append slot after the new last beat", () => {
+  const { doc, barIds, partId } = score();
+  const undo = undoOf(doc);
+  const a = insertBeat(doc, cursorAt(doc, partId, barIds[0]!, 6));
+  const b = insertBeat(doc, { ...a, at: "after" });
+  const c = insertBeat(doc, { ...b, at: "after" });
+  expect(isRestAt(doc, b)).toBe(true);
+  expect(deleteBeat(doc, b)).toEqual(c);
+  expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([a.beatId, c.beatId]);
+  undo.undo();
+  expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([a.beatId, b.beatId, c.beatId]);
+
+  expect(deleteBeat(doc, c)).toEqual({ ...b, at: "after" });
+  deleteBeat(doc, b);
+  expect(deleteBeat(doc, a)).toEqual({ ...a, beatId: null, at: "after" });
+  expect(beatsOf(doc, barIds[0]!)).toEqual([]);
 });
 
 test("a fret goes on the string of the cursor; null clears it and other strings stay", () => {
@@ -99,20 +199,30 @@ test("a note goes on its beat under its key, whole: a drum piece, a spelled pitc
 
 test("a command on a beat that is gone changes nothing", () => {
   const { doc, barIds, partId } = score();
-  const cursor = { ...cursorAt(doc, partId, barIds[0]!), beatId: "gone" };
-  const before = docToJson(doc);
+  const cursor: Cursor = { ...cursorAt(doc, partId, barIds[0]!), beatId: "gone", at: "on" };
+  const transactions = transactionsOf(doc);
   expect(setFret(doc, cursor, 1)).toEqual(cursor);
   expect(setDuration(doc, cursor, { value: 8 })).toEqual(cursor);
-  expect(docToJson(doc)).toEqual(before);
+  expect(insertBeat(doc, cursor)).toEqual(cursor);
+  expect(deleteNote(doc, cursor)).toEqual(cursor);
+  expect(deleteBeat(doc, cursor)).toEqual(cursor);
+  expect(transactions.count).toBe(0);
+});
+
+test("an append slot whose anchor is gone appends at the end of its voice", () => {
+  const { doc, barIds, partId } = score();
+  const first = insertBeat(doc, cursorAt(doc, partId, barIds[0]!));
+  const added = insertBeat(doc, { ...first, beatId: "gone", at: "after" });
+  expect(beatsOf(doc, barIds[0]!).map(([id]) => id)).toEqual([first.beatId, added.beatId]);
 });
 
 test("a voice that does not fill its bar is flagged; an empty or a full one is not", () => {
   const { doc, barIds, partId } = score(3);
   let cursor = insertBeat(doc, cursorAt(doc, partId, barIds[0]!), { value: 2 });
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId: barIds[0], voice: "0:0" }]);
-  cursor = insertBeat(doc, cursor, { value: 4 });
-  cursor = insertBeat(doc, cursor, { value: 8 });
-  cursor = insertBeat(doc, cursor, { value: 8 });
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 4 });
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 8 });
   expect(flagsOf(docToJson(doc))).toEqual([]);
   setDuration(doc, cursor, { value: 4, dots: 1 });
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "overfull", partId, barId: barIds[0], voice: "0:0" }]);
