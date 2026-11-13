@@ -223,6 +223,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - **遷移清單**：`score-model` 裡一份依版本排序的清單，每一項是 `{ from, to, doc(doc: Y.Doc): void, json(json: unknown): unknown }`。`doc` 與 `json` 兩面的語意必須相同。
 - **`Y.Doc` 那一面**：伺服器在 `onLoadDocument` 載入狀態之後，以參與者身分、在一筆交易裡依序跑 `doc` 遷移，最後把 `meta.schemaVersion` 設成目前的版本。不要在 `onStoreDocument` 裡改文件，否則會再觸發一次儲存。
 - **`ScoreJSON` 那一面**：版本存的是 `docToJson` 的結果，帶著當時的 `schemaVersion`。讀取版本時，伺服器先依序跑 `json` 遷移，回傳目前版本的 JSON（補充：由伺服器遷移，客戶端拿到的一律是目前的版本）。還原、預覽都用遷移後的 JSON。
+- **補充**：`schemaVersion` 讀不懂（沒寫、不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時相同：不遷移，也不會因此被判定為較新。
+- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
 - **`jsonToDoc`**：放在 `score-model`，把 `ScoreJSON` 寫進一份 `Y.Doc`。匯入與還原共用；保留 JSON 裡的 id，依陣列順序重新產生 `order`，建好所有內容容器。
 - **測試**（M1a）：一份假的舊版 fixture（`schemaVersion: 0`）與一個只在測試裡註冊的 0 → 1 遷移，兩面都要測：`Y.Doc` 從舊狀態遷移後的 `docToJson`，等於 JSON 遷移後的結果。正式的遷移清單在第一版是空的。
 

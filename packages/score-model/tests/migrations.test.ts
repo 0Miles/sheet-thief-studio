@@ -71,7 +71,19 @@ test("a document of a newer schema than this code is told apart, and neither sid
   expect(() => migrateJson({ ...docToJson(doc), schemaVersion: SCHEMA_VERSION + 1 })).toThrow(/newer/);
 });
 
-test("a version that has no schema version, or does not pass the schema once migrated, is refused", () => {
-  expect(() => migrateJson({ title: "No version", bars: [], parts: [] })).toThrow();
+test("a schema version that cannot be read is taken as the current one, as reading takes it: nothing to migrate, nothing locked", () => {
+  for (const version of [-1, 0.5, "1", null]) {
+    const doc = new Y.Doc();
+    createScore(doc, "Odd");
+    metaOf(doc).set("schemaVersion", version);
+    expect(migrateDoc(doc, [zeroToOne])).toBe(false);
+    expect(isNewerSchema(doc)).toBe(false);
+    expect(migrateJson({ schemaVersion: version, title: "Odd", bars: [], parts: [] }).schemaVersion).toBe(SCHEMA_VERSION);
+  }
+  expect(migrateJson({ title: "No version", bars: [], parts: [] }).schemaVersion).toBe(SCHEMA_VERSION);
+});
+
+test("a version that does not pass the schema once migrated is refused", () => {
   expect(() => migrateJson({ ...SCORE_V0, title: 7 }, [zeroToOne])).toThrow();
+  expect(() => migrateJson("not a score")).toThrow();
 });
