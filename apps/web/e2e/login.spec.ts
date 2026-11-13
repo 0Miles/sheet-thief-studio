@@ -1,31 +1,10 @@
 // Logging in and out through the pages, and what someone not logged in can open
 // (docs/spec/routes.md, section 1).
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-
-/**
- * Every error the page throws or logs, collected for the test to assert there are none. The
- * browser logs each refused call too: the 401s from `refused` (by default GET /api/me, how the
- * page learns that nobody is logged in) are what the test expects, not errors.
- */
-function pageErrors(page: Page, refused: string[] = ["/api/me"]): string[] {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() !== "error") return;
-    const expected = message.text().includes("401") && refused.some((path) => message.location().url.endsWith(path));
-    if (!expected) errors.push(message.text());
-  });
-  return errors;
-}
-
-async function logIn(page: Page, username: string, password: string): Promise<void> {
-  await page.getByLabel(strings.login.username).fill(username);
-  await page.getByLabel(strings.login.password).fill(password);
-  await page.getByRole("button", { name: strings.login.submit }).click();
-}
+import { logIn, pageErrors } from "./pages";
 
 test("someone not logged in is sent to /login; the admin logs in to /, and logging out goes back to /login", async ({ page }) => {
   const errors = pageErrors(page);
@@ -34,7 +13,7 @@ test("someone not logged in is sent to /login; the admin logs in to /, and loggi
 
   await logIn(page, ADMIN.username, ADMIN.password);
   await expect(page).toHaveURL("/");
-  await expect(page.getByRole("heading", { name: strings.app.name })).toBeVisible();
+  await expect(page.getByRole("heading", { name: strings.home.title })).toBeVisible();
   await expect(page.getByText(ADMIN.displayName)).toBeVisible();
 
   await page.getByRole("button", { name: strings.header.logout }).click();
@@ -46,7 +25,7 @@ test("someone not logged in is sent to /login; the admin logs in to /, and loggi
 });
 
 test("a wrong password is refused on the page, and the page stays on /login", async ({ page }) => {
-  const errors = pageErrors(page, ["/api/auth/login"]);
+  const errors = pageErrors(page, [{ status: 401, path: "/api/auth/login" }]);
   await page.goto("/login");
   await logIn(page, ADMIN.username, "not the password");
   await expect(page.getByRole("alert")).toHaveText(strings.errors.invalid_credentials);

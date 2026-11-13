@@ -32,3 +32,8 @@ export async function get<T>(path: string, shape: { parse(value: unknown): T }):
 export async function post(path: string, body?: unknown): Promise<void> {
   await call("POST", path, body);
 }
+
+/** POST, the answer checked against its shape in @studio/contracts. */
+export async function postFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
+  return shape.parse(await (await call("POST", path, body)).json());
+}

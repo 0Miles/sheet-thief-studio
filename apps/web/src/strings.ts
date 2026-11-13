@@ -7,7 +7,23 @@ export const strings = {
     tagline: "樂團一起寫譜：多聲部團譜的線上即時共編。",
   },
   home: {
+    title: "我的團譜",
     newScore: "新增團譜",
+    empty: "還沒有團譜。按「新增團譜」建立第一份。",
+    loading: "載入中…",
+    roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
+  },
+  newScore: {
+    title: "新增團譜",
+    scoreTitle: "標題",
+    create: "建立",
+    cancel: "取消",
+    close: "關閉",
+  },
+  score: {
+    loading: "載入中…",
+    label: "譜面",
+    sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
   },
   header: {
     logout: "登出",

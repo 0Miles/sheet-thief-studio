@@ -47,9 +47,18 @@ jobs:
       - name: Unit tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test
-      - name: Build the web app
+      - id: build
+        name: Build the web app
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studio/web build
+      # Only the end-to-end build may expose window.__studioTest (docs/spec/testing.md, section 2).
+      - name: The production build holds no test hook
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          if grep -rq "__studioTest" apps/web/dist; then
+            echo "apps/web/dist holds __studioTest: the test hook is in the production build" >&2
+            exit 1
+          fi
 
   # The pages through a real browser, against the real server, Postgres and Redis.
   e2e:

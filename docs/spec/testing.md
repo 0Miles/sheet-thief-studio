@@ -29,6 +29,7 @@
 | `window.__studioMeasure` | 只在 `VITE_MEASURE=1` 的 build | 只給 measure 套件用：`placeCursor`、`editBar`、`bulkEdit`、`renders`、`keys`、`player.reload`、`player.trace`（`hook.ts:45-61`），以及 measure 套件現在讀的 `ready`、`synced`、`json`、`stateSize`、`cursorRect`、`errors`、`player.state`、`player.position`（補充） |
 
 - 正式 build 兩者都沒有。加一個檢查，確認打包結果（`apps/web/dist`）不含 `__studio` 這個字串；CI 的 `check` job 跑它。
+  - 目前（#6）CI 檢查的是 `__studioTest`：spike 頁的 `window.__studio` 還在正式 build 裡，#37 移除 spike 頁之後改成檢查 `__studio`。`__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷，其他 build 裡是死碼，打包時整段移除。
 - e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
 - **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
 - Playwright 的 `webServer` 現在是 `pnpm build && pnpm preview`（`apps/web/playwright.config.ts:25`），要帶上 `VITE_E2E=1`。

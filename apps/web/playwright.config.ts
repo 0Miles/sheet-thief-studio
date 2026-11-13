@@ -28,7 +28,9 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
+      // The end-to-end build: it has `window.__studioTest` (src/testHook.ts); no other build does.
       command: "pnpm build && pnpm preview",
+      env: { VITE_E2E: "1" },
       url: "http://localhost:5183",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

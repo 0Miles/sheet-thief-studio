@@ -1,19 +1,14 @@
-// Two members, each in a browser of their own, co-editing one score through the real server
-// (docs/ROADMAP.md, question S4).
-import { type Browser, expect, type Page, test } from "@playwright/test";
+// Two browsers, each logged in on its own, co-editing one score through the real server on the
+// spike page (docs/ROADMAP.md, question S4). Both are the score's Owner: adding members comes with #13.
+import { expect, type Page, test } from "@playwright/test";
 
+import { ADMIN } from "./environment";
+import { createScore, loggedIn } from "./pages";
 import { beatsIn, openScore, placeCursor, settled } from "./studio";
 
 const GUITAR = 0;
-/** The fourth bar of the demo score: empty. */
+/** The fourth bar of a new score: empty. */
 const BAR = 3;
-
-async function member(browser: Browser, name: string): Promise<Page> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await openScore(page, `/spike/${name}?bars=4&parts=2&player=0`);
-  return page;
-}
 
 /** Type one beat per fret: a new beat, then its fret, as someone entering notes does. */
 async function typeBeats(page: Page, frets: number[]): Promise<void> {
@@ -35,13 +30,12 @@ function isContiguous(indexes: number[]): boolean {
 }
 
 test("two members typing in the same bar at the same time keep every beat, each run together, and undo only their own", async ({ browser }) => {
-  const name = `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  // The first member's page seeds the score; the second opens it once it has reached the server.
-  const anna = await member(browser, name);
-  await settled([anna]);
-  const ben = await member(browser, name);
+  const anna = await loggedIn(browser, ADMIN);
+  const ben = await loggedIn(browser, ADMIN);
+  const id = await createScore(anna, "共編測試");
+  for (const page of [anna, ben]) await openScore(page, `/spike/${id}?player=0`);
   const start = await settled([anna, ben]);
-  expect(start.parts).toHaveLength(2);
+  expect(start.parts).toHaveLength(1);
   expect(beatsIn(start, GUITAR, BAR)).toHaveLength(0);
 
   await placeCursor(anna, GUITAR, BAR, -1, 6);
