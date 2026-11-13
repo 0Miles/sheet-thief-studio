@@ -305,3 +305,22 @@ test("a bar whose id is __proto__ is left out of every part and flagged; a beat 
   // What reading gives can be written back: nothing in it is lost on the way.
   expect(docToJson(jsonToDoc(json))).toEqual(json);
 });
+
+test("a value that carries a key __proto__ cannot be read, so that every member reads the same", () => {
+  const { doc, notes } = band();
+  // Other members decode such a key as the prototype of the value: they would read it otherwise.
+  notes(0).set("s6", JSON.parse('{"fret":3,"__proto__":{"dead":true}}'));
+  notes(1).set("s5", JSON.parse('{"fret":5,"bend":{"type":"bend","semitones":2,"__proto__":{}}}'));
+  barsOf(doc).get("b2")!.set("timeSig", JSON.parse('{"numerator":3,"denominator":4,"__proto__":{"numerator":6}}'));
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  const mine = readScore(doc);
+  expect(readScore(other)).toEqual(mine);
+  expect(mine.score.parts[0]!.content.b1!["0:0"]!.map((item) => item.notes)).toEqual([{}, { s4: { fret: 7 } }, {}]);
+  expect(mine.score.bars[1]!.timeSig).toEqual({ numerator: 4, denominator: 4 });
+  expect(mine.invalid.map((item) => [item.barId, item.beatId, item.noteKey, item.what])).toEqual([
+    ["b2", undefined, undefined, "bar.timeSig"],
+    ["b1", "x1", "s6", "note"],
+    ["b1", "x2", "s5", "note"],
+  ]);
+});

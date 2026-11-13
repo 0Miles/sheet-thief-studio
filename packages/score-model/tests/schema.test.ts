@@ -166,6 +166,10 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["a tie on a drum", (json) => void (beatOf(drums(json)).notes.p36 = { tie: true })],
   ["palm mute on a pitched note", (json) => void (beatOf(keys(json)).notes.n61 = { palmMute: true })],
   ["a spelling on a guitar note", (json) => void (beatOf(guitar(json)).notes.s6 = { fret: 3, spell: "G" })],
+  // zod records drop a key __proto__ without a word: it is refused instead.
+  ["notes with a key __proto__", (json) => void (beatOf(guitar(json)).notes = JSON.parse('{"s6":{"fret":3},"__proto__":{"fret":1}}'))],
+  ["voices with a key __proto__", (json) => void (guitar(json).content.b2 = JSON.parse('{"0:0":[],"__proto__":[]}'))],
+  ["content with a key __proto__", (json) => void (guitar(json).content = JSON.parse('{"b1":{"0:0":[]},"__proto__":{"0:0":[]}}'))],
   ["the spelling H", (json) => void (beatOf(keys(json)).notes.n61 = { spell: "H" })],
   ["a spelling with three sharps", (json) => void (beatOf(keys(json)).notes.n61 = { spell: "C###" })],
 ];

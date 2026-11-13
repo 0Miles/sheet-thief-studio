@@ -246,6 +246,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
+- **補充**：值（音符、`timeSig`、`staves` 等）不是單純的 JSON 時當成讀不懂：物件或陣列的原型不是一般的，或帶有 `__proto__` 這個鍵。理由：其他成員解碼時把這個鍵當成物件的原型，讀到的會和寫入的成員不同。`ScoreJSON` 的記錄（`content`、聲線、`notes`）帶 `__proto__` 鍵時，zod 拒絕，不默默丟掉。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
 - 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。**補充**：作廢在交易結束、任何 observer 被呼叫之前做（Yjs 的 `beforeObserverCalls`，依 `transaction.changed`），所以在 observer 裡讀取也看得到這次的修改；交易進行中讀取時不用快取。

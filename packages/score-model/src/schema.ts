@@ -30,6 +30,22 @@ export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
  * A string of `min` to `max` characters, counted as JavaScript counts them (UTF-16 code units,
  * docs/spec/schema.md section 13); zod's own length checks count code points.
  */
+/**
+ * Whether a value is plain JSON all the way down: plain objects and arrays, and no key
+ * __proto__. Members who receive such a key decode it as the prototype of its object and read
+ * something else than the member who wrote it; zod's records drop it without a word.
+ */
+export function isPlainJson(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return true;
+  if (Array.isArray(value)) return Object.getPrototypeOf(value) === Array.prototype && value.every(isPlainJson);
+  return Object.getPrototypeOf(value) === Object.prototype && !Object.hasOwn(value, "__proto__") && Object.values(value).every(isPlainJson);
+}
+
+/** A record of string keys, refused when it has a key __proto__ rather than losing it. */
+function keyedRecord<T extends z.ZodType>(value: T) {
+  return z.custom((input) => typeof input !== "object" || input === null || !Object.hasOwn(input, "__proto__"), "a key __proto__").pipe(z.record(z.string(), value));
+}
+
 function text(min: number, max: number) {
   return z.string().refine((value) => value.length >= min && value.length <= max, `from ${min} to ${max} characters`);
 }
@@ -143,7 +159,7 @@ const beatFieldsSchema = z.object({
 /** Every field a beat can have, whatever its part. */
 export const beatSchema = beatFieldsSchema.extend({
   /** Keyed by position: "s3" a string, "p38" a drum piece, "n60" a pitch. Empty is a rest. */
-  notes: z.record(z.string(), noteSchema),
+  notes: keyedRecord(noteSchema),
 });
 export type BeatJSON = z.infer<typeof beatSchema>;
 
@@ -216,7 +232,7 @@ export function voiceKeys(staves: number): string[] {
 // Parts -----------------------------------------------------------------------------------------
 
 /** Bar id, then voice ("staff:voice"), to its beats. A bar or voice left out is empty. */
-const contentSchema = z.record(z.string(), z.record(z.string(), z.array(beatSchema)));
+const contentSchema = keyedRecord(keyedRecord(z.array(beatSchema)));
 
 /** The name may be empty when read: an unreadable name reads as empty (section 11). */
 const partName = text(0, 64);
