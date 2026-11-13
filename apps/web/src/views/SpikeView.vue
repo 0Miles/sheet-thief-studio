@@ -24,6 +24,7 @@ import { useRoute } from "vue-router";
 import * as Y from "yjs";
 
 import { collabUrl, newCollabTicket } from "../api";
+import { keyPlatform } from "../device";
 import { seedDemo, seedPerf } from "../spike/demoScores";
 import type { KeySample, RenderSample, StudioHook } from "../spike/hook";
 import { strings } from "../strings";
@@ -271,7 +272,7 @@ function start(): void {
     if (query("seed") === "perf") seedPerf(doc, Number(query("bars") ?? 100));
     else seedDemo(doc, { bars: Number(query("bars") ?? 12), parts: Number(query("parts") ?? 3) });
   }
-  session = createEditorSession(doc); // after the seed, so that undo cannot take the seed back
+  session = createEditorSession(doc, { platform: keyPlatform() }); // after the seed, so that undo cannot take the seed back
   session.onPresence(updateRect);
   const json = docToJson(doc);
   score.value = json;

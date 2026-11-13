@@ -13,7 +13,7 @@ import * as Y from "yjs";
 
 import { ApiError, collabUrl, get, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
-import { canType } from "../device";
+import { canType, keyPlatform } from "../device";
 import { clearOf } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -96,7 +96,7 @@ function firstCursor(json: ScoreJSON): Cursor | null {
 }
 
 function startEditing(json: ScoreJSON): void {
-  session = createEditorSession(doc, { cursor: firstCursor(json), readOnly: view.value === "readOnlyEdit" });
+  session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(() => {
     placeCursor();
     reveal();
@@ -118,10 +118,7 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  // Keys that go to an input method. Safari ends a composition with a keydown whose `isComposing`
-  // is false and whose keyCode is 229 (docs/spec/keymap.md, 1.1).
-  if (session === undefined || event.isComposing || event.keyCode === 229) return;
-  if (session.press(event)) event.preventDefault();
+  if (session?.press(event)) event.preventDefault();
 }
 
 /** A click on the score only moves the cursor (docs/spec/views.md, section 2). */

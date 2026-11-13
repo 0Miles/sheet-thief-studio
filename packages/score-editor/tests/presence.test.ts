@@ -142,7 +142,7 @@ test("a session started on a beat that has not arrived yet still lands on the be
     typed = setFret(other, { ...typed, at: "after" }, fret);
     ids.push(typed.beatId!);
   }
-  const session = createEditorSession(doc, { cursor: { ...typed, beatId: ids[1]!, at: "on" } });
+  const session = createEditorSession(doc, { platform: "other", cursor: { ...typed, beatId: ids[1]!, at: "on" } });
   send();
   other.transact(() => contentOf(partsOf(other).get(partId)!).get(barId!)!.get("0:0")!.delete(1, 1));
   send();
