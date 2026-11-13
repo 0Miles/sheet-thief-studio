@@ -82,15 +82,10 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { action: "fret", context: "fretted", keys: FRET_KEYS, keymap: both(...FRET_KEYS) },
 ];
 
-/** The keys of a binding on a platform. */
-export function chordsOf(binding: KeyBinding, platform: KeyPlatform): readonly Chord[] {
-  return (platform === "mac" ? binding.mac : undefined) ?? binding.keys;
-}
-
 /**
  * The keys no binding may be on (keymap.md, 1.2): the operating system takes them first, the
  * browser cannot be kept from them, or they take the focus away. Written as `KeyBinding.keymap`
- * is; `*` stands for any key with exactly those modifiers.
+ * is; `*` stands for any key with those modifiers held, and any others besides.
  */
 export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
   other: [
@@ -120,7 +115,6 @@ export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
     ...LETTERS.map((letter) => `Alt+Key${letter}`),
     // Linux desktops switch workspaces with them; on Windows, AltGr is Ctrl+Alt.
     "Ctrl+Alt+*",
-    "Ctrl+Alt+Shift+*",
   ],
   mac: [
     // Taken by macOS before the browser: Mission Control and Spaces, the input sources, Spotlight,

@@ -2,7 +2,7 @@
 import { detectKeyPlatform, type KeyPlatform } from "@studio/score-editor";
 
 let typeable: boolean | undefined;
-let keys: KeyPlatform | undefined;
+let platform: KeyPlatform | undefined;
 
 /**
  * The device can be typed on (docs/spec/views.md, section 1): a fine pointer and a window at least
@@ -19,6 +19,6 @@ export function canType(): boolean {
  * told once, and nowhere else in the page.
  */
 export function keyPlatform(): KeyPlatform {
-  keys ??= detectKeyPlatform(navigator);
-  return keys;
+  platform ??= detectKeyPlatform(navigator);
+  return platform;
 }

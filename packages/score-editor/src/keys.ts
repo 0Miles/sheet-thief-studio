@@ -2,7 +2,7 @@
 // chords, which become the keys of Windows and Linux, or of macOS, here and nowhere else.
 import type { PartKind } from "@studio/score-model";
 
-import { chordsOf, KEY_BINDINGS, type KeyBinding } from "./bindings";
+import { KEY_BINDINGS, type KeyBinding } from "./bindings";
 
 /** The keys of Windows and Linux (`"other"`), or of macOS and iPadOS (`"mac"`). */
 export type KeyPlatform = "mac" | "other";
@@ -41,27 +41,61 @@ export interface KeyCombo {
   metaKey: boolean;
 }
 
+/** A modifier as a keyboard event tells it. */
+export type ModifierFlag = Exclude<keyof KeyCombo, "code">;
+
+/**
+ * Keys written as modifiers and a `code` joined with `+`, each modifier read by `flagOf`, which
+ * throws on one it does not know.
+ */
+function readKeys(text: string, flagOf: (modifier: string) => ModifierFlag): KeyCombo {
+  const parts = text.split("+");
+  const combo: KeyCombo = { code: parts.pop()!, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+  for (const part of parts) combo[flagOf(part)] = true;
+  return combo;
+}
+
 /** What each abstract modifier holds on each platform. */
-const HELD: Record<KeyPlatform, Record<Modifier, keyof Omit<KeyCombo, "code">>> = {
+const HELD: Record<KeyPlatform, Record<Modifier, ModifierFlag>> = {
   other: { Mod: "ctrlKey", Nav: "ctrlKey", Alt: "altKey", Shift: "shiftKey" },
   mac: { Mod: "metaKey", Nav: "altKey", Alt: "altKey", Shift: "shiftKey" },
 };
 
 /** The keys of a chord on a platform. */
 export function resolveChord(chord: Chord, platform: KeyPlatform): KeyCombo {
-  const parts = chord.split("+");
-  const code = parts.pop()!;
-  const combo: KeyCombo = { code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
   let last = -1;
-  for (const part of parts) {
+  return readKeys(chord, (part) => {
     const index = MODIFIERS.indexOf(part as Modifier);
     if (index < 0) throw new Error(`${chord}: ${part} is not one of ${MODIFIERS.join(", ")}`);
     if (index <= last) throw new Error(`${chord}: the modifiers are written in the order ${MODIFIERS.join(", ")}`);
     last = index;
-    combo[HELD[platform][part as Modifier]] = true;
-  }
-  return combo;
+    return HELD[platform][part as Modifier];
+  });
 }
+
+/** The keys of a binding on a platform. */
+export function chordsOf(binding: KeyBinding, platform: KeyPlatform): readonly Chord[] {
+  return (platform === "mac" ? binding.mac : undefined) ?? binding.keys;
+}
+
+/**
+ * The modifiers by the names on each platform's keyboard, in the order they are named, which on
+ * a Mac is Apple's (⌃⌥⇧⌘), with the symbols a Mac shows them with.
+ */
+const KEYBOARD_NAMES: Record<KeyPlatform, [name: string, flag: ModifierFlag, symbol?: string][]> = {
+  other: [
+    ["Ctrl", "ctrlKey"],
+    ["Alt", "altKey"],
+    ["Shift", "shiftKey"],
+    ["Win", "metaKey"],
+  ],
+  mac: [
+    ["Ctrl", "ctrlKey", "⌃"],
+    ["Option", "altKey", "⌥"],
+    ["Shift", "shiftKey", "⇧"],
+    ["Cmd", "metaKey", "⌘"],
+  ],
+};
 
 /** The names of the keys whose name is not their `code`, by platform where they differ. */
 const KEY_NAMES: Record<string, string | Record<KeyPlatform, string>> = {
@@ -96,48 +130,24 @@ function keyName(code: string, platform: KeyPlatform): string {
 
 /**
  * How a chord is shown on this platform, in a toolbar's hint or a help text: `Ctrl+Z` on Windows
- * and Linux, `⌘Z` on a Mac, with the Mac's modifiers in Apple's order (⌃⌥⇧⌘).
+ * and Linux, `⌘Z` on a Mac.
  */
 export function formatChord(chord: Chord, platform: KeyPlatform): string {
   const combo = resolveChord(chord, platform);
+  const held = KEYBOARD_NAMES[platform].filter(([, flag]) => combo[flag]);
   const key = keyName(combo.code, platform);
-  if (platform === "mac") {
-    const held = [combo.ctrlKey && "⌃", combo.altKey && "⌥", combo.shiftKey && "⇧", combo.metaKey && "⌘"];
-    return held.filter(Boolean).join("") + key;
-  }
-  const held = [combo.ctrlKey && "Ctrl", combo.altKey && "Alt", combo.shiftKey && "Shift", combo.metaKey && "Win"];
-  return [...held.filter(Boolean), key].join("+");
+  return platform === "mac" ? held.map(([, , symbol]) => symbol).join("") + key : [...held.map(([name]) => name), key].join("+");
 }
-
-/** The modifiers by the names on each platform's keyboard, in the order they are named. */
-const KEYBOARD_NAMES: Record<KeyPlatform, [name: string, flag: keyof Omit<KeyCombo, "code">][]> = {
-  other: [
-    ["Ctrl", "ctrlKey"],
-    ["Alt", "altKey"],
-    ["Shift", "shiftKey"],
-    ["Win", "metaKey"],
-  ],
-  mac: [
-    ["Ctrl", "ctrlKey"],
-    ["Option", "altKey"],
-    ["Shift", "shiftKey"],
-    ["Cmd", "metaKey"],
-  ],
-};
-
 /**
  * The keys written with the modifiers on the platform's keyboard, as the keymap's tables are:
  * `"Ctrl+Shift+KeyZ"`, `"Cmd+Enter"`, `"Option+ArrowLeft"`.
  */
 export function comboOf(text: string, platform: KeyPlatform): KeyCombo {
-  const parts = text.split("+");
-  const combo: KeyCombo = { code: parts.pop()!, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
-  for (const part of parts) {
+  return readKeys(text, (part) => {
     const held = KEYBOARD_NAMES[platform].find(([name]) => name === part);
     if (held === undefined) throw new Error(`${text}: ${part} is not a modifier of ${platform}`);
-    combo[held[1]] = true;
-  }
-  return combo;
+    return held[1];
+  });
 }
 
 /** The keys named as `comboOf` reads them, the modifiers always in the same order. */

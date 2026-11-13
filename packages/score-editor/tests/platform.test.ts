@@ -14,11 +14,12 @@ import {
   type KeyCombo,
   type KeyPlatform,
   matchKey,
+  type ModifierFlag,
   resolveChord,
 } from "../src/index";
 
 const PLATFORMS: KeyPlatform[] = ["other", "mac"];
-const MODIFIER_FLAGS = ["ctrlKey", "altKey", "shiftKey", "metaKey"] as const;
+const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKey"];
 
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
@@ -81,7 +82,9 @@ describe.each(PLATFORMS)("on %s", (platform) => {
   test.each(KEY_BINDINGS.map((binding) => [nameOf(binding), binding] as const))("%s is on no key the platform keeps for itself", (_, binding) => {
     const forbidden = FORBIDDEN_KEYS[platform].map((text) => comboOf(text, platform));
     for (const combo of combosOf(binding, platform)) {
-      const taken = forbidden.find((entry) => (entry.code === "*" || entry.code === combo.code) && MODIFIER_FLAGS.every((flag) => entry[flag] === combo[flag]));
+      const taken = forbidden.find((entry) =>
+        entry.code === "*" ? MODIFIER_FLAGS.every((flag) => !entry[flag] || combo[flag]) : entry.code === combo.code && MODIFIER_FLAGS.every((flag) => entry[flag] === combo[flag]),
+      );
       expect(taken && `${comboName(combo, platform)} is kept by the platform (${comboName(taken, platform)})`).toBeUndefined();
     }
   });
