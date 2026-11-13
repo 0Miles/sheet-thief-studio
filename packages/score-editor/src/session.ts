@@ -38,6 +38,23 @@ export interface Key {
   altKey?: boolean;
 }
 
+/**
+ * A stretch the cursor extends over, inside one part (docs/spec/commands.md, section 4). Its
+ * shape is fixed here for the presence; until selecting comes (#21), the session has none.
+ */
+export type Selection =
+  | { kind: "beats"; partId: string; barId: string; voice: string; anchorBeatId: string; focusBeatId: string }
+  | { kind: "bars"; partId: string; anchorBarId: string; focusBarId: string };
+
+/**
+ * What this member shows the others (docs/spec/views.md, section 8). The shell writes it to the
+ * awareness, next to the fields the server fills in.
+ */
+export interface LocalPresence {
+  cursor: Cursor | null;
+  selection: Selection | null;
+}
+
 export interface EditorSessionOptions {
   /** Where the cursor starts. */
   cursor?: Cursor | null;
@@ -51,8 +68,15 @@ export interface EditorSessionOptions {
 }
 
 export interface EditorSession {
-  /** Where this member is typing. */
+  /**
+   * Where this member is typing. When a change (another member's, or an undo) removes its beat,
+   * it moves to the nearest place still there; null once its part or bar is gone.
+   */
   readonly cursor: Cursor | null;
+  readonly selection: Selection | null;
+  presence(): LocalPresence;
+  /** Called with the presence each time the cursor or the selection changes. */
+  onPresence(listener: (presence: LocalPresence) => void): () => void;
   /**
    * Handle a key at the cursor. True when it is one of the session's keys: the shell then calls
    * `preventDefault`. Any other key is left alone.
@@ -71,11 +95,17 @@ export interface EditorSession {
 /** A key of the session: the command it runs at a cursor, and whether that changes the score. */
 interface Action {
   changes: boolean;
-  run(at: Cursor): Cursor;
+  run(at: Cursor): Cursor | null;
 }
 
 const move = (run: (at: Cursor) => Cursor): Action => ({ changes: false, run });
-const change = (run: (at: Cursor) => Cursor): Action => ({ changes: true, run });
+const change = (run: (at: Cursor) => Cursor | null): Action => ({ changes: true, run });
+
+function samePlace(a: Cursor | null, b: Cursor | null): boolean {
+  if (a === null || b === null) return a === b;
+  const keys = Object.keys(a) as (keyof Cursor)[];
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
 
 /** The first digit of what may become a two-digit fret. */
 interface TypedDigit {
@@ -91,6 +121,22 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   let lastDigit: TypedDigit | null = null;
   const refusedListeners = new Set<() => void>();
   let refused = false;
+  const presenceListeners = new Set<(presence: LocalPresence) => void>();
+
+  function presence(): LocalPresence {
+    return { cursor, selection: null };
+  }
+
+  function moveTo(next: Cursor | null): void {
+    if (samePlace(next, cursor)) return;
+    cursor = next;
+    const told = presence();
+    for (const listener of presenceListeners) listener(told);
+  }
+
+  // Whatever changed the score, the cursor stays on a place that exists.
+  const settle = (): void => moveTo(cursor && settleCursor(doc, cursor));
+  doc.on("afterTransaction", settle);
 
   function typeDigit(digit: number, at: Cursor, previous: TypedDigit | null): Cursor {
     const second =
@@ -125,7 +171,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     return change((at) => {
       if (redo) undo.redo();
       else undo.undo();
-      return settleCursor(doc, at) ?? at;
+      return settleCursor(doc, at);
     });
   }
 
@@ -173,9 +219,17 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     get cursor() {
       return cursor;
     },
+    get selection() {
+      return null;
+    },
+    presence,
+    onPresence(listener) {
+      presenceListeners.add(listener);
+      return () => presenceListeners.delete(listener);
+    },
     press(key) {
       if (cursor === null) return false;
-      // Any key but a second digit ends the time for one.
+      // A digit waits for a second one; any other key ends the wait.
       const previous = lastDigit;
       lastDigit = null;
       const action = actionFor(key, cursor, previous);
@@ -185,18 +239,18 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         refused = true;
         return true;
       }
-      cursor = action.run(cursor);
+      moveTo(action.run(cursor));
       return true;
     },
-    moveTo(next) {
-      cursor = next;
-    },
+    moveTo,
     onRefused(listener) {
       refusedListeners.add(listener);
       return () => refusedListeners.delete(listener);
     },
     destroy() {
+      doc.off("afterTransaction", settle);
       refusedListeners.clear();
+      presenceListeners.clear();
       undo.destroy();
     },
   };
