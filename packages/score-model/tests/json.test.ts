@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { addPart, contentOf, createScore, docToJson, insertBars, jsonToDoc, partsOf, SCHEMA_VERSION, type ScoreJSON } from "../src/index";
+import { addPart, contentOf, createScore, docToJson, insertBars, jsonToDoc, type PartJSON, partsOf, SCHEMA_VERSION, type ScoreJSON } from "../src/index";
 import { score } from "./arbitraries";
 
 test("a score written into a document reads back the same", () => {
@@ -11,6 +11,42 @@ test("a score written into a document reads back the same", () => {
     fc.property(score(), (json) => {
       expect(docToJson(jsonToDoc(json))).toEqual(json);
     }),
+    { numRuns: 300 },
+  );
+});
+
+/**
+ * The same score written as loosely as the schema allows: empty bars and empty voices left
+ * out, empty second voices written.
+ */
+function loosened(json: ScoreJSON): fc.Arbitrary<ScoreJSON> {
+  return fc.infiniteStream(fc.boolean()).map((choices) => {
+    const choose = () => choices.next().value as boolean;
+    const parts = json.parts.map((part): PartJSON => {
+      const content: PartJSON["content"] = {};
+      for (const [barId, voices] of Object.entries(part.content)) {
+        if (Object.values(voices).every((beats) => beats.length === 0) && choose()) continue;
+        const loose = { ...voices };
+        part.staves.forEach((_, staff) => {
+          if (loose[`${staff}:0`]?.length === 0 && choose()) delete loose[`${staff}:0`];
+          if (loose[`${staff}:1`] === undefined && choose()) loose[`${staff}:1`] = [];
+        });
+        content[barId] = loose;
+      }
+      return { ...part, content } as PartJSON;
+    });
+    return { ...json, parts };
+  });
+}
+
+test("a score written loosely reads back in the form docToJson gives, with the same music", () => {
+  fc.assert(
+    fc.property(
+      score().chain((json) => fc.tuple(fc.constant(json), loosened(json))),
+      ([json, loose]) => {
+        expect(docToJson(jsonToDoc(loose))).toEqual(json);
+      },
+    ),
     { numRuns: 300 },
   );
 });

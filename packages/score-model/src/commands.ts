@@ -8,13 +8,13 @@ import {
   barsOf,
   contentOf,
   emptyBarContent,
+  KIND_DEFAULTS,
   LOCAL,
   MAIN_VOICE,
   metaOf,
   type NoteJSON,
   type NoteValue,
   ordered,
-  PART_DEFAULTS,
   type PartKind,
   partsOf,
   SCHEMA_VERSION,
@@ -70,7 +70,7 @@ export interface NewPart {
 }
 
 /** Add a part after the last one, with a place for the content of every bar. */
-export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = PART_DEFAULTS[kind].program, staves = PART_DEFAULTS[kind].staves }: NewPart): string {
+export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KIND_DEFAULTS[kind].program, staves = KIND_DEFAULTS[kind].staves }: NewPart): string {
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);

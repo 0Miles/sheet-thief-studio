@@ -22,15 +22,15 @@ Y.Doc
 - 拍點層級的欄位直接放在拍點的 `Y.Map` 上，各自後寫者勝。
 - 音符是整顆 JSON（`NoteJSON`），以位置為鍵，同一個音符的同時修改是後寫者勝。
 - 每個聲部、每個小節、每條聲線是一個 `Y.Array<拍點>`。
-- 小節與聲部的順序由各自的 `order` 欄位決定：fractional index 排序鍵，同鍵時依 id 排（`schema.ts:100-106` 的 `ordered`）。
-- id 用 `nanoid(10)`（`commands.ts:42-44`）。
+- 小節與聲部的順序由各自的 `order` 欄位決定：fractional index 排序鍵，同鍵時依 id 排（`schema.ts` 的 `ordered`）。
+- id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
 ### 1.1 內容容器
 
 - 每個聲部對每個小節都有一個「小節內容」`Y.Map`，鍵是 `"<譜表>:<聲線>"`，值是那條聲線的 `Y.Array`。
 - **補充**：容器預先建好聲部每個譜表的兩條聲線（`"0:0"`、`"0:1"`；兩個譜表時再加 `"1:0"`、`"1:1"`）。理由：兩個人同時「第一次寫進第二聲線」時，各自建立的 `Y.Array` 會互相覆蓋，一方的拍點無聲消失（ADR 0002 增補）。空的聲線讀起來就是整小節休止，投影時不產生第二聲線。
-- 建立小節的人，在同一筆交易裡替所有聲部建好容器；建立聲部的人，在同一筆交易裡替所有小節建好容器（ADR 0002:21，`commands.ts:78-80,111-112`）。
-- 缺少的容器（含缺少的聲線）只由伺服器補齊：在 debounce 過的 `onChange` 裡以參與者身分執行 `fillMissingContent`（`commands.ts:118-130`）。客戶端不補。見 [`collab.md`](collab.md)。
+- 建立小節的人，在同一筆交易裡替所有聲部建好容器；建立聲部的人，在同一筆交易裡替所有小節建好容器（ADR 0002:21，`commands.ts` 的 `addPart`、`insertBars`）。
+- 缺少的容器（含缺少的聲線）只由伺服器補齊：在 debounce 過的 `onChange` 裡以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補。見 [`collab.md`](collab.md)。
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建。
 
 ## 2. meta
@@ -121,7 +121,7 @@ Y.Doc
 | `lyric?` | string，0–32 字元；一拍一個音節，只有一行 | pitched |
 
 - `tuplet`：`actual` integer 2–12、`normal` integer 1–12、兩者不相等（補充）。介面只提供三連音 `{ actual: 3, normal: 2 }`。
-- 時值的 tick：全音符 3840（四分音符 960）；附點倍數 1、1.5、1.75；連音乘 `normal / actual`（`flags.ts:4-12`）。
+- 時值的 tick：全音符 3840（四分音符 960）；附點倍數 1、1.5、1.75；連音乘 `normal / actual`（`flags.ts` 的 `beatTicks`）。
 - `lyric` 的空字串表示延長（melisma）。投影時空字串與沒寫都轉成 `beat.lyrics = null`，不要轉成 `[""]`。
 - 音節結尾帶 `-` 表示字還沒結束；照原樣存、照原樣投影。alphaTab 照原樣畫出 `-`（`LyricsGlyph.paint`，`alphaTab.core.mjs:57310-57315`），沒有跨音符的連字號圖形；它自己讀 GP 歌詞時也保留 `-`（:12522-12597）。
 - `text` 的空字串表示移除，所以存下來的 `text` 至少 1 個字元。
@@ -209,7 +209,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 
 ## 9. `schemaVersion` 與加法規則
 
-- 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts:6`）照用。
+- 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts` 的 `SCHEMA_VERSION`）照用。
 - 新增 optional 欄位屬於加法改動，**不升** `schemaVersion`。條件：同一個 PR 也改本檔、ADR 0002 的增補（形狀有變時）與 zod schema。
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
@@ -244,7 +244,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
-- `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，各自標記。三者都沒寫（還沒建立團譜的空文件）時不標記。
+- `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
 - 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；`observeDeep` 回報某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。
 - 伺服器端的讀取（建立版本、鏡射標題）用同一個函式。
@@ -321,6 +321,6 @@ interface BeatJSON {
 | 聲部的 `name`（補充） | 64 字元 |
 | 聲部 | 總共 16 個，其中非鼓聲部最多 15 個 |
 | 小節 | 1000 個。匯入用這個上限；**補充**：插入小節、放置樂句的指令也不得讓總數超過 1000 |
-| 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後） |
+| 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後；`importedScoreSchema`） |
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |

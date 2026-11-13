@@ -11,12 +11,12 @@ import {
   barsOf,
   isNoteKey,
   isVoiceKey,
+  KIND_DEFAULTS,
   kindSchemas,
   metaOf,
   metaSchema,
   type NoteJSON,
   ordered,
-  PART_DEFAULTS,
   type PartJSON,
   type PartKind,
   partKindSchema,
@@ -38,7 +38,8 @@ interface Fit {
 
 /** A beat as last checked: what it reads as (null when it cannot be read) and what was wrong in it. */
 interface Checked {
-  fit: string;
+  /** The fit it was checked for, as `kind:strings`. */
+  checkedFor: string;
   beat: BeatJSON | null;
   invalid: InvalidContentFlag[];
 }
@@ -71,8 +72,8 @@ function flag(place: Place, what: string): InvalidContentFlag {
   return { kind: "invalidContent", ...place, what };
 }
 
-/** The value of a field as its schema reads it; `fallback` (and a flag) when it does not fit. */
-function field<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
+/** The value of a field as its schema reads it, or `fallback` and a flag when it does not fit. */
+function readField<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
   const parsed = schema.safeParse(value);
   if (parsed.success) return parsed.data;
   invalid.push(flag(place, what));
@@ -88,7 +89,7 @@ function fieldsOf(beat: YBeat): Record<string, unknown> {
   return fields;
 }
 
-function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "fit"> {
+function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {
   const fields = fieldsOf(beat);
   const at: Place = typeof fields.id === "string" ? { ...place, beatId: fields.id } : place;
   const invalid: InvalidContentFlag[] = [];
@@ -123,8 +124,8 @@ function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: Inv
       return;
     }
     let result = checked.get(beat);
-    if (result?.fit !== key) {
-      result = { fit: key, ...checkBeat(beat, fit, place) };
+    if (result?.checkedFor !== key) {
+      result = { checkedFor: key, ...checkBeat(beat, fit, place) };
       checked.set(beat, result);
     }
     invalid.push(...result.invalid);
@@ -165,8 +166,8 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
     // Notes on a string cannot be placed without the tuning of the strings.
     if (kind.data === "fretted") return null;
   }
-  const defaults = PART_DEFAULTS[kind.data];
-  const staves = field(shape.staves, part.get("staves"), defaults.staves, invalid, place, "part.staves");
+  const defaults = KIND_DEFAULTS[kind.data];
+  const staves = readField(shape.staves, part.get("staves"), defaults.staves, invalid, place, "part.staves");
   const fit: Fit = { kind: kind.data, strings: tuning.success ? tuning.data.length : 0 };
   const content: PartJSON["content"] = {};
   const stored = part.get("content");
@@ -182,11 +183,11 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], invalid: I
   }
   return {
     id,
-    name: field(shape.name, part.get("name"), "", invalid, place, "part.name"),
+    name: readField(shape.name, part.get("name"), "", invalid, place, "part.name"),
     kind: kind.data,
     tuning: tuning.success ? tuning.data : [],
-    capo: field(shape.capo, part.get("capo"), 0, invalid, place, "part.capo"),
-    program: field(shape.program, part.get("program"), defaults.program, invalid, place, "part.program"),
+    capo: readField(shape.capo, part.get("capo"), 0, invalid, place, "part.capo"),
+    program: readField(shape.program, part.get("program"), defaults.program, invalid, place, "part.program"),
     staves,
     content,
   } as PartJSON;
@@ -196,7 +197,7 @@ const BAR_FIELDS = ["tempo", "keySig", "repeatStart", "repeatEnd", "voltas", "se
 
 function readBar(id: string, bar: Y.Map<unknown>, first: boolean, invalid: InvalidContentFlag[]): BarJSON {
   const place: Place = { barId: id };
-  const read: BarJSON = { id, timeSig: field(barSchema.shape.timeSig, bar.get("timeSig"), { numerator: 4, denominator: 4 }, invalid, place, "bar.timeSig") };
+  const read: BarJSON = { id, timeSig: readField(barSchema.shape.timeSig, bar.get("timeSig"), { numerator: 4, denominator: 4 }, invalid, place, "bar.timeSig") };
   for (const name of BAR_FIELDS) {
     const value = bar.get(name);
     // A pickup bar anywhere but first is ignored: inserting a bar before it can make one.
@@ -241,8 +242,8 @@ export function readScore(doc: Y.Doc): ScoreRead {
   const artist = meta.get("artist");
   // An empty document (no score made in it yet) reads as an empty score of this version.
   const read: ScoreJSON = {
-    schemaVersion: version === undefined ? SCHEMA_VERSION : field(shape.schemaVersion, version, SCHEMA_VERSION, invalid, {}, "meta.schemaVersion"),
-    title: title === undefined ? "" : field(shape.title, title, "", invalid, {}, "meta.title"),
+    schemaVersion: version === undefined ? SCHEMA_VERSION : readField(shape.schemaVersion, version, SCHEMA_VERSION, invalid, {}, "meta.schemaVersion"),
+    title: title === undefined ? "" : readField(shape.title, title, "", invalid, {}, "meta.title"),
     bars: [],
     parts: [],
   };

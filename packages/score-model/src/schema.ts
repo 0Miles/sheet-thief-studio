@@ -23,6 +23,9 @@ export const MAX_NON_PERCUSSION_PARTS = 15;
 
 export const MAX_BARS = 1000;
 
+/** An imported score, serialized as JSON in UTF-8. */
+export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
 /**
  * A string of `min` to `max` characters, counted as JavaScript counts them (UTF-16 code units,
  * docs/spec/schema.md section 13); zod's own length checks count code points.
@@ -277,7 +280,7 @@ export type PartJSON = z.infer<typeof partSchema>;
 export type Staff = PartJSON["staves"][number];
 
 /** What a part of each kind gets when nothing says otherwise: on creation, or when its own field cannot be read. */
-export const PART_DEFAULTS: Record<PartKind, { program: number; staves: Staff[] }> = {
+export const KIND_DEFAULTS: Record<PartKind, { program: number; staves: Staff[] }> = {
   fretted: { program: 25, staves: [{ clef: "tab" }] },
   percussion: { program: 0, staves: [{ clef: "neutral" }] },
   pitched: { program: 0, staves: [{ clef: "treble" }] },
@@ -307,6 +310,19 @@ export const scoreSchema = metaSchema
     });
   });
 export type ScoreJSON = z.infer<typeof scoreSchema>;
+
+/** How many bytes a string takes in UTF-8. */
+function utf8Length(value: string): number {
+  let bytes = 0;
+  for (const character of value) {
+    const code = character.codePointAt(0) as number;
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  return bytes;
+}
+
+/** A score to import as a new one: a legal score of at most 5 MB once serialized (section 13). */
+export const importedScoreSchema = scoreSchema.refine((score) => utf8Length(JSON.stringify(score)) <= MAX_IMPORT_BYTES, `more than ${MAX_IMPORT_BYTES} bytes of JSON`);
 
 // The Yjs document ------------------------------------------------------------------------------
 
@@ -350,7 +366,7 @@ export function staffCountOf(part: YPart): number {
   const kind = partKindSchema.safeParse(part.get("kind"));
   if (!kind.success) return 1;
   const staves = partSchemas[kind.data].shape.staves.safeParse(part.get("staves"));
-  return staves.success ? staves.data.length : PART_DEFAULTS[kind.data].staves.length;
+  return staves.success ? staves.data.length : KIND_DEFAULTS[kind.data].staves.length;
 }
 
 /**

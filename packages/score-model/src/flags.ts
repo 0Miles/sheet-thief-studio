@@ -24,8 +24,9 @@ export interface DurationFlag {
 }
 
 /**
- * A part of the document that does not fit the schema and is left out when it is read (or read
- * as its default, docs/spec/schema.md section 11). It names as much of where it is as is known.
+ * Invalid content: something in the document that does not fit the schema, left out when it is
+ * read or read as its default (docs/spec/schema.md section 11). It says as much of where it
+ * stands as is known.
  */
 export interface InvalidContentFlag {
   kind: "invalidContent";

@@ -18,9 +18,14 @@ import {
   voiceKeys,
 } from "./schema";
 
+/** Set every field that has a value. */
+function setFields(map: Y.Map<unknown>, fields: object): void {
+  for (const [field, value] of Object.entries(fields)) if (value !== undefined) map.set(field, value);
+}
+
 function beatToY({ notes, ...fields }: BeatJSON): YBeat {
   const beat: YBeat = new Y.Map();
-  for (const [field, value] of Object.entries(fields)) if (value !== undefined) beat.set(field, value);
+  setFields(beat, fields);
   const map = new Y.Map();
   for (const [key, note] of Object.entries(notes)) map.set(key, note);
   beat.set("notes", map);
@@ -50,24 +55,24 @@ export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
     score.bars.forEach(({ id, ...fields }, index) => {
       const bar: YBar = new Y.Map();
       bar.set("order", barKeys[index]);
-      for (const [field, value] of Object.entries(fields)) if (value !== undefined) bar.set(field, value);
+      setFields(bar, fields);
       bars.set(id, bar);
     });
 
     const parts = partsOf(doc);
     parts.clear();
     const partKeys = generateNKeysBetween(null, null, score.parts.length);
-    score.parts.forEach(({ id, content: json, ...fields }, index) => {
+    score.parts.forEach(({ id, content: beatsByBar, ...fields }, index) => {
       const part: YPart = new Y.Map();
       part.set("order", partKeys[index]);
-      for (const [field, value] of Object.entries(fields)) part.set(field, value);
+      setFields(part, fields);
       const content = new Y.Map<YBarContent>();
       for (const { id: barId } of score.bars) {
         // Every voice of every staff, filled before it joins the document (a map not in a document yet cannot be read).
         const voices: YBarContent = new Y.Map();
         for (const voice of voiceKeys(fields.staves.length)) {
           const beats = new Y.Array<YBeat>();
-          beats.push((json[barId]?.[voice] ?? []).map(beatToY));
+          beats.push((beatsByBar[barId]?.[voice] ?? []).map(beatToY));
           voices.set(voice, beats);
         }
         content.set(barId, voices);

@@ -2,7 +2,7 @@
 import fc from "fast-check";
 import { expect, test } from "vitest";
 
-import { MAX_BARS, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "../src/index";
+import { importedScoreSchema, MAX_BARS, MAX_IMPORT_BYTES, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "../src/index";
 import { score } from "./arbitraries";
 
 test("every legal score passes the schema", () => {
@@ -184,4 +184,29 @@ test("fields the schema does not know are left out, not refused", () => {
   const parsed = scoreSchema.parse(json);
   expect(parsed).not.toHaveProperty("composer");
   expect(beatOf(parsed.parts[0]!).notes.s6).toEqual({ fret: 3 });
+});
+
+/** A legal score of 1000 bars whose beats carry 64 CJK characters of text each (3 bytes apiece in UTF-8). */
+function wordy(beatsPerBar: number): ScoreJSON {
+  const bars = Array.from({ length: MAX_BARS }, (_, index) => ({ id: `b${index}`, timeSig: { numerator: 4, denominator: 4 as const } }));
+  const beats = (barId: string) => Array.from({ length: beatsPerBar }, (_, index) => ({ id: `${barId}x${index}`, value: 64 as const, dots: 0 as const, notes: {}, text: "譜".repeat(64) }));
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    title: "Wordy",
+    bars,
+    parts: [{ id: "gtr", name: "Guitar", kind: "fretted", tuning: [64, 59, 55, 50, 45, 40], capo: 0, program: 25, staves: [{ clef: "tab" }], content: Object.fromEntries(bars.map(({ id }) => [id, { "0:0": beats(id) }])) }],
+  };
+}
+
+test("a score to import may take up to 5 MB once serialized, counted in UTF-8 bytes", () => {
+  const large = wordy(22);
+  // Every character is one byte but the 64 CJK characters of each beat, three bytes each.
+  const characters = JSON.stringify(large).length;
+  const bytes = characters + 2 * 64 * 22 * MAX_BARS;
+  // Over 5 MB in UTF-8, though under it counted in JavaScript characters.
+  expect(bytes).toBeGreaterThan(MAX_IMPORT_BYTES);
+  expect(characters).toBeLessThan(MAX_IMPORT_BYTES);
+  expect(scoreSchema.safeParse(large).success).toBe(true);
+  expect(importedScoreSchema.safeParse(large).success).toBe(false);
+  expect(importedScoreSchema.safeParse(wordy(20)).success).toBe(true);
 });

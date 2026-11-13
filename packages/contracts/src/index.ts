@@ -7,6 +7,7 @@ export {
   barSchema,
   type BeatJSON,
   beatSchema,
+  importedScoreSchema,
   type NoteJSON,
   noteSchema,
   type PartJSON,

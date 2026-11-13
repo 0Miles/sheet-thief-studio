@@ -55,7 +55,7 @@
 
 ## 4. 補齊內容容器
 
-- 只有伺服器補齊缺少的內容容器：在 debounce 過的 `onChange` 裡，以參與者身分執行 `fillMissingContent`（`commands.ts:118-130`）。客戶端不補（ADR 0002:21）。
+- 只有伺服器補齊缺少的內容容器：在 debounce 過的 `onChange` 裡，以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補（ADR 0002:21）。
 - `fillMissingContent` 也補齊缺少的聲線（[`schema.md`](schema.md) 1.1）。
 - **補充**：debounce 1000 ms。沒有缺漏時不開交易，避免觸發多餘的儲存。
 
