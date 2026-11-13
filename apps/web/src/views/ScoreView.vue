@@ -118,7 +118,8 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  if (session === undefined || event.isComposing) return;
+  // Keys that go to an input method (229: some browsers send it before `isComposing` is set).
+  if (session === undefined || event.isComposing || event.keyCode === 229) return;
   if (session.press(event)) event.preventDefault();
 }
 

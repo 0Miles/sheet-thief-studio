@@ -147,3 +147,4 @@ interface PresenceState {
 - **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。
+  - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機沒有還沒送出的修改（`provider.isSynced && provider.unsyncedChanges === 0`）；有修改還沒送出時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。
