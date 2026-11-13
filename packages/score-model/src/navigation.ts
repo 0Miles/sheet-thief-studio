@@ -22,7 +22,7 @@ function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
   // A beat whose length cannot be read is left out, as reading leaves it out.
   voiceOf(doc, cursor)?.forEach((beat) => {
     const duration = durationOf(beat);
-    if (duration !== undefined) held += beatTicks({ dots: 0, ...duration });
+    if (duration !== undefined) held += beatTicks(duration);
   });
   return fillOf(held, barTicks(timeSig.success ? timeSig.data : COMMON_TIME)) === "underfull";
 }
@@ -79,7 +79,8 @@ export function moveByBeat(doc: Y.Doc, from: Cursor, step: 1 | -1): Cursor {
 export function moveFromAppendedBeat(doc: Y.Doc, from: Cursor): Cursor {
   const cursor = settleCursor(doc, from);
   if (cursor === null) return from;
-  return cursor.at === "on" ? pastLastBeat(doc, cursor) : moveByBeat(doc, cursor, 1);
+  // Settled off a beat only when its voice is now empty: then on to the next bar, as from any empty voice.
+  return cursor.at === "on" ? pastLastBeat(doc, cursor) : toNextBar(doc, cursor, 1);
 }
 
 /** How many lines the cursor can stand on in a part: its strings when fretted, else the staff positions of a five-line staff with two ledger lines each side. */

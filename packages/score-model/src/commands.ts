@@ -15,9 +15,9 @@ import {
   metaOf,
   beatSchema,
   NOTE_VALUES,
+  type BeatJSON,
   type NoteJSON,
   type NoteValue,
-  noteValueSchema,
   ordered,
   type PartKind,
   partKindOf,
@@ -28,7 +28,6 @@ import {
   contentMapOf,
   type TimeSignature,
   type Tuplet,
-  tupletSchema,
   type YBar,
   type YBeat,
   type YPart,
@@ -180,13 +179,18 @@ function indexOfBeat(voice: YVoice, beatId: string | null): number {
   return -1;
 }
 
-/** The beat the cursor stands on; none in the append slot. */
-function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
+/** Where the beat the cursor stands on is: its voice and its index there; none in the append slot or when the beat is gone. */
+function beatIndexAt(doc: Y.Doc, cursor: Cursor): { voice: YVoice; index: number } | undefined {
   if (cursor.at !== "on") return undefined;
   const voice = voiceAt(doc, cursor);
-  if (voice === undefined) return undefined;
-  const index = indexOfBeat(voice, cursor.beatId);
-  return index < 0 ? undefined : voice.get(index);
+  const index = voice === undefined ? -1 : indexOfBeat(voice, cursor.beatId);
+  return voice === undefined || index < 0 ? undefined : { voice, index };
+}
+
+/** The beat the cursor stands on; none in the append slot. */
+function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
+  const found = beatIndexAt(doc, cursor);
+  return found?.voice.get(found.index);
 }
 
 /** The duration of a beat: its note value, dots and tuplet. */
@@ -196,24 +200,30 @@ export interface NewBeat {
   tuplet?: Tuplet;
 }
 
+/** The duration of a beat as stored. */
+type Duration = Pick<BeatJSON, "value" | "dots" | "tuplet">;
+
 /** What a beat gets when there is no beat to take its duration from. */
-const QUARTER: NewBeat = { value: 4 };
+const QUARTER: Duration = { value: 4, dots: 0 };
+
+const durationSchema = beatSchema.pick({ value: true, dots: true, tuplet: true });
 
 /** The duration of a beat as stored; undefined when it cannot be read. */
-export function durationOf(beat: YBeat): NewBeat | undefined {
-  const value = noteValueSchema.safeParse(beat.get("value"));
-  const dots = beatSchema.shape.dots.safeParse(beat.get("dots"));
-  const stored = beat.get("tuplet");
-  const tuplet = tupletSchema.safeParse(stored);
-  if (!value.success || !dots.success || (stored !== undefined && !tuplet.success)) return undefined;
-  return { value: value.data, dots: dots.data, ...(tuplet.success ? { tuplet: tuplet.data } : {}) };
+export function durationOf(beat: YBeat): Duration | undefined {
+  const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  return duration.success ? duration.data : undefined;
 }
 
-/** Where a beat made at the cursor goes: its voice, its index there, and the beat it takes its duration from. */
+/** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
 interface BeatPlace {
   voice: YVoice;
   index: number;
-  durationFrom: YBeat | undefined;
+  duration: NewBeat;
+}
+
+/** The duration a beat made at a place takes from `beat`: as long as it, else a quarter. */
+function durationFrom(beat: YBeat | undefined): NewBeat {
+  return (beat && durationOf(beat)) ?? QUARTER;
 }
 
 /**
@@ -223,21 +233,23 @@ interface BeatPlace {
  * Undefined when the cursor's beat or voice is gone.
  */
 function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+  if (cursor.at === "on") {
+    const found = beatIndexAt(doc, cursor);
+    return found && { ...found, duration: durationFrom(found.voice.get(found.index)) };
+  }
   const voice = voiceAt(doc, cursor);
   if (voice === undefined) return undefined;
+  if (cursor.beatId === null) return { voice, index: 0, duration: QUARTER };
   const found = indexOfBeat(voice, cursor.beatId);
-  if (cursor.at === "on") return found < 0 ? undefined : { voice, index: found, durationFrom: voice.get(found) };
-  if (cursor.beatId === null) return { voice, index: 0, durationFrom: undefined };
   const anchor = found < 0 ? voice.length - 1 : found;
-  return { voice, index: anchor + 1, durationFrom: anchor < 0 ? undefined : voice.get(anchor) };
+  return { voice, index: anchor + 1, duration: durationFrom(anchor < 0 ? undefined : voice.get(anchor)) };
 }
 
 /**
  * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
- * rest of `duration` (else as long as its place says), then `fill` puts its notes on it.
+ * rest of `duration`, then `fill` puts its notes on it.
  */
-function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, duration?: NewBeat, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
-  const { value, dots = 0, tuplet } = duration ?? (place.durationFrom && durationOf(place.durationFrom)) ?? QUARTER;
+function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots = 0, tuplet }: NewBeat, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
   const id = newId();
   doc.transact(() => {
     const beat: YBeat = new Y.Map();
@@ -261,7 +273,7 @@ function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, duration?: NewBe
  */
 export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: NewBeat): Cursor {
   const place = placeFor(doc, cursor);
-  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration);
+  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration ?? place.duration);
 }
 
 /**
@@ -274,7 +286,7 @@ function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: Note
     const note = write(undefined);
     const place = placeFor(doc, cursor);
     if (note === null || place === undefined) return cursor;
-    return makeBeat(doc, cursor, place, undefined, (notes) => notes.set(key, note));
+    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, note));
   }
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;
@@ -323,9 +335,9 @@ export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
  * left).
  */
 export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
-  const voice = cursor.at === "on" ? voiceAt(doc, cursor) : undefined;
-  const index = voice === undefined ? -1 : indexOfBeat(voice, cursor.beatId);
-  if (voice === undefined || index < 0) return cursor;
+  const found = beatIndexAt(doc, cursor);
+  if (found === undefined) return cursor;
+  const { voice, index } = found;
   doc.transact(() => voice.delete(index, 1), LOCAL);
   if (index < voice.length) return { ...cursor, beatId: voice.get(index).get("id") as string };
   return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };

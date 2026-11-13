@@ -191,7 +191,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function commonKey(key: Key): KeyCommand | undefined {
     switch (key.key) {
       case "ArrowRight":
-        return move((at) => (at.beatId !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
+        return move((at) => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
       case "ArrowLeft":
         return move((at) => moveByBeat(doc, at, -1));
       case "ArrowDown":
