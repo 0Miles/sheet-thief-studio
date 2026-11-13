@@ -37,16 +37,17 @@ interface Cursor {
 - `at: "on"`：游標在 `beatId` 那個拍點上。
 - `at: "after"`：**附加位置（Append slot）**。錨點 `beatId` 是進入附加位置時那條聲線的最後一個拍點。
 - 空聲線的附加位置是 `{ beatId: null, at: "after" }`，新拍點插在 index 0。
-- 「第一個拍點之前」這個位置取消（現在的 `beatId: null` 表示「第一個拍點之前」，要改）。
+- 沒有「第一個拍點之前」這個位置。
 - `line`：
   - fretted：弦，1 到弦數，1 是最高音的弦。
-  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts:34-37`、`geometry.ts:42-49`）。
+  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts` 的 `lineRange`、`geometry.ts` 的 `lineOffset`）。
 
-**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8，`coediting.test.ts:46-64,138-166`）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
+**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8；`packages/score-model/tests/coediting.test.ts` 的「beats typed by two members in the same bar at the same time are all kept, each run together」、「two members typing six beats each in the append slot of the same bar keep each their beats together, in the order typed」與「whatever three members do, in whatever order their changes arrive, they end with the same score」）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
 
 - 錨點之後被別人附加了拍點：附加位置畫在錨點之後、他人拍點之前；在附加位置輸入，新拍點也插在那裡。
-- 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts:47-59`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
-- 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。
+- 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts` 的 `settleCursor`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
+- **補充**：游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
+- 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。**補充**：看的人這邊沒有那位成員的拍點位置，所以不帶位置解析：那位成員所在的拍點被刪除時，在看的人這邊先落在那條聲線的最後一個拍點，直到那位成員自己的 session 送出新的 presence。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
 
 ## 3. 移動
@@ -102,6 +103,7 @@ interface Cursor {
 
 - **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts` 的 `TWO_DIGIT_WINDOW`、`MAX_FRET` 與 `typeDigit`；測試在 `packages/score-editor/tests/typing.test.ts`）。現在的做法（暫時調大 `captureTimeout`）可以換掉。
 - **在附加位置輸入**：建立一個新拍點並寫入音符，是一個 Command。新拍點的時值取錨點拍點的時值（`value`、`dots`、`tuplet`）；沒有錨點時是四分音符。輸入後游標移到新拍點（`at: "on"`），下一次 `→` 以它為新的錨點。
+  - **補充**：別人的拍點已經接在新拍點之後時也一樣。游標還停在新拍點上（只換弦、換線不算離開）時，`→` 把它當成聲線的最後一個拍點：小節未滿就進它的附加位置，已滿或超過就到下一小節（`navigation.ts` 的 `moveFromAppendedBeat`）。否則 `→` 會走到別人的拍點上，同時打譜的兩人的拍點就不再成段。游標離開新拍點之後，`→` 照第 3 節。`Insert` 在附加位置建立的拍點也一樣。
 - 在既有拍點上輸入：游標留在原拍點（這樣才能疊和弦），fretted 與 pitched 可以接著換弦、換線再輸入。
 - **補充**：percussion 切換之後，`line` 移到該鼓件的譜表位置（[`schema.md`](schema.md) 7.1）。
 - **pitched 的音高**：`score-model` 有一個純函式，由「clef 加譜表位置」得出自然音的音高；`A`–`G` 在所有同名的音裡，取和游標位置的自然音相差最少音級的那一個（7 個音名不會等距，所以沒有平手）。再依該小節生效的 `keySig` 套用升降（例如 G 大調的 F 變成 F♯），寫入 `spell`。**補充**：輸入後 `line` 移到新音所在的譜表位置。
@@ -111,9 +113,9 @@ interface Cursor {
 
 | Command | 鍵 | 語意 |
 |---|---|---|
-| `insertBeat` | `Insert` | 在游標拍點**之前**插入一個休止拍點，時值和游標拍點相同；在附加位置上就是附加（時值規則同 5.1）。游標移到新拍點。現在的 `insertBeat` 插在之後（`commands.ts` 的 `insertBeat`），要改 |
-| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充）；percussion 是畫在那條線上的**所有**鼓件 |
-| `deleteBeat` | `Delete`（空拍點） | 刪掉拍點（新增；現在的 `Delete` 只會清格號，`packages/score-editor/src/session.ts` 的 `noteKeys.fretted`） |
+| `insertBeat` | `Insert` | 在游標拍點**之前**插入一個休止拍點，時值和游標拍點相同；在附加位置上就是附加（時值規則同 5.1）。游標移到新拍點 |
+| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充）；percussion 是畫在那條線上的**所有**鼓件。現在只做了 fretted；percussion、pitched 跟著它們的音符鍵在 M2、M3 做，在那之前不動 |
+| `deleteBeat` | `Delete`（空拍點） | 刪掉拍點 |
 
 - percussion 的 `Delete` 刪整條線，理由：好幾個鼓件畫在同一條線上（`spike-report.md:287-301`），只刪一個會有歧義。
 - **補充**：拍點上有音、但游標那條線上沒有音時，`Delete` 不動。
@@ -253,7 +255,7 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
 ## 9. 同時修改時的規定
 
-- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `coediting.test.ts:90-106`。
+- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」。
 - **放置與貼上小節段**：在既有的 `Y.Array` 上先刪再插，同時輸入的內容保留（5.7）。
 - **內容容器**：客戶端不補缺少的容器，只有伺服器補（[`collab.md`](collab.md)）。
 - **新團譜的初始內容**由伺服器建立。

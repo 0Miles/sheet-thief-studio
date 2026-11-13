@@ -10,6 +10,8 @@ type Press = [key: string, modifiers?: Modifiers];
 /** The keys that change a part of any kind, with their modifiers. */
 const CHANGING_KEYS: Press[] = [
   ["Insert"],
+  ["Delete"],
+  ["Backspace"],
   ["+"],
   ["-"],
   ["z", { ctrlKey: true }],
@@ -19,12 +21,12 @@ const CHANGING_KEYS: Press[] = [
 ];
 
 /** The keys that change a fretted part only. */
-const FRETTED_KEYS: Press[] = [...[..."0123456789"].map((digit): Press => [digit]), ["Delete"]];
+const FRETTED_KEYS: Press[] = [..."0123456789"].map((digit): Press => [digit]);
 
 /** A note of each kind, by its key. */
 const NOTES: Record<PartKind, [key: string, note: NoteJSON]> = { fretted: ["s6", { fret: 9 }], percussion: ["p38", {}], pitched: ["n60", {}] };
 
-/** Two beats entered by a member who could, then a read-only session on the same score. */
+/** Two beats entered by a member who could (the second before the first), then a read-only session on the same score. */
 function readOnlyScore(kind: PartKind = "fretted") {
   const { doc, press, beats, partId, barIds, session: writer } = sessionOn(kind);
   press("Insert");
@@ -64,6 +66,8 @@ test("while read-only, the cursor moves as usual", () => {
   expect(session.press(keyOf("ArrowUp"))).toBe(true);
   expect(session.cursor).toMatchObject({ beatId: beatIds[1], line: 5 });
   session.press(keyOf("ArrowRight"));
-  expect(session.cursor).toMatchObject({ barId: barIds[1], beatId: null });
+  expect(session.cursor).toMatchObject({ barId: barIds[0], beatId: beatIds[1], at: "after" });
+  session.press(keyOf("ArrowRight"));
+  expect(session.cursor).toMatchObject({ barId: barIds[1], beatId: null, at: "after" });
   expect(refusals).toBe(0);
 });

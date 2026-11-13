@@ -3,18 +3,23 @@
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
   barsOf,
+  beatPositionOf,
   type Cursor,
+  deleteBeat,
+  deleteNote,
   insertBeat,
+  isRestAt,
   LOCAL,
   moveByBeat,
   moveByLine,
+  moveFromAppendedBeat,
   type PartKind,
-  partKindSchema,
+  partKindOf,
   partsOf,
+  type Selection,
   setFret,
   settleCursor,
   stepDuration,
-  valueAt,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -39,19 +44,12 @@ export interface Key {
 }
 
 /**
- * A stretch the cursor extends over, inside one part (docs/spec/commands.md, section 4). Its
- * shape is fixed here for the presence; until selecting comes (#21), the session has none.
- */
-export type Selection =
-  | { kind: "beats"; partId: string; barId: string; voice: string; anchorBeatId: string; focusBeatId: string }
-  | { kind: "bars"; partId: string; anchorBarId: string; focusBarId: string };
-
-/**
  * What this member shows the others (docs/spec/views.md, section 8). The shell writes it to the
  * awareness, next to the fields the server fills in.
  */
 export interface LocalPresence {
   cursor: Cursor | null;
+  /** Until selecting comes (#21), the session has none. */
   selection: Selection | null;
 }
 
@@ -120,6 +118,18 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
   let cursor = start;
   let lastDigit: TypedDigit | null = null;
+  /**
+   * The beat this member just made in the append slot, while the cursor is still on it: the next
+   * → takes it as the new anchor (docs/spec/commands.md, 5.1).
+   */
+  let appended: string | null = null;
+  /**
+   * Where the cursor's beat stands, taken each time the cursor moves, or once its beat arrives:
+   * a removed beat's place.
+   */
+  let position = start && beatPositionOf(doc, start);
+  /** While a key's command runs: the cursor moves once, where the command puts it. */
+  let running = false;
   const refusedListeners = new Set<() => void>();
   let refused = false;
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
@@ -130,14 +140,32 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
 
   function moveTo(next: Cursor | null): void {
     if (samePlace(next, cursor)) return;
+    if (next?.at !== "on" || next.beatId !== appended) appended = null;
     cursor = next;
+    position = next && beatPositionOf(doc, next);
     const told = presence();
     for (const listener of presenceListeners) listener(told);
   }
 
-  // Whatever changed the score, the cursor stays on a place that exists.
-  const settle = (): void => moveTo(cursor && settleCursor(doc, cursor));
+  /** The cursor on a place that exists, whatever changed the score. */
+  const settled = (at: Cursor | null): Cursor | null => at && settleCursor(doc, at, position);
+  const settle = (): void => {
+    if (running) return;
+    // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
+    if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
+    moveTo(settled(cursor));
+  };
   doc.on("afterTransaction", settle);
+
+  /**
+   * Run a command that may make a beat in the append slot (a note typed there, or Insert): when
+   * it does, the next → takes that beat as the new anchor (docs/spec/commands.md, 5.1).
+   */
+  function markAppended(at: Cursor, make: (at: Cursor) => Cursor): Cursor {
+    const next = make(at);
+    if (at.at === "after" && next.at === "on" && next.beatId !== at.beatId) appended = next.beatId;
+    return next;
+  }
 
   function typeDigit(digit: number, at: Cursor, previous: TypedDigit | null): Cursor {
     const second =
@@ -155,12 +183,8 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         undo.captureTimeout = 0;
       }
     }
-    let next = at;
-    doc.transact(() => {
-      // In an empty bar the first digit also makes the beat it goes on.
-      if (next.beatId === null) next = insertBeat(doc, next, { value: 4 });
-      setFret(doc, next, digit);
-    }, LOCAL);
+    // In the append slot the digit also makes the beat it goes on, and the cursor moves onto it.
+    const next = markAppended(at, (here) => setFret(doc, here, digit));
     lastDigit = { digit, at: now(), cursor: next };
     return next;
   }
@@ -169,11 +193,10 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function shortcut(key: Key): KeyCommand | undefined {
     if (key.code !== "KeyZ" && key.code !== "KeyY") return undefined;
     const redo = key.code === "KeyY" || key.shiftKey === true;
-    return change(() => {
+    return change((at) => {
       if (redo) undo.redo();
       else undo.undo();
-      // The undo's transaction has already settled the cursor on what is left.
-      return cursor;
+      return settled(at);
     });
   }
 
@@ -181,7 +204,6 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   const noteKeys: Record<PartKind, (key: Key, previous: TypedDigit | null) => KeyCommand | undefined> = {
     fretted(key, previous) {
       if (/^[0-9]$/.test(key.key)) return change((at) => typeDigit(Number(key.key), at, previous));
-      if (key.key === "Delete") return change((at) => setFret(doc, at, null));
       return undefined;
     },
     // Drums and staves get theirs with their milestones (docs/ROADMAP.md, M2 and M3).
@@ -193,7 +215,7 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function commonKey(key: Key): KeyCommand | undefined {
     switch (key.key) {
       case "ArrowRight":
-        return move((at) => moveByBeat(doc, at, 1));
+        return move((at) => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
       case "ArrowLeft":
         return move((at) => moveByBeat(doc, at, -1));
       case "ArrowDown":
@@ -201,7 +223,11 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
       case "ArrowUp":
         return move((at) => moveByLine(doc, at, -1));
       case "Insert":
-        return change((at) => insertBeat(doc, at, { value: valueAt(doc, at) ?? 4 }));
+        return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
+      // The key marked delete on a Mac keyboard sends Backspace (docs/spec/keymap.md, section 2).
+      case "Delete":
+      case "Backspace":
+        return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
       case "+":
         return change((at) => stepDuration(doc, at, 1));
       case "-":
@@ -214,8 +240,8 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
   function commandFor(key: Key, at: Cursor, previous: TypedDigit | null): KeyCommand | undefined {
     if (key.ctrlKey === true || key.metaKey === true) return shortcut(key);
     // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
-    const kind = partKindSchema.safeParse(partsOf(doc).get(at.partId)?.get("kind"));
-    return (kind.success ? noteKeys[kind.data](key, previous) : undefined) ?? commonKey(key);
+    const kind = partKindOf(partsOf(doc).get(at.partId));
+    return (kind === undefined ? undefined : noteKeys[kind](key, previous)) ?? commonKey(key);
   }
 
   return {
@@ -244,7 +270,14 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
         }
         return true;
       }
-      moveTo(command.run(cursor));
+      running = true;
+      let next: Cursor | null;
+      try {
+        next = command.run(cursor);
+      } finally {
+        running = false;
+      }
+      moveTo(next);
       return true;
     },
     moveTo,

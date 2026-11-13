@@ -19,11 +19,29 @@ export function beatsIn(score: ScoreJSON, part: number, bar: number): BeatJSON[]
   return score.parts[part]!.content[barId]?.["0:0"] ?? [];
 }
 
-/** Put the cursor before the first beat (-1) or on a beat of a bar of a part, and give the page the keyboard. */
+/** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, and give the page the keyboard. */
 export async function placeCursor(page: Page, part: number, bar: number, beat: number, line: number): Promise<void> {
   const cursor = await page.evaluate(([p, b, at, l]) => window.__studio!.placeCursor(p!, b!, at!, l!), [part, bar, beat, line]);
   expect(cursor).not.toBeNull();
   await page.locator(".scroller").focus();
+}
+
+/**
+ * Type one beat per fret from the append slot, as someone entering notes does: the digit makes
+ * the beat, → goes on to the append slot after it. The first beat is made a sixteenth and the
+ * next ones take the length of the one before, so that two members typing six beats each in one
+ * bar of 4/4 never fill it, and → never leaves the bar.
+ */
+export async function typeBeats(page: Page, frets: number[]): Promise<void> {
+  for (const [index, fret] of frets.entries()) {
+    await page.keyboard.press(String(fret));
+    if (index === 0) {
+      await page.keyboard.press("+");
+      await page.keyboard.press("+");
+    }
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(20);
+  }
 }
 
 /** Wait until every page has sent its changes and all hold the same score; returns that score. */

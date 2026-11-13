@@ -76,7 +76,7 @@
 | 4 | alphaTab 匯入匯出的 round-trip | M5 第一張匯入匯出的票：GP5、GP7、MusicXML 的樣本「匯入 → `ScoreJSON` → 投影 → 匯出 → 再匯入」，斷言支援範圍內的內容不變，不支援的列進匯入報告（[`import-export.md`](import-export.md)） | 修正對照；做不到的列進報告 |
 | 5 | S2 重新量測 | 見第 4 節 | 只有證明是瓶頸才改成增量；在成員筆電上量是人工項目 |
 | 6 | M3 的游標幾何 | M3 的第一張票：兩個譜表、第二條聲線的游標定位，做法同 S3，並和 alphaTab 回報的音符頭位置比對（這兩種情況都沒有試過，`spike-report.md:215`） | 修正 `geometry.ts` 的公式 |
-| 7 | 刪除小節的復原行為 | vitest 鎖住「刪除當下的內容會回來、之後別人同時送到的不保證」，仿照 `coediting.test.ts:90-106` | — |
+| 7 | 刪除小節的復原行為 | vitest 鎖住「刪除當下的內容會回來、之後別人同時送到的不保證」，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」 | — |
 | 8 | 聲道分配 | 用 `sound.test.ts` 的寫法，斷言 16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道 | — |
 | 9 | alphaTab 標記不被遮蓋 | e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽 | 移開疊層，不是遮住標記 |
 

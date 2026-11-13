@@ -20,7 +20,7 @@ type Notes = Record<string, NoteJSON>;
 function write(doc: Y.Doc, partId: string, barId: string, beats: [NoteValue, Notes][]): void {
   let cursor: Cursor = cursorAt(doc, partId, barId);
   for (const [value, notes] of beats) {
-    cursor = insertBeat(doc, cursor, { value });
+    cursor = insertBeat(doc, { ...cursor, at: "after" }, { value });
     for (const [key, note] of Object.entries(notes)) setNote(doc, cursor, key, note);
   }
 }

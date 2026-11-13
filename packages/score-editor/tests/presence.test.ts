@@ -1,10 +1,10 @@
 // The session on a plain Y.Doc, with other members' changes arriving as updates, as a provider
 // would hand them over: the local presence, and undo of only this member's commands.
-import { contentOf, cursorAt, insertBeat, partsOf, setFret } from "@studio/score-model";
+import { addPart, contentOf, createScore, cursorAt, insertBars, insertBeat, partsOf, setFret } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import type { LocalPresence } from "../src/index";
+import { createEditorSession, type LocalPresence } from "../src/index";
 import { sessionOn } from "./support";
 
 /** Another member's copy of the score, and a way to hand their changes to ours. */
@@ -48,7 +48,7 @@ test("with no provider, other members' changes merge in, and undo takes back onl
 test("when another member removes the beat under the cursor, the cursor settles and the presence is told", () => {
   const { doc, session, press, beats, partId, barIds } = sessionOn();
   press("5");
-  press("Insert");
+  press("ArrowRight");
   press("7");
   const [first, second] = beats().map((beat) => beat.id);
   expect(session.cursor?.beatId).toBe(second);
@@ -60,4 +60,91 @@ test("when another member removes the beat under the cursor, the cursor settles 
   send();
   expect(session.cursor?.beatId).toBe(first);
   expect(told.map((presence) => presence.cursor?.beatId)).toEqual([first]);
+});
+
+test("→ from a beat typed in the append slot goes on after it, even when another member's beats arrived after it meanwhile", () => {
+  const { doc, press, beats, partId, barIds, cursor } = sessionOn();
+  press("1");
+  press("+");
+  press("ArrowRight");
+  press("2");
+  const mine = beats()[1]!.id;
+  const { other, send } = otherMember(doc);
+  setFret(other, { ...cursorAt(other, partId, barIds[0]!, 1), beatId: mine, at: "after" }, 9);
+  send();
+
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: mine, at: "after" });
+  press("3");
+  const frets = () => beats().map((beat) => beat.notes.s6?.fret ?? beat.notes.s1?.fret);
+  expect(frets()).toEqual([1, 2, 3, 9]);
+
+  // Once the cursor has left that beat, → is the plain one again: on to the next beat.
+  press("ArrowLeft");
+  press("ArrowRight");
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: beats()[3]!.id, at: "on" });
+});
+
+test("when another member removes the beat under the cursor in the middle of a voice, the cursor lands on the beat that took its place", () => {
+  const { doc, session, press, beats, partId, barIds } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  press("ArrowRight");
+  press("3");
+  press("ArrowRight");
+  press("4");
+  press("ArrowLeft");
+  press("ArrowLeft");
+  const [, second, third] = beats().map((beat) => beat.id);
+  expect(session.cursor?.beatId).toBe(second);
+
+  const { other, send } = otherMember(doc);
+  other.transact(() => contentOf(partsOf(other).get(partId)!).get(barIds[0]!)!.get("0:0")!.delete(1, 1));
+  send();
+  expect(session.cursor).toMatchObject({ beatId: third, at: "on" });
+});
+
+test("a key's command tells the presence once, where the cursor ends, not where it passes during the change", () => {
+  const { session, press, beats } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  const [first] = beats().map((beat) => beat.id);
+  const told: LocalPresence[] = [];
+  session.onPresence((presence) => told.push(presence));
+  press("Delete");
+  press("Delete");
+  expect(told.map((presence) => [presence.cursor?.beatId, presence.cursor?.at])).toEqual([[first, "after"]]);
+});
+
+test("→ from a rest Insert made in the append slot goes on after it, even when another member's beat arrived after it", () => {
+  const { doc, press, beats, partId, barIds, cursor } = sessionOn();
+  press("Insert");
+  const mine = beats()[0]!.id;
+  const { other, send } = otherMember(doc);
+  setFret(other, { ...cursorAt(other, partId, barIds[0]!, 1), beatId: mine, at: "after" }, 9);
+  send();
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ beatId: mine, at: "after" });
+});
+
+test("a session started on a beat that has not arrived yet still lands on the beat that took its place once it is removed", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Demo");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const partId = addPart(doc, { name: "Part", kind: "fretted" });
+  const { other, send } = otherMember(doc);
+  let typed = cursorAt(other, partId, barId!, 6);
+  const ids: string[] = [];
+  for (const fret of [1, 2, 3, 4]) {
+    typed = setFret(other, { ...typed, at: "after" }, fret);
+    ids.push(typed.beatId!);
+  }
+  const session = createEditorSession(doc, { cursor: { ...typed, beatId: ids[1]!, at: "on" } });
+  send();
+  other.transact(() => contentOf(partsOf(other).get(partId)!).get(barId!)!.get("0:0")!.delete(1, 1));
+  send();
+  expect(session.cursor).toMatchObject({ beatId: ids[2], at: "on" });
 });

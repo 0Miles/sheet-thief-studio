@@ -3,7 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { ADMIN } from "../environment";
 import { createScore, loggedIn } from "../pages";
-import { openScore, placeCursor } from "../studio";
+import { openScore, placeCursor, typeBeats } from "../studio";
 import { screenshotPath, writeData } from "./output";
 
 // Twice the pixels, so that the small things (the mark, the accidentals) can be read.
@@ -74,14 +74,7 @@ test("the spike page with two members' input, for the report", async ({ browser 
   await openScore(ben, `/spike/${id}?player=0`);
   await placeCursor(anna, 0, 3, -1, 6);
   await placeCursor(ben, 0, 3, -1, 1);
-  const type = async (page: Page, frets: number[]): Promise<void> => {
-    for (const fret of frets) {
-      await page.keyboard.press("Insert");
-      await page.keyboard.press(String(fret));
-      await page.waitForTimeout(20);
-    }
-  };
-  await Promise.all([type(anna, [1, 2, 3, 4]), type(ben, [7, 8, 9, 7])]);
+  await Promise.all([typeBeats(anna, [1, 2, 3, 4]), typeBeats(ben, [7, 8, 9, 7])]);
   await anna.waitForTimeout(1500);
   await anna.screenshot({ path: screenshotPath("s4-member-a.png") });
   await ben.screenshot({ path: screenshotPath("s4-member-b.png") });

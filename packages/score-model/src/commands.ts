@@ -8,6 +8,9 @@ import {
   barsOf,
   COMMON_TIME,
   contentOf,
+  type BeatDuration,
+  type Duration,
+  durationOf,
   emptyBarContent,
   KIND_DEFAULTS,
   LOCAL,
@@ -18,6 +21,7 @@ import {
   type NoteValue,
   ordered,
   type PartKind,
+  partKindOf,
   partsOf,
   SCHEMA_VERSION,
   type Staff,
@@ -31,15 +35,32 @@ import {
   voiceKeys,
 } from "./schema";
 
-/** Where a member is typing. `beatId` is null before the first beat of a voice. */
+/**
+ * Where a member is typing (docs/spec/commands.md, section 2). On a beat (`at: "on"`), or in the
+ * append slot of its voice (`at: "after"`): there `beatId` is the anchor, the last beat of the
+ * voice when the cursor came there, and null when the voice was empty. Typing in the append slot
+ * puts the new beat right after the anchor, so that two members typing in the same bar each keep
+ * their beats together (docs/adr/0002).
+ */
 export interface Cursor {
   partId: string;
   barId: string;
+  /** "staff:voice". */
   voice: string;
   beatId: string | null;
+  at: "on" | "after";
   /** Fretted parts: the string (1 is the highest). Other kinds: the staff position. */
   line: number;
 }
+
+/**
+ * A stretch the cursor extends over, inside one part (docs/spec/commands.md, section 4): beats
+ * of one voice of one bar, or bars with all their voices. The anchor is where it started, the
+ * focus follows the cursor.
+ */
+export type Selection =
+  | { kind: "beats"; partId: string; barId: string; voice: string; anchorBeatId: string; focusBeatId: string }
+  | { kind: "bars"; partId: string; anchorBarId: string; focusBarId: string };
 
 /** Standard guitar tuning, from the first string: E4 B3 G3 D3 A2 E2. */
 export const STANDARD_GUITAR = [64, 59, 55, 50, 45, 40];
@@ -158,67 +179,154 @@ function indexOfBeat(voice: YVoice, beatId: string | null): number {
   return -1;
 }
 
-function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
+/** Where the beat the cursor stands on is: its voice and its index there; none in the append slot or when the beat is gone. */
+function beatIndexAt(doc: Y.Doc, cursor: Cursor): { voice: YVoice; index: number } | undefined {
+  if (cursor.at !== "on") return undefined;
   const voice = voiceAt(doc, cursor);
-  if (voice === undefined) return undefined;
-  const index = indexOfBeat(voice, cursor.beatId);
-  return index < 0 ? undefined : voice.get(index);
+  const index = voice === undefined ? -1 : indexOfBeat(voice, cursor.beatId);
+  return voice === undefined || index < 0 ? undefined : { voice, index };
 }
 
-export interface NewBeat {
-  value: NoteValue;
-  dots?: 0 | 1 | 2;
+/** The beat the cursor stands on; none in the append slot. */
+function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
+  const found = beatIndexAt(doc, cursor);
+  return found?.voice.get(found.index);
+}
+
+/** What a beat gets when there is no beat to take its duration from. */
+const QUARTER: BeatDuration = { value: 4, dots: 0 };
+
+/** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
+interface BeatPlace {
+  voice: YVoice;
+  index: number;
+  duration: BeatDuration;
+}
+
+/** The duration a beat made at a place takes from `beat`: as long as it, else a quarter. */
+function durationFrom(beat: YBeat | undefined): BeatDuration {
+  return (beat && durationOf(beat)) ?? QUARTER;
 }
 
 /**
- * Insert a rest after the beat of the cursor and move the cursor onto it: first when the cursor
- * is before the first beat, last when its beat is gone.
+ * Where a beat made at the cursor goes: on a beat, just before it, as long as it; in the append
+ * slot, just after the anchor, as long as the anchor (first and a quarter in an empty voice; when
+ * the anchor is gone, after the last beat and as long as it, where the cursor settles).
+ * Undefined when the cursor's beat or voice is gone.
  */
-export function insertBeat(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: NewBeat): Cursor {
+function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+  if (cursor.at === "on") {
+    const found = beatIndexAt(doc, cursor);
+    return found && { ...found, duration: durationFrom(found.voice.get(found.index)) };
+  }
   const voice = voiceAt(doc, cursor);
-  if (voice === undefined) return cursor;
+  if (voice === undefined) return undefined;
+  if (cursor.beatId === null) return { voice, index: 0, duration: QUARTER };
+  const found = indexOfBeat(voice, cursor.beatId);
+  const anchor = found < 0 ? voice.length - 1 : found;
+  return { voice, index: anchor + 1, duration: durationFrom(anchor < 0 ? undefined : voice.get(anchor)) };
+}
+
+/**
+ * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
+ * rest of `duration`, then `fill` puts its notes on it.
+ */
+function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, tuplet }: BeatDuration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
   const id = newId();
   doc.transact(() => {
-    const at = indexOfBeat(voice, cursor.beatId);
     const beat: YBeat = new Y.Map();
+    const notes = new Y.Map<NoteJSON>();
     beat.set("id", id);
     beat.set("value", value);
     beat.set("dots", dots);
-    beat.set("notes", new Y.Map());
-    voice.insert(cursor.beatId === null ? 0 : at < 0 ? voice.length : at + 1, [beat]);
+    if (tuplet !== undefined) beat.set("tuplet", { ...tuplet });
+    beat.set("notes", notes);
+    place.voice.insert(place.index, [beat]);
+    fill?.(notes);
   }, LOCAL);
-  return { ...cursor, beatId: id };
-}
-
-/** Put a fret on the string of the cursor, on its beat; null clears the string. */
-export function setFret(doc: Y.Doc, cursor: Cursor, fret: number | null): Cursor {
-  const beat = beatAt(doc, cursor);
-  if (beat === undefined) return cursor;
-  doc.transact(() => {
-    const notes = beat.get("notes") as Y.Map<NoteJSON>;
-    const key = `s${cursor.line}`;
-    if (fret === null) notes.delete(key);
-    else notes.set(key, { ...notes.get(key), fret });
-  }, LOCAL);
-  return cursor;
+  return { ...cursor, beatId: id, at: "on" };
 }
 
 /**
- * Put a note on the beat of the cursor at the position named by `key` ("s3", "p38", "n61"),
- * replacing the one there; null removes it. The key is not checked against the kind of the part.
+ * Insert a rest before the beat of the cursor, or append one in the append slot, and move the
+ * cursor onto it. It lasts `duration`, else as long as the beat of the cursor or the anchor,
+ * else a quarter (docs/spec/commands.md, 5.1 and 5.2). Changes nothing when the cursor's beat is
+ * gone.
  */
-export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON | null): Cursor {
+export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cursor {
+  const place = placeFor(doc, cursor);
+  return place === undefined ? cursor : makeBeat(doc, cursor, place, duration === undefined ? place.duration : { dots: 0, ...duration });
+}
+
+/**
+ * Write a note at the cursor, one command: on its beat, or in the append slot on a new beat made
+ * there (as `insertBeat` makes it), the cursor then on that beat. `write` gets the note stored
+ * at `key` and returns the new one, or null to remove it; removing makes no beat.
+ */
+function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
+  if (cursor.at === "after") {
+    const note = write(undefined);
+    const place = placeFor(doc, cursor);
+    if (note === null || place === undefined) return cursor;
+    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, note));
+  }
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;
+  const notes = beat.get("notes") as Y.Map<NoteJSON>;
+  const note = write(notes.get(key));
+  if (note === null && !notes.has(key)) return cursor;
   doc.transact(() => {
-    const notes = beat.get("notes") as Y.Map<NoteJSON>;
     if (note === null) notes.delete(key);
     else notes.set(key, note);
   }, LOCAL);
   return cursor;
 }
 
-export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: NewBeat): Cursor {
+/** Put a fret on the string of the cursor, keeping what else its note holds; null clears the string. */
+export function setFret(doc: Y.Doc, cursor: Cursor, fret: number | null): Cursor {
+  return writeNote(doc, cursor, `s${cursor.line}`, (stored) => (fret === null ? null : { ...stored, fret }));
+}
+
+/**
+ * Put a note at the cursor at the position named by `key` ("s3", "p38", "n61"), replacing the
+ * one there; null removes it. The key is not checked against the kind of the part.
+ */
+export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON | null): Cursor {
+  return writeNote(doc, cursor, key, () => note);
+}
+
+/** Whether the cursor stands on a beat without notes: a rest. */
+export function isRestAt(doc: Y.Doc, cursor: Cursor): boolean {
+  const notes = beatAt(doc, cursor)?.get("notes");
+  return notes instanceof Y.Map && notes.size === 0;
+}
+
+/**
+ * Remove the notes on the line of the cursor, from its beat: on a fretted part, the note on its
+ * string. Drums and staves get theirs with the keys that enter their notes (docs/ROADMAP.md, M2
+ * and M3): until then nothing is removed from them.
+ */
+export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
+  if (partKindOf(partsOf(doc).get(cursor.partId)) !== "fretted") return cursor;
+  return setFret(doc, cursor, null);
+}
+
+/**
+ * Remove the beat of the cursor. The cursor moves onto the beat that takes its place, or, when
+ * it was the last, into the append slot after the new last beat (an empty voice's when none is
+ * left).
+ */
+export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
+  const found = beatIndexAt(doc, cursor);
+  if (found === undefined) return cursor;
+  const { voice, index } = found;
+  doc.transact(() => voice.delete(index, 1), LOCAL);
+  if (index < voice.length) return { ...cursor, beatId: voice.get(index).get("id") as string };
+  return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };
+}
+
+/** Give the beat of the cursor a note value and dots; its tuplet stays. */
+export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omit<Duration, "tuplet">): Cursor {
   const beat = beatAt(doc, cursor);
   if (beat === undefined) return cursor;
   doc.transact(() => {
@@ -240,14 +348,9 @@ export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   return cursor;
 }
 
-/** The note value of the beat of the cursor, or undefined when it stands on none. */
-export function valueAt(doc: Y.Doc, cursor: Cursor): NoteValue | undefined {
-  return beatAt(doc, cursor)?.get("value") as NoteValue | undefined;
-}
-
-/** The cursor on the first beat of a bar of a part (before it when the bar is empty). */
+/** The cursor at the first place of the first voice of a bar of a part: its first beat, or the append slot of an empty voice. */
 export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = 1): Cursor {
-  const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, line };
+  const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
-  return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string } : cursor;
+  return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;
 }

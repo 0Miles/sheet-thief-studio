@@ -82,7 +82,7 @@ const hook: StudioHook = {
     const barId = json.bars[bar]?.id;
     if (partJson === undefined || barId === undefined) return null;
     const beatId = beat < 0 ? null : (partJson.content[barId]?.["0:0"]?.[beat]?.id ?? null);
-    moveCursor({ partId: partJson.id, barId, voice: "0:0", beatId, line });
+    moveCursor({ partId: partJson.id, barId, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line });
     return session?.cursor ?? null;
   },
   editBar(part, bar) {
@@ -111,7 +111,7 @@ const hook: StudioHook = {
       if (part === undefined || bar === undefined) break;
       const beats = part.content[bar.id]?.["0:0"] ?? [];
       const beatId = beats[next(beats.length)]?.id ?? null;
-      const at: Cursor = { partId: part.id, barId: bar.id, voice: "0:0", beatId, line: 1 + next(part.tuning.length) };
+      const at: Cursor = { partId: part.id, barId: bar.id, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line: 1 + next(part.tuning.length) };
       const kind = next(10);
       if (kind < 7) setFret(doc, at, next(20));
       else if (kind < 9) stepDuration(doc, at, next(2) === 0 ? 1 : -1);

@@ -21,7 +21,7 @@ import {
   ordered,
   type PartJSON,
   type PartKind,
-  partKindSchema,
+  partKindOf,
   partSchemas,
   partsOf,
   SCHEMA_VERSION,
@@ -198,22 +198,22 @@ function readVoices(voices: Y.Map<unknown>, fit: Fit, staves: number, place: Pla
 
 function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boolean, invalid: InvalidContentFlag[]): PartJSON | null {
   const place: Place = { partId: id };
-  const kind = partKindSchema.safeParse(part.get("kind"));
-  if (!kind.success) {
+  const kind = partKindOf(part);
+  if (kind === undefined) {
     invalid.push(flag(place, "part.kind"));
     return null;
   }
-  const shape = partSchemas[kind.data].shape;
+  const shape = partSchemas[kind].shape;
   const tuning = shape.tuning.safeParse(part.get("tuning"));
   if (!tuning.success) {
     invalid.push(flag(place, "part.tuning"));
     // Notes on a string cannot be placed without the tuning of the strings.
-    if (kind.data === "fretted") return null;
+    if (kind === "fretted") return null;
   }
-  const defaults = KIND_DEFAULTS[kind.data];
+  const defaults = KIND_DEFAULTS[kind];
   const staves = readField(shape.staves, part.get("staves"), defaults.staves.map((staff) => ({ ...staff })), invalid, place, "part.staves");
   const strings = tuning.success ? tuning.data.length : 0;
-  const fit: Fit = { kind: kind.data, strings, key: `${kind.data}:${strings}`, reuse };
+  const fit: Fit = { kind, strings, key: `${kind}:${strings}`, reuse };
   // Built from entries, so that a bar id __proto__ is a key like any other.
   const content: [string, Record<string, BeatJSON[]>][] = [];
   const stored = contentMapOf(part);
@@ -230,7 +230,7 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
   return {
     id,
     name: readField(shape.name, part.get("name"), "", invalid, place, "part.name"),
-    kind: kind.data,
+    kind,
     tuning: tuning.success ? tuning.data : [],
     capo: readField(shape.capo, part.get("capo"), 0, invalid, place, "part.capo"),
     program: readField(shape.program, part.get("program"), defaults.program, invalid, place, "part.program"),

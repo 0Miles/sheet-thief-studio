@@ -28,7 +28,7 @@ test("every drum piece of the table sounds on the percussion channel with its Ge
   const drums = addPart(doc, { name: "Drums", kind: "percussion" });
   let cursor = cursorAt(doc, drums, barId!);
   for (const piece of pieces) {
-    cursor = insertBeat(doc, cursor, { value: 4 });
+    cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 4 });
     setNote(doc, cursor, `p${piece.id}`, {});
   }
   const played = notesPlayed(doc);
@@ -45,7 +45,7 @@ test("a pitch sounds the same however it is spelled, and a fretted note sounds i
   const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
   let cursor = insertBeat(doc, cursorAt(doc, keys, barId!), { value: 2 });
   setNote(doc, cursor, "n61", { spell: "C#" });
-  cursor = insertBeat(doc, cursor, { value: 2 });
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 2 });
   setNote(doc, cursor, "n61", { spell: "Db" });
   setNote(doc, insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 1 }), "s6", { fret: 3 });
   const played = notesPlayed(doc);
