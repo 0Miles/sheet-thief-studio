@@ -17,6 +17,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 ## 2. Origin 檢查
 
 - 所有非 GET（`POST`、`PUT`、`PATCH`、`DELETE`）的 `/api/*` 請求都檢查 `Origin`：必須等於設定的公開 origin（環境變數 `PUBLIC_ORIGIN`）。沒有 `Origin` 標頭也拒絕。拒絕時回 403 `bad_origin`。做法同前身 `app/security.py` 的 `OriginCheckMiddleware`。
+- **補充**：伺服器實際上檢查所有路徑的非 GET（與 HEAD）請求，不只 `/api/*`：router 先把路徑解碼再比對，只看原始網址開頭的話，`/%61pi/…` 會繞過檢查（#5）。
 - WebSocket upgrade 不使用 cookie，驗證靠 collab ticket，所以不做 Origin 檢查（ADR 0005）。
 
 ## 3. 密碼
@@ -39,7 +40,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |
 | 其他 API | 不另設限制：平台只對登入的成員開放，辨識另有「每個帳號同時一件」的限制 | 補充 |
 
-- 登入的計數（#5）：照 #5 的驗收條件「第 11 次錯誤登入被擋」，只計失敗的登入，成功的登入把它用掉的兩個名額還回去；帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。這是對上表「最多 10 次」的解讀，數字不變，等 owner 確認。
+- 登入的計數（#5）：照 #5 的驗收條件「第 11 次錯誤登入被擋」，只計失敗的登入，成功的登入把它用掉的兩個名額還回去；帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。這是對上表「最多 10 次」的解讀，數字不變（補充）。
 - IP 取自 nginx 設定的 `X-Forwarded-For`；Fastify 只信任來自 nginx 的這一跳（補充）。做法是把 nginx 的位址交給 `trustProxy`（環境變數 `TRUSTED_PROXIES`，預設 `loopback`）：Fastify 5 對數字的 `trustProxy`（「信任 1 跳」）一律不信任，因為只看跳數無法確認直接連進來的是 nginx。server 跑在容器裡時，nginx 連進來的位址不是 loopback，部署時要把 `TRUSTED_PROXIES` 設成它的位址，否則所有人都會被當成同一個 IP。
 
 ## 5. 大小上限
