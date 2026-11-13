@@ -56,8 +56,23 @@ const checked = new WeakMap<YBeat, Checked>();
 
 const watched = new WeakSet<Y.Doc>();
 
-/** Documents inside a transaction: what it changes is forgotten only once it ends. */
-const changing = new WeakSet<Y.Doc>();
+/**
+ * The transactions of each document that are running, or ended with their changes not yet
+ * forgotten. While there is any, checks are neither reused nor kept.
+ */
+const unsettled = new WeakMap<Y.Doc, Set<Y.Transaction>>();
+
+/**
+ * Call `opened` when a transaction of the document starts (at once for one already running) and
+ * `ended` when it has ended, before any of its observers is called. Two Yjs internals, kept in
+ * this one place: `doc._transaction` and the `beforeObserverCalls` event. Neither is part of the
+ * documented API; tests/cache.test.ts locks both, and yjs is pinned to ~13.6.33.
+ */
+function followTransactions(doc: Y.Doc, opened: (transaction: Y.Transaction) => void, ended: (transaction: Y.Transaction) => void): void {
+  if (doc._transaction !== null) opened(doc._transaction);
+  doc.on("beforeTransaction", opened);
+  doc.on("beforeObserverCalls", ended);
+}
 
 /** Any shared type of a document, as a transaction names the ones it changed. */
 type YType = Y.Transaction["changed"] extends Map<infer T, unknown> ? T : never;
@@ -73,17 +88,16 @@ function barContentAbove(type: YType, parts: object): YType | null {
 /**
  * Forget the beats checked in the content of a bar as soon as anything in it changes, whoever
  * changes it: when the transaction ends, before any observer is called, so that an observer
- * reading the score sees the change. While a transaction runs, reading checks every beat.
+ * reading the score sees the change. While a transaction is unsettled, reading checks every beat.
  */
 function watch(doc: Y.Doc): void {
   if (watched.has(doc)) return;
   watched.add(doc);
   const parts = partsOf(doc);
-  // Read first inside a transaction: it began before the reader listened.
-  if (doc._transaction !== null) changing.add(doc);
-  doc.on("beforeTransaction", () => changing.add(doc));
-  doc.on("beforeObserverCalls", (transaction: Y.Transaction) => {
-    changing.delete(doc);
+  const pending = new Set<Y.Transaction>();
+  unsettled.set(doc, pending);
+  followTransactions(doc, (transaction) => pending.add(transaction), (transaction) => {
+    pending.delete(transaction);
     // One transaction can change a bar many times: forget its beats once.
     const bars = new Set<YType>();
     for (const type of transaction.changed.keys()) {
@@ -155,7 +169,8 @@ function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: Inv
     let result = fit.reuse ? checked.get(beat) : undefined;
     if (result?.checkedFor !== fit.key) {
       result = { checkedFor: fit.key, ...checkBeat(beat, fit, place) };
-      checked.set(beat, result);
+      // Kept only when no transaction is unsettled: one may change this beat, or have made it.
+      if (fit.reuse) checked.set(beat, result);
     }
     invalid.push(...result.invalid);
     if (result.beat) read.push(result.beat);
@@ -265,7 +280,7 @@ export interface ScoreRead {
  * read is left out of every part, so that the parts stay aligned; a part of no known kind is
  * left out whole; a beat or a note that cannot be read is left out of its voice. Beats are
  * checked again only after something in their bar changed, and every time while a transaction
- * runs. Treat what it returns as read-only: unchanged beats are the same objects from one read
+ * is unsettled (running, or ended with its observers not all called yet). Treat what it returns as read-only: unchanged beats are the same objects from one read
  * to the next.
  */
 export function readScore(doc: Y.Doc): ScoreRead {
@@ -296,7 +311,7 @@ export function readScore(doc: Y.Doc): ScoreRead {
   });
   read.bars = placed.map(([id, bar], index) => readBar(id, bar, index === 0, invalid));
   const barIds = read.bars.map((bar) => bar.id);
-  const reuse = !changing.has(doc);
+  const reuse = unsettled.get(doc)?.size === 0;
   read.parts = inOrder(partsOf(doc), "part", invalid).flatMap(([id, part]) => readPart(id, part, barIds, reuse, invalid) ?? []);
   return { score: read, invalid };
 }

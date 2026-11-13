@@ -1,9 +1,11 @@
 // Reading checks every beat against the schema; it checks a beat again only after something
 // in its bar changed (docs/spec/schema.md section 11): a keystroke changes one bar.
+// The tests on reads inside transactions and from observers also lock the two Yjs internals
+// the reader relies on (`followTransactions` in src/read.ts): upgrading yjs must keep them green.
 import { afterEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { type BeatJSON, cursorAt, docToJson, jsonToDoc, kindSchemas, partsOf, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
+import { type BeatJSON, cursorAt, docToJson, insertBars, insertBeat, jsonToDoc, kindSchemas, partsOf, readScore, SCHEMA_VERSION, type ScoreJSON, setFret, setNote } from "../src/index";
 
 const BARS = ["b1", "b2", "b3"];
 
@@ -101,4 +103,40 @@ test("a first read inside a transaction does not keep what it checked past a cha
     setFret(doc, { ...cursorAt(doc, "gtr", "b2", 6), beatId: "b2g1" }, 7);
     expect(fret()).toBe(7);
   });
+});
+
+test("what is read inside a transaction about a bar it made is not kept: later reads see later changes", () => {
+  const doc = band();
+  let barId = "";
+  doc.transact(() => {
+    [barId] = insertBars(doc, { after: "b3", count: 1 });
+    const cursor = insertBeat(doc, cursorAt(doc, "gtr", barId, 6), { value: 4 });
+    setFret(doc, cursor, 3);
+    expect(docToJson(doc).parts[0]!.content[barId]!["0:0"]![0]!.notes.s6!.fret).toBe(3);
+    setFret(doc, cursor, 7);
+  });
+  expect(docToJson(doc).parts[0]!.content[barId]!["0:0"]![0]!.notes.s6!.fret).toBe(7);
+});
+
+test("an observer reading while transactions it opened are still to be ended sees their changes", () => {
+  const doc = band();
+  const fret = (bar: string, beat: number) => docToJson(doc).parts[0]!.content[bar]!["0:0"]![beat]!.notes.s6!.fret;
+  const beatOf = (bar: string, beat: number) => ({ ...cursorAt(doc, "gtr", bar, 6), beatId: `${bar}g${beat}` });
+  docToJson(doc); // every beat checked and kept
+  const seen: (number | undefined)[] = [];
+  let calls = 0;
+  partsOf(doc).observeDeep(() => {
+    calls++;
+    if (calls === 1) {
+      // Two transactions of their own, both ended only after this observer returns.
+      setFret(doc, beatOf("b1", 0), 7);
+      setFret(doc, beatOf("b3", 2), 9);
+    } else if (calls === 2) {
+      // Called for the first of them, while the second (bar 3) is still to be ended.
+      seen.push(fret("b3", 2));
+    }
+  });
+  setFret(doc, beatOf("b2", 1), 5);
+  expect(seen).toEqual([9]);
+  expect(fret("b3", 2)).toBe(9);
 });
