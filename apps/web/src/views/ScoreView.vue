@@ -6,7 +6,7 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { type ScoreDetails, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, type View } from "@studio/score-editor";
-import { cursorAt, docToJson, flagsOf, observeScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
+import { type Cursor, cursorAt, docToJson, flagsOf, observeScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
 import { createAlphaTabEngine, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import * as Y from "yjs";
@@ -83,7 +83,7 @@ function draw(change: ScoreChange): void {
 }
 
 /** The cursor a member starts with: the first place of the first bar of the first part. */
-function firstCursor(json: ScoreJSON) {
+function firstCursor(json: ScoreJSON): Cursor | null {
   const part = json.parts[0];
   const bar = json.bars[0];
   // Fretted parts start on the top string, the others on the middle line (docs/spec/commands.md, section 2).
@@ -119,6 +119,8 @@ function onKey(event: KeyboardEvent): void {
 
 /** A click on the score only moves the cursor (docs/spec/views.md, section 2). */
 function onPointer(event: PointerEvent): void {
+  // The main button only: not a right click for the context menu.
+  if (event.button !== 0) return;
   if (session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);

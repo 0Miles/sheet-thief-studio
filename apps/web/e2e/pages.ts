@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 
 import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
+import type { Role } from "@studio/contracts";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -63,7 +64,7 @@ export async function createScore(page: Page, title: string): Promise<string> {
 export interface ScoreFixture {
   title: string;
   owner: string;
-  members?: { username: string; role: "editor" | "viewer" }[];
+  members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
 }
 

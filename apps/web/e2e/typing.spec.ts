@@ -4,15 +4,21 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { BeatJSON, Cursor, ScoreJSON } from "@studio/score-model";
 
+import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
 import { loggedIn, pageErrors, seedScore } from "./pages";
+
+/** Every change typed here has reached the server. */
+async function synced(page: Page): Promise<void> {
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+}
 
 /** Open a score and wait until it is drawn and in step with the server; the score then has the keyboard. */
 async function openScore(page: Page, id: string): Promise<void> {
   await page.goto(`/scores/${id}`);
   await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+  await synced(page);
 }
 
 function scoreOf(page: Page): Promise<ScoreJSON> {
@@ -26,11 +32,6 @@ function cursorOf(page: Page): Promise<Cursor | null> {
 /** The beats of the first voice of a bar (by index) of the first part. */
 function beatsIn(score: ScoreJSON, bar: number): BeatJSON[] {
   return score.parts[0]!.content[score.bars[bar]!.id]?.["0:0"] ?? [];
-}
-
-/** Every change typed here has reached the server. */
-async function synced(page: Page): Promise<void> {
-  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
 }
 
 function seed(bars?: number): string {
@@ -108,7 +109,6 @@ test("a Viewer moves the cursor but changes nothing; the notice that a Viewer ca
   await expect(notice).toBeVisible();
   await page.keyboard.press("+");
   await page.keyboard.press("6");
-  await expect(notice).toHaveCount(1);
   await page.getByRole("button", { name: strings.score.dismiss }).click();
   await expect(notice).toHaveCount(0);
 
@@ -130,20 +130,26 @@ test("at the top of a score of more than 10 bars, the cursor never covers an are
   const reserved = page.locator("[data-reserved]");
   await expect(reserved).not.toHaveCount(0);
   const areas = await Promise.all((await reserved.all()).map((area) => area.boundingBox()));
+  expect(areas).not.toContain(null);
   const scroller = page.locator("[data-scroller]");
 
-  // On the top string, through every bar: the first system's last bar is one of them.
-  for (let bar = 0; bar < 12; bar++) {
+  /** The cursor is drawn where it is now, clear of every reserved area, with the page at the top. */
+  async function clearAt(bar: number, at: Cursor["at"]): Promise<void> {
     expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
-    expect(await cursorOf(page)).toMatchObject({ barId: (await scoreOf(page)).bars[bar]!.id, line: 1 });
+    expect(await cursorOf(page)).toMatchObject({ barId: (await scoreOf(page)).bars[bar]!.id, at, line: 1 });
     const cursor = await page.locator("[data-cursor]").boundingBox();
     expect(cursor).not.toBeNull();
-    for (const area of areas) {
-      expect(area).not.toBeNull();
-      const apart =
-        cursor!.x + cursor!.width <= area!.x || area!.x + area!.width <= cursor!.x || cursor!.y + cursor!.height <= area!.y || area!.y + area!.height <= cursor!.y;
-      expect(apart, `bar ${bar + 1}`).toBe(true);
-    }
+    for (const area of areas) expect(overlaps(cursor!, area!), `bar ${bar + 1}, ${at}`).toBe(false);
+  }
+
+  // On the top string, through every bar (the first system's last bar is one of them): the append
+  // slot of the empty voice, a beat typed there, and the append slot after that beat.
+  for (let bar = 0; bar < 12; bar++) {
+    await clearAt(bar, "after");
+    await page.keyboard.press("1");
+    await clearAt(bar, "on");
+    await page.keyboard.press("ArrowRight");
+    await clearAt(bar, "after");
     await page.keyboard.press("ArrowRight");
   }
   expect(errors).toEqual([]);

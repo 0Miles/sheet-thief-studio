@@ -104,6 +104,12 @@ const MARK_FREE_TRACKS = 2;
 /** How wide the mark is at scale 1 (`AttributionGlyph`: about 68.3 px), rounded up. */
 const MARK_WIDTH = 70;
 
+/** How much of the score a drawing shows: all its bars, and the tracks drawn. */
+export interface DrawnExtent {
+  barCount: number;
+  trackCount: number;
+}
+
 /**
  * The areas no overlay may cover (docs/adr/0003, docs/spec/views.md section 9): where alphaTab
  * draws its attribution mark, above the last bar of the first system, ending at its barline.
@@ -111,7 +117,7 @@ const MARK_WIDTH = 70;
  * from the top of the system down to the first staff line, and at least as wide as the mark.
  * None when alphaTab draws no mark: `barCount` bars in the score, `trackCount` tracks drawn.
  */
-export function reservedRects(lookup: BoundsLookup, { barCount, trackCount }: { barCount: number; trackCount: number }, scale: number): Rect[] {
+export function reservedRects(lookup: BoundsLookup, { barCount, trackCount }: DrawnExtent, scale: number): Rect[] {
   if (barCount <= MARK_FREE_BARS && trackCount <= MARK_FREE_TRACKS) return [];
   const system = lookup.staffSystems[0];
   const last = system?.bars.at(-1);
