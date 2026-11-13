@@ -13,10 +13,13 @@ import { SESSION_TTL_SECONDS, type Session, type Sessions } from "./sessions";
 declare module "fastify" {
   interface FastifyInstance {
     sessions: Sessions;
-    /** preHandler for the routes that need a logged-in account: answers 401 without one. */
-    authenticate(request: FastifyRequest, reply: FastifyReply): Promise<void>;
+  }
+  interface FastifyContextConfig {
+    /** Open without a session. Every other /api/ route answers 401 to a request without one. */
+    public?: boolean;
   }
   interface FastifyRequest {
+    /** The session and its account, on every /api/ route not marked public. */
     session: Session | null;
     account: Account | null;
   }
@@ -30,7 +33,10 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
   app.decorate("sessions", sessions);
   app.decorateRequest("session", null);
   app.decorateRequest("account", null);
-  app.decorate("authenticate", async (request: FastifyRequest, reply: FastifyReply) => {
+  // Every /api/ route needs a session unless it says otherwise, so a new route cannot be left
+  // open by forgetting to ask for one. Unknown paths have no route and answer 404.
+  app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.routeOptions.url?.startsWith("/api/") || request.routeOptions.config.public) return;
     const id = request.cookies[cookie.name];
     const session = id ? await sessions.resume(id) : null;
     const account = session ? await Account.findByPk(session.accountId) : null;
@@ -44,7 +50,7 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     keepSession(reply, session.id);
   });
 
-  app.post("/api/auth/login", async (request, reply) => {
+  app.post("/api/auth/login", { config: { public: true } }, async (request, reply) => {
     const body = loginRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
     // Only failed attempts count: a successful one gives its two back.
@@ -65,14 +71,14 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     return reply.code(204).send();
   });
 
-  app.post("/api/auth/logout", async (request, reply) => {
+  app.post("/api/auth/logout", { config: { public: true } }, async (request, reply) => {
     const id = request.cookies[cookie.name];
     if (id) await sessions.end({ sessionId: id });
     reply.clearCookie(cookie.name, cookieOptions);
     return reply.code(204).send();
   });
 
-  app.get("/api/me", { preHandler: app.authenticate }, async (request) => {
+  app.get("/api/me", async (request) => {
     const account = request.account!;
     return me.parse({
       accountId: account.id,

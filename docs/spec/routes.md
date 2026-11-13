@@ -50,6 +50,7 @@
 - 錯誤回應的形狀是 `{ code: string, params?: object }`。`code` 是穩定的英文代碼，介面依 `code` 顯示 `apps/web/src/strings.ts` 裡的繁中文字；伺服器不回傳給人看的句子。
 - 成功但沒有內容時回 204。
 - 所有非 GET 請求都檢查 `Origin`（[`security.md`](security.md)）。
+- **補充**：`/api/*` 的 route 預設都要 session，沒有就回 401 `unauthenticated`；不需要登入的 route（登入、登出、訪客取 ticket）要在 route 設定上明確標成 public，忘了標就是要登入（#5）。
 - 資料形狀用 zod 定義在 `packages/contracts`；團譜文件的 schema 從 `score-model` re-export。
 
 ### 3.1 登入與自己的帳號
@@ -150,7 +151,7 @@
 | code | HTTP | 意思 |
 |---|---|---|
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
-| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤 |
+| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤，或帳號已停用（三者不區分） |
 | `password_change_required` | 403 | 要先改密碼 |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
