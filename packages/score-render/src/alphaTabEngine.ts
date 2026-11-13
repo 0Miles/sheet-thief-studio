@@ -2,7 +2,7 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type PartShape, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, reservedRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import type { PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
@@ -164,6 +164,14 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     if (lookup === null || this.projection === null) return null;
     const origin = this.surfaceOrigin();
     return cursorAtPoint(lookup, this.projection, this.parts, x - origin.x, y - origin.y, this.metrics());
+  }
+
+  reservedRects(): Rect[] {
+    const lookup = this.api.boundsLookup;
+    const projection = this.projection;
+    if (lookup === null || projection === null) return [];
+    const drawn: DrawnExtent = { barCount: projection.barIds.length, trackCount: this.trackIndexes(projection).length };
+    return reservedRects(lookup, drawn, this.api.settings.display.scale).map((rect) => this.fromSurface(rect));
   }
 
   onRendered(listener: (event: RenderedEvent) => void): Unsubscribe {

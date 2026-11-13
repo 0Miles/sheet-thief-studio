@@ -17,16 +17,18 @@ async function drawnScore(page: Page): Promise<ScoreJSON> {
 
 test("a score created on / opens by itself, as the server made it, the same after reloading; / lists it, and someone else gets the 404 page", async ({ page, browser }) => {
   const errors = pageErrors(page);
+  // A title of its own, so that the list of an earlier run of this test does not hold it too.
+  const title = `測試團譜 ${test.info().repeatEachIndex}-${Date.now()}`;
   await logInFromStart(page, ADMIN);
 
   await page.getByRole("button", { name: strings.home.newScore }).click();
-  await page.getByLabel(strings.newScore.scoreTitle).fill("測試團譜");
+  await page.getByLabel(strings.newScore.scoreTitle).fill(title);
   await page.getByRole("button", { name: strings.newScore.create }).click();
   await expect(page).toHaveURL(/\/scores\/[0-9a-f-]{36}$/);
   const address = page.url();
 
   const created = await drawnScore(page);
-  expect(created.title).toBe("測試團譜");
+  expect(created.title).toBe(title);
   expect(created.parts).toHaveLength(1);
   expect(created.bars).toHaveLength(8);
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();
@@ -35,7 +37,7 @@ test("a score created on / opens by itself, as the server made it, the same afte
   expect(await drawnScore(page)).toEqual(created);
 
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /測試團譜/ })).toBeVisible();
+  await expect(page.getByRole("link").filter({ has: page.getByText(title, { exact: true }) })).toBeVisible();
   expect(errors).toEqual([]);
 
   // Another account, not a member: the same address shows the 404 page once logged in.

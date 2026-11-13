@@ -22,6 +22,8 @@ export const strings = {
     unavailable: "無法開啟這份團譜",
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
+    viewerCannotEdit: "檢視者無法修改",
+    dismiss: "關閉",
   },
   header: {
     logout: "登出",

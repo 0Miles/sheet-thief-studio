@@ -10,7 +10,7 @@
 | `packages/score-editor` | `EditorSession`：Cursor、Selection、`UndoManager`、按鍵 → Command、唯讀旗標、Presence 的本機狀態；三種視圖的判定函式；平台層（抽象組合、`detectKeyPlatform`、`formatChord`） | vitest 加真的 `Y.Doc`，不需要瀏覽器。判定函式窮舉所有組合（[`views.md`](views.md)）；平台層對每個綁定、兩個平台跑同一組檢查（[`keymap.md`](keymap.md) 第 1.3 節） |
 | `packages/score-render` | 投影、`replaceBars`、聲道分配、匯入、匯出 | vitest（jsdom）。聲音用 alphaTab 的 `MidiFileGenerator` 產生 MIDI 再檢查（`tests/sound.test.ts` 的寫法） |
 | `apps/server` | API、session、權限、Hocuspocus 掛鉤、版本、定時工作 | vitest，一律打**真的** Postgres 與 Redis：本機用 `compose.dev.yaml`，CI 用 service containers；不 mock 資料庫。共編測試在 Node 裡用真的 `@hocuspocus/provider` 連線（Node 22 內建 WebSocket；CI 用 Node 22，`ci.yml:23`） |
-| `apps/web` | 頁面與整合 | Playwright e2e，經由真的鍵盤與介面操作 |
+| `apps/web` | 頁面與整合 | Playwright e2e，經由真的鍵盤與介面操作。**補充**（#19）：疊層避開保留區域的純函式（`src/overlay.ts`）另外有 vitest（`tests/overlay.test.ts`） |
 | `services/recognizer` | 辨識核心、契約出口、#27 | pytest，在裝了 OCR 套件的 Docker image 裡跑 |
 | 契約 | 辨識服務的中間模型 JSON | Python 與 TypeScript 兩邊讀同一批 fixture（[`recognizer.md`](recognizer.md)） |
 
@@ -32,7 +32,8 @@
   - 目前（#6）CI 檢查的是 `__studioTest`：spike 頁的 `window.__studio` 還在正式 build 裡，#37 移除 spike 頁之後改成檢查 `__studio`。`__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷，其他 build 裡是死碼，打包時整段移除。
 - e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
-- **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
+  - **補充**（#19）：還沒有介面或 API 可以建立的前置資料（帶 Editor、Viewer 成員的團譜，或超過 8 小節的團譜），由 server 自己的腳本直接寫進 e2e 資料庫（`apps/server/tests/scoreE2e.ts`，`e2e/pages.ts` 的 `seedScore`）。腳本只接受名稱以 `_e2e` 結尾的資料庫，而且只建立新的團譜，所以不會和 server 記憶體裡的文件衝突。#13 有了加入成員的頁面之後，成員本身的行為仍然要經由介面驗證。
+- **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`），等到 `data-sync="synced"` 就表示本機輸入的內容已經送到伺服器（#19，[`views.md`](views.md) 第 10 節）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
 - Playwright 的網頁 `webServer` 是 `pnpm build && pnpm preview`，帶 `VITE_E2E=1` 建置，而且一律不重用已經在跑的 preview（`apps/web/playwright.config.ts`，#6）。
 - 視圖 `SpikeView.vue` 與 `window.__studio` 是量測用的鷹架，要被取代（`spike-report.md:361`）。
 

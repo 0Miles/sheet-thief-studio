@@ -53,11 +53,19 @@ function barBoundsOf(lookup: BoundsLookup, barIndex: number, track: number, staf
   return masterBar?.bars.find((item) => item.bar.staff.track.index === track && item.bar.staff.index === staff) ?? null;
 }
 
+/** The box of the cursor on a drawn beat, in x: centred on its notes, at least as wide as a rest's. */
+function beatSpan(beat: BeatBounds, metrics: StaffMetrics): { left: number; right: number } {
+  const half = Math.max(beat.visualBounds.w / 2, MIN_HALF_WIDTH * metrics.staffSpace);
+  return { left: beat.onNotesX - half, right: beat.onNotesX + half };
+}
+
 /**
  * The rectangle of a cursor: centred on the notes of its beat and on its line. In the append
- * slot of an empty voice it is a thin caret at the left edge of the place of the beats; in an
- * append slot after a beat it is drawn on that beat for now (#19 draws the append slot). Null
- * when the bar or the part is not drawn.
+ * slot of an empty voice it is a thin caret at the left edge of the place of the beats. In an
+ * append slot after a beat (its anchor) it is a thin caret between the anchor and whatever is
+ * drawn next in the voice: a beat others appended after the anchor, a rest filling the bar, or
+ * the end of the bar (docs/spec/commands.md, section 2). Null when the bar or the part is not
+ * drawn.
  */
 export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor, metrics: StaffMetrics): Rect | null {
   const track = projection.partIndex.get(cursor.partId);
@@ -81,8 +89,43 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   if (address === undefined || address.bar !== barIndex) return null;
   const beat = bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat);
   if (beat === undefined) return null;
-  const half = Math.max(beat.visualBounds.w / 2, MIN_HALF_WIDTH * metrics.staffSpace);
-  return { x: beat.onNotesX - half, y, width: half * 2, height };
+  const span = beatSpan(beat, metrics);
+  if (cursor.at === "on") return { x: span.left, y, width: span.right - span.left, height };
+  const next = bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat + 1);
+  const end = next === undefined ? bar.visualBounds.x + bar.visualBounds.w : beatSpan(next, metrics).left;
+  const width = Math.min(CARET_WIDTH * metrics.staffSpace, Math.max(end - span.right, 0));
+  return { x: (span.right + end - width) / 2, y, width, height };
+}
+
+/** alphaTab draws its mark on scores of more than this many bars ... */
+const MARK_FREE_BARS = 10;
+/** ... or when it draws more than this many tracks (`ScoreLayout._resolveShowAttribution`). */
+const MARK_FREE_TRACKS = 2;
+/** How wide the mark is at scale 1 (`AttributionGlyph`: about 68.3 px), rounded up. */
+const MARK_WIDTH = 70;
+
+/** How much of the score a drawing shows: all its bars, and the tracks drawn. */
+export interface DrawnExtent {
+  barCount: number;
+  trackCount: number;
+}
+
+/**
+ * The areas no overlay may cover (docs/adr/0003, docs/spec/views.md section 9): where alphaTab
+ * draws its attribution mark, above the last bar of the first system, ending at its barline.
+ * The mark has no element of its own, so the room above the right end of that bar's top staff is
+ * reserved, from the top of the system down to the first staff line, as wide as the mark. None when alphaTab draws no mark: `barCount` bars in the score, `trackCount` tracks drawn.
+ */
+export function reservedRects(lookup: BoundsLookup, { barCount, trackCount }: DrawnExtent, scale: number): Rect[] {
+  if (barCount <= MARK_FREE_BARS && trackCount <= MARK_FREE_TRACKS) return [];
+  const system = lookup.staffSystems[0];
+  const last = system?.bars.at(-1);
+  if (system === undefined || last === undefined) return [];
+  const right = last.realBounds.x + last.realBounds.w;
+  const left = right - MARK_WIDTH * scale;
+  const top = system.realBounds.y;
+  const firstLine = Math.min(...last.bars.map((bar) => bar.visualBounds.y));
+  return [{ x: left, y: top, width: right - left, height: Math.max(firstLine - top, 0) }];
 }
 
 function distanceToSpan(value: number, start: number, length: number): number {

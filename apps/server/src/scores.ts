@@ -33,13 +33,14 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
 /**
  * What a new score starts with, written by the server through the commands of score-model: one
  * six-string guitar and eight bars of 4/4. The tempo is left unwritten, which reads as 120
- * (docs/spec/schema.md, section 3). The dialog of #11 replaces these fixed values.
+ * (docs/spec/schema.md, section 3). The dialog of #11 replaces these fixed values. The end-to-end
+ * tests' fixtures ask for more bars.
  */
-function startContent(doc: Y.Doc, title: string): void {
+export function startContent(doc: Y.Doc, title: string, bars = 8): void {
   createScore(doc, title);
   // A fretted part's defaults are the preset 「吉他 6 弦」: standard tuning, tablature, program 25.
   addPart(doc, { name: "吉他 1", kind: "fretted" });
-  insertBars(doc, { after: null, count: 8, timeSig: COMMON_TIME });
+  insertBars(doc, { after: null, count: bars, timeSig: COMMON_TIME });
 }
 
 /** Make a score owned by the account, its content written as a participant; returns its id. */
