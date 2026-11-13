@@ -72,4 +72,4 @@ pnpm lint && pnpm typecheck && pnpm test
 pnpm --filter @studio/web test:e2e
 ```
 
-技術驗證頁：`/spike/<名稱>`（共編）與 `/local`（只在這一頁），不需要登入。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。
+技術驗證頁：`/spike/<團譜 id>`（共編：要先登入，而且是那份團譜的成員）與 `/local`（只在這一頁，不需要登入）。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。
