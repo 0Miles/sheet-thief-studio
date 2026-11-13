@@ -3,6 +3,7 @@
 // minimal keyboard entry. With a name in the address the score is co-edited through the server;
 // without one it lives in this page only (measurements and screenshots).
 import { HocuspocusProvider } from "@hocuspocus/provider";
+import { createEditorSession, type EditorSession } from "@studio/score-editor";
 import {
   type Cursor,
   cursorAt,
@@ -14,7 +15,6 @@ import {
   type ScoreChange,
   type ScoreJSON,
   setFret,
-  settleCursor,
   stepDuration,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type RenderedEvent, type ScoreEngine } from "@studio/score-render";
@@ -24,7 +24,6 @@ import * as Y from "yjs";
 
 import { seedDemo, seedPerf } from "../spike/demoScores";
 import type { KeySample, RenderSample, StudioHook } from "../spike/hook";
-import { createTyping, type Typing } from "../spike/typing";
 import { strings } from "../strings";
 
 const route = useRoute();
@@ -39,7 +38,6 @@ const hasPlayer = query("player") !== "0";
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
-const cursor = shallowRef<Cursor | null>(null);
 const rect = ref<Rect | null>(null);
 const shown = ref("all");
 const connection = ref<"local" | "connecting" | "connected" | "disconnected">(documentName === null ? "local" : "connecting");
@@ -49,7 +47,7 @@ const flagCount = computed(() => (score.value ? flagsOf(score.value).length : 0)
 const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
-let typing: Typing | undefined;
+let session: EditorSession | undefined;
 let stopObserving: (() => void) | undefined;
 let started = false;
 /** While true, changes to the document are not drawn (bulk edits for the size measurement). */
@@ -74,7 +72,7 @@ const hook: StudioHook = {
   synced: () => provider === undefined || (provider.isSynced && provider.unsyncedChanges === 0),
   json: () => docToJson(doc),
   stateSize: () => Y.encodeStateAsUpdate(doc).byteLength,
-  cursor: () => cursor.value,
+  cursor: () => session?.cursor ?? null,
   cursorRect: () => rect.value,
   placeCursor(part, bar, beat, line) {
     const json = docToJson(doc);
@@ -83,7 +81,7 @@ const hook: StudioHook = {
     if (partJson === undefined || barId === undefined) return null;
     const beatId = beat < 0 ? null : (partJson.content[barId]?.["0:0"]?.[beat]?.id ?? null);
     moveCursor({ partId: partJson.id, barId, voice: "0:0", beatId, line });
-    return cursor.value;
+    return session?.cursor ?? null;
   },
   editBar(part, bar) {
     const json = docToJson(doc);
@@ -146,7 +144,8 @@ function shownPartIds(json: ScoreJSON): string[] {
 }
 
 function updateRect(): void {
-  rect.value = cursor.value && engine ? engine.renderer.boundsOf(cursor.value) : null;
+  const at = session?.cursor ?? null;
+  rect.value = at && engine ? engine.renderer.boundsOf(at) : null;
 }
 
 /** Scroll so that the cursor is on screen, with some room around it. */
@@ -159,9 +158,9 @@ function reveal(): void {
   else if (box.y + box.height > view.scrollTop + view.clientHeight - margin) view.scrollTop = box.y + box.height - view.clientHeight + margin;
 }
 
+/** The session holds the cursor; the page draws it each time the session tells it moved. */
 function moveCursor(next: Cursor | null): void {
-  cursor.value = next;
-  updateRect();
+  session?.moveTo(next);
   reveal();
 }
 
@@ -198,7 +197,6 @@ function onRendered(event: RenderedEvent): void {
   const first = awaiting.shift();
   // Changes that arrived while the renderer was busy are drawn together, next.
   if (awaiting.length > 1) awaiting.splice(0, awaiting.length - 1);
-  if (cursor.value) cursor.value = settleCursor(doc, cursor.value);
   updateRect();
   hook.ready = true;
   if (first === undefined) return;
@@ -222,29 +220,26 @@ function onPainted(barIds: string[]): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  const at = cursor.value;
-  if (at === null || typing === undefined || score.value === null) return;
-  const kind = score.value.parts.find((part) => part.id === at.partId)?.kind;
-  if (kind !== "fretted" && (/^[0-9]$/.test(event.key) || event.key === "Delete")) return;
+  const at = session?.cursor ?? null;
+  if (at === null || session === undefined) return;
   // The key is watched from before its command runs: without a worker the renderer has
   // finished its layout by the time the command returns.
   const sample: KeySample = { key: event.key, pressed: event.timeStamp, started: performance.now(), handled: 0, rendered: null, painted: null, frame: 0, nextFrame: 0 };
   const pending: PendingKey = { sample, barId: at.barId, drawing: drawings + 1 };
   pendingKeys.add(pending);
-  const next = typing.press(event, at);
-  if (next === undefined) {
+  if (!session.press(event)) {
     pendingKeys.delete(pending);
     return;
   }
   event.preventDefault();
-  moveCursor(next);
+  reveal();
   sample.handled = performance.now();
   if (drawings < pending.drawing) {
     pendingKeys.delete(pending);
     finishKey(sample); // the key only moved the cursor
     return;
   }
-  pending.barId = next.barId;
+  pending.barId = session.cursor?.barId ?? at.barId;
   // The piece holding the bar is painted only when it is on screen: do not wait for ever.
   pending.timer = setTimeout(() => settleKey(pending), 1500);
 }
@@ -274,7 +269,8 @@ function start(): void {
     if (query("seed") === "perf") seedPerf(doc, Number(query("bars") ?? 100));
     else seedDemo(doc, { bars: Number(query("bars") ?? 12), parts: Number(query("parts") ?? 3) });
   }
-  typing = createTyping(doc); // after the seed, so that undo cannot take the seed back
+  session = createEditorSession(doc); // after the seed, so that undo cannot take the seed back
+  session.onPresence(updateRect);
   const json = docToJson(doc);
   score.value = json;
   const wanted = Number(query("show"));
@@ -284,7 +280,7 @@ function start(): void {
   stopObserving = observeScore(doc, draw);
   const part = json.parts.find((item) => shownPartIds(json).includes(item.id) && item.kind === "fretted") ?? json.parts[0];
   const bar = json.bars[0];
-  if (part && bar) cursor.value = cursorAt(doc, part.id, bar.id, 1);
+  if (part && bar) session.moveTo(cursorAt(doc, part.id, bar.id, 1));
 }
 
 onMounted(() => {
@@ -326,7 +322,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearTimeout(reloadTimer);
   stopObserving?.();
-  typing?.undo.destroy();
+  session?.destroy();
   provider?.destroy();
   engine?.destroy();
   doc.destroy();

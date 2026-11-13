@@ -1,35 +1,18 @@
-import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars } from "@studio/score-model";
+// Keyboard entry on a fretted part, moved here with the spike's typing (docs/spec/testing.md).
 import { expect, test } from "vitest";
-import * as Y from "yjs";
 
-import { createTyping, TWO_DIGIT_WINDOW } from "../src/spike/typing";
-
-/** A guitar with two empty bars, the typing on it and a clock the test moves. */
-function session() {
-  const doc = new Y.Doc();
-  createScore(doc, "Demo");
-  const barIds = insertBars(doc, { after: null, count: 2 });
-  const partId = addPart(doc, { name: "Guitar", kind: "fretted" });
-  const clock = { now: 0 };
-  const typing = createTyping(doc, () => clock.now);
-  let cursor: Cursor = cursorAt(doc, partId, barIds[0]!, 6);
-  const press = (key: string, wait = 1000, modifiers: { ctrlKey?: boolean } = {}): void => {
-    clock.now += wait;
-    cursor = typing.press({ key, ...modifiers }, cursor) ?? cursor;
-  };
-  const beats = (bar = 0) => docToJson(doc).parts[0]!.content[barIds[bar]!]!["0:0"]!;
-  return { press, beats, cursor: () => cursor, barIds };
-}
+import { TWO_DIGIT_WINDOW } from "../src/index";
+import { sessionOn } from "./support";
 
 test("a digit in an empty bar makes a quarter beat with that fret on the cursor's string", () => {
-  const { press, beats, cursor } = session();
+  const { press, beats, cursor } = sessionOn();
   press("7");
   expect(beats().map((beat) => [beat.value, beat.notes])).toEqual([[4, { s6: { fret: 7 } }]]);
   expect(cursor().beatId).toBe(beats()[0]!.id);
 });
 
 test("two digits typed quickly are one fret; typed slowly, the second replaces the first", () => {
-  const { press, beats } = session();
+  const { press, beats } = sessionOn();
   press("1");
   press("2", TWO_DIGIT_WINDOW - 50);
   expect(beats()[0]!.notes.s6).toEqual({ fret: 12 });
@@ -42,7 +25,7 @@ test("two digits typed quickly are one fret; typed slowly, the second replaces t
 });
 
 test("a two-digit fret is one undo step, and so is the digit that made its beat", () => {
-  const { press, beats } = session();
+  const { press, beats } = sessionOn();
   press("1");
   press("5", 100);
   press("Insert");
@@ -60,7 +43,7 @@ test("a two-digit fret is one undo step, and so is the digit that made its beat"
 });
 
 test("arrows move the cursor, Insert adds a beat of the same value, + and - change it, Delete clears the string", () => {
-  const { press, beats, cursor, barIds } = session();
+  const { press, beats, cursor, barIds } = sessionOn();
   press("5");
   press("+");
   press("Insert");
@@ -81,11 +64,11 @@ test("arrows move the cursor, Insert adds a beat of the same value, + and - chan
 });
 
 test("a key that is not a typing key is left alone", () => {
-  const { press, beats, cursor } = session();
+  const { press, beats, cursor } = sessionOn();
   const before = cursor();
-  press("a");
-  press("F5");
-  press("c", 1000, { ctrlKey: true });
+  expect(press("a")).toBe(false);
+  expect(press("F5")).toBe(false);
+  expect(press("c", 1000, { ctrlKey: true })).toBe(false);
   expect(cursor()).toBe(before);
   expect(beats()).toEqual([]);
 });

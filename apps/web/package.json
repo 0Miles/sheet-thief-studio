@@ -18,6 +18,7 @@
     "@karyl-chan/ui": "0.5.0",
     "@popperjs/core": "^2.11.8",
     "@studio/contracts": "workspace:*",
+    "@studio/score-editor": "workspace:*",
     "@studio/score-model": "workspace:*",
     "@studio/score-render": "workspace:*",
     "nanoid": "^6.0.2",

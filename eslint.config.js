@@ -15,7 +15,7 @@ export default defineConfigWithVueTs(
   // alphaTab stays behind the renderer's interface (docs/adr/0003). The Vite plugin that
   // bundles its workers is a different package and is not concerned.
   {
-    files: ["apps/**/*.{ts,vue}", "packages/contracts/**/*.ts", "packages/score-model/**/*.ts"],
+    files: ["apps/**/*.{ts,vue}", "packages/contracts/**/*.ts", "packages/score-editor/**/*.ts", "packages/score-model/**/*.ts"],
     rules: {
       "no-restricted-imports": ["error", { paths: [{ name: "@coderline/alphatab", message: "alphaTab is imported only inside packages/score-render (docs/adr/0003)." }] }],
     },
