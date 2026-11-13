@@ -19,6 +19,7 @@ M0（技術驗證）已完成，接下來是 M1a；目前還不能使用。計�
 | `apps/web` | Vue 3 網頁（Vite、pinia、vue-router、`@karyl-chan/ui`） |
 | `apps/server` | Fastify API 與 Hocuspocus 共編伺服器 |
 | `packages/score-model` | 團譜文件：Yjs schema、編輯指令、檢查；前後端共用 |
+| `packages/score-editor` | 打譜：游標、按鍵對應到指令、復原、唯讀，以及給哪一種視圖；不碰 DOM，任何 `Y.Doc` 都能用 |
 | `packages/score-render` | 譜面顯示與播放（alphaTab 只在這裡使用） |
 | `packages/contracts` | API 的資料形狀（zod） |
 | `docs/` | 詞彙表以外的文件：ADR、規格附錄（`docs/spec/`）、路線圖、技術驗證報告 |

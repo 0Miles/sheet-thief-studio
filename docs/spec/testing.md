@@ -15,7 +15,7 @@
 | 契約 | 辨識服務的中間模型 JSON | Python 與 TypeScript 兩邊讀同一批 fixture（[`recognizer.md`](recognizer.md)） |
 
 - `packages/score-editor` 不碰 DOM、不依賴 `ScoreRenderer`、不知道 Hocuspocus、不 import y-protocols；給任何 `Y.Doc` 都能運作。點擊轉成 Cursor（`hitTest`）、幾何計算、寫入 `provider.awareness`，都由 Vue 殼負責。
-- 現有的 `apps/web/src/spike/typing.ts` 與 `apps/web/tests/typing.test.ts` 搬進 `packages/score-editor`。
+- spike 的 `apps/web/src/spike/typing.ts` 與 `apps/web/tests/typing.test.ts` 已經搬進 `packages/score-editor`（`src/session.ts`、`tests/typing.test.ts`，#9）。
 - `eslint.config.js:18` 禁止 import alphaTab 的清單，加上 `packages/score-editor/**`。
 - **補充**：`compose.dev.yaml` 的 Postgres 與 Redis 是 M1a 第一張 server 票建立的；伺服器測試用獨立的資料庫名稱，每個測試檔自己清資料。
 
