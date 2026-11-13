@@ -19,8 +19,16 @@ const title = ref("");
 const error = ref("");
 const sending = ref(false);
 
+/** The list could not be asked for. */
+const loadFailed = ref(false);
+
 onMounted(async () => {
-  scores.value = (await get("/api/scores", scoreList)).scores;
+  try {
+    scores.value = (await get("/api/scores", scoreList)).scores;
+  } catch (failure) {
+    loadFailed.value = true;
+    throw failure;
+  }
 });
 
 function startCreating(): void {
@@ -51,7 +59,8 @@ async function create(): Promise<void> {
       <Spacer />
       <AppButton variant="primary" @click="startCreating">{{ text.newScore }}</AppButton>
     </Cluster>
-    <p v-if="scores === null" class="home__muted">{{ strings.loading }}</p>
+    <p v-if="loadFailed" class="home__error" role="alert">{{ strings.unknownError }}</p>
+    <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
     <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
     <ul v-else class="home__scores">
       <li v-for="score in scores" :key="score.id">

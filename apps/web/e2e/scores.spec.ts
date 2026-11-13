@@ -4,7 +4,7 @@ import { expect, type Page, test } from "@playwright/test";
 import type { ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
-import { ADMIN, MEMBER } from "./environment";
+import { ADMIN, OUTSIDER } from "./environment";
 import { logIn, logInFromStart, pageErrors } from "./pages";
 
 /** Wait until the score is drawn, then read it. */
@@ -45,7 +45,7 @@ test("a score created on / opens by itself, as the server made it, the same afte
     { status: 404, path: new URL(address).pathname.replace("/scores/", "/api/scores/") },
   ]);
   await stranger.goto(address);
-  await logIn(stranger, MEMBER.username, MEMBER.password);
+  await logIn(stranger, OUTSIDER.username, OUTSIDER.password);
   await expect(stranger).toHaveURL(address);
   await expect(stranger.getByRole("heading", { name: strings.notFound.title })).toBeVisible();
   expect(await stranger.evaluate(() => window.__studioTest?.scoreJson() ?? null)).toBeNull();

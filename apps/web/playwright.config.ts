@@ -32,7 +32,8 @@ export default defineConfig({
       command: "pnpm build && pnpm preview",
       env: { VITE_E2E: "1" },
       url: "http://localhost:5183",
-      reuseExistingServer: !process.env.CI,
+      // Never an older preview: it may be a build without VITE_E2E, or of other sources.
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

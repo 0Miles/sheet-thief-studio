@@ -19,6 +19,8 @@ const text = strings.score;
 
 const details = ref<ScoreDetails | null>(null);
 const notFound = ref(false);
+/** The score could not be asked for, for a reason other than not being found. */
+const failed = ref(false);
 /** The score is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
 const sync = ref<"syncing" | "synced" | "offline">("syncing");
@@ -57,6 +59,7 @@ onMounted(async () => {
       notFound.value = true;
       return;
     }
+    failed.value = true;
     throw error;
   }
   if (host.value === undefined) return;
@@ -96,9 +99,10 @@ onBeforeUnmount(() => {
     <AppHeader />
     <main class="score">
       <header class="score__toolbar">
-        <h1 class="score__title">{{ score?.title ?? details?.title ?? strings.loading }}</h1>
-        <span class="score__sync" :data-sync="sync">{{ text.sync[sync] }}</span>
+        <h1 class="score__title">{{ score?.title ?? details?.title ?? (failed ? "" : strings.loading) }}</h1>
+        <span v-if="!failed" class="score__sync" :data-sync="sync">{{ text.sync[sync] }}</span>
       </header>
+      <p v-if="failed" class="score__error" role="alert">{{ strings.unknownError }}</p>
       <div class="score__scroller">
         <div ref="host" class="score__page" :aria-label="text.label" :data-ready="ready"></div>
       </div>
@@ -128,6 +132,10 @@ onBeforeUnmount(() => {
   font-size: 0.875rem;
 }
 .score__sync[data-sync="offline"] {
+  color: var(--danger);
+}
+.score__error {
+  margin: 1rem 1.5rem;
   color: var(--danger);
 }
 .score__scroller {

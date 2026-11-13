@@ -31,6 +31,7 @@
 - 正式 build 兩者都沒有。加一個檢查，確認打包結果（`apps/web/dist`）不含 `__studio` 這個字串；CI 的 `check` job 跑它。
   - 目前（#6）CI 檢查的是 `__studioTest`：spike 頁的 `window.__studio` 還在正式 build 裡，#37 移除 spike 頁之後改成檢查 `__studio`。`__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷，其他 build 裡是死碼，打包時整段移除。
 - e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
+- **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
 - **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
 - Playwright 的 `webServer` 現在是 `pnpm build && pnpm preview`（`apps/web/playwright.config.ts:25`），要帶上 `VITE_E2E=1`。
 - 視圖 `SpikeView.vue` 與 `window.__studio` 是量測用的鷹架，要被取代（`spike-report.md:361`）。

@@ -49,6 +49,8 @@ async function makeScore(collab: Collab, ownerId: string, title: string): Promis
     await ScoreMember.create({ scoreId: created.id, accountId: ownerId, role: "owner" }, { transaction });
     return created;
   });
+  // Between the commit and the end of `change`, the row holds an empty document. Nobody can open
+  // it meanwhile: its id is only answered below, and only its Owner is a member.
   try {
     await collab.change(score.id, (doc) => startContent(doc, title));
   } catch (error) {
