@@ -3,10 +3,14 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { z } from "zod";
 
-/** Refuse a request that may change something unless the browser says it comes from our own page. */
+/**
+ * Refuse a request that may change something unless the browser says it comes from our own page.
+ * Every path, not only /api/: the router decodes a path before matching it, so a test on the raw
+ * URL would let `/%61pi/…` through.
+ */
 export function registerOriginCheck(app: FastifyInstance, publicOrigin: string): void {
   app.addHook("onRequest", async (request, reply) => {
-    if (!request.url.startsWith("/api/") || request.method === "GET" || request.method === "HEAD") return;
+    if (request.method === "GET" || request.method === "HEAD") return;
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ code: "bad_origin" });
   });
 }

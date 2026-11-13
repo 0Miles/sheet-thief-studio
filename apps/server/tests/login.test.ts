@@ -83,7 +83,10 @@ test("a request to the API that may change something must come from our origin",
   for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
     expect((await send(method, "/api/any/path")).statusCode).toBe(403);
   }
-  expect((await send("POST", "/api/auth/logout")).statusCode).toBe(403);
+  // The router decodes the path before matching: an encoded /api is still checked.
+  for (const url of ["/api/auth/logout", "/%61pi/auth/login", "/%61pi/auth/logout"]) {
+    expect((await send("POST", url)).statusCode).toBe(403);
+  }
   // Reading needs no Origin.
   expect((await app.inject({ method: "GET", url: "/api/me" })).json()).toEqual({ code: "unauthenticated" });
 });
