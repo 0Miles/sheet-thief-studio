@@ -19,14 +19,15 @@ const title = ref("");
 const error = ref("");
 const sending = ref(false);
 
-/** The list could not be asked for. */
-const loadFailed = ref(false);
+/** What to say when the list could not be asked for; null while all is well. */
+const loadError = ref<string | null>(null);
 
 onMounted(async () => {
   try {
     scores.value = (await get("/api/scores", scoreList)).scores;
   } catch (failure) {
-    loadFailed.value = true;
+    loadError.value = failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
+    // Still an error of the page: it reaches the console, and the e2e tests' pageerror check.
     throw failure;
   }
 });
@@ -59,7 +60,7 @@ async function create(): Promise<void> {
       <Spacer />
       <AppButton variant="primary" @click="startCreating">{{ text.newScore }}</AppButton>
     </Cluster>
-    <p v-if="loadFailed" class="home__error" role="alert">{{ strings.unknownError }}</p>
+    <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
     <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
     <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
     <ul v-else class="home__scores">

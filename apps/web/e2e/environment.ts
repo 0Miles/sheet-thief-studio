@@ -17,7 +17,7 @@ export const ADMIN = {
 /** An account that is no member of the scores the admin creates. */
 export const OUTSIDER = {
   username: "e2e-ben",
-  displayName: "測試成員",
+  displayName: "其他帳號",
   password: "e2e member password",
   isAdmin: false,
   mustChangePassword: false,

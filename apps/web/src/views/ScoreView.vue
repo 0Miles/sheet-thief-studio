@@ -10,7 +10,7 @@ import * as Y from "yjs";
 
 import { ApiError, collabUrl, get, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
-import { strings } from "../strings";
+import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
@@ -19,8 +19,8 @@ const text = strings.score;
 
 const details = ref<ScoreDetails | null>(null);
 const notFound = ref(false);
-/** The score could not be asked for, for a reason other than not being found. */
-const failed = ref(false);
+/** What to say when the score could not be asked for, for a reason other than not being found; null while all is well. */
+const loadError = ref<string | null>(null);
 /** The score is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
 const sync = ref<"syncing" | "synced" | "offline">("syncing");
@@ -59,7 +59,8 @@ onMounted(async () => {
       notFound.value = true;
       return;
     }
-    failed.value = true;
+    loadError.value = error instanceof ApiError ? errorText(error.code) : strings.unknownError;
+    // Still an error of the page: it reaches the console, and the e2e tests' pageerror check.
     throw error;
   }
   if (host.value === undefined) return;
@@ -99,10 +100,10 @@ onBeforeUnmount(() => {
     <AppHeader />
     <main class="score">
       <header class="score__toolbar">
-        <h1 class="score__title">{{ score?.title ?? details?.title ?? (failed ? "" : strings.loading) }}</h1>
-        <span v-if="!failed" class="score__sync" :data-sync="sync">{{ text.sync[sync] }}</span>
+        <h1 class="score__title">{{ score?.title ?? details?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
+        <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ text.sync[sync] }}</span>
       </header>
-      <p v-if="failed" class="score__error" role="alert">{{ strings.unknownError }}</p>
+      <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <div class="score__scroller">
         <div ref="host" class="score__page" :aria-label="text.label" :data-ready="ready"></div>
       </div>

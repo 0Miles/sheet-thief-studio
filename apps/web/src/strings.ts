@@ -19,6 +19,7 @@ export const strings = {
     close: "關閉",
   },
   score: {
+    unavailable: "無法開啟這份團譜",
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
   },

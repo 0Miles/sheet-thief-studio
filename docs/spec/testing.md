@@ -33,7 +33,7 @@
 - e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
 - **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
-- Playwright 的 `webServer` 現在是 `pnpm build && pnpm preview`（`apps/web/playwright.config.ts:25`），要帶上 `VITE_E2E=1`。
+- Playwright 的網頁 `webServer` 是 `pnpm build && pnpm preview`，帶 `VITE_E2E=1` 建置，而且一律不重用已經在跑的 preview（`apps/web/playwright.config.ts`，#6）。
 - 視圖 `SpikeView.vue` 與 `window.__studio` 是量測用的鷹架，要被取代（`spike-report.md:361`）。
 
 ## 3. CI
