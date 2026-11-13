@@ -8,7 +8,9 @@ import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest";
+import { HocuspocusProvider } from "@hocuspocus/provider";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
@@ -111,8 +113,12 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   }
   const beforeDeletion = await ticketFor(app, deleted, session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted } });
+  const deletedState = (await Score.findByPk(deleted))!.docState;
   await refusal(deleted, beforeDeletion);
 
+  // No refused id was loaded, nothing was stored over the deleted score, no score was made.
+  expect(app.collab.loadedScores()).toEqual([mine]);
+  expect((await Score.findByPk(deleted))!.docState).toEqual(deletedState);
   expect(await Score.count()).toBe(scoresBefore);
 });
 
@@ -212,4 +218,26 @@ test("a provider the server disconnects connects again with a ticket it fetched 
   const applied = nextSyncStatus(score.provider);
   metaOf(score.doc).set("title", "重連之後改的標題");
   expect(await applied).toBe(true);
+});
+
+test("a session that ends while the document is being loaded leaves no connection open", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  const id = await createScore(app, session);
+  const ticket = await ticketFor(app, id, session);
+  // The ticket has passed onAuthenticate's checks; the session ends while the document comes
+  // from Postgres, before the connection is in the register.
+  const load = Score.findOne.bind(Score);
+  const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
+    await app.sessions.end({ sessionId: session });
+    return load(options);
+  });
+
+  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
+  opened.push({ provider, doc: provider.document });
+  const closed = await socketClosed(provider);
+
+  expect(loading).toHaveBeenCalledOnce();
+  loading.mockRestore();
+  expect(closed).toBe(4401);
 });

@@ -45,6 +45,8 @@ export interface Collab {
    * Returns how many were closed.
    */
   closeConnections(which: ConnectionsToClose, event: CloseEvent): number;
+  /** The ids of the scores whose documents are in memory now. */
+  loadedScores(): string[];
 }
 
 declare module "fastify" {
@@ -55,6 +57,17 @@ declare module "fastify" {
 
 export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tickets: CollabTickets; sessions: Sessions }): Collab {
   const register = new Map<Connection<CollabContext>, CollabContext & { scoreId: string }>();
+
+  /**
+   * Out of the document first, so that nothing more it sends is applied; then the socket, so that
+   * the provider reconnects and has to show a new ticket. Our providers open one document per
+   * socket: closing the socket closes only this connection. A client that opened several
+   * documents on one socket loses them all, and gets them back the same way.
+   */
+  function close(connection: Connection<CollabContext>, event: CloseEvent): void {
+    connection.close(event);
+    connection.webSocket.close(event.code, event.reason);
+  }
 
   const hocuspocus = new Hocuspocus<CollabContext>({
     quiet: true,
@@ -76,6 +89,9 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     async connected({ connection, documentName, context }) {
       register.set(connection, { ...context, scoreId: documentName });
       connection.onClose(() => register.delete(connection));
+      // The document was loaded between onAuthenticate and here, and the connection was not in
+      // the register yet: a session that ended meanwhile closed nothing. Close it now.
+      if (!(await sessions.isActive(context.sessionId))) close(connection, Unauthorized);
     },
     async onLoadDocument({ documentName, document }) {
       // Authentication has found the score; a direct connection only ever opens one that exists.
@@ -102,17 +118,17 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     },
     closeConnections(which, event) {
       let closed = 0;
-      for (const [connection, owner] of register) {
-        if (which.scoreId !== undefined && owner.scoreId !== which.scoreId) continue;
-        if (which.accountId !== undefined && owner.accountId !== which.accountId) continue;
-        if (which.sessionId !== undefined && owner.sessionId !== which.sessionId) continue;
-        // Out of the document first, so that nothing more it sends is applied; then the socket,
-        // so that the provider reconnects and has to show a new ticket.
-        connection.close(event);
-        connection.webSocket.close(event.code, event.reason);
+      for (const [connection, holder] of register) {
+        if (which.scoreId !== undefined && holder.scoreId !== which.scoreId) continue;
+        if (which.accountId !== undefined && holder.accountId !== which.accountId) continue;
+        if (which.sessionId !== undefined && holder.sessionId !== which.sessionId) continue;
+        close(connection, event);
         closed += 1;
       }
       return closed;
+    },
+    loadedScores() {
+      return [...hocuspocus.documents.keys()];
     },
   };
 
@@ -153,7 +169,10 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     }
   });
   // Shutting down: close every connection before the server waits for them to end, then store
-  // every document still open, while the database is there.
+  // every document still open, while the database is there. `storeDocumentHooks` with
+  // `immediately` is awaited and runs after a store already under way; `flushPendingStores()`
+  // would only start the debounced stores, without a promise to wait for. The payload is the one
+  // Hocuspocus builds for a store that no connection made.
   app.addHook("preClose", async () => {
     collab.closeConnections({}, ResetConnection);
     await Promise.all(
