@@ -133,6 +133,8 @@ interface PresenceState {
 - `ScoreRenderer.reservedRects(): Rect[]`：疊層不得覆蓋的區域。實作是從 `boundsLookup` 取第一行譜最後一個小節上方的區域，也就是 alphaTab 標記所在的位置；名稱不提 alphaTab（`types.ts:1-2`）。
 - 所有疊層都不得畫進這些區域：游標、名牌、選取框、Flag 框、樂句預覽、固定的播放列、提示訊息（補充）。
 - 遇到衝突時，疊層移開（例如名牌改貼在游標下方），不是遮住標記。
+  - **補充**（#19）：標記沒有自己的範圍可查，所以保留區域取保守的範圍：從第一行譜的上緣到最上面那個譜表的第一條線，橫跨最後一個小節，而且至少和標記一樣寬。游標在那個小節的第一條弦上時會伸進去一點，伸進去的部分切掉（`apps/web/src/overlay.ts` 的 `clearOf`）。
+  - **補充**（#19）：疊層層裡每個保留區域放一個看不見、不接收滑鼠的 `<rect data-reserved>`，e2e 從 DOM 讀它，不必擴充 `__studioTest`。
 - e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽（[`testing.md`](testing.md)）。
 - 標記沒有自己的 DOM 元素，它和譜線畫在同一條 path 裡（`spike-report.md:54`），所以只能這樣斷言；目視確認仍是人工項目。
 - 規則：整份譜超過 10 小節，或這次畫出的 track 超過 2 個時就顯示；位置是第一行譜最後一個小節的上方；沒有設定可以關掉（`spike-report.md:54,66`）。
