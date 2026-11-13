@@ -38,13 +38,13 @@ interface BeatsFragment {
 
 ## 2. 剪貼簿
 
-- 用 DOM 的 `copy`、`cut`、`paste` 事件，不用 async Clipboard API，所以不會跳權限提示。`Ctrl+C`、`Ctrl+X`、`Ctrl+V` 的 keydown 不呼叫 `preventDefault()`，讓瀏覽器觸發這些事件（[`keymap.md`](keymap.md)）。
+- 用 DOM 的 `copy`、`cut`、`paste` 事件，不用 async Clipboard API，所以不會跳權限提示。`Mod+C`、`Mod+X`、`Mod+V`（Windows、Linux 是 `Ctrl`，macOS 是 `Cmd`）的 keydown 不呼叫 `preventDefault()`，讓瀏覽器觸發這些事件（[`keymap.md`](keymap.md)）。
 - 寫入 `text/plain`，內容是前綴 `sheet-thief-studio/fragment@1` 加上片段的 JSON，所以能跨分頁、跨團譜、貼進樂句編輯器。**補充**：前綴與 JSON 之間是一個換行字元 `\n`。
 - schema 有非加法的改動時，`@1` 升成 `@2`。
 - 貼上時用 zod 驗證；沒有前綴、前綴的版本不認得、驗證失敗、或種類不合的內容，忽略並提示「剪貼簿裡沒有可以貼上的內容」（補充：種類不合時提示「只能貼進同一種聲部」）。
 - 複製：拍點範圍產生拍點段，小節範圍產生小節段；沒有選取時不動。
 - 剪下等於「複製加上一個清空的 Command」。Viewer 只能複製，不能剪下或貼上。
-- **焦點元素要先用測試確認**：現在譜面的焦點元素是 `SpikeView.vue:355` 的 `.scroller`（`tabindex="0"`）。在 Chromium 與 Firefox 寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
+- **焦點元素要先用測試確認**：現在譜面的焦點元素是 `SpikeView.vue:355` 的 `.scroller`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
 
 ## 3. 建立樂句的三種途徑
 
@@ -57,7 +57,8 @@ interface BeatsFragment {
 - 一份平面列表，沒有資料夾或標籤，依更新時間由新到舊排序。
 - 可以依種類篩選、依名稱搜尋；可以改名、刪除、複製一份。
 - 「從圖片辨識」的入口在這頁。**補充**：還沒審核完的辨識，列在頁面上方的「待審核」區塊。
-- 手機上能不能上傳圖片辨識，等 owner 裁定；暫定不能（[`README.md`](README.md) 的「等待 owner 裁定」）。
+- 「從圖片辨識」用 `<input type="file" accept="image/*" multiple>`，**不設** `capture`：手機會讓使用者選擇直接拍照或從相簿挑（owner 在 2026-11-13 裁定手機可以上傳）。
+- 在不能打譜的裝置上（手機、平板；判定同 [`views.md`](views.md) 第 1 節的 `canType`），這一頁可以列出、篩選、搜尋樂句，也可以「從圖片辨識」。**補充**：新增空白樂句、改名、刪除、複製一份，只在能打譜的裝置上出現，維持「手機與平板只看譜與播放」的限制，只開放上傳這一項。上傳後照常進審核頁看進度，結果留在「待審核」區塊，到桌面再審核。
 
 ### 4.1 `phrases` 表
 
@@ -83,6 +84,7 @@ interface BeatsFragment {
 - 復原堆疊在本機，重新整理後清空。
 - 鍵位與團譜的可編輯視圖相同；小節的插入、刪除、拍號在這裡只影響這個樂句（補充）。
 - **補充**：調弦、譜號可以在樂句編輯器裡改（同聲部屬性的 Command）；`kind` 不能改。
+- 在不能打譜的裝置上（[`views.md`](views.md) 第 1 節的 `canType`），樂句編輯器只能看：畫出樂句、可以播放，不接受修改，也不送出任何儲存請求。**補充**：顯示「請在電腦上編輯」。
 
 ### 5.1 儲存
 
@@ -120,3 +122,4 @@ interface BeatsFragment {
 - 按「捨棄」就刪掉那筆辨識與原圖。
 - 原圖要經過權限檢查才能讀取，只有發起辨識的帳號可以。
 - 辨識結果在伺服器保留最多 7 天（[`recognizer.md`](recognizer.md)）。
+- 在不能打譜的裝置上，審核頁只能看：進度、失敗的原因與建議、辨識結果的譜（可以播放）、原圖、略過的項目都看得到；不能修改，也沒有「存成樂句」與「捨棄」。**補充**：顯示「請在電腦上審核並存成樂句」；捨棄也是改動，所以一樣留給桌面。

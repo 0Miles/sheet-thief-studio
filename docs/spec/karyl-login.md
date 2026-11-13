@@ -45,7 +45,7 @@
 
 `/auth/karyl` 是伺服器路由，SPA 讀不到它的結果。做法：
 
-- 失敗時 302 轉到 `/login`，同時設一個短期 cookie `__Host-karyl_result`（`Secure`、`Path=/`、`SameSite=Lax`、`Max-Age=60`，**不是** `HttpOnly`，讓 SPA 讀得到），值是 `unbound:<Discord id>`、`disabled` 或 `invalid` 之一。
+- 失敗時 302 轉到 `/login`，同時設一個短期 cookie `__Host-karyl_result`（`Secure`、`Path=/`、`SameSite=Lax`、`Max-Age=60`，**不是** `HttpOnly`，讓 SPA 讀得到），值是 `unbound:<Discord id>`、`disabled` 或 `invalid` 之一。走 http 的開發與測試環境改用不帶前綴、不帶 `Secure` 的 `karyl_result`，和 session cookie 用同一個設定（[`security.md`](security.md) 第 1 節）。
 - `/login` 讀到這個 cookie 就顯示對應的訊息（未綁定時顯示 Discord id），然後立刻刪掉它。
 - 不把 Discord id 放在網址裡。
 - 成功時不設這個 cookie。

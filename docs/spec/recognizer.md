@@ -8,6 +8,11 @@
 - 不開放 PDF 與 ASCII TAB 上傳，雖然核心內部能處理（圖片在子行程裡組成 PDF 再讀）。
 - 只辨識弦樂 TAB；不辨識鼓與五線譜。
 - 回報 4–7 弦。圖片讀法接受 4–7 條線的譜表（前身 `app/extract/raster_tab.py:190-191`），但舊站只開放六弦（前身 `music_settings.py` 的 `PROJECT_TUNINGS`、`recognition_errors.py`），非六弦的準確度沒有驗證過；實際品質是人工判定項目。
+- 手機也可以上傳（[`phrases.md`](phrases.md) 第 4 節），辨識服務與 server 的介面都不用為此改動：
+  - 前身讀圖時已經套用 EXIF 的方向（前身 `app/extract/raster_tab.py:2187-2205` 的 `ImageOps.exif_transpose`），直拍的照片會先轉正；這段在複製的 `extract/` 目錄裡。
+  - HEIC 等其他格式在 server 收檔時就回 415 `unsupported_image`（第 7 節）。
+  - 超過像素上限的照片（例如手機相機的 48 百萬像素模式）該頁回報 `image_too_large`（第 4 節）。
+  - 真實手機照片的辨識品質與上傳結果，是人工判定項目（[`testing.md`](testing.md) 第 6 節第 4 項）。
 - 前身的 #21（速度只從標題區讀取）在 Studio 不適用：樂句不帶速度。
 - 前身的 #27 在副本裡實作（第 6 節），不在關鍵路徑上。
 - 舊 repo 的 #21、#27 不動，舊站維持凍結。

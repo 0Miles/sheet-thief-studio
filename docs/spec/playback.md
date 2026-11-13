@@ -15,7 +15,7 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 | 預備拍（一小節）開關 | 開／關 | 全站共用 |
 | 播放中修改的行為 | (a) 或 (b)，見第 3 節 | 全站共用 |
 
-- 節拍器與預備拍暫定照做，等 owner 確認（[`README.md`](README.md) 的「等待 owner 裁定」）；否決時拿掉 Mixer 的兩個開關與 `setMetronome`、`setCountIn`。
+- owner 在 2026-11-13 確認保留節拍器與預備拍（[`README.md`](README.md) 的「owner 的裁定」）。
 - 窄螢幕的 Read view，混音面板收在抽屜裡（[`views.md`](views.md)）。
 - 訪客也可以用 Mixer（本機設定，不影響任何人）。
 
