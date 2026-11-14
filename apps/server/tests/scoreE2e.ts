@@ -6,7 +6,7 @@
 // server holds it in memory yet. It refuses any database whose name does not end in `_e2e`.
 import { text } from "node:stream/consumers";
 
-import type { Role } from "@studio/contracts";
+import { createScoreRequest, type Role } from "@studio/contracts";
 import { addPart, type PartKind, SCHEMA_VERSION } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -36,7 +36,7 @@ const doc = new Y.Doc();
 if (fixture.state !== undefined) {
   Y.applyUpdate(doc, Buffer.from(fixture.state, "base64"));
 } else {
-  startContent(doc, fixture.title, fixture.bars);
+  startContent(doc, createScoreRequest.parse({ title: fixture.title }), fixture.bars);
   for (const part of fixture.parts ?? []) addPart(doc, part);
 }
 const id = await sequelize.transaction(async (transaction) => {

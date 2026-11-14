@@ -1,5 +1,16 @@
 // Shapes of what the API sends and receives, shared by the server and the web app.
-import { barsFragmentSchema, partKindSchema } from "@studio/score-model";
+import {
+  barSchema,
+  barsFragmentSchema,
+  MAX_NON_PERCUSSION_PARTS,
+  MAX_PARTS,
+  MAX_TITLE,
+  NEW_SCORE,
+  PART_PRESET_IDS,
+  PART_PRESETS,
+  partKindSchema,
+  timeSigSchema,
+} from "@studio/score-model";
 import { z } from "zod";
 
 // The score is defined once, in score-model (docs/adr/0002, addendum): only re-exported here.
@@ -67,11 +78,36 @@ export type Me = z.infer<typeof me>;
 export const role = z.enum(["owner", "editor", "viewer"]);
 export type Role = z.infer<typeof role>;
 
-/** A new score (`POST /api/scores`). Only the title for now; the dialog of #11 adds the parts and the rest. */
+/** A part preset (docs/spec/commands.md, section 10), by its id in `PART_PRESETS`. */
+export const partPresetId = z.enum(PART_PRESET_IDS);
+
+/** A part of a new score: a preset, and for fretted ones a tuning of its number of strings (the preset's when left out). */
+export const newScorePart = z
+  .object({ preset: partPresetId, tuning: z.array(z.int().min(0).max(127)).optional() })
+  .refine(({ preset, tuning }) => tuning === undefined || (PART_PRESETS[preset].kind === "fretted" && tuning.length === PART_PRESETS[preset].tuning.length), {
+    message: "a tuning of the preset's number of strings, for fretted parts only",
+    path: ["tuning"],
+  });
+export type NewScorePart = z.infer<typeof newScorePart>;
+
+/**
+ * A new score (`POST /api/scores`), as the dialog chooses it (docs/spec/commands.md, section 10):
+ * its title, its parts in order, and the time signature of its bars and the tempo of the first.
+ * What is left out is the dialog's default: one six-string guitar, 4/4, 120.
+ */
 export const createScoreRequest = z.object({
-  title: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(MAX_TITLE),
+  parts: z
+    .array(newScorePart)
+    .min(1)
+    .max(MAX_PARTS)
+    .refine((parts) => parts.filter(({ preset }) => PART_PRESETS[preset].kind !== "percussion").length <= MAX_NON_PERCUSSION_PARTS, `at most ${MAX_NON_PERCUSSION_PARTS} parts other than drums`)
+    .default(() => [{ preset: "guitar6" as const }]),
+  timeSig: timeSigSchema.default(() => ({ ...NEW_SCORE.timeSig })),
+  tempo: barSchema.shape.tempo.unwrap().default(NEW_SCORE.tempo),
 });
-export type CreateScoreRequest = z.infer<typeof createScoreRequest>;
+export type CreateScoreRequest = z.input<typeof createScoreRequest>;
+export type NewScore = z.output<typeof createScoreRequest>;
 
 export const createdScore = z.object({ id: z.string() });
 export type CreatedScore = z.infer<typeof createdScore>;

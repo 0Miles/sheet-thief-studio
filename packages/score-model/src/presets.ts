@@ -3,7 +3,7 @@
 // of the interface, kept in the web app's strings by preset id; the names parts get are content of
 // the score, written by the server, so they are here.
 import { STANDARD_GUITAR } from "./commands";
-import type { PartJSON } from "./schema";
+import { COMMON_TIME, type PartJSON, type TimeSignature } from "./schema";
 
 export type PartPreset = Pick<PartJSON, "kind" | "tuning" | "staves" | "program">;
 
@@ -18,6 +18,9 @@ export const PART_PRESETS = {
 } as const satisfies Record<string, PartPreset>;
 
 export type PartPresetId = keyof typeof PART_PRESETS;
+
+/** What the dialog of a new score starts with, and what a new score has where the request is silent. */
+export const NEW_SCORE: { readonly timeSig: TimeSignature; readonly tempo: number; readonly bars: number } = { timeSig: COMMON_TIME, tempo: 120, bars: 8 };
 
 /** The presets in the order of the table. */
 export const PART_PRESET_IDS = Object.keys(PART_PRESETS) as [PartPresetId, ...PartPresetId[]];
