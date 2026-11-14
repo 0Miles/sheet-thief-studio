@@ -40,6 +40,13 @@ export interface ScoreRenderer {
   showParts(partIds: readonly string[]): void;
   /** Where the cursor is on the page, or null when its place is not drawn (yet). */
   boundsOf(cursor: Cursor): Rect | null;
+  /**
+   * Where playback is on the page at a tick (`ScorePlayer.position`): the beat played then, as
+   * tall as its system, so that the page can keep it on screen. At the start of a bar it is
+   * where the cursor stands in that bar's empty voice. Null before the sound is made, or when
+   * that place is not drawn.
+   */
+  boundsAtTick(tick: number): Rect | null;
   /** The cursor nearest to a point of the page, or null outside any bar. */
   hitTest(x: number, y: number): Cursor | null;
   /**
@@ -90,6 +97,10 @@ export interface ScorePlayer {
   readonly state: PlayerState;
   readonly position: PlayerPosition;
   seek(tick: number): void;
+  /** The tick a bar starts at, the first time it is played; null before the sound is made. */
+  tickOf(barId: string): number | null;
+  /** The bar played at a tick; null before the sound is made. */
+  barAt(tick: number): string | null;
   setMute(partId: string, mute: boolean): void;
   setSolo(partId: string, solo: boolean): void;
   /** 0 is silent, 1 the volume written in the score. */

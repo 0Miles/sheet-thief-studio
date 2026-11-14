@@ -2,8 +2,9 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, reservedRects, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
+import { barAtTick, barStartTick } from "./ticks";
 import type { PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
@@ -13,6 +14,11 @@ export interface EngineOptions {
   soundFont: string | null;
   /** The element that scrolls the score, when it is not the page. */
   scrollElement?: HTMLElement;
+  /**
+   * A click on the score moves playback there (the Read view). Off, the default, a click is the
+   * page's alone: in the edit views it only moves the cursor (docs/spec/views.md, section 2).
+   */
+  seekOnClick?: boolean;
   /** Lay out and draw in a web worker (the default) or on the page's own thread. */
   useWorkers?: boolean;
   /**
@@ -98,6 +104,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       settings.player.playerMode = alphaTab.PlayerMode.EnabledSynthesizer;
       settings.player.soundFont = options.soundFont;
       settings.player.scrollMode = alphaTab.ScrollMode.Off; // the page decides what scrolls
+      // The page draws where playback is (`boundsAtTick`), clear of the reserved areas.
+      settings.player.enableCursor = false;
+      settings.player.enableSeekToClick = options.seekOnClick ?? false;
+      // A loop comes from the member's selection, never from dragging over the score.
+      settings.player.enablePlaybackRangeSelection = false;
       if (options.scrollElement) settings.player.scrollElement = options.scrollElement;
     }
     this.api = new alphaTab.AlphaTabApi(element, settings);
@@ -156,6 +167,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return null;
     const rect = cursorRect(lookup, this.projection, this.parts, cursor, this.metrics());
+    return rect && this.fromSurface(rect);
+  }
+
+  boundsAtTick(tick: number): Rect | null {
+    const lookup = this.api.boundsLookup;
+    const cache = this.api.tickCache;
+    if (lookup === null || cache === null) return null;
+    // The bar from the sound (repeats), the beat from the drawing: a bar changed since the sound
+    // was made has new beats, already drawn.
+    const played = barAtTick(cache, tick);
+    const rect = played && playbackRect(lookup, played.index, played.offset);
     return rect && this.fromSurface(rect);
   }
 
@@ -241,6 +263,18 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   seek(tick: number): void {
     this.api.tickPosition = tick;
+  }
+
+  tickOf(barId: string): number | null {
+    const index = this.projection?.barIndex.get(barId);
+    const cache = this.api.tickCache;
+    return index === undefined || cache === null ? null : barStartTick(cache, index);
+  }
+
+  barAt(tick: number): string | null {
+    const cache = this.api.tickCache;
+    const played = cache && barAtTick(cache, tick);
+    return (played && this.projection?.barIds[played.index]) ?? null;
   }
 
   setMute(partId: string, mute: boolean): void {
