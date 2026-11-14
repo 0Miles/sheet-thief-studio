@@ -39,7 +39,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 點譜面只移動 Cursor，不移動播放位置：設定 `enableSeekToClick = false` 與 `enablePlaybackRangeSelection = false`（`alphaTab.d.ts:14309,14316`；`enableUserInteraction` 已經 deprecated，:14295）。
 - 播放從 Cursor 所在小節開始；有 Selection 時，用選取範圍當循環區間（[`playback.md`](playback.md)）。
 - 自動跟隨播放位置：成員按任何鍵或手動捲動時暫停，直到下一次按播放。
-- alphaTab 的捲動已經關掉（`alphaTabEngine.ts:100`），跟隨由殼自己做，所以 `ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（#31，細節見 [`playback.md`](playback.md) 4.1）。
+- alphaTab 的捲動已經關掉（`alphaTabEngine.ts` 的 `ScrollMode.Off`），跟隨由殼自己做，所以 `ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（#31，細節見 [`playback.md`](playback.md) 4.1）。
 - **補充**（#31）：`EngineOptions.seekOnClick` 預設關閉；Read view 要點譜面跳過去時再打開。
 - 排版：Page 版面、lazy loading、`useWorkers: false`、以小節為單位就地更新（ADR 0003）。
 

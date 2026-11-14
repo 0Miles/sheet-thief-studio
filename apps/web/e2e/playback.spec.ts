@@ -4,12 +4,11 @@
 // mouse; the page is read through the DOM and `window.__studioTest`. How it sounds is for a
 // person to judge (#41): here the positions and the states are checked.
 import { expect, type Page, test } from "@playwright/test";
-import type { Cursor, ScoreJSON } from "@studio/score-model";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { loggedIn, pageErrors, seedScore } from "./pages";
+import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore } from "./pages";
 
 const text = strings.score.player;
 
@@ -26,19 +25,9 @@ function seed(bars?: number): string {
 }
 
 /** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
-async function openScore(page: Page, id: string): Promise<void> {
-  await page.goto(`/scores/${id}`);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+async function openToPlay(page: Page, id: string): Promise<void> {
+  await openScore(page, id);
   await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
-}
-
-function scoreOf(page: Page): Promise<ScoreJSON> {
-  return page.evaluate(() => window.__studioTest!.scoreJson()!);
-}
-
-function cursorOf(page: Page): Promise<Cursor | null> {
-  return page.evaluate(() => window.__studioTest!.cursor());
 }
 
 /**
@@ -75,7 +64,7 @@ test("with the cursor in bar 5, playing starts at bar 5 and goes on; stop ends i
   const id = seed();
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
-  await openScore(page, id);
+  await openToPlay(page, id);
   const start = await scoreOf(page);
   for (let bar = 1; bar < 5; bar++) await page.keyboard.press("ArrowRight");
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[4]!.id });
@@ -100,7 +89,7 @@ test("a click on the score while it plays moves the cursor there, and playback g
   const id = seed();
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
-  await openScore(page, id);
+  await openToPlay(page, id);
   const start = await scoreOf(page);
   // Where bar 6 is drawn, to click on it later: the cursor shows it.
   for (let bar = 1; bar < 6; bar++) await page.keyboard.press("ArrowRight");
@@ -132,7 +121,7 @@ test("a Viewer plays from the cursor too", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, VIEWER);
   const errors = pageErrors(page);
-  await openScore(page, id);
+  await openToPlay(page, id);
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await recordBarsShown(page);
@@ -150,7 +139,7 @@ test("at the start of every bar, playback is drawn where the cursor is in that b
   const id = seed(12);
   const page = await loggedIn(browser, ADMIN);
   const errors = pageErrors(page);
-  await openScore(page, id);
+  await openToPlay(page, id);
   const scroller = page.locator("[data-scroller]");
   const playhead = page.locator("[data-playhead]");
   const reserved = await Promise.all((await page.locator("[data-reserved]").all()).map((area) => area.boundingBox()));
@@ -187,7 +176,7 @@ test("playback that goes off screen is followed; after an arrow key it no longer
   // Low enough that the second system of the score is not all on screen with the page at its top.
   const page = await loggedIn(browser, ADMIN, { viewport: { width: 1280, height: 360 } });
   const errors = pageErrors(page);
-  await openScore(page, id);
+  await openToPlay(page, id);
   const scroller = page.locator("[data-scroller]");
   const playhead = page.locator("[data-playhead]");
   const scrollTop = () => scroller.evaluate((element) => element.scrollTop);

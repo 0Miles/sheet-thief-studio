@@ -99,6 +99,8 @@ const playheadRect = shallowRef<Rect | null>(null);
 let resumable = false;
 /** Playback is kept on screen: from pressing play until the member presses a key or scrolls. */
 let following = false;
+/** Playback is followed now: the page goes with it, not with the cursor. */
+const followed = () => following && playerState.value === "playing";
 let soundTimer: ReturnType<typeof setTimeout> | undefined;
 
 const doc = new Y.Doc();
@@ -140,7 +142,7 @@ function showPlayback(tick: number): void {
   const rect = engine.renderer.boundsAtTick(tick);
   playheadRect.value = rect && clearOf(rect, reserved.value);
   const element = scroller.value;
-  if (!following || playerState.value !== "playing" || rect === null || element === undefined) return;
+  if (!followed() || rect === null || element === undefined) return;
   const top = element.scrollTop;
   if (rect.y >= top && rect.y + rect.height <= top + element.clientHeight) return;
   element.scrollTop = Math.max(rect.y - FOLLOW_MARGIN, 0);
@@ -244,7 +246,7 @@ function startEditing(json: ScoreJSON): void {
     placeCursor();
     resumable = false;
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
-    if (!following || playerState.value !== "playing") reveal();
+    if (!followed()) reveal();
   });
   session.onRefused(() => {
     notice.value = text.viewerCannotEdit;
@@ -272,11 +274,16 @@ function onKey(event: KeyboardEvent): void {
   if (session?.press(event)) event.preventDefault();
 }
 
+/** The pointer went down on a scroll bar of the score, outside its content. */
+function onScrollBar(event: PointerEvent): boolean {
+  const element = scroller.value;
+  return element !== undefined && event.target === element && (event.offsetX >= element.clientWidth || event.offsetY >= element.clientHeight);
+}
+
 /** A click on the score only moves the cursor (docs/spec/views.md, section 2); playback goes on where it is. */
 function onPointer(event: PointerEvent): void {
-  const element = scroller.value;
-  // On a scroll bar, or the middle button's scrolling: the member scrolls.
-  if (event.button === 1 || (element !== undefined && event.target === element && (event.offsetX >= element.clientWidth || event.offsetY >= element.clientHeight))) {
+  // A scroll bar, or the middle button's scrolling: the member scrolls.
+  if (event.button === 1 || onScrollBar(event)) {
     stopFollowing();
     return;
   }

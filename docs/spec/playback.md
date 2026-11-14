@@ -48,7 +48,7 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 | Read view | 移動播放位置（補充：不自動開始播放） | 目前的播放位置 | 沒有選取，所以沒有循環（補充） | 一直跟隨 |
 
 - 循環區間（補充）：拍點範圍是「第一個拍點的起點 tick」到「最後一個拍點的結束 tick」；小節範圍是第一個小節的開頭到最後一個小節的結尾。
-- 跟隨由殼自己做：`ScoreRenderer` 新增「由播放位置（tick）查座標」的方法（alphaTab 的捲動已經關掉，`alphaTabEngine.ts:100`）。
+- 跟隨由殼自己做：`ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（alphaTab 的捲動已經關掉，`alphaTabEngine.ts` 的 `ScrollMode.Off`；見 4.1）。
 - **補充**：`Space` 是播放／暫停（[`keymap.md`](keymap.md)）。
 - iOS 第一次播放要在使用者的手勢裡啟動音訊；實機確認是人工項目。
 

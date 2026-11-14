@@ -4,6 +4,7 @@
 import type * as alphaTab from "@coderline/alphatab";
 
 type MidiTickLookup = alphaTab.midi.MidiTickLookup;
+type MasterBarTickLookup = alphaTab.midi.MasterBarTickLookup;
 
 /** A bar of the score by its index, and how many ticks into it. */
 export interface PlayedBar {
@@ -20,10 +21,10 @@ export function barAtTick(lookup: MidiTickLookup, tick: number): PlayedBar | nul
   if (high < 0) return null;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if ((bars[middle] as alphaTab.midi.MasterBarTickLookup).start <= tick) low = middle;
+    if ((bars[middle] as MasterBarTickLookup).start <= tick) low = middle;
     else high = middle - 1;
   }
-  const played = bars[low] as alphaTab.midi.MasterBarTickLookup;
+  const played = bars[low] as MasterBarTickLookup;
   return { index: played.masterBar.index, offset: Math.max(tick - played.start, 0) };
 }
 
