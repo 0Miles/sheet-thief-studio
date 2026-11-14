@@ -88,7 +88,7 @@ function soundOf(note: NoteJSON): NoteSound {
   return { velocity: on.noteVelocity, length: off.tick - on.tick, bends };
 }
 
-test("the flags alphaTab plays change how the note sounds: ghost softer, accent louder, staccato, palm mute and dead shorter, let ring longer, vibrato bent", () => {
+test("the techniques alphaTab plays change how the note sounds: ghost softer, accent louder, staccato, palm mute and dead shorter, let ring longer, vibrato bent", () => {
   const plain = soundOf({ fret: 5 });
   expect(plain.length).toBe(960);
   const ghost = soundOf({ fret: 5, ghost: true });

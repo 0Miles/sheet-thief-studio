@@ -22,7 +22,9 @@ import {
   ordered,
   type PartKind,
   partKindOf,
+  partSchemas,
   partsOf,
+  readNote,
   SCHEMA_VERSION,
   type Staff,
   staffCountOf,
@@ -296,9 +298,13 @@ export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON 
   return writeNote(doc, cursor, key, () => note);
 }
 
-/** The techniques a note has or has not (docs/spec/commands.md, 5.4): a key turns each on and off. */
-export const NOTE_FLAGS = ["dead", "ghost", "accent", "staccato", "vibrato", "palmMute", "letRing", "tap"] as const;
-export type NoteFlag = (typeof NOTE_FLAGS)[number];
+/**
+ * The techniques a note has or has not (docs/spec/commands.md, 5.4): a key turns each on and off.
+ * Tie and legato are on or off too, but tie takes the fret of the note before (`toggleAt` with a
+ * toggle of its own).
+ */
+export const ON_OFF_TECHNIQUES = ["dead", "ghost", "accent", "staccato", "vibrato", "palmMute", "letRing", "tap"] as const;
+export type OnOffTechnique = (typeof ON_OFF_TECHNIQUES)[number];
 
 /**
  * A technique a key turns on and off on notes (docs/spec/commands.md, 5.4): whether a note has
@@ -311,19 +317,19 @@ export interface NoteToggle {
 }
 
 /**
- * One of NOTE_FLAGS as a toggle, on the note as stored (fields this version does not know are
- * kept). Dead also makes a note without a fret on a string that has none, and turned off on such
- * a note takes it away: a fretted note needs a fret or dead (docs/spec/schema.md, section 8).
+ * One of ON_OFF_TECHNIQUES as a toggle, on the note as stored (fields this version does not know
+ * are kept). Dead also makes a note without a fret on a string that has none, and turned off on
+ * such a note takes it away: a fretted note needs a fret or dead (docs/spec/schema.md, section 8).
  */
-export function flagToggle(flag: NoteFlag): NoteToggle {
+export function onOffToggle(technique: OnOffTechnique): NoteToggle {
   return {
-    has: (note) => note[flag] === true,
+    has: (note) => note[technique] === true,
     turn(stored, on) {
-      if (stored === undefined) return on && flag === "dead" ? { dead: true } : null;
-      if (on) return { ...stored, [flag]: true };
+      if (stored === undefined) return on && technique === "dead" ? { dead: true } : null;
+      if (on) return { ...stored, [technique]: true };
       const rest = { ...stored };
-      delete rest[flag];
-      return flag === "dead" && rest.fret === undefined ? null : rest;
+      delete rest[technique];
+      return technique === "dead" && rest.fret === undefined ? null : rest;
     },
   };
 }
@@ -336,47 +342,55 @@ export function toggleAt(doc: Y.Doc, cursor: Cursor, key: string, toggle: NoteTo
   return writeNote(doc, cursor, key, (stored) => toggle.turn(stored, stored === undefined || !toggle.has(stored)));
 }
 
-/** Turn a flag of the note at `key` of the cursor's beat on or off (`toggleAt`). */
-export function toggleNoteFlag(doc: Y.Doc, cursor: Cursor, key: string, flag: NoteFlag): Cursor {
-  return toggleAt(doc, cursor, key, flagToggle(flag));
+/** Every voice of the part of a bar range in its bars; none when its part is gone. */
+function voicesOfBars(doc: Y.Doc, selection: Extract<Selection, { kind: "bars" }>): YVoice[] {
+  const part = partsOf(doc).get(selection.partId);
+  return part === undefined ? [] : selectedBars(doc, selection).flatMap((barId) => [...(contentOf(part).get(barId)?.values() ?? [])]);
 }
 
 /** The beats a selection holds, in the part selected: those of a beat range, or every voice's in the bars of a bar range. */
 function beatsOfSelection(doc: Y.Doc, selection: Selection): YBeat[] {
-  if (selection.kind === "beats") {
-    const found = selectedBeats(doc, selection);
-    return found ? found.voice.slice(found.first, found.last + 1) : [];
-  }
-  const part = partsOf(doc).get(selection.partId);
-  if (part === undefined) return [];
-  return selectedBars(doc, selection).flatMap((barId) => [...(contentOf(part).get(barId)?.values() ?? [])].flatMap((voice) => voice.toArray()));
+  if (selection.kind === "bars") return voicesOfBars(doc, selection).flatMap((voice) => voice.toArray());
+  const found = selectedBeats(doc, selection);
+  return found ? found.voice.slice(found.first, found.last + 1) : [];
+}
+
+/** How many strings a part has, as reading counts them: none when its tuning cannot be read. */
+function stringCountOf(part: YPart, kind: PartKind): number {
+  const tuning = partSchemas[kind].shape.tuning.safeParse(part.get("tuning"));
+  return tuning.success ? tuning.data.length : 0;
 }
 
 /**
  * Turn a technique on every note of a selection, in the part selected (docs/spec/commands.md,
- * 5.4), one command: off when every one of them has it, else on. Makes no notes where there are
- * none; changes nothing when the selection holds no notes. The cursor stays where it is.
+ * 5.4), one command: off when every one of them has it, else on. Only the notes the members see
+ * count: those reading leaves out are left alone (docs/spec/schema.md, section 11). Makes no
+ * notes where there are none; changes nothing when the selection holds no notes. The cursor
+ * stays where it is.
  */
 export function toggleOnSelection(doc: Y.Doc, selection: Selection, cursor: Cursor, toggle: NoteToggle): Cursor {
+  const part = partsOf(doc).get(selection.partId);
+  const kind = partKindOf(part);
+  if (part === undefined || kind === undefined) return cursor;
+  const strings = stringCountOf(part, kind);
   const notes = beatsOfSelection(doc, selection).flatMap((beat) => {
     const map = notesOf(beat);
-    return map ? [...map.entries()].map(([key, note]) => ({ map, key, note })) : [];
+    if (map === undefined) return [];
+    return [...map.entries()].flatMap(([key, stored]) => {
+      const read = readNote(kind, strings, key, stored);
+      return read ? [{ map, key, stored, read }] : [];
+    });
   });
   if (notes.length === 0) return cursor;
-  const on = !notes.every(({ note }) => toggle.has(note));
+  const on = !notes.every(({ read }) => toggle.has(read));
   doc.transact(() => {
-    for (const { map, key, note } of notes) {
-      const next = toggle.turn(note, on);
+    for (const { map, key, stored } of notes) {
+      const next = toggle.turn(stored, on);
       if (next === null) map.delete(key);
       else map.set(key, next);
     }
   }, LOCAL);
   return cursor;
-}
-
-/** Turn a flag on every note of a selection, or off every one when all have it (`toggleOnSelection`). */
-export function toggleNoteFlagIn(doc: Y.Doc, selection: Selection, cursor: Cursor, flag: NoteFlag): Cursor {
-  return toggleOnSelection(doc, selection, cursor, flagToggle(flag));
 }
 
 /** The notes of a beat, as the commands change them; none when they cannot be read. */
@@ -438,8 +452,7 @@ export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
  */
 export function deleteSelection(doc: Y.Doc, selection: Selection, cursor: Cursor): Cursor {
   if (selection.kind === "bars") {
-    const part = partsOf(doc).get(selection.partId);
-    const voices = part === undefined ? [] : selectedBars(doc, selection).flatMap((barId) => [...(contentOf(part).get(barId)?.values() ?? [])]);
+    const voices = voicesOfBars(doc, selection);
     if (!voices.some((voice) => voice.length > 0)) return cursor;
     // Each voice is emptied where it is, not replaced: beats someone types there meanwhile are kept (docs/spec/commands.md, 5.7).
     doc.transact(() => voices.forEach((voice) => voice.delete(0, voice.length)), LOCAL);

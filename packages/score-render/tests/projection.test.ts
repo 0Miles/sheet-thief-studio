@@ -166,7 +166,7 @@ test("a change of bars or parts is not a replacement: the whole score is project
   expect(replaceBars(projectScore(docToJson(band().doc), settings), docToJson(other.doc), [other.barIds[0]!], settings)).toBeNull();
 });
 
-test("each flag of a fretted note becomes its alphaTab field, and a dead note without a fret is in the projection", () => {
+test("each on/off technique of a fretted note becomes its alphaTab field, and a dead note without a fret is in the projection", () => {
   const doc = new Y.Doc();
   createScore(doc, "Techniques");
   const [barId] = insertBars(doc, { after: null, count: 1 });

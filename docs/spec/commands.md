@@ -167,7 +167,7 @@ interface Cursor {
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
   - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
-  - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`：一個技巧是一個 `NoteToggle`（音符有沒有它、開或關之後的音符），`toggleAt` 作用在游標那條線上的音符、`toggleOnSelection` 作用在選取；開關型的欄位由 `flagToggle` 產生。其他技巧的票沿用這兩個函式，只寫自己的 `NoteToggle`。
+  - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`：一個技巧是一個 `NoteToggle`（音符有沒有它、開或關之後的音符），`toggleAt` 作用在游標那條線上的音符、`toggleOnSelection` 作用在選取；開關型的技巧（`ON_OFF_TECHNIQUES`）由 `onOffToggle` 產生。其他技巧的票沿用這兩個函式，只寫自己的 `NoteToggle`。選取時只算成員看得到的音符：讀取時被略過的音符（[`schema.md`](schema.md) 第 11 節）不算、也不改（`schema.ts` 的 `readNote`）。
 
 ### 5.5 文字與歌詞
 

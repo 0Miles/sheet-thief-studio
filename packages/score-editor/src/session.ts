@@ -16,7 +16,8 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
-  type NoteFlag,
+  type OnOffTechnique,
+  onOffToggle,
   partKindOf,
   partsOf,
   type Selection,
@@ -25,8 +26,8 @@ import {
   settleCursor,
   settleSelection,
   stepDuration,
-  toggleNoteFlag,
-  toggleNoteFlagIn,
+  toggleAt,
+  toggleOnSelection,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -226,12 +227,13 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    * else on the note of the cursor's string, where dead may make a note, and a beat for it in
    * the append slot. Fretted parts only, until the keys of drums and staves name their notes.
    */
-  function toggleFlag(flag: NoteFlag): KeyCommand {
+  function toggleTechnique(technique: OnOffTechnique): KeyCommand {
+    const toggle = onOffToggle(technique);
     if (selection !== null) {
       const selected = selection;
-      return onSelection(selected, (at) => toggleNoteFlagIn(doc, selected, at, flag));
+      return onSelection(selected, (at) => toggleOnSelection(doc, selected, at, toggle));
     }
-    return change((at) => markAppended(at, (here) => toggleNoteFlag(doc, here, `s${here.line}`, flag)));
+    return change((at) => markAppended(at, (here) => toggleAt(doc, here, `s${here.line}`, toggle)));
   }
 
   /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3 and 4.1). */
@@ -276,8 +278,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         });
       case "fret":
         return change((at) => typeDigit(value, at, previous));
-      default:
-        return toggleFlag(effect);
+      case "dead":
+      case "ghost":
+      case "accent":
+      case "staccato":
+      case "vibrato":
+      case "palmMute":
+      case "letRing":
+      case "tap":
+        return toggleTechnique(effect);
     }
   }
 

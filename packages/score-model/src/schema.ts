@@ -203,6 +203,17 @@ export function isNoteKey(kind: PartKind, strings: number, key: string): boolean
   return Number(match[1]) <= (kind === "fretted" ? strings : 127);
 }
 
+/**
+ * The note a value stored at `key` reads as, on a part of `kind` with `strings` strings; undefined
+ * when reading leaves it out (section 11): a key of another kind or string, or a note this kind
+ * of part cannot hold.
+ */
+export function readNote(kind: PartKind, strings: number, key: string, value: unknown): NoteJSON | undefined {
+  if (!isNoteKey(kind, strings, key) || value instanceof Y.AbstractType) return undefined;
+  const note = kindSchemas[kind].note.safeParse(value);
+  return note.success ? note.data : undefined;
+}
+
 /** Whether a key names a voice of a part with `staves` staves: "<staff>:<voice>", each voice 0 or 1. */
 export function isVoiceKey(key: string, staves: number): boolean {
   return voiceKeys(staves).includes(key);

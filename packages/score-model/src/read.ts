@@ -11,7 +11,6 @@ import {
   type BeatJSON,
   barsOf,
   COMMON_TIME,
-  isNoteKey,
   isVoiceKey,
   KIND_DEFAULTS,
   kindSchemas,
@@ -24,6 +23,7 @@ import {
   partKindOf,
   partSchemas,
   partsOf,
+  readNote,
   SCHEMA_VERSION,
   type ScoreJSON,
   contentMapOf,
@@ -151,8 +151,8 @@ function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Chec
   const entries: [string, unknown][] = [];
   notes.forEach((value: unknown, key) => entries.push([key, value]));
   for (const [key, value] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const note = isNoteKey(kind, strings, key) && !(value instanceof Y.AbstractType) ? rules.note.safeParse(value) : null;
-    if (note?.success) read[key] = note.data;
+    const note = readNote(kind, strings, key, value);
+    if (note) read[key] = note;
     else invalid.push(flag({ ...at, noteKey: key }, "note"));
   }
   return { beat: { ...parsed.data, notes: read }, invalid };
