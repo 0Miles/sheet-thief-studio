@@ -194,7 +194,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
   - 聲音（alphaTab 1.9 的 `MidiFileGenerator`）：搥弦、勾弦的目的音比較小聲；`legato` 滑音把起點音滑到目的音，目的音不再撥一次；`shift` 滑音也滑過去，但目的音照樣撥；`outUp`、`outDown`、`inBelow`、`inAbove` 在音的結尾或開頭彎一下音高。測試：`packages/score-render/tests/sound.test.ts`。
 - `bend.semitones`：integer 1–4。新設定的 bend 預設 2 個半音（補充，見 [`keymap.md`](keymap.md)）。
   - **補充**（#28）：型與範圍在 `schema.ts` 的 `BEND_TYPES`、`BEND_SEMITONES`（`min` 1、`max` 4、新的 bend 用 `initial` 2）。
-  - **補充**（#28）：投影是 `projection.ts` 的 `BENDS`。bend point 的 offset 是 alphaTab 的 0–60（整個音符的長度），值是 alphaTab 的四分之一音（`BendPoint.value`，1 個半音是 2），下面寫成 `semitones` 的倍數 `q`：
+  - **補充**（#28）：投影是 `projection.ts` 的 `BENDS`。bend point 的 offset 是 alphaTab 的 0–60（整個音符的長度），值是 alphaTab 的四分之一音（`BendPoint.value`，1 個半音是 2）；下面的 `q` 是 `semitones × 2`，推到頂的值：
     - `bend` → `BendType.Bend`：`(0, 0)`、`(15, q)`：在音符的前四分之一推上去，之後保持。
     - `bendRelease` → `BendType.BendRelease`：`(0, 0)`、`(15, q)`、`(45, q)`、`(60, 0)`：前四分之一推上去，保持，最後四分之一放回來。
     - `preBend` → `BendType.Prebend`：`(0, q)`、`(60, q)`：先推好再撥，保持。

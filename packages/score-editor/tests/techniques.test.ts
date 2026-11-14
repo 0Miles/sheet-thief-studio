@@ -4,8 +4,7 @@ import { cursorAt } from "@studio/score-model";
 import { expect, test } from "vitest";
 
 import { createEditorSession } from "../src/index";
-import type { KeyPlatform } from "../src/index";
-import { keyOf, type Modifiers, sessionOn } from "./support";
+import { keyOf, sessionOn, undoEach } from "./support";
 
 const shift = { shiftKey: true };
 
@@ -36,15 +35,6 @@ test.each(["other", "mac"] as const)("on %s, each Shift+letter turns its techniq
     expect(beats()[0]!.notes).toEqual({ s6: { fret: 5 } });
   }
 });
-
-/** Press undo once for each of `states`, on `platform`, the note going back to each in turn. */
-function undoEach(press: (key: string, wait?: number, modifiers?: Modifiers) => boolean, platform: KeyPlatform, note: () => unknown, states: unknown[]): void {
-  const undo = platform === "mac" ? { metaKey: true } : { ctrlKey: true };
-  for (const state of states) {
-    press("z", 1000, undo);
-    expect(note()).toEqual(state);
-  }
-}
 
 test("on a string with no note, Shift+X makes a dead note without a fret, and the other technique keys do nothing", () => {
   const { press, beats } = sessionOn();
@@ -123,7 +113,6 @@ test.each(["percussion", "pitched"] as const)("on a %s part, the fretted techniq
 
 test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to the one before, taking its fret, and again unties it, one undo step each", () => {
   for (const platform of ["other", "mac"] as const) {
-    const undo = platform === "mac" ? { metaKey: true } : { ctrlKey: true };
     const { press, beats } = sessionOn("fretted", 2, platform);
     press("5");
     press("ArrowRight");
@@ -132,9 +121,10 @@ test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to t
     expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 5, tie: true }]);
     press("l", 1000, shift);
     expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 5 }]);
-    press("z", 1000, undo);
-    press("z", 1000, undo);
-    expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 7 }]);
+    undoEach(press, platform, () => beats().map((beat) => beat.notes.s6), [
+      [{ fret: 5 }, { fret: 5, tie: true }],
+      [{ fret: 5 }, { fret: 7 }],
+    ]);
   }
 });
 

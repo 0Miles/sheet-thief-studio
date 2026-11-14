@@ -60,8 +60,10 @@ test("at the cursor, Shift+U's change strokes its beat down, then up, then not a
   undo.undo();
   expect(strokes()).toEqual([null, "up", null]);
   undo.undo();
+  expect(strokes()).toEqual([null, "down", null]);
   undo.undo();
   expect(strokes()).toEqual([null, null, null]);
+  expect(undo.canUndo()).toBe(false);
   // The notes are as they were.
   expect(beats().map((beat) => beat.notes.s2?.fret)).toEqual([1, 2, 3]);
 });

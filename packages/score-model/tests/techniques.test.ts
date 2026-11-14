@@ -341,11 +341,10 @@ test("a tie takes the fret of the note before on its string, in its bar or the b
   expect(danglingTies(doc)).toEqual([]);
   toggleTie(doc, opening, "s3");
   expect(notes(nextBar)).toEqual([{ s3: { fret: 5 } }]);
-  undo.undo();
-  undo.undo();
-  expect(notes(nextBar)).toEqual([{ s3: { fret: 2 } }]);
+  undoEach(undo, () => notes(nextBar)[0]!.s3!, [{ fret: 2 }, { fret: 5, tie: true }], {}, 1);
   undo.undo();
   expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 7 } }]);
+  expect(undo.canUndo()).toBe(false);
 });
 
 test("with no note before it, the tie is added all the same, the fret kept, and it is a dangling tie", () => {
@@ -419,14 +418,15 @@ test("on a pitched part, a tie on an empty line makes the note before's pitch th
 
 /**
  * Undo every step of a technique stepped through, last first: the note goes back through each of
- * `states` (what it held besides `base`, the first before any step) to the first.
+ * `states` (what it held besides `base`, the first before any step) to the first. Then there is
+ * nothing more to undo, unless `left` steps are, from before.
  */
-function undoEach(undo: Y.UndoManager, note: () => NoteJSON, states: Partial<NoteJSON>[], base: NoteJSON): void {
+function undoEach(undo: Y.UndoManager, note: () => NoteJSON, states: Partial<NoteJSON>[], base: NoteJSON, left = 0): void {
   for (const state of [...states].reverse()) {
     undo.undo();
     expect(note()).toEqual({ ...base, ...state });
   }
-  expect(undo.canUndo()).toBe(false);
+  expect(undo.canUndo()).toBe(left > 0);
 }
 
 // Links (#27; docs/spec/commands.md, 5.4): legato is on or off; a slide out and a slide in step
@@ -529,13 +529,8 @@ test("a bend's semitones go up and down one at a time, from 1 to 4, kept when it
   expect(semitones).toEqual([3, 4, 4, 3, 2, 1, 1]);
   toggleAt(doc, cursor, "s3", bendCycle);
   expect(notes()).toEqual([{ s3: { fret: 5, bend: { type: "bendRelease", semitones: 1 } } }]);
-  undo.undo();
   // The steps that went past 1 or 4 wrote nothing: no undo step of their own.
-  for (const expected of [1, 2, 3, 4, 3, 2]) {
-    expect(notes()[0]!.s3!.bend).toEqual({ type: "bend", semitones: expected });
-    undo.undo();
-  }
-  expect(notes()[0]!.s3!.bend).toEqual({ type: "bend", semitones: 2 });
+  undoEach(undo, () => notes()[0]!.s3!, [2, 3, 4, 3, 2, 1].map((semitones) => ({ bend: { type: "bend", semitones } })), { fret: 5 });
 });
 
 test("the semitones of a note with no bend, or of no note, stay as they are: nothing is written", () => {

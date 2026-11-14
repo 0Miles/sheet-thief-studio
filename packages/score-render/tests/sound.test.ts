@@ -3,6 +3,8 @@ import * as alphaTab from "@coderline/alphatab";
 import {
   addPart,
   type BeatChange,
+  BEND_TYPES,
+  type BendType,
   changeBeatAt,
   createScore,
   cursorAt,
@@ -323,7 +325,7 @@ function bendOf(bend: NoteJSON["bend"]): number[] {
 }
 
 test.each([1, 2, 3, 4])("a bend of %i semitones sends pitch bends whose highest is that many semitones up, for every shape", (semitones) => {
-  for (const type of ["bend", "bendRelease", "preBend", "preBendRelease"] as const) {
+  for (const type of BEND_TYPES) {
     const pitch = bendOf({ type, semitones });
     expect(Math.max(...pitch)).toBeCloseTo(semitones);
     expect(Math.min(...pitch)).toBeGreaterThanOrEqual(0);
@@ -331,7 +333,7 @@ test.each([1, 2, 3, 4])("a bend of %i semitones sends pitch bends whose highest 
 });
 
 test("each shape of bend goes its own way: up and held, up and down, struck bent and held, struck bent and let down", () => {
-  const ends = (type: NonNullable<NoteJSON["bend"]>["type"]) => {
+  const ends = (type: BendType) => {
     const pitch = bendOf({ type, semitones: 2 });
     return [pitch[0], pitch.at(-1)].map((value) => Math.round(value! * 100) / 100);
   };
