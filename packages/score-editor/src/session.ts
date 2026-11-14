@@ -16,6 +16,7 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
+  type NoteFlag,
   partKindOf,
   partsOf,
   type Selection,
@@ -24,6 +25,8 @@ import {
   settleCursor,
   settleSelection,
   stepDuration,
+  toggleNoteFlag,
+  toggleNoteFlagIn,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -218,7 +221,20 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     run: (at) => ({ cursor: run(at), selection: settleSelection(doc, selected) }),
   });
 
-  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
+  /**
+   * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
+   * else on the note of the cursor's string, where dead may make a note, and a beat for it in
+   * the append slot. Fretted parts only, until the keys of drums and staves name their notes.
+   */
+  function toggleFlag(flag: NoteFlag): KeyCommand {
+    if (selection !== null) {
+      const selected = selection;
+      return onSelection(selected, (at) => toggleNoteFlagIn(doc, selected, at, flag));
+    }
+    return change((at) => markAppended(at, (here) => toggleNoteFlag(doc, here, `s${here.line}`, flag)));
+  }
+
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3 and 4.1). */
   function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
     switch (effect) {
       case "nextBeat":
@@ -260,6 +276,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         });
       case "fret":
         return change((at) => typeDigit(value, at, previous));
+      default:
+        return toggleFlag(effect);
     }
   }
 
