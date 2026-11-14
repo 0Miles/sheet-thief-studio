@@ -51,7 +51,7 @@ export interface InvalidContentFlag {
 
 /**
  * A note marked to go on from another that is not there (docs/spec/flags.md, section 1): a tie
- * with no same note just before it, a link (#27) with no note on its string just after it.
+ * with no same note just before it, a link (`linksOn`) with no note on its string just after it.
  */
 export interface LinkFlag {
   kind: "danglingTie" | "danglingLink";
@@ -73,6 +73,24 @@ function continues(kind: PartJSON["kind"], tied: NoteJSON, before: NoteJSON | un
   return kind !== "fretted" || (tied.fret !== undefined && before.fret === tied.fret);
 }
 
+/**
+ * Whether a note goes on to the note after it on its string (docs/adr/0002, marked on the note it
+ * starts from): a hammer-on or pull-off, or a slide out legato or shift.
+ */
+export function linksOn(note: NoteJSON): boolean {
+  return note.legato === true || note.slideOut === "legato" || note.slideOut === "shift";
+}
+
+/**
+ * The note a link from beat `index` of a voice goes on to (docs/spec/flags.md, "下一個音"): the
+ * note with the same key, its string, on the beat just after it in its voice, which is the first
+ * beat of the same voice in the next bar (`next`, its beats) for the last beat of a bar. None when
+ * that beat is a rest, holds no note on the string, or there is no beat after.
+ */
+export function linkTarget(beats: readonly BeatJSON[], index: number, next: readonly BeatJSON[] | undefined, key: string): NoteJSON | undefined {
+  return (index + 1 < beats.length ? beats[index + 1] : next?.[0])?.notes[key];
+}
+
 /** Where a flag stands in the score, to put the flags in order: what it has no part, bar, voice or beat for comes first. */
 type Rank = [part: number, bar: number, voice: string, beat: number];
 
@@ -85,7 +103,8 @@ function compareRanks(a: Rank, b: Rank): number {
  * then beat, what stands for a whole part, bar or voice before what is in it, and what is not in
  * the score (a part or a beat reading left out) after what is. `invalid` is the invalid content
  * reading found (`readScore`), merged in. An empty voice is a whole-bar rest, not a flag; the
- * first bar, when it is a pickup, is never underfull.
+ * first bar, when it is a pickup, is never underfull. A note with a dangling tie and a dangling
+ * link has both, the tie first.
  */
 export function flagsOf(score: ScoreJSON, invalid: readonly InvalidContentFlag[] = []): Flag[] {
   const flags: Flag[] = [];
@@ -100,9 +119,13 @@ export function flagsOf(score: ScoreJSON, invalid: readonly InvalidContentFlag[]
         const fill = fillOf(beats.reduce((sum, beat) => sum + beatTicks(beat), 0), barTicks(bar.timeSig));
         if (fill !== null && !(fill === "underfull" && index === 0 && bar.anacrusis)) flags.push({ kind: fill, partId: part.id, barId: bar.id, voice });
         let before = lastBefore.get(voice);
-        for (const beat of beats) {
+        const next = score.bars[index + 1];
+        const following = next && part.content[next.id]?.[voice];
+        for (const [beatIndex, beat] of beats.entries()) {
           for (const [noteKey, note] of Object.entries(beat.notes)) {
-            if (note.tie && !continues(part.kind, note, before?.notes[noteKey])) flags.push({ kind: "danglingTie", partId: part.id, barId: bar.id, voice, beatId: beat.id, noteKey });
+            const at = { partId: part.id, barId: bar.id, voice, beatId: beat.id, noteKey };
+            if (note.tie && !continues(part.kind, note, before?.notes[noteKey])) flags.push({ kind: "danglingTie", ...at });
+            if (part.kind === "fretted" && linksOn(note) && linkTarget(beats, beatIndex, following, noteKey) === undefined) flags.push({ kind: "danglingLink", ...at });
           }
           before = beat;
         }

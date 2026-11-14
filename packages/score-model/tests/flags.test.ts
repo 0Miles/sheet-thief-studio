@@ -186,3 +186,52 @@ test("F8 does not stop where the cursor cannot go: the parts not given, a part o
   expect(nextFlag(json, named, at("g", "a", "a0"), { partIds: ["h"] })?.cursor).toEqual(at("h", "a", null));
   expect(nextFlag(json, named, at("h", "b", "b0"), { partIds: ["h"] })?.cursor).toEqual(at("h", "c", null));
 });
+
+// Links (#27): a hammer-on or pull-off, and a slide out that goes on to a note, go on to the note
+// on its string on the beat just after it, in its bar or the first beat of the next bar.
+const danglingLinks = (flags: Flag[]) => flags.filter((flag) => flag.kind === "danglingLink").map((flag) => "beatId" in flag && flag.beatId);
+
+test("a link with a note on its string on the beat after it, in its bar, is not dangling", () => {
+  const flags = flagsOf(score(guitar("g", { a: full("a", { fret: 5, legato: true }, { fret: 7, slideOut: "legato" }, { fret: 9, slideOut: "shift" }), b: full("b", { fret: 5 }, { fret: 5 }, { fret: 5 }) })));
+  expect(flags).toEqual([]);
+});
+
+test("a link on the last beat of its bar goes on to the first beat of the next bar", () => {
+  const flags = flagsOf(score(guitar("g", { a: full("a", { fret: 5 }, { fret: 5 }, { fret: 5, legato: true }), b: full("b", { fret: 7 }, { fret: 7 }, { fret: 7 }) })));
+  expect(flags).toEqual([]);
+});
+
+test("a link with no note after it is dangling: on the last beat of the score, before a rest, before an empty bar, and when the next bar starts with a rest", () => {
+  const part = guitar("g", {
+    a: [quarter("a0", { s3: { fret: 5, legato: true } }), quarter("a1"), quarter("a2", { s3: { fret: 5, slideOut: "shift" } })],
+    b: [],
+    c: [quarter("c0", { s3: { fret: 5, slideOut: "legato" } }), quarter("c1", { s3: { fret: 7 } }), quarter("c2", { s3: { fret: 9, legato: true } })],
+  });
+  const flags = flagsOf(score(part));
+  expect(danglingLinks(flags)).toEqual(["a0", "a2", "c2"]);
+  expect(flags.find((flag) => flag.kind === "danglingLink")).toEqual({ kind: "danglingLink", partId: "g", barId: "a", voice: "0:0", beatId: "a0", noteKey: "s3" });
+  part.content.b = { "0:0": [quarter("b0"), quarter("b1", { s3: { fret: 2 } }), quarter("b2", { s3: { fret: 3 } })] };
+  expect(danglingLinks(flagsOf(score(part)))).toEqual(["a0", "a2", "c2"]);
+});
+
+test("a link goes on on its own string only: a note on another string after it leaves it dangling", () => {
+  const part = guitar("g", { a: full("a", { fret: 5, legato: true }, { fret: 7 }, { fret: 7 }) });
+  part.content.a!["0:0"]![1] = quarter("a1", { s2: { fret: 7 } });
+  part.content.b = { "0:0": [quarter("b0", { s4: { fret: 5 } })] };
+  part.content.a!["0:0"]![2] = quarter("a2", { s3: { fret: 5, slideOut: "legato" } });
+  expect(danglingLinks(flagsOf(score(part)))).toEqual(["a0", "a2"]);
+});
+
+test("a slide out up or down, and a slide in, go on to no note: they are never dangling", () => {
+  const flags = flagsOf(score(guitar("g", { a: full("a", { fret: 5, slideOut: "outUp" }, { fret: 5, slideIn: "inBelow" }, { fret: 5, slideOut: "outDown" }) })));
+  expect(danglingLinks(flags)).toEqual([]);
+});
+
+test("the note after is looked for in the same voice only, and a tie and a link on one note are two flags, the tie first", () => {
+  const voices = guitar("g", { a: [] });
+  voices.content.a = { "0:0": [quarter("x", { s3: { fret: 5, legato: true, tie: true } })], "0:1": [quarter("y", { s3: { fret: 5 } }), quarter("z", { s3: { fret: 7 } })] };
+  expect(flagsOf(score(voices)).flatMap((flag) => ("beatId" in flag ? [[flag.kind, flag.beatId]] : []))).toEqual([
+    ["danglingTie", "x"],
+    ["danglingLink", "x"],
+  ]);
+});
