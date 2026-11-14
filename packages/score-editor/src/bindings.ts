@@ -53,7 +53,6 @@ export interface NativeBinding extends BindingKeys {
   effect: NativeEffect;
   native: true;
   page?: undefined;
-  value?: undefined;
 }
 
 /** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */

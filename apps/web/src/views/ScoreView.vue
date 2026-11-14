@@ -19,7 +19,7 @@ import * as Y from "yjs";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import { canType, keyPlatform } from "../device";
-import { clearOf } from "../overlay";
+import { clearOf, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -136,11 +136,12 @@ const FOLLOW_MARGIN = 40;
 /** Show where playback is: the bar in the toolbar, the place on the page, kept on screen while following. */
 function showPlayback(tick: number): void {
   if (engine === undefined || stopped.value) return;
-  const barId = engine.player.barAt(tick);
-  const index = barId === null ? -1 : (score.value?.bars.findIndex((bar) => bar.id === barId) ?? -1);
-  if (index >= 0) playingBar.value = index + 1;
+  const played = engine.player.barAt(tick);
+  if (played !== null) playingBar.value = played.index + 1;
   const rect = engine.renderer.boundsAtTick(tick);
-  playheadRect.value = rect && clearOf(rect, reserved.value);
+  const placed = rect && clearOf(rect, reserved.value);
+  // Most positions fall on the beat drawn already: the page is not drawn again for them.
+  if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
   const element = scroller.value;
   if (!followed() || rect === null || element === undefined) return;
   const top = element.scrollTop;

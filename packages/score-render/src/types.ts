@@ -67,6 +67,12 @@ export interface ScoreRenderer {
 /** "loading" until the soundfont and the sound of the score are in place. */
 export type PlayerState = "loading" | "paused" | "playing";
 
+/** A bar as playback finds it: its id, and its index in the score as the sound has it. */
+export interface PlayedBarOf {
+  barId: string;
+  index: number;
+}
+
 export interface PlayerPosition {
   /** 960 ticks in a quarter note, from the start of the score. */
   tick: number;
@@ -100,7 +106,7 @@ export interface ScorePlayer {
   /** The tick a bar starts at, the first time it is played; null before the sound is made. */
   tickOf(barId: string): number | null;
   /** The bar played at a tick; null before the sound is made. */
-  barAt(tick: number): string | null;
+  barAt(tick: number): PlayedBarOf | null;
   setMute(partId: string, mute: boolean): void;
   setSolo(partId: string, solo: boolean): void;
   /** 0 is silent, 1 the volume written in the score. */

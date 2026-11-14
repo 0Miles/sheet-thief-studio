@@ -1,6 +1,6 @@
-// Playback positions and bars: which bar is played at a tick, and at which tick a bar starts. Both
-// read the tick lookup alphaTab builds with the sound of a score, so that a bar played twice (a
-// repeat) is found where it sounds, not where it is written.
+// Playback positions and bars: which bar is played at a tick. It reads the tick lookup alphaTab
+// builds with the sound of a score, so that a bar played twice (a repeat) is found where it
+// sounds, not where it is written. (The tick a bar starts at is alphaTab's `getMasterBarStart`.)
 import type * as alphaTab from "@coderline/alphatab";
 
 type MidiTickLookup = alphaTab.midi.MidiTickLookup;
@@ -26,9 +26,4 @@ export function barAtTick(lookup: MidiTickLookup, tick: number): PlayedBar | nul
   }
   const played = bars[low] as MasterBarTickLookup;
   return { index: played.masterBar.index, offset: Math.max(tick - played.start, 0) };
-}
-
-/** The tick a bar is first played at; null when it is not in the sound. */
-export function barStartTick(lookup: MidiTickLookup, index: number): number | null {
-  return lookup.masterBars.find((played) => played.masterBar.index === index)?.start ?? null;
 }

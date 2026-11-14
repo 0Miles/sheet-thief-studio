@@ -4,8 +4,8 @@ import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
 import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
-import { barAtTick, barStartTick } from "./ticks";
-import type { PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import { barAtTick } from "./ticks";
+import type { PlayedBarOf, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -282,14 +282,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   tickOf(barId: string): number | null {
     const index = this.projection?.barIndex.get(barId);
+    const masterBar = index === undefined ? undefined : this.projection?.score.masterBars[index];
     const cache = this.api.tickCache;
-    return index === undefined || cache === null ? null : barStartTick(cache, index);
+    // 0 for a bar not in the sound (yet): playing it starts at the top.
+    return masterBar === undefined || cache === null ? null : cache.getMasterBarStart(masterBar);
   }
 
-  barAt(tick: number): string | null {
+  barAt(tick: number): PlayedBarOf | null {
     const cache = this.api.tickCache;
     const played = cache && barAtTick(cache, tick);
-    return (played && this.projection?.barIds[played.index]) ?? null;
+    const barId = played && this.projection?.barIds[played.index];
+    return played && barId ? { barId, index: played.index } : null;
   }
 
   setMute(partId: string, mute: boolean): void {
