@@ -1,7 +1,7 @@
 // Scores and their members (docs/spec/routes.md, 3.3; docs/spec/collab.md, sections 2 and 3):
 // creating one, listing mine, opening one, and the collab ticket to edit it.
-import { collabTicket, createdScore, createScoreRequest, type Role, scoreDetails, scoreList } from "@studio/contracts";
-import { addPart, COMMON_TIME, createScore, insertBars, SCHEMA_VERSION } from "@studio/score-model";
+import { collabTicket, createdScore, createScoreRequest, eachPart, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
+import { addPart, barsOf, createScore, insertBars, PART_PRESETS, partNames, SCHEMA_VERSION } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
@@ -28,29 +28,35 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
 }
 
 /**
- * What a new score starts with, written by the server through the commands of score-model: one
- * six-string guitar and eight bars of 4/4. The tempo is left unwritten, which reads as 120
- * (docs/spec/schema.md, section 3). The dialog of #11 replaces these fixed values. The end-to-end
- * tests' fixtures ask for more bars.
+ * What a new score starts with (docs/spec/commands.md, section 10): the parts chosen, each as its
+ * preset with the tuning chosen and numbered by the name of its preset, then the bars, of the time
+ * signature chosen, the first at the tempo chosen. Written by the server through the commands of
+ * score-model, but for the tempo: the command that sets one comes with the bar properties (#22).
  */
-export function startContent(doc: Y.Doc, title: string, bars = 8): void {
+export function startContent(doc: Y.Doc, { title, parts, timeSig, tempo, bars }: NewScore): void {
   createScore(doc, title);
-  // A fretted part's defaults are the preset 「吉他 6 弦」: standard tuning, tablature, program 25.
-  addPart(doc, { name: "吉他 1", kind: "fretted" });
-  insertBars(doc, { after: null, count: bars, timeSig: COMMON_TIME });
+  const each = eachPart(parts);
+  const names = partNames(each.map(({ preset }) => preset));
+  each.forEach(({ preset, tuning }, index) => {
+    const { kind, tuning: standard, staves, program } = PART_PRESETS[preset];
+    addPart(doc, { name: names[index] as string, kind, tuning: [...(tuning ?? standard)], staves: [...staves], program });
+  });
+  const [first] = insertBars(doc, { after: null, count: bars, timeSig });
+  // Written even when it is 120, which an unwritten tempo reads as: the first bar says what was chosen.
+  doc.transact(() => barsOf(doc).get(first as string)!.set("tempo", tempo));
 }
 
 /** Make a score owned by the account, its content written as a participant; returns its id. */
-async function makeScore(collab: Collab, ownerId: string, title: string): Promise<string> {
+async function makeScore(collab: Collab, ownerId: string, request: NewScore): Promise<string> {
   const score = await Score.sequelize!.transaction(async (transaction) => {
-    const created = await Score.create({ title, docState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())), schemaVersion: SCHEMA_VERSION }, { transaction });
+    const created = await Score.create({ title: request.title, docState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())), schemaVersion: SCHEMA_VERSION }, { transaction });
     await ScoreMember.create({ scoreId: created.id, accountId: ownerId, role: "owner" }, { transaction });
     return created;
   });
   // Between the commit and the end of `change`, the row holds an empty document. Nobody can open
   // it meanwhile: its id is only answered below, and only its Owner is a member.
   try {
-    await collab.change(score.id, (doc) => startContent(doc, title));
+    await collab.change(score.id, (doc) => startContent(doc, request));
   } catch (error) {
     // No empty score left behind for its Owner to find.
     await score.destroy();
@@ -63,7 +69,7 @@ export function registerScores(app: FastifyInstance, { collab, tickets }: { coll
   app.post("/api/scores", async (request, reply) => {
     const body = createScoreRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
-    const id = await makeScore(collab, request.account!.id, body.data.title);
+    const id = await makeScore(collab, request.account!.id, body.data);
     return reply.code(201).send(createdScore.parse({ id }));
   });
 

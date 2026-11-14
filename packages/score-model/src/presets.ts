@@ -1,7 +1,9 @@
 // The part presets (docs/spec/commands.md, section 10): what a new part, or a new blank phrase,
-// starts as. Their names are texts of the interface, kept in the web app's strings by preset id.
+// starts as, and the tuning options of a fretted part. The names of the presets in menus are texts
+// of the interface, kept in the web app's strings by preset id; the names parts get are content of
+// the score, written by the server, so they are here.
 import { STANDARD_GUITAR } from "./commands";
-import type { PartJSON } from "./schema";
+import { COMMON_TIME, type PartJSON, type TimeSignature } from "./schema";
 
 export type PartPreset = Pick<PartJSON, "kind" | "tuning" | "staves" | "program">;
 
@@ -16,3 +18,82 @@ export const PART_PRESETS = {
 } as const satisfies Record<string, PartPreset>;
 
 export type PartPresetId = keyof typeof PART_PRESETS;
+
+/** The presets in the order of the table. */
+export const PART_PRESET_IDS = Object.keys(PART_PRESETS) as [PartPresetId, ...PartPresetId[]];
+
+/** What the dialog of a new score starts with, and what a new score has where the request is silent: one part of `part`. */
+export const NEW_SCORE: { readonly part: PartPresetId; readonly timeSig: TimeSignature; readonly tempo: number; readonly bars: number } = {
+  part: "guitar6",
+  timeSig: COMMON_TIME,
+  tempo: 120,
+  bars: 8,
+};
+
+/** The name a new part of each preset is numbered under: seven-string guitars share the guitars', five-string basses the basses'. */
+export const PRESET_BASE_NAMES: Record<PartPresetId, string> = {
+  guitar6: "吉他",
+  guitar7: "吉他",
+  bass4: "貝斯",
+  bass5: "貝斯",
+  drums: "鼓",
+  keys: "鍵盤",
+  vocals: "人聲",
+};
+
+/**
+ * The names of new parts of these presets, in order, numbered after the parts the score already
+ * has (`taken`): 「吉他 1」「吉他 2」, then 「吉他 3」 when 「吉他 2」 is the highest guitar there.
+ */
+export function partNames(presets: readonly PartPresetId[], taken: Iterable<string> = []): string[] {
+  const highest = new Map<string, number>();
+  const count = (name: string) => {
+    const { base, number } = /^(?<base>.+) (?<number>[1-9][0-9]*)$/.exec(name)?.groups ?? {};
+    if (base === undefined || number === undefined) return;
+    highest.set(base, Math.max(highest.get(base) ?? 0, Number(number)));
+  };
+  for (const name of taken) count(name);
+  return presets.map((preset) => {
+    const base = PRESET_BASE_NAMES[preset];
+    const name = `${base} ${(highest.get(base) ?? 0) + 1}`;
+    count(name);
+    return name;
+  });
+}
+
+/**
+ * The tuning options a fretted part offers besides setting every string by hand (custom); they
+ * follow from the standard tuning of its number of strings.
+ */
+export const TUNING_OPTIONS = ["standard", "drop", "halfDown", "wholeDown"] as const;
+export type TuningOption = (typeof TUNING_OPTIONS)[number];
+
+/**
+ * The preset whose tuning is the standard one of each number of strings a fretted part can have:
+ * every fretted preset has a number of strings of its own (4 and 5 the basses, 6 and 7 the guitars).
+ */
+const STANDARD_OF_STRINGS = new Map(PART_PRESET_IDS.filter((id) => PART_PRESETS[id].kind === "fretted").map((id) => [PART_PRESETS[id].tuning.length, id]));
+
+/** The tuning of this option for a fretted part of this many strings (4 to 7), from the first string. */
+export function tuningFor(option: TuningOption, strings: number): number[] {
+  const preset = STANDARD_OF_STRINGS.get(strings);
+  if (preset === undefined) throw new RangeError(`no fretted part has ${strings} strings`);
+  const standard = [...PART_PRESETS[preset].tuning];
+  switch (option) {
+    case "standard":
+      return standard;
+    case "drop":
+      return standard.map((pitch, index) => (index === standard.length - 1 ? pitch - 2 : pitch));
+    case "halfDown":
+      return standard.map((pitch) => pitch - 1);
+    case "wholeDown":
+      return standard.map((pitch) => pitch - 2);
+  }
+}
+
+const PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/** The name of a MIDI pitch, middle C (60) being C4: how a string of a custom tuning is shown. */
+export function pitchName(pitch: number): string {
+  return `${PITCH_CLASSES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+}

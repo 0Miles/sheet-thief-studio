@@ -1,23 +1,20 @@
 <script setup lang="ts">
 // My scores (docs/spec/routes.md, section 1): the scores I am a member of, most recently updated
-// first, and creating a new one. This first version asks only for a title (#11 adds the dialog).
-import { AppButton, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { createdScore, type ScoreSummary, scoreList } from "@studio/contracts";
+// first, and creating a new one in its dialog.
+import { AppButton, Cluster, Spacer } from "@karyl-chan/ui";
+import { type ScoreSummary, scoreList } from "@studio/contracts";
 import { onMounted, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink } from "vue-router";
 
-import { ApiError, get, postFor } from "../api";
+import { ApiError, get } from "../api";
 import AppHeader from "../components/AppHeader.vue";
+import NewScoreDialog from "../components/NewScoreDialog.vue";
 import { errorText, strings } from "../strings";
 
-const router = useRouter();
 const text = strings.home;
 
 const scores = ref<ScoreSummary[] | null>(null);
 const creating = ref(false);
-const title = ref("");
-const error = ref("");
-const sending = ref(false);
 
 /** What to say when the list could not be asked for; null while all is well. */
 const loadError = ref<string | null>(null);
@@ -31,25 +28,6 @@ onMounted(async () => {
     throw failure;
   }
 });
-
-function startCreating(): void {
-  title.value = "";
-  error.value = "";
-  creating.value = true;
-}
-
-async function create(): Promise<void> {
-  error.value = "";
-  sending.value = true;
-  try {
-    const { id } = await postFor("/api/scores", { title: title.value }, createdScore);
-    await router.push({ name: "score", params: { id } });
-  } catch (failure) {
-    error.value = failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-  } finally {
-    sending.value = false;
-  }
-}
 </script>
 
 <template>
@@ -59,7 +37,7 @@ async function create(): Promise<void> {
       <h1>{{ text.title }}</h1>
       <Spacer />
       <RouterLink :to="{ name: 'phrases' }" class="home__link">{{ text.phrases }}</RouterLink>
-      <AppButton variant="primary" @click="startCreating">{{ text.newScore }}</AppButton>
+      <AppButton variant="primary" @click="creating = true">{{ text.newScore }}</AppButton>
     </Cluster>
     <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
     <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
@@ -73,18 +51,7 @@ async function create(): Promise<void> {
         </RouterLink>
       </li>
     </ul>
-    <AppModal :visible="creating" :title="strings.newScore.title" :close-label="strings.newScore.close" @close="creating = false">
-      <form @submit.prevent="create">
-        <Stack gap="4">
-          <AppTextField v-model="title" :label="strings.newScore.scoreTitle" name="title" :maxlength="100" autofocus required />
-          <p v-if="error" class="home__error" role="alert">{{ error }}</p>
-          <Cluster gap="2" justify="end">
-            <AppButton type="button" variant="ghost" @click="creating = false">{{ strings.newScore.cancel }}</AppButton>
-            <AppButton type="submit" variant="primary" :loading="sending">{{ strings.newScore.create }}</AppButton>
-          </Cluster>
-        </Stack>
-      </form>
-    </AppModal>
+    <NewScoreDialog :visible="creating" @close="creating = false" />
   </main>
 </template>
 

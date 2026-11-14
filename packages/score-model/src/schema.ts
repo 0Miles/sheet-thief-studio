@@ -21,6 +21,11 @@ export const MAX_PARTS = 16;
 /** Parts other than drums in a score: each needs MIDI channels of its own (docs/spec/playback.md). */
 export const MAX_NON_PERCUSSION_PARTS = 15;
 
+/** Whether a score may have parts of these kinds: no more than both limits above (docs/spec/commands.md, 7.1). */
+export function withinPartLimits(kinds: readonly PartKind[]): boolean {
+  return kinds.length <= MAX_PARTS && kinds.filter((kind) => kind !== "percussion").length <= MAX_NON_PERCUSSION_PARTS;
+}
+
 export const MAX_BARS = 1000;
 
 /** The longest title of a score (docs/spec/commands.md, 7.3). */

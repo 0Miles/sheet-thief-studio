@@ -83,7 +83,7 @@
 |---|---|---|
 | `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
 | `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜 | 任何帳號 |
-| `POST /api/scores` | `{ title, parts: [{ preset, count }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。#6 先只收 `{ title }`，內容固定是一個「吉他 6 弦」聲部、4/4、8 小節（速度不寫，讀作 120）；#11 加上其他欄位 | 任何帳號 |
+| `POST /api/scores` | `{ title, parts: [{ preset, count, tuning? }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。**補充**（#11）：`preset` 是 `PART_PRESETS` 的 id；`tuning` 只給 fretted，弦數要和預設相同，不給就是預設的調弦；`title` 以外都可以省略，省略時是一個「吉他 6 弦」、4/4、120、8 小節（`NEW_SCORE`）；第一小節一定寫上 `tempo`。驗證在 contracts 的 `createScoreRequest` | 任何帳號 |
 | `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |

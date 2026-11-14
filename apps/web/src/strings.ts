@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import type { ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import type { Flag, PartKind, PartPresetId } from "@studio/score-model";
+import { type Flag, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 export const strings = {
   app: {
@@ -14,9 +14,23 @@ export const strings = {
     phrases: "樂句庫",
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
   },
+  // The dialog of a new score (docs/spec/commands.md, section 10).
   newScore: {
     title: "新增團譜",
     scoreTitle: "標題",
+    parts: "聲部",
+    preset: "聲部種類",
+    count: "數量",
+    tuning: "調弦",
+    tunings: { standard: "標準", drop: "Drop（最低弦降全音）", halfDown: "降半音", wholeDown: "降全音", custom: "逐弦自訂" } satisfies Record<TuningOption | "custom", string>,
+    string: (string: number) => `第 ${string} 弦`,
+    addPart: "再加一種聲部",
+    removePart: "移除",
+    tooManyParts: `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`,
+    beats: "每小節拍數",
+    beatUnit: "拍的單位",
+    beatUnits: { 1: "全音符", 2: "二分音符", 4: "四分音符", 8: "八分音符", 16: "十六分音符", 32: "三十二分音符" } satisfies Record<TimeSignature["denominator"], string>,
+    tempo: "速度（每分鐘四分音符數）",
     create: "建立",
     cancel: "取消",
     close: "關閉",

@@ -1,5 +1,20 @@
 // Shapes of what the API sends and receives, shared by the server and the web app.
-import { barsFragmentSchema, partKindSchema } from "@studio/score-model";
+import {
+  barSchema,
+  barsFragmentSchema,
+  MAX_BARS,
+  MAX_NON_PERCUSSION_PARTS,
+  MAX_PARTS,
+  MAX_TITLE,
+  NEW_SCORE,
+  PART_PRESET_IDS,
+  PART_PRESETS,
+  partKindSchema,
+  type PartPresetId,
+  partSchemas,
+  timeSigSchema,
+  withinPartLimits,
+} from "@studio/score-model";
 import { z } from "zod";
 
 // The score is defined once, in score-model (docs/adr/0002, addendum): only re-exported here.
@@ -67,11 +82,57 @@ export type Me = z.infer<typeof me>;
 export const role = z.enum(["owner", "editor", "viewer"]);
 export type Role = z.infer<typeof role>;
 
-/** A new score (`POST /api/scores`). Only the title for now; the dialog of #11 adds the parts and the rest. */
+/** A part preset (docs/spec/commands.md, section 10), by its id in `PART_PRESETS`. */
+export const partPresetId = z.enum(PART_PRESET_IDS);
+
+/**
+ * Parts of a new score, a line of its dialog: a preset, how many parts of it, and for fretted ones
+ * a tuning of its number of strings (the preset's when left out).
+ */
+export const partChoice = z
+  .object({ preset: partPresetId, count: z.int().min(1).max(MAX_PARTS).default(1), tuning: partSchemas.fretted.shape.tuning.optional() })
+  .refine(({ preset, tuning }) => tuning === undefined || (PART_PRESETS[preset].kind === "fretted" && tuning.length === PART_PRESETS[preset].tuning.length), {
+    message: "a tuning of the preset's number of strings, for fretted parts only",
+    path: ["tuning"],
+  });
+export type PartChoice = z.input<typeof partChoice>;
+
+/** Every part these choices make, in order: each choice as many times as its count (once when left out). */
+export function eachPart(choices: readonly PartChoice[]): { preset: PartPresetId; tuning?: number[] }[] {
+  return choices.flatMap(({ preset, count = 1, tuning }) => Array.from({ length: count }, () => ({ preset, tuning })));
+}
+
+/**
+ * Whether a score may have the parts these choices make (docs/spec/commands.md, 7.1). The counts
+ * are added up first, so that no count past the limit makes its parts: zod runs this even when a
+ * count already failed its own range, and the dialog runs it on whatever is typed.
+ */
+export function choicesWithinPartLimits(choices: readonly PartChoice[]): boolean {
+  const total = choices.reduce((sum, { count = 1 }) => sum + Math.max(0, count), 0);
+  // Not `>`: a count that is no number (NaN) fails here too.
+  if (!(total <= MAX_PARTS)) return false;
+  return withinPartLimits(eachPart(choices).map(({ preset }) => PART_PRESETS[preset].kind));
+}
+
+/**
+ * A new score (`POST /api/scores`), as the dialog chooses it (docs/spec/commands.md, section 10):
+ * its title, its parts in order, the time signature of its bars, the tempo of the first, and how
+ * many bars. What is left out is the default: one six-string guitar, eight bars of 4/4 at 120.
+ */
 export const createScoreRequest = z.object({
-  title: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(MAX_TITLE),
+  parts: z
+    .array(partChoice)
+    .min(1)
+    .max(MAX_PARTS)
+    .refine(choicesWithinPartLimits, `at most ${MAX_PARTS} parts, ${MAX_NON_PERCUSSION_PARTS} of them other than drums`)
+    .default(() => [{ preset: NEW_SCORE.part, count: 1 }]),
+  timeSig: timeSigSchema.default(() => ({ ...NEW_SCORE.timeSig })),
+  tempo: barSchema.shape.tempo.unwrap().default(NEW_SCORE.tempo),
+  bars: z.int().min(1).max(MAX_BARS).default(NEW_SCORE.bars),
 });
-export type CreateScoreRequest = z.infer<typeof createScoreRequest>;
+export type CreateScoreRequest = z.input<typeof createScoreRequest>;
+export type NewScore = z.output<typeof createScoreRequest>;
 
 export const createdScore = z.object({ id: z.string() });
 export type CreatedScore = z.infer<typeof createdScore>;
