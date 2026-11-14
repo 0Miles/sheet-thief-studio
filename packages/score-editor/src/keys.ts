@@ -2,7 +2,7 @@
 // chords, which become the keys of Windows and Linux, or of macOS, here and nowhere else.
 import type { PartKind } from "@studio/score-model";
 
-import { KEY_BINDINGS, type KeyBinding, type PageEffect } from "./bindings";
+import { KEY_BINDINGS, type KeyBinding, type PageEffect, type TextEntryEffect } from "./bindings";
 
 /** The keys of Windows and Linux (`"other"`), or of macOS and iPadOS (`"mac"`). */
 export type KeyPlatform = "mac" | "other";
@@ -210,16 +210,17 @@ function bindingsOn(platform: KeyPlatform): Map<string, KeyBinding[]> {
 
 /**
  * The binding a key runs on this platform, on a part of this kind (none: the part's kind cannot
- * be read). The modifiers must be exactly the binding's: one more held, and it is not that key
- * (keymap.md, 1.1). A key that goes to an input method is no binding's: Safari ends a
- * composition with a keydown whose `isComposing` is false and whose `keyCode` is 229.
+ * be read), or in a text box of the score (`"textEntry"`), where the keys of the score are not.
+ * The modifiers must be exactly the binding's: one more held, and it is not that key (keymap.md,
+ * 1.1). A key that goes to an input method is no binding's: Safari ends a composition with a
+ * keydown whose `isComposing` is false and whose `keyCode` is 229.
  */
-export function matchKey(key: Key, platform: KeyPlatform, kind: PartKind | undefined): KeyBinding | undefined {
+export function matchKey(key: Key, platform: KeyPlatform, kind: PartKind | "textEntry" | undefined): KeyBinding | undefined {
   if (key.isComposing === true || key.keyCode === 229) return undefined;
   const combo: KeyCombo = { code: key.code, ctrlKey: key.ctrlKey === true, altKey: key.altKey === true, shiftKey: key.shiftKey === true, metaKey: key.metaKey === true };
   return bindingsOn(platform)
     .get(comboName(combo, platform))
-    ?.find((binding) => binding.context === "score" || binding.context === kind);
+    ?.find((binding) => binding.context === kind || (binding.context === "score" && kind !== "textEntry"));
 }
 
 /**
@@ -229,4 +230,14 @@ export function matchKey(key: Key, platform: KeyPlatform, kind: PartKind | undef
 export function pageEffectOf(key: Key, platform: KeyPlatform): PageEffect | null {
   const binding = matchKey(key, platform, undefined);
   return binding?.page ? binding.effect : null;
+}
+
+/**
+ * What a key does in a text box of the score, such as the text of a beat (keymap.md, section 6):
+ * null for every other key, which is the box's own. The key with which an input method ends a
+ * composition, a word chosen with Enter among them, is null too (`matchKey`): it saves nothing.
+ */
+export function textEntryEffectOf(key: Key, platform: KeyPlatform): TextEntryEffect | null {
+  const binding = matchKey(key, platform, "textEntry");
+  return binding?.entry ? binding.effect : null;
 }

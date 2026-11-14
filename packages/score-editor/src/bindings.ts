@@ -35,7 +35,11 @@ export type SessionEffect =
   | "redo"
   | "fret"
   | "tie"
-  | OnOffTechnique;
+  | OnOffTechnique
+  | "stroke"
+  | "slapPop"
+  | "dynamic"
+  | "text";
 
 /**
  * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
@@ -50,8 +54,17 @@ export type NativeEffect = "copy" | "cut" | "paste";
  */
 export type PageEffect = "playPause" | "nextFlag";
 
-/** Where a key works: on the score whatever the kind of the part, or on parts of one kind only. */
-export type KeyContext = "score" | PartKind;
+/**
+ * What a key does in a text box of the score (keymap.md, section 6): the text of a beat, typed
+ * there, is saved, or the box is left without saving it.
+ */
+export type TextEntryEffect = "saveEntry" | "cancelEntry";
+
+/**
+ * Where a key works: on the score whatever the kind of the part, on parts of one kind only, or in
+ * a text box of the score (`textEntryEffectOf`), where no key of the score works.
+ */
+export type KeyContext = "score" | PartKind | "textEntry";
 
 interface BindingKeys {
   context: KeyContext;
@@ -73,6 +86,7 @@ interface BindingKeys {
 interface SessionKeys extends BindingKeys {
   native?: undefined;
   page?: undefined;
+  entry?: undefined;
   /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
   repeat?: true;
 }
@@ -85,6 +99,7 @@ export interface NativeBinding extends BindingKeys {
   effect: NativeEffect;
   native: true;
   page?: undefined;
+  entry?: undefined;
   fret?: undefined;
 }
 
@@ -93,10 +108,21 @@ export interface PageBinding extends BindingKeys {
   effect: PageEffect;
   native?: undefined;
   page: true;
+  entry?: undefined;
   fret?: undefined;
 }
 
-export type KeyBinding = SessionBinding | NativeBinding | PageBinding;
+/** A key of a text box of the score: the box does what it is for (`textEntryEffectOf`). */
+export interface TextEntryBinding extends BindingKeys {
+  effect: TextEntryEffect;
+  context: "textEntry";
+  entry: true;
+  native?: undefined;
+  page?: undefined;
+  fret?: undefined;
+}
+
+export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding;
 
 const DIGITS = [..."0123456789"];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -155,6 +181,9 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // Section 3: Shift and a letter, on every kind of part.
   { effect: "triplet", context: "score", keys: ["Shift+KeyT"], keymap: both("Shift+KeyT") },
   { effect: "clear", context: "score", keys: ["Shift+KeyR"], keymap: both("Shift+KeyR") },
+  { effect: "dynamic", context: "score", keys: ["Shift+KeyF"], keymap: both("Shift+KeyF") },
+  // Section 5: the text of the cursor's beat, in a box the page opens (`EditorSession.onEditText`).
+  { effect: "text", context: "score", keys: ["Enter", "NumpadEnter"], keymap: both("Enter", "NumpadEnter") },
   { effect: "undo", context: "score", keys: ["Mod+KeyZ"], keymap: { other: ["Ctrl+KeyZ"], mac: ["Cmd+KeyZ"] } },
   // Not Cmd+Y on a Mac: it is the history of Safari and Chrome.
   { effect: "redo", context: "score", keys: ["Mod+KeyY", "Mod+Shift+KeyZ"], mac: ["Mod+Shift+KeyZ"], keymap: { other: ["Ctrl+KeyY", "Ctrl+Shift+KeyZ"], mac: ["Cmd+Shift+KeyZ"] } },
@@ -178,6 +207,12 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
   }),
+  // Section 3: the flags of a beat a fretted part only has.
+  { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
+  { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
+  // Section 6: in a text box. Return, on a Mac, is the same key.
+  { effect: "saveEntry", context: "textEntry", keys: ["Enter", "NumpadEnter"], entry: true, keymap: both("Enter", "NumpadEnter") },
+  { effect: "cancelEntry", context: "textEntry", keys: ["Escape"], entry: true, keymap: both("Escape") },
 ];
 
 /**

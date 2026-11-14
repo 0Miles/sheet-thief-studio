@@ -14,6 +14,7 @@ import {
   deleteSelection,
   dotCycle,
   durationStep,
+  dynamicCycle,
   extendSelection,
   insertBeat,
   isRestAt,
@@ -34,8 +35,12 @@ import {
   type Selection,
   type SelectionStep,
   setFret,
+  setText,
   settleCursor,
   settleSelection,
+  slapPopCycle,
+  strokeCycle,
+  textAt,
   techniqueToggle,
   tieToggle,
   toggleAt,
@@ -67,6 +72,15 @@ export interface LocalPresence {
  * such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3).
  */
 export type SessionHint = "oneVoice";
+
+/**
+ * Enter on a beat (docs/spec/keymap.md, 6.1): the shell opens a box there for its text, filled
+ * with the text it holds (empty for none), and gives what is typed to `setText`.
+ */
+export interface TextRequest {
+  cursor: Cursor;
+  text: string;
+}
 
 export interface EditorSessionOptions {
   /** Whose keys the member types with: the shell tells it once, with `detectKeyPlatform`. */
@@ -112,6 +126,15 @@ export interface EditorSession {
   onRefused(listener: () => void): () => void;
   /** Called each time a key does nothing the member is to be told about. */
   onHint(listener: (hint: SessionHint) => void): () => void;
+  /** Called each time Enter asks for the text of the cursor's beat; never in the append slot, nor while read-only. */
+  onEditText(listener: (request: TextRequest) => void): () => void;
+  /**
+   * Save the text of a beat, typed in the box `onEditText` asked for, one command: at `cursor`,
+   * the cursor of the request, on whatever beat it names; an empty text takes it away. False,
+   * and nothing saved, while read-only (the member is told, as for a key), or for a text of more
+   * than 64 characters. The selection ends, as after any command that does not work on it.
+   */
+  setText(cursor: Cursor, text: string): boolean;
   destroy(): void;
 }
 
@@ -169,7 +192,14 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   const lines = new Map<string, number>(start ? [[start.partId, start.line]] : []);
   const refusedListeners = new Set<() => void>();
   const hintListeners = new Set<(hint: SessionHint) => void>();
+  const textListeners = new Set<(request: TextRequest) => void>();
   let refused = false;
+  /** Tell the member, the first time only, that a change was refused because the session is read-only. */
+  function refuse(): void {
+    if (refused) return;
+    refused = true;
+    for (const listener of refusedListeners) listener();
+  }
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
 
   function presence(): LocalPresence {
@@ -306,7 +336,20 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     );
   }
 
-  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3 and 4.1). */
+  /**
+   * Enter: ask the shell for the text of the cursor's beat, which a box there then changes (one
+   * command, `setText`). It changes nothing itself, but leads to a change: refused while read-only.
+   */
+  const askForText: KeyCommand = {
+    changes: true,
+    run: (at) => {
+      const text = textAt(doc, at);
+      if (text !== null) for (const listener of textListeners) listener({ cursor: at, text });
+      return { cursor: at, selection };
+    },
+  };
+
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1 and 5). */
   function commandOf(binding: SessionBinding, previous: TypedDigit | null): KeyCommand {
     const { effect } = binding;
     switch (effect) {
@@ -372,6 +415,14 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return change((at) => typeDigit(binding.fret, at, previous));
       case "tie":
         return toggleNotes(tieToggle);
+      case "stroke":
+        return changeBeats(strokeCycle);
+      case "slapPop":
+        return changeBeats(slapPopCycle);
+      case "dynamic":
+        return changeBeats(dynamicCycle);
+      case "text":
+        return askForText;
       default:
         // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
         return toggleNotes(techniqueToggle(effect));
@@ -394,7 +445,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (cursor === null) return false;
       // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
       const binding = matchKey(key, platform, partKindOf(partsOf(doc).get(cursor.partId)));
-      if (binding === undefined || binding.native || binding.page) return false;
+      if (binding === undefined || binding.native || binding.page || binding.entry) return false;
       // Held down, only moves, + and - run again; the repeats of the others are still not the browser's.
       if (key.repeat === true && !binding.repeat) return true;
       // A digit waits for a second one; any other key that runs something ends the wait.
@@ -402,10 +453,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       lastDigit = null;
       const command = commandOf(binding, previous);
       if (command.changes && readOnly) {
-        if (!refused) {
-          refused = true;
-          for (const listener of refusedListeners) listener();
-        }
+        refuse();
         return true;
       }
       running = true;
@@ -431,11 +479,27 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       hintListeners.add(listener);
       return () => hintListeners.delete(listener);
     },
+    onEditText(listener) {
+      textListeners.add(listener);
+      return () => textListeners.delete(listener);
+    },
+    setText(at, text) {
+      if (readOnly) {
+        refuse();
+        return false;
+      }
+      // Not a key: a digit typed before it waits for no second one.
+      lastDigit = null;
+      if (!setText(doc, at, text)) return false;
+      putAt({ cursor, selection: null });
+      return true;
+    },
     destroy() {
       doc.off("afterTransaction", settle);
       doc.off("beforeTransaction", separate);
       refusedListeners.clear();
       hintListeners.clear();
+      textListeners.clear();
       presenceListeners.clear();
       undo.destroy();
     },

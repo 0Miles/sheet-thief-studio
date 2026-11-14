@@ -846,6 +846,14 @@ export function setText(doc: Y.Doc, cursor: Cursor, text: string): boolean {
   return true;
 }
 
+/** The text over the beat of the cursor, empty for none; null in the append slot, or on a beat reading leaves out. */
+export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
+  const reader = readerOf(doc, cursor.partId);
+  const beat = beatAt(doc, cursor);
+  const read = reader && beat && seenBeat(reader, beat);
+  return read ? (read.flags.text ?? "") : null;
+}
+
 /** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
 export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   return changeBeatAt(doc, cursor, durationStep(step));
