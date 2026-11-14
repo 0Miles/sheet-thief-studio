@@ -116,6 +116,8 @@ const flags = shallowRef<Flag[]>([]);
 const flagMarks = shallowRef<FlagMark[]>([]);
 /** Where F8 or the toolbar's button last took the cursor, while it is still there. */
 const flagStop = shallowRef<FlagStop | null>(null);
+/** The key of the toolbar's next-flag button, as this platform names it. */
+const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 const playerState = ref<PlayerState>("loading");
@@ -307,8 +309,7 @@ function draw(change: ScoreChange): void {
   score.value = json;
   // From the whole score: a tie can be dangling for a change in the bar before (docs/spec/flags.md, section 3).
   flags.value = flagsOf(json, invalid);
-  // The flag F8 stopped at was fixed: its words go.
-  if (!stillAt(flagStop.value, session?.cursor ?? null, flags.value)) flagStop.value = null;
+  forgetStaleStop();
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
     if (narrow.value) keepNarrowPart(json);
@@ -388,6 +389,11 @@ function onNarrowPart(event: Event): void {
   showChosenParts();
 }
 
+/** The cursor moved off the flag F8 stopped at, or the flag was fixed: its words go. */
+function forgetStaleStop(): void {
+  if (!stillAt(flagStop.value, session?.cursor ?? null, flags.value)) flagStop.value = null;
+}
+
 /**
  * F8, or the toolbar's button: the cursor goes to the next flag of the parts shown (docs/spec/
  * flags.md, section 4), and the page with it, as after any key.
@@ -403,8 +409,8 @@ function goToNextFlag(): void {
 
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
-  session.onPresence(({ cursor }) => {
-    if (!stillAt(flagStop.value, cursor, flags.value)) flagStop.value = null;
+  session.onPresence(() => {
+    forgetStaleStop();
     placeCursor();
     resumable = false;
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
@@ -576,8 +582,8 @@ onBeforeUnmount(() => {
           v-if="view"
           :count="flags.length"
           :can-go="editing"
-          :shortcut="keyNameOf('nextFlag', keyPlatform())"
-          :stopped-at="flagStop?.flag ?? null"
+          :shortcut="nextFlagKey"
+          :stopped-at="flagStop?.flag.kind ?? null"
           @next="onToolbar(goToNextFlag)"
         />
         <label v-if="narrow && parts.length > 0" class="score__part">
@@ -614,7 +620,7 @@ onBeforeUnmount(() => {
               :key="`flag-${index}`"
               data-flag
               :data-kind="mark.kind"
-              :class="['score__flag', `score__flag--${mark.shape}`, { 'score__flag--invalid': mark.kind === 'invalidContent' }]"
+              :class="['score__flag', `score__flag--${mark.shape}`]"
               :stroke-width="mark.shape === 'box' ? FLAG_STROKE : undefined"
               :x="mark.rect.x"
               :y="mark.rect.y"
@@ -738,7 +744,7 @@ onBeforeUnmount(() => {
   fill: none;
   stroke: rgba(220, 38, 38, 0.7);
 }
-.score__flag--box.score__flag--invalid {
+.score__flag--box[data-kind="invalidContent"] {
   stroke: rgba(124, 58, 237, 0.7);
   stroke-dasharray: 4 3;
 }

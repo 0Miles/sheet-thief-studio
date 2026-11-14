@@ -13,8 +13,8 @@ defineProps<{
   canGo: boolean;
   /** The key of the button, as this platform names it. */
   shortcut: string;
-  /** The flag the cursor was taken to, while it is still there. */
-  stoppedAt: Flag | null;
+  /** The kind of the flag the cursor was taken to, while it is still there. */
+  stoppedAt: Flag["kind"] | null;
 }>();
 const emit = defineEmits<{ next: [] }>();
 const text = strings.score.flags;
@@ -26,7 +26,7 @@ const text = strings.score.flags;
     <AppButton v-if="canGo" variant="ghost" size="sm" data-next-flag :title="text.nextKey(shortcut)" :disabled="count === 0" @click="emit('next')">
       {{ text.next }}
     </AppButton>
-    <span v-if="stoppedAt" class="flags__what" data-flag-stopped :data-kind="stoppedAt.kind">{{ text.kinds[stoppedAt.kind] }}</span>
+    <span v-if="stoppedAt" class="flags__what" data-flag-stopped :data-kind="stoppedAt">{{ text.kinds[stoppedAt] }}</span>
   </div>
 </template>
 

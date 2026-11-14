@@ -342,7 +342,7 @@ export function onOffToggle(technique: Exclude<OnOffTechnique, "dead">): NoteTog
   return plainToggle(technique);
 }
 
-function plainToggle(technique: OnOffTechnique): NoteToggle<boolean> {
+function plainToggle(technique: OnOffTechnique | "tie"): NoteToggle<boolean> {
   return {
     decide: (seen) => !seen.every((note) => note[technique] === true),
     turn(stored, on) {
@@ -370,6 +370,8 @@ export const deadToggle: NoteToggle<boolean> = {
   },
 };
 
+const plainTie = plainToggle("tie");
+
 /**
  * Tie (docs/spec/commands.md, 5.4): on, unless every note seen has it already; on an empty line
  * it is on too, to make the note there. Adding it takes the fret of the note before on the same
@@ -379,17 +381,12 @@ export const deadToggle: NoteToggle<boolean> = {
  * no such note before, nothing. Off takes the tie away and keeps the fret.
  */
 export const tieToggle: NoteToggle<boolean> = {
-  decide: (seen) => seen.length === 0 || !seen.every((note) => note.tie === true),
-  turn(stored, on, { key, before }) {
-    if (!on) {
-      if (stored?.tie !== true) return stored ?? null;
-      const note = { ...stored };
-      delete note.tie;
-      return note;
-    }
+  decide: (seen) => seen.length === 0 || plainTie.decide(seen),
+  turn(stored, on, place) {
+    const { key, before } = place;
     // A note tied already, to the fret before or with none to take, is left as it is.
-    if (before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
-    if (stored !== undefined) return stored.tie === true ? stored : { ...stored, tie: true };
+    if (on && before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
+    if (!on || stored !== undefined) return plainTie.turn(stored, on, place);
     if (before === undefined || !key.startsWith("n")) return null;
     return before.spell === undefined ? { tie: true } : { spell: before.spell, tie: true };
   },

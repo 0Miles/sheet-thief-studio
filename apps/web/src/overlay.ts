@@ -41,7 +41,7 @@ export const FLAG_STROKE = 2;
 /** How far a note's mark reaches around its head. */
 const NOTE_MARGIN = 2;
 
-/** The rectangle made smaller by `by` on every side; null when nothing is left of it. */
+/** The rectangle made smaller by `by` on every side (larger when `by` is negative); null when nothing is left of it. */
 function inset(rect: Rect, by: number): Rect | null {
   const width = rect.width - 2 * by;
   const height = rect.height - 2 * by;
@@ -61,18 +61,16 @@ export function flagMarksOf(
   reserved: readonly Rect[],
 ): FlagMark[] {
   return flags.flatMap((flag): FlagMark[] => {
-    const { kind, partId, barId } = flag;
+    const { kind, barId } = flag;
     if (barId === undefined) return [];
     if (kind === "danglingTie" || kind === "danglingLink") {
       if (!partIds.includes(flag.partId)) return [];
       // The heads of every note of the beat: the line the cursor is given does not matter.
       const head = renderer.noteHeadsOf({ partId: flag.partId, barId, voice: flag.voice, beatId: flag.beatId, at: "on", line: 1 }).find((each) => each.key === flag.noteKey);
       if (head === undefined) return [];
-      const { x, y, width, height } = head.rect;
-      const around = { x: x - NOTE_MARGIN, y: y - NOTE_MARGIN, width: width + 2 * NOTE_MARGIN, height: height + 2 * NOTE_MARGIN };
-      return [{ kind, shape: "note", rect: clearOf(around, reserved) }];
+      return [{ kind, shape: "note", rect: clearOf(inset(head.rect, -NOTE_MARGIN)!, reserved) }];
     }
-    const parts = partId === undefined ? partIds : partIds.filter((id) => id === partId);
+    const parts = flag.partId === undefined ? partIds : partIds.filter((id) => id === flag.partId);
     return parts.flatMap((id) =>
       renderer.boundsOfSelection({ kind: "bars", partId: id, anchorBarId: barId, focusBarId: barId }).flatMap((box) => {
         const rect = inset(clearOf(box, reserved), FLAG_STROKE / 2);

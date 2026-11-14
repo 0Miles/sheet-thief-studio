@@ -1,6 +1,6 @@
 // What is wrong in a score but is never rewritten for the members: only pointed out.
 import type { Cursor } from "./commands";
-import { type BeatDuration, type BeatJSON, MAIN_VOICE, type NoteJSON, type PartJSON, type ScoreJSON, startLine, type TimeSignature, voiceKeys } from "./schema";
+import { type BeatDuration, type BeatJSON, isVoiceKey, MAIN_VOICE, type NoteJSON, type PartJSON, type ScoreJSON, startLine, stringOfNoteKey, type TimeSignature } from "./schema";
 
 /** Ticks in a whole note (960 in a quarter). */
 export const WHOLE = 3840;
@@ -93,25 +93,26 @@ export function flagsOf(score: ScoreJSON, invalid: readonly InvalidContentFlag[]
     /** The last beat of each voice in the bar before. */
     let lastOf = new Map<string, BeatJSON>();
     for (const [index, bar] of score.bars.entries()) {
-      const voices = Object.entries(part.content[bar.id] ?? {});
-      for (const [voice, beats] of voices) {
+      const lastBefore = lastOf;
+      lastOf = new Map();
+      for (const [voice, beats] of Object.entries(part.content[bar.id] ?? {})) {
         if (beats.length === 0) continue;
         const fill = fillOf(beats.reduce((sum, beat) => sum + beatTicks(beat), 0), barTicks(bar.timeSig));
         if (fill !== null && !(fill === "underfull" && index === 0 && bar.anacrusis)) flags.push({ kind: fill, partId: part.id, barId: bar.id, voice });
-        let before = lastOf.get(voice);
+        let before = lastBefore.get(voice);
         for (const beat of beats) {
           for (const [noteKey, note] of Object.entries(beat.notes)) {
             if (note.tie && !continues(part.kind, note, before?.notes[noteKey])) flags.push({ kind: "danglingTie", partId: part.id, barId: bar.id, voice, beatId: beat.id, noteKey });
           }
           before = beat;
         }
+        lastOf.set(voice, before!);
       }
-      lastOf = new Map(voices.flatMap(([voice, beats]) => (beats.length === 0 ? [] : [[voice, beats.at(-1)!] as const])));
     }
   }
   const { rankOf } = placesIn(score);
-  // A stable sort: flags at the same place keep the order they were found in.
-  return [...flags, ...invalid].map((flag) => ({ flag, rank: rankOf(flag) })).sort((a, b) => compareRanks(a.rank, b.rank)).map(({ flag }) => flag);
+  // The sort is stable: flags at the same place keep the order they were found in.
+  return [...flags, ...invalid].sort((a, b) => compareRanks(rankOf(a), rankOf(b)));
 }
 
 /** Where flags and cursors stand in a score, as ranks to put them in order. */
@@ -152,17 +153,17 @@ function cursorFor(score: ScoreJSON, flag: Flag, line: number | undefined): Curs
   const part = score.parts.find((each) => each.id === flag.partId);
   const barId = flag.barId ?? score.bars[0]?.id;
   if (part === undefined || barId === undefined || !score.bars.some((bar) => bar.id === barId)) return null;
-  const voice = flag.voice !== undefined && voiceKeys(part.staves.length).includes(flag.voice) ? flag.voice : MAIN_VOICE;
+  const voice = flag.voice !== undefined && isVoiceKey(flag.voice, part.staves.length) ? flag.voice : MAIN_VOICE;
   const beats = part.content[barId]?.[voice] ?? [];
   const beat = beats.find((each) => "beatId" in flag && each.id === flag.beatId) ?? beats[0];
-  const string = part.kind === "fretted" && "noteKey" in flag ? /^s(\d+)$/.exec(flag.noteKey ?? "")?.[1] : undefined;
+  const string = part.kind === "fretted" && "noteKey" in flag ? stringOfNoteKey(flag.noteKey ?? "") : undefined;
   return {
     partId: part.id,
     barId,
     voice,
     beatId: beat?.id ?? null,
     at: beat === undefined ? "after" : "on",
-    line: string === undefined ? (line ?? startLine(part.kind)) : Number(string),
+    line: string ?? line ?? startLine(part.kind),
   };
 }
 
