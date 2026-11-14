@@ -111,4 +111,6 @@ export interface ScorePlayer {
   setLoop(range: PlayRange | null): void;
   onState(listener: (state: PlayerState) => void): Unsubscribe;
   onPosition(listener: (position: PlayerPosition) => void): Unsubscribe;
+  /** Called when playback reaches the end of the score and stops there; not at the end of a loop. */
+  onFinished(listener: () => void): Unsubscribe;
 }

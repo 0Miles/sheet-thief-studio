@@ -76,6 +76,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private painted = new Listeners<string[]>();
   private states = new Listeners<PlayerState>();
   private positions = new Listeners<PlayerPosition>();
+  private finished = new Listeners<void>();
   private playerState: PlayerState = "loading";
   private playerIsReady = false;
   private lastPosition: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
@@ -83,6 +84,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private reload: { resume: boolean; tick: number; done: () => void } | null = null;
   /** Where playback was sent back to after a reload, until alphaTab reports from there. */
   private resumedAt: { tick: number; at: number } | null = null;
+  /**
+   * Playing again after a reload, until alphaTab says so: the pause it reports first is the stop
+   * of taking the new sound, which it tells after the sound is in place.
+   */
+  private resuming = false;
   private destroyed = false;
 
   constructor(
@@ -129,7 +135,16 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       // Not before the player can play (alphaTab reports "paused" as soon as a listener is
       // added), and not while it stops to take a new sound: that is not the member pausing.
       if (!this.playerIsReady || this.reload) return;
-      this.setState(event.state === alphaTab.synth.PlayerState.Playing ? "playing" : "paused");
+      const playing = event.state === alphaTab.synth.PlayerState.Playing;
+      if (this.resuming) {
+        if (!playing) return;
+        this.resuming = false;
+      }
+      this.setState(playing ? "playing" : "paused");
+    });
+    api.playerFinished.on(() => {
+      // At the end of a loop alphaTab goes back to its start and plays on.
+      if (this.reload === null && !api.isLooping) this.finished.emit();
     });
     api.playerPositionChanged.on((event) => {
       // Taking a new sound rewinds alphaTab for a moment: not a position of the playback.
@@ -317,6 +332,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return this.positions.add(listener);
   }
 
+  onFinished(listener: () => void): Unsubscribe {
+    return this.finished.add(listener);
+  }
+
   // --- internals ---
 
   /** One drawing at a time: changes arriving while alphaTab works are merged and drawn after it. */
@@ -431,6 +450,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     this.reload = null;
     if (reload.resume || reload.tick > 0) this.resumedAt = { tick: reload.tick, at: performance.now() };
     if (reload.resume) {
+      this.resuming = true;
       this.api.tickPosition = reload.tick;
       this.api.play();
     } else if (reload.tick > 0) {
