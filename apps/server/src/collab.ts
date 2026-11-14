@@ -114,13 +114,12 @@ function isAwarenessOf(message: Uint8Array, documents: Set<string>): boolean {
  * leave one out.
  */
 function withoutGuestPresence(websocket: WebSocket, socket: Socket): WebSocket {
+  const send = (message: Uint8Array) => {
+    if (!isAwarenessOf(message, socket.guestOf)) websocket.send(message);
+  };
   return new Proxy(websocket, {
     get(target, key) {
-      if (key === "send") {
-        return (message: Uint8Array) => {
-          if (!isAwarenessOf(message, socket.guestOf)) target.send(message);
-        };
-      }
+      if (key === "send") return send;
       const value: unknown = Reflect.get(target, key, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
@@ -146,11 +145,18 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     connection.webSocket.close(event.code, event.reason);
   }
 
-  /** Whether the ticket's member or guest may open the score now, as the database says (not as it said when the ticket was given). */
-  async function stillAllowed(holder: Holder): Promise<{ role: Role | null } | null> {
-    if (holder.linkToken !== null) return (await isLinkOf(holder.scoreId, holder.linkToken)) ? { role: null } : null;
+  /**
+   * The role the ticket's member has in the score now (null for a guest), as the database says,
+   * not as it said when the ticket was given; `Forbidden` when they may no longer open it.
+   */
+  async function roleNow(holder: Holder): Promise<Role | null> {
+    if (holder.linkToken !== null) {
+      if (!(await isLinkOf(holder.scoreId, holder.linkToken))) throw Forbidden;
+      return null;
+    }
     const member = await membership(holder.scoreId, holder.accountId!);
-    return member !== null && (await sessions.isActive(holder.sessionId!)) ? { role: member.role } : null;
+    if (member === null || !(await sessions.isActive(holder.sessionId!))) throw Forbidden;
+    return member.role;
   }
 
   const hocuspocus = new Hocuspocus<CollabContext>({
@@ -168,7 +174,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       const holder: Holder =
         "linkToken" in ticket
           ? { scoreId: documentName, accountId: null, sessionId: null, linkToken: ticket.linkToken, role: null }
-          : { scoreId: documentName, accountId: ticket.accountId, sessionId: ticket.sessionId, linkToken: null, role: ticket.role };
+          : { scoreId: documentName, accountId: ticket.accountId, sessionId: ticket.sessionId, linkToken: null, role: null };
       // Closable from here on, before the checks: an event that comes after a check has read
       // the database still finds the connection.
       const entry: Loading = { holder, socket, closeWith: null };
@@ -176,9 +182,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       try {
         // The rights now, not those of the ticket: they may have changed in the last 60 seconds.
         // No member, no link, no score (or a deleted one): refused before any document is made.
-        const allowed = await stillAllowed(holder);
-        if (allowed === null) throw Forbidden;
-        holder.role = allowed.role;
+        holder.role = await roleNow(holder);
       } catch (error) {
         loading.delete(connectionConfig);
         throw error;

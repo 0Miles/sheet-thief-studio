@@ -16,7 +16,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
 import { Score, ScoreMember } from "../src/db/models";
-import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
+import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -128,15 +128,6 @@ async function addBen(scoreId: string, role: Role): Promise<void> {
   await ScoreMember.create({ scoreId, accountId: ben, role });
 }
 
-
-/** Whether the server has closed this connection's socket since the call. */
-function closes(score: OpenScore): () => boolean {
-  let closed = false;
-  void socketClosed(score.provider).then(() => {
-    closed = true;
-  });
-  return () => closed;
-}
 
 test("what a Viewer's connection sends does not change the score on the server", async () => {
   const { app, url } = await startApp();

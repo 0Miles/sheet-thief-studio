@@ -8,14 +8,12 @@ import type { BeatJSON } from "@studio/score-model";
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
 import { createScore, loggedIn, pageErrors } from "./pages";
+import { beatsIn } from "./studio";
 
 /** The beats of the first voice of the first bar of the first part, as the page holds them. */
-function firstBeats(page: Page): Promise<BeatJSON[]> {
-  return page.evaluate(() => {
-    const score = window.__studioTest!.scoreJson();
-    if (score === null) return [];
-    return score.parts[0]!.content[score.bars[0]!.id]?.["0:0"] ?? [];
-  });
+async function firstBeats(page: Page): Promise<BeatJSON[]> {
+  const score = await page.evaluate(() => window.__studioTest!.scoreJson());
+  return score === null ? [] : beatsIn(score, 0, 0);
 }
 
 test("an Owner makes a read-only link; a browser without cookies opens it read-only and follows the score live, until the link is revoked", async ({ browser }) => {

@@ -1,6 +1,7 @@
 // Read-only links and their guests (docs/spec/accounts.md, section 7; docs/spec/collab.md,
 // sections 3, 5 and 6): the Owner's API, the guest's ticket, and what a guest's connection may
 // and may not do, through real providers.
+import { Forbidden } from "@hocuspocus/common";
 import { HocuspocusProvider, MessageType } from "@hocuspocus/provider";
 import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
@@ -14,7 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, ScoreMember } from "../src/db/models";
 import { withoutLinkTokens } from "../src/links";
-import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
+import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -93,15 +94,6 @@ async function openAsGuest(app: FastifyInstance, url: string, scoreId: string, t
   const score = await openScore(url, scoreId, () => guestTicketFor(app, token));
   opened.push(score);
   return score;
-}
-
-/** Whether the server has closed this connection's socket since the call. */
-function closes(score: OpenScore): () => boolean {
-  let closed = false;
-  void socketClosed(score.provider).then(() => {
-    closed = true;
-  });
-  return () => closed;
 }
 
 /** Counts the awareness messages the provider receives from now on. */
@@ -262,7 +254,7 @@ test("revoking the link, or making it anew, closes the guests' connections and l
 
     expect((await link(app, replace, id, session)).statusCode).toBe(replace === "DELETE" ? 204 : 200);
 
-    expect(await visitorClosed).toBe(4403);
+    expect(await visitorClosed).toBe(Forbidden.code);
     await refused;
   }
   const applied = nextSyncStatus(member.provider);
@@ -289,7 +281,7 @@ test("a link revoked while a guest's document is being loaded leaves no connecti
   const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
   opened.push({ provider, doc: provider.document });
 
-  expect(await socketClosed(provider)).toBe(4403);
+  expect(await socketClosed(provider)).toBe(Forbidden.code);
   expect(revoked).toBe(true);
 });
 
@@ -301,15 +293,15 @@ test("a member's connection still loading is closed by an event that concerns it
   const load = Score.findOne.bind(Score);
   vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
     // Not this score's: nothing to close.
-    expect(app.collab.closeConnections({ scoreId: other.id }, { code: 4403, reason: "forbidden" })).toBe(0);
-    expect(app.collab.closeConnections({ scoreId: id }, { code: 4403, reason: "forbidden" })).toBe(1);
+    expect(app.collab.closeConnections({ scoreId: other.id }, Forbidden)).toBe(0);
+    expect(app.collab.closeConnections({ scoreId: id }, Forbidden)).toBe(1);
     return load(options);
   });
 
   const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
   opened.push({ provider, doc: provider.document });
 
-  expect(await socketClosed(provider)).toBe(4403);
+  expect(await socketClosed(provider)).toBe(Forbidden.code);
 });
 
 test("logs show no link token, in the path or in a parameter", () => {
@@ -328,8 +320,8 @@ test("a guest whose link is still valid reconnects with a new ticket after the s
   const visitor = await openAsGuest(app, url, id, token);
   const closed = socketClosed(visitor.provider);
 
-  expect(app.collab.closeConnections({ linkToken: token }, { code: 4403, reason: "forbidden" })).toBe(1);
+  expect(app.collab.closeConnections({ linkToken: token }, Forbidden)).toBe(1);
 
-  expect(await closed).toBe(4403);
+  expect(await closed).toBe(Forbidden.code);
   await insync(visitor.provider);
 });

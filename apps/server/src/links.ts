@@ -32,9 +32,10 @@ function routedPath(url: string): string {
  */
 export function withoutLinkTokens(url: string): string {
   const at = url.indexOf("?");
+  const query = at === -1 ? "" : url.slice(at);
   const path = routedPath(url);
-  const shown = LINK_PATH.test(path) ? path.replace(LINK_PATH, "$1[token]") : url.slice(0, at === -1 ? undefined : at);
-  return at === -1 ? shown : shown + url.slice(at).replace(/([?&]token=)[^&#]*/g, "$1[token]");
+  const shown = LINK_PATH.test(path) ? path.replace(LINK_PATH, "$1[token]") : url.slice(0, url.length - query.length);
+  return shown + query.replace(/([?&]token=)[^&#]*/g, "$1[token]");
 }
 
 /** Whether the token is the read-only link of this score, and the score is not deleted. */
@@ -43,14 +44,15 @@ export async function isLinkOf(scoreId: string, token: string): Promise<boolean>
 }
 
 /**
- * The id of the score when the session's account is its Owner; otherwise the refusal, sent: 404
- * to anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
+ * The score when the session's account is its Owner; otherwise null, the refusal sent: 404 to
+ * anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
  */
-async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<string | FastifyReply> {
+async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<Score | null> {
   const member = await membership(request.params.id, request.account!.id);
-  if (member === null) return notFound(reply);
-  if (member.role !== "owner") return reply.code(403).send({ code: "forbidden" });
-  return member.score.id;
+  if (member?.role === "owner") return member.score;
+  if (member === null) notFound(reply);
+  else reply.code(403).send({ code: "forbidden" });
+  return null;
 }
 
 /** Give the score this link token (null: none), and return the one it had. Its column only: the score's `updated_at` stays. */
@@ -78,25 +80,26 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
   });
 
   app.get<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const scoreId = await ownedScore(request, reply);
-    if (typeof scoreId !== "string") return scoreId;
-    const score = await Score.findByPk(scoreId, { attributes: ["linkToken"] });
-    return scoreLink.parse({ token: score?.linkToken ?? null });
+    const score = await ownedScore(request, reply);
+    if (score === null) return reply;
+    // Read here only: the token is a secret, not part of what every membership check loads.
+    const stored = await Score.findByPk(score.id, { attributes: ["linkToken"] });
+    return scoreLink.parse({ token: stored?.linkToken ?? null });
   });
 
   // Making a link anew revokes the one before (docs/spec/accounts.md, section 7).
   app.post<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const scoreId = await ownedScore(request, reply);
-    if (typeof scoreId !== "string") return scoreId;
+    const score = await ownedScore(request, reply);
+    if (score === null) return reply;
     const token = newToken();
-    revoked(scoreId, await replaceLink(scoreId, token));
+    revoked(score.id, await replaceLink(score.id, token));
     return scoreLink.parse({ token });
   });
 
   app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const scoreId = await ownedScore(request, reply);
-    if (typeof scoreId !== "string") return scoreId;
-    revoked(scoreId, await replaceLink(scoreId, null));
+    const score = await ownedScore(request, reply);
+    if (score === null) return reply;
+    revoked(score.id, await replaceLink(score.id, null));
     return reply.code(204).send();
   });
 

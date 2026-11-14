@@ -20,12 +20,12 @@ const details = ref<ScoreDetails | null>(null);
 const notFound = ref(false);
 /** What to say when something could not be done; null while all is well. */
 const error = ref<string | null>(null);
-/** The Owner's link token: undefined until known, null when the score has none. */
+/** The Owner's link token: undefined until known (and for anyone else), null when the score has none. */
 const token = ref<string | null | undefined>(undefined);
 const sending = ref(false);
 const copied = ref(false);
 
-const linkPath = computed(() => `/api/scores/${props.id}/link`);
+const linkPath = `/api/scores/${props.id}/link`;
 /** The whole address a guest opens. */
 const address = computed(() => (token.value ? `${location.origin}/s/${token.value}` : ""));
 
@@ -36,7 +36,7 @@ function failed(failure: unknown): void {
 onMounted(async () => {
   try {
     details.value = await get(`/api/scores/${props.id}`, scoreDetails);
-    if (details.value.role === "owner") token.value = (await get(linkPath.value, scoreLink)).token;
+    if (details.value.role === "owner") token.value = (await get(linkPath, scoreLink)).token;
   } catch (failure) {
     if (failure instanceof ApiError && failure.status === 404) {
       notFound.value = true;
@@ -63,11 +63,11 @@ async function changeLink(change: () => Promise<string | null>): Promise<void> {
 }
 
 /** Make the link, or make it anew: the old one stops opening the score at once. */
-const makeLink = () => changeLink(async () => (await postFor(linkPath.value, undefined, scoreLink)).token);
+const makeLink = () => changeLink(async () => (await postFor(linkPath, undefined, scoreLink)).token);
 
 const revoke = () =>
   changeLink(async () => {
-    await del(linkPath.value);
+    await del(linkPath);
     return null;
   });
 
@@ -93,7 +93,7 @@ async function copy(): Promise<void> {
         </Stack>
         <p v-if="error" class="settings__error" role="alert">{{ error }}</p>
         <p v-if="details === null && error === null" class="settings__muted">{{ strings.loading }}</p>
-        <section v-if="details?.role === 'owner' && token !== undefined" class="settings__section" :aria-label="text.link.title">
+        <section v-if="token !== undefined" class="settings__section" :aria-label="text.link.title">
           <Stack gap="3">
             <h2>{{ text.link.title }}</h2>
             <p class="settings__muted">{{ text.link.help }}</p>
