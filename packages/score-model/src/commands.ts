@@ -296,6 +296,89 @@ export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON 
   return writeNote(doc, cursor, key, () => note);
 }
 
+/** The techniques a note has or has not (docs/spec/commands.md, 5.4): a key turns each on and off. */
+export const NOTE_FLAGS = ["dead", "ghost", "accent", "staccato", "vibrato", "palmMute", "letRing", "tap"] as const;
+export type NoteFlag = (typeof NOTE_FLAGS)[number];
+
+/**
+ * A technique a key turns on and off on notes (docs/spec/commands.md, 5.4): whether a note has
+ * it, and the note once it is turned on or off, null to remove the note. `stored` is undefined
+ * where there is no note: what turning it on makes there, if anything.
+ */
+export interface NoteToggle {
+  has(note: NoteJSON): boolean;
+  turn(stored: NoteJSON | undefined, on: boolean): NoteJSON | null;
+}
+
+/**
+ * One of NOTE_FLAGS as a toggle, on the note as stored (fields this version does not know are
+ * kept). Dead also makes a note without a fret on a string that has none, and turned off on such
+ * a note takes it away: a fretted note needs a fret or dead (docs/spec/schema.md, section 8).
+ */
+export function flagToggle(flag: NoteFlag): NoteToggle {
+  return {
+    has: (note) => note[flag] === true,
+    turn(stored, on) {
+      if (stored === undefined) return on && flag === "dead" ? { dead: true } : null;
+      if (on) return { ...stored, [flag]: true };
+      const rest = { ...stored };
+      delete rest[flag];
+      return flag === "dead" && rest.fret === undefined ? null : rest;
+    },
+  };
+}
+
+/**
+ * Turn a technique on the note at `key` of the cursor's beat on, or off when it has it, one
+ * command; in the append slot, a note it makes there goes on a new beat (as a digit does).
+ */
+export function toggleAt(doc: Y.Doc, cursor: Cursor, key: string, toggle: NoteToggle): Cursor {
+  return writeNote(doc, cursor, key, (stored) => toggle.turn(stored, stored === undefined || !toggle.has(stored)));
+}
+
+/** Turn a flag of the note at `key` of the cursor's beat on or off (`toggleAt`). */
+export function toggleNoteFlag(doc: Y.Doc, cursor: Cursor, key: string, flag: NoteFlag): Cursor {
+  return toggleAt(doc, cursor, key, flagToggle(flag));
+}
+
+/** The beats a selection holds, in the part selected: those of a beat range, or every voice's in the bars of a bar range. */
+function beatsOfSelection(doc: Y.Doc, selection: Selection): YBeat[] {
+  if (selection.kind === "beats") {
+    const found = selectedBeats(doc, selection);
+    return found ? found.voice.slice(found.first, found.last + 1) : [];
+  }
+  const part = partsOf(doc).get(selection.partId);
+  if (part === undefined) return [];
+  return selectedBars(doc, selection).flatMap((barId) => [...(contentOf(part).get(barId)?.values() ?? [])].flatMap((voice) => voice.toArray()));
+}
+
+/**
+ * Turn a technique on every note of a selection, in the part selected (docs/spec/commands.md,
+ * 5.4), one command: off when every one of them has it, else on. Makes no notes where there are
+ * none; changes nothing when the selection holds no notes. The cursor stays where it is.
+ */
+export function toggleOnSelection(doc: Y.Doc, selection: Selection, cursor: Cursor, toggle: NoteToggle): Cursor {
+  const notes = beatsOfSelection(doc, selection).flatMap((beat) => {
+    const map = notesOf(beat);
+    return map ? [...map.entries()].map(([key, note]) => ({ map, key, note })) : [];
+  });
+  if (notes.length === 0) return cursor;
+  const on = !notes.every(({ note }) => toggle.has(note));
+  doc.transact(() => {
+    for (const { map, key, note } of notes) {
+      const next = toggle.turn(note, on);
+      if (next === null) map.delete(key);
+      else map.set(key, next);
+    }
+  }, LOCAL);
+  return cursor;
+}
+
+/** Turn a flag on every note of a selection, or off every one when all have it (`toggleOnSelection`). */
+export function toggleNoteFlagIn(doc: Y.Doc, selection: Selection, cursor: Cursor, flag: NoteFlag): Cursor {
+  return toggleOnSelection(doc, selection, cursor, flagToggle(flag));
+}
+
 /** The notes of a beat, as the commands change them; none when they cannot be read. */
 function notesOf(beat: YBeat | undefined): Y.Map<NoteJSON> | undefined {
   const notes = beat?.get("notes");
