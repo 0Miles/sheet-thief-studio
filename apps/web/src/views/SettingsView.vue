@@ -48,12 +48,12 @@ onMounted(async () => {
   }
 });
 
-/** Make the link, or make it anew: the old one stops opening the score at once. */
-async function makeLink(): Promise<void> {
+/** Ask the server for a link change; the token it leaves the score with. */
+async function changeLink(change: () => Promise<string | null>): Promise<void> {
   error.value = null;
   sending.value = true;
   try {
-    token.value = (await postFor(linkPath.value, undefined, scoreLink)).token;
+    token.value = await change();
     copied.value = false;
   } catch (failure) {
     failed(failure);
@@ -62,18 +62,14 @@ async function makeLink(): Promise<void> {
   }
 }
 
-async function revoke(): Promise<void> {
-  error.value = null;
-  sending.value = true;
-  try {
+/** Make the link, or make it anew: the old one stops opening the score at once. */
+const makeLink = () => changeLink(async () => (await postFor(linkPath.value, undefined, scoreLink)).token);
+
+const revoke = () =>
+  changeLink(async () => {
     await del(linkPath.value);
-    token.value = null;
-  } catch (failure) {
-    failed(failure);
-  } finally {
-    sending.value = false;
-  }
-}
+    return null;
+  });
 
 async function copy(): Promise<void> {
   try {

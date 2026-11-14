@@ -2,7 +2,7 @@
 // docs/spec/collab.md). One Hocuspocus document per score, its name the score id, its Yjs state
 // in Postgres. A connection gets in with a collab ticket (ADR 0005), and the server keeps a
 // register of its connections to close only the ones an event concerns.
-import type { IncomingMessage as Upgrade } from "node:http";
+import type { IncomingMessage as HttpRequest } from "node:http";
 import type { Duplex } from "node:stream";
 
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
@@ -67,9 +67,10 @@ declare module "fastify" {
 /** A connection of the register: whom it belongs to, and which score it opened. */
 type Holder = CollabContext & { scoreId: string };
 
-/** One WebSocket: the scores it opened as a guest, whose presence it is never sent. */
+/** One WebSocket: the scores it opened as a guest, whose presence it is never sent, and whether it has closed. */
 interface Socket {
   guestOf: Set<string>;
+  closed: boolean;
 }
 
 /**
@@ -132,7 +133,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   // same object for one connection.
   const loading = new Map<ConnectionConfiguration, Loading>();
   // By the upgrade request each socket was opened with, which the hooks are handed too.
-  const sockets = new WeakMap<object, Socket>();
+  const socketByRequest = new WeakMap<object, Socket>();
 
   /**
    * Out of the document first, so that nothing more it sends is applied; then the socket, so that
@@ -146,7 +147,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   }
 
   /** Whether the ticket's member or guest may open the score now, as the database says (not as it said when the ticket was given). */
-  async function stillAllowed(holder: Holder): Promise<{ role: Role } | { role: null } | null> {
+  async function stillAllowed(holder: Holder): Promise<{ role: Role | null } | null> {
     if (holder.linkToken !== null) return (await isLinkOf(holder.scoreId, holder.linkToken)) ? { role: null } : null;
     const member = await membership(holder.scoreId, holder.accountId!);
     return member !== null && (await sessions.isActive(holder.sessionId!)) ? { role: member.role } : null;
@@ -161,8 +162,9 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       const ticket = await tickets.redeem(token);
       // Refused with a code and a reason only: an error with a message would be logged as a fault.
       if (ticket === null || ticket.scoreId !== documentName) throw Forbidden;
-      const socket = sockets.get(request);
-      if (socket === undefined) throw Forbidden;
+      // A socket that closed while the ticket was redeemed would never take the entry below out.
+      const socket = socketByRequest.get(request);
+      if (socket === undefined || socket.closed) throw Forbidden;
       const holder: Holder =
         "linkToken" in ticket
           ? { scoreId: documentName, accountId: null, sessionId: null, linkToken: ticket.linkToken, role: null }
@@ -204,7 +206,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     async beforeHandleAwareness({ context, states, removedClients }) {
       // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
       // itself or anyone else is applied.
-      if (context?.linkToken == null) return;
+      if (context === undefined || context.linkToken === null) return;
       states.clear();
       removedClients.clear();
     },
@@ -261,9 +263,9 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   const server = crossws({
     hooks: {
       open(peer) {
-        const socket: Socket = { guestOf: new Set() };
+        const socket: Socket = { guestOf: new Set(), closed: false };
         // The same object for the socket's whole life; Hocuspocus hands it to the hooks.
-        sockets.set(peer.request, socket);
+        socketByRequest.set(peer.request, socket);
         clients.set(peer, hocuspocus.handleConnection(withoutGuestPresence(peer.websocket as unknown as WebSocket, socket), peer.request as Request));
       },
       message(peer, message) {
@@ -272,7 +274,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       close(peer, event) {
         clients.get(peer)?.handleClose({ code: event.code ?? 1000, reason: event.reason ?? "" });
         // What it was still loading will not be connected.
-        const socket = sockets.get(peer.request);
+        const socket = socketByRequest.get(peer.request);
+        if (socket !== undefined) socket.closed = true;
         for (const [config, entry] of loading) if (entry.socket === socket) loading.delete(config);
       },
       error(peer, error) {
@@ -281,7 +284,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     },
   });
 
-  app.server.on("upgrade", (request: Upgrade, socket: Duplex, head: Buffer) => {
+  app.server.on("upgrade", (request: HttpRequest, socket: Duplex, head: Buffer) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     if (path === COLLAB_PATH || path.startsWith(`${COLLAB_PATH}/`)) {
       server.handleUpgrade(request, socket, head).catch((error: unknown) => {

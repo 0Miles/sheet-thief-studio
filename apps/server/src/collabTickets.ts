@@ -8,7 +8,7 @@ import { isToken, newToken } from "./tokens";
 export const TICKET_TTL_SECONDS = 60;
 
 /** Who the ticket lets in, to which score: a member, with the role they had when it was given, or a guest with the score's read-only link. */
-export type Ticket = { scoreId: string } & (MemberTicket | GuestTicket);
+export type Ticket = { scoreId: string } & (MemberTicket | LinkTicket);
 
 export interface MemberTicket {
   accountId: string;
@@ -16,7 +16,7 @@ export interface MemberTicket {
   role: Role;
 }
 
-export interface GuestTicket {
+export interface LinkTicket {
   linkToken: string;
 }
 

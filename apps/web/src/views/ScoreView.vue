@@ -41,21 +41,31 @@ async function asMember(id: string): Promise<Opening> {
   return { scoreId: id, title: details.title, role: details.role, ticket: () => newCollabTicket(id) };
 }
 
-/** A guest's: the link gives the score's id with a first ticket; every later connection asks the link for a new one. */
+const opening = ref<Opening | null>(null);
+/** A guest's link stopped opening the score (revoked, or made anew) while the page was open. */
+const gone = ref(false);
+
+/**
+ * A guest's: the link gives the score's id with a first ticket; every later connection asks the
+ * link for a new one. A 404 then means the link is gone; any other failure (too many tickets, the
+ * server restarting) is passing, and the provider tries again once its socket times out.
+ */
 async function asGuest(token: string): Promise<Opening> {
   const shared = await guestTicketFor(token);
   let first: string | null = shared.ticket;
   const ticket = async () => {
     const given = first;
     first = null;
-    return given ?? (await guestTicketFor(token)).ticket;
+    if (given !== null) return given;
+    try {
+      return (await guestTicketFor(token)).ticket;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) gone.value = true;
+      throw error;
+    }
   };
   return { scoreId: shared.scoreId, title: shared.title, role: null, ticket };
 }
-
-const opening = ref<Opening | null>(null);
-/** A guest's link stopped opening the score (revoked, or made anew) while the page was open. */
-const gone = ref(false);
 const syncText = guest ? strings.shared.sync : text.sync;
 const notFound = ref(false);
 /** What to say when the score could not be asked for, for a reason other than not being found; null while all is well. */
@@ -209,9 +219,8 @@ onMounted(async () => {
     // the provider reconnects after 30 seconds of silence: it asks for the state every 15.
     ...(guest ? { awareness: null, forceSyncInterval: 15_000 } : {}),
     onAuthenticationFailed: () => {
-      if (!guest) return;
+      if (!gone.value) return;
       // Its link opens nothing any more: stop, rather than ask it for tickets again and again.
-      gone.value = true;
       sync.value = "offline";
       const stopped = provider;
       provider = undefined;
