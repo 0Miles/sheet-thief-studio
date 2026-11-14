@@ -171,7 +171,7 @@ test("at the start of every bar, playback is drawn where the cursor is in that b
   expect(errors).toEqual([]);
 });
 
-test("playback that goes off screen is followed; after an arrow key it no longer is, until play is pressed again", async ({ browser }) => {
+test("playback that goes off screen is followed; after an arrow key or a scroll it no longer is, until play is pressed again", async ({ browser }) => {
   const id = seed(24);
   // Low enough that the second system of the score is not all on screen with the page at its top.
   const page = await loggedIn(browser, ADMIN, { viewport: { width: 1280, height: 360 } });
@@ -233,5 +233,60 @@ test("playback that goes off screen is followed; after an arrow key it no longer
   await expect.poll(scrollTop).toBeGreaterThan(0);
   await expect.poll(inSight).toBe(true);
   expect(oneAfterAnother((await barsShown(page)).slice(2)), (await barsShown(page)).join(", ")).toBe(true);
+
+  // Scrolled by the member while it plays, here a little with the wheel: from then on the page
+  // stays where they put it.
+  await page.getByRole("button", { name: text.stop }).click();
+  await toTop();
+  await recordBarsShown(page);
+  await page.keyboard.press("Space");
+  await expect(page.locator('[data-player="playing"]')).toBeVisible();
+  await page.mouse.wheel(0, 10);
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  const scrolled = await scrollTop();
+  await untilShown(page, last + 2);
+  expect(await barsShown(page)).toEqual([last, last + 1, last + 2]);
+  expect(await inSight()).toBe(false);
+  expect(await scrollTop()).toBe(scrolled);
+  expect(errors).toEqual([]);
+});
+
+test("further into a bar of several beats, playback is drawn on the beat played", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openToPlay(page, id);
+  // Two half notes in the first bar: a quarter note made one step longer, then one of the same length.
+  await page.keyboard.press("3");
+  await page.keyboard.press("-");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("5");
+  const start = await scoreOf(page);
+  expect(start.parts[0]!.content[start.bars[0]!.id]!["0:0"]!.map((beat) => beat.value)).toEqual([2, 2]);
+  /** The middle of the cursor on the beat it is on, in x. */
+  const middle = async () => {
+    const box = (await page.locator("[data-cursor]").boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  const second = await middle();
+  await page.keyboard.press("ArrowLeft");
+  const first = await middle();
+
+  // Every place playback is drawn at, in order, each once.
+  await page.evaluate(() => {
+    const drawn: { x: number; width: number }[] = [];
+    (window as unknown as { playheads: typeof drawn }).playheads = drawn;
+    new MutationObserver(() => {
+      const box = document.querySelector("[data-playhead]")?.getBoundingClientRect();
+      if (box && drawn.at(-1)?.x !== box.x) drawn.push({ x: box.x, width: box.width });
+    }).observe(document.querySelector("[data-scroller]")!, { subtree: true, childList: true, attributes: true });
+  });
+  await recordBarsShown(page);
+  await page.keyboard.press("Space");
+  await untilShown(page, 2);
+  const [onFirst, onSecond] = await page.evaluate(() => (window as unknown as { playheads: { x: number; width: number }[] }).playheads);
+  const holds = (box: { x: number; width: number } | undefined, x: number) => box !== undefined && box.x <= x && x <= box.x + box.width;
+  expect(holds(onFirst, first) && !holds(onFirst, second)).toBe(true);
+  expect(holds(onSecond, second) && !holds(onSecond, first)).toBe(true);
   expect(errors).toEqual([]);
 });

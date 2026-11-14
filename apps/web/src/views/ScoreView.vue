@@ -97,10 +97,12 @@ const playingBar = ref<number | null>(null);
 const playheadRect = shallowRef<Rect | null>(null);
 /** The member paused, and the cursor has not moved since: playing goes on from there. */
 let resumable = false;
-/** Playback is kept on screen: from pressing play until the member presses a key or scrolls. */
-let following = false;
-/** Playback is followed now: the page goes with it, not with the cursor. */
-const followed = () => following && playerState.value === "playing";
+/** Playback is to be kept on screen: from pressing play until the member presses a key or scrolls. */
+let keepInSight = false;
+/** Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the cursor. */
+const isFollowing = () => keepInSight && playerState.value === "playing";
+/** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
+let ownScrollTop: number | null = null;
 let soundTimer: ReturnType<typeof setTimeout> | undefined;
 
 const doc = new Y.Doc();
@@ -143,10 +145,10 @@ function showPlayback(tick: number): void {
   // Most positions fall on the beat drawn already: the page is not drawn again for them.
   if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
   const element = scroller.value;
-  if (!followed() || rect === null || element === undefined) return;
+  if (!isFollowing() || rect === null || element === undefined) return;
   const top = element.scrollTop;
   if (rect.y >= top && rect.y + rect.height <= top + element.clientHeight) return;
-  element.scrollTop = Math.max(rect.y - FOLLOW_MARGIN, 0);
+  scrollTo(Math.max(rect.y - FOLLOW_MARGIN, 0));
 }
 
 /**
@@ -162,7 +164,7 @@ function play(): void {
   }
   resumable = false;
   stopped.value = false;
-  following = true;
+  keepInSight = true;
   player.play();
 }
 
@@ -199,7 +201,26 @@ function onToolbar(action: () => void): void {
 
 /** The member looks over the score themselves: playback is no longer kept on screen, until they press play. */
 function stopFollowing(): void {
-  following = false;
+  keepInSight = false;
+}
+
+/** Scroll the score, as the page: following playback, or showing the cursor. */
+function scrollTo(top: number): void {
+  const element = scroller.value;
+  if (element === undefined) return;
+  element.scrollTop = top;
+  // As far as it could go: at the end of the score, less than asked.
+  ownScrollTop = element.scrollTop;
+}
+
+/**
+ * A scroll the page did not make is the member's, however they made it: the wheel, a touch, a
+ * scroll bar (overlay scroll bars take no room, so a click on them cannot be told apart), keys.
+ */
+function onScroll(): void {
+  const element = scroller.value;
+  if (element === undefined || (ownScrollTop !== null && Math.abs(element.scrollTop - ownScrollTop) < 1)) return;
+  stopFollowing();
 }
 
 /** Changes are heard once typing stops for 400 ms (docs/spec/playback.md, section 3, behaviour (a)). */
@@ -216,8 +237,8 @@ function reveal(): void {
   const box = cursorRect.value;
   if (element === undefined || box === null) return;
   const margin = 80;
-  if (box.y < element.scrollTop + margin) element.scrollTop = Math.max(box.y - margin, 0);
-  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) element.scrollTop = box.y + box.height - element.clientHeight + margin;
+  if (box.y < element.scrollTop + margin) scrollTo(Math.max(box.y - margin, 0));
+  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) scrollTo(box.y + box.height - element.clientHeight + margin);
 }
 
 function draw(change: ScoreChange): void {
@@ -247,7 +268,7 @@ function startEditing(json: ScoreJSON): void {
     placeCursor();
     resumable = false;
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
-    if (!followed()) reveal();
+    if (!isFollowing()) reveal();
   });
   session.onRefused(() => {
     notice.value = text.viewerCannotEdit;
@@ -275,21 +296,11 @@ function onKey(event: KeyboardEvent): void {
   if (session?.press(event)) event.preventDefault();
 }
 
-/** The pointer went down on a scroll bar of the score, outside its content. */
-function onScrollBar(event: PointerEvent): boolean {
-  const element = scroller.value;
-  return element !== undefined && event.target === element && (event.offsetX >= element.clientWidth || event.offsetY >= element.clientHeight);
-}
-
 /** A click on the score only moves the cursor (docs/spec/views.md, section 2); playback goes on where it is. */
 function onPointer(event: PointerEvent): void {
-  // A scroll bar, or the middle button's scrolling: the member scrolls.
-  if (event.button === 1 || onScrollBar(event)) {
-    stopFollowing();
-    return;
-  }
-  // The main button only: not a right click for the context menu.
-  if (event.button !== 0) return;
+  // The main button only: not a right click for the context menu. Not on the scroller itself
+  // either: that is its scroll bar, or the room around the page.
+  if (event.button !== 0 || event.target === scroller.value) return;
   if (session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
@@ -349,9 +360,9 @@ onMounted(async () => {
       if (!gone.value) return;
       // Its link opens nothing any more: stop, rather than ask it for tickets again and again.
       sync.value = "offline";
-      const stopped = provider;
+      const dropped = provider;
       provider = undefined;
-      queueMicrotask(() => stopped?.destroy());
+      queueMicrotask(() => dropped?.destroy());
     },
     onSynced: () => {
       updateSync();
@@ -408,8 +419,7 @@ onBeforeUnmount(() => {
         :aria-label="text.label"
         @keydown="onKey"
         @pointerdown="onPointer"
-        @wheel.passive="stopFollowing"
-        @touchmove.passive="stopFollowing"
+        @scroll.passive="onScroll"
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready"></div>
@@ -463,6 +473,8 @@ onBeforeUnmount(() => {
 .score__scroller {
   flex: 1;
   overflow: auto;
+  /* The browser never scrolls on its own when the drawing changes size: any scroll the page did not make is the member's. */
+  overflow-anchor: none;
   outline: none;
   /* The score is drawn in black: keep its page white in either theme. */
   background: #fff;
