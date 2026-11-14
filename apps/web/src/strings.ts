@@ -26,6 +26,8 @@ export const strings = {
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
     viewerCannotEdit: "檢視者無法修改",
+    // The box Enter opens for the text over a beat, such as a chord name.
+    beatText: "拍點文字",
     // What a key that did nothing tells the member (`SessionHint`).
     hints: { oneVoice: "弦樂聲部只有一條聲線" } satisfies Record<SessionHint, string>,
     dismiss: "關閉",
