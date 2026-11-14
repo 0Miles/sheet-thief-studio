@@ -11,5 +11,3 @@ import { router } from "./router";
 useColorScheme(); // applies the remembered light/dark choice before the first paint of the app
 
 createApp(App).use(createPinia()).use(router).mount("#app");
-
-console.info("__studio");
