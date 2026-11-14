@@ -44,7 +44,7 @@
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `POST /recognize` | `multipart/form-data`，欄位 `images` 依頁序重複出現。成功 200，回傳第 5 節的結果；辨識失敗 422，回傳錯誤；忙碌 503 `{ "code": "busy" }`；請求本身不合（沒有圖片、格式不對）400 |
+| `POST /recognize` | `multipart/form-data`，欄位 `images` 依頁序重複出現。成功 200，回傳第 5 節的結果；辨識失敗 422，回傳錯誤；忙碌 503，回傳 code 是 `busy` 的錯誤（第 5.2 節）；請求本身不合（沒有圖片、格式不對）400 |
 | `GET /healthz` | 200 |
 
 - 同步呼叫：一次只跑一件；正在跑的時候，新的請求立刻回 503，對應舊的 `busy` code。
@@ -71,6 +71,8 @@
 - 新增的 JSON 出口放在 `_build_track` 之後、`_unify_bars` 之前（前身 `converter.py:558,738`）。理由：`_unify_bars` 會切掉超出拍號的音（前身 `converter.py:738-745`），違反 Studio「只標記、不改寫」的原則。
 - JSON Schema 放在 `services/recognizer/contract/recognition.schema.json`（補充：路徑），版本號從 1 開始。形狀改了就升版本號。
 - Python 與 TypeScript 兩邊用同一批契約 fixture 測試（補充：放在 `services/recognizer/contract/fixtures/`，TypeScript 的測試直接讀這個目錄）。
+- **補充**（#59）：server 讀這份 JSON 用的 zod 形狀在 `packages/contracts/src/recognizer.ts`（`recognizerResponse`、`recognizerResult`、`recognizerFailure`）。`packages/contracts/tests/recognizer.test.ts` 用 Ajv（JSON Schema 2020-12）與 zod 驗證每一份 fixture，也驗證故意改壞的版本兩者都拒絕，並檢查 schema 的每個欄位都有 `description`。欄位的意思寫在 schema 的 `description` 裡；本節只寫大綱與跨欄位的規則。
+- **補充**：fixture 至少包含六弦、四弦、七弦、帶 capo、讀不懂的調弦、帶裝飾音與刷弦（含力度）的結果各一份，以及 `recognition_failed`（四種頁層級原因）、`timeout`、`busy`、`unavailable` 的錯誤各一份。改契約時，這些 fixture 跟著改。
 - 只傳穩定的 code 加參數；自由文字只寫進 log。理由：舊核心的訊息是葡文、英文（前身 `i18n.py:20` 預設是 `"pt"`），而 Studio 介面只有繁中。
 
 ### 5.1 成功的結果（大綱）
@@ -114,8 +116,30 @@
 - `tuning.source`：`"detected"`（譜面或標題區印的調弦）或 `"default"`（該弦數的標準調弦）；`reason` 是讀不到時的原因代碼（例如 `"unrecognized"`）；`raw` 是讀不懂時保留的原文（前身 `tunings.py` 的 `TuningChoice`）。
 - `capo.source`：`"detected"` 或 `"default"`。
 - 每個小節的 `timeSignature` 是 `null` 時沿用前一個。
-- `units` 是寫出來的長度，以 32 分音符為單位（1–48，一定能表示成音符加附點）；`tuplet` 為真表示三連音。
-- `warnings` 只有 code 與參數。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other" }`，原文寫進 log。
+- `units` 是寫出來的長度，以 32 分音符為單位，一定能表示成一個音符加 0–2 個附點：1、2、3、4、6、7、8、12、14、16、24、28、32、48（第 7.2 節的表）；`tuplet` 為真表示三連音。
+- **補充**（#59）跨欄位的規則，JSON Schema 與 zod 都檢查：
+  - `tuning.midi` 的個數等於 `strings`；音符的 `string` 不超過 `strings`；同一個拍點上每條弦最多一個音符。
+  - `fret` 只有 `dead` 時是 `null`；`graceHammer` 只有 `graceFret` 不是 `null` 時才可能為真。
+  - `tuning`：`source: "detected"` 時 `reason`、`raw` 都是 `null`；`source: "default"` 時 `reason` 是 `"not_found"`（`raw` 是 `null`）或 `"unrecognized"`（`raw` 是讀不懂的原文）。辨識服務不接受指定調弦，所以沒有前身的 `"manual"` 與 `"string_count_mismatch"`。
+  - `capo`：`source: "default"` 時 `fret` 一定是 0。
+  - 小節的 `sign`、`jump` 用小寫的 code（`segno`、`coda`、`fine`；`da_capo`、`da_capo_al_coda`、`da_capo_al_fine`、`da_segno`、`da_segno_al_coda`、`da_segno_al_fine`、`to_coda`），不用前身 Guitar Pro 的名稱（前身的 `"Da Coda"` 就是 To Coda）。
+  - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出。
+  - 所有物件都不接受多出來的欄位；多了欄位就是另一個版本。
+- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。
+
+**補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
+
+| code | `params` | 意思 |
+|---|---|---|
+| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的（前身 `converter.py` 的 `_flag_estimated_rhythm`） |
+| `overlapping_notes` | `{ page, count }` | 那一頁同一條弦上重疊的音符，略過了幾個（前身 `rhythm.py:81`） |
+| `staves_ignored` | `{ count }` | 弦數和多數不同的譜表，略過了幾行（前身 `converter.py` 的 `_main_staves`） |
+| `bar_too_dense` | `{ page, notes }` | 那一頁有個小節讀到的音多到超出拍號，這個小節的音都當成 32 分音符（前身 `rhythm.py:447`） |
+| `fixed_durations` | `{}` | 不是每一行都有小節線，時值用固定長度（前身 `rhythm.py:543`） |
+| `other` | `{}` | 還沒有對應 code 的提醒 |
+
+- 調弦讀不到或讀不懂的提醒不另外回報：`tuning.reason` 已經說了。前身每讀一張圖片就加的「從圖片讀出的 TAB，請檢查」提醒也不回報：Studio 的辨識一定是圖片。
+- 要加新的 code，就是改了形狀：升版本號。
 
 ### 5.2 失敗的結果
 
@@ -137,6 +161,8 @@
 | `timeout` | 整件 | 超過 120 秒沒有進度，或整體超過 900 秒 |
 | `unavailable` | 整件 | 補充：子行程無法啟動（前身 `ConversionUnavailable`） |
 | `busy` | 整件 | 已經有一件在跑（HTTP 503） |
+
+- **補充**（#59）：`params` 在版本 1 一律是 `{}`；`pages` 依頁序列出，只有 `recognition_failed` 會有，其他 code 是空陣列。`busy` 的 503 回應也是這個形狀。
 
 Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的「執行中」辨識標成失敗（第 7 節）。介面依 code 顯示 `strings.ts` 裡的繁中文字與建議。
 
