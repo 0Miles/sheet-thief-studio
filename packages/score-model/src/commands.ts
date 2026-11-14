@@ -313,10 +313,12 @@ export const ON_OFF_TECHNIQUES = ["dead", "ghost", "accent", "staccato", "vibrat
 export type OnOffTechnique = (typeof ON_OFF_TECHNIQUES)[number];
 
 /**
- * Where a note a toggle turns stands: its key, and the note with the same key on the beat before
- * in its voice (the last beat of the bar before, for the first beat of a bar), when one can be read.
+ * Where a note a toggle turns stands: the kind of its part, its key, and the note with the same
+ * key on the beat before in its voice (the last beat of the bar before, for the first beat of a
+ * bar), when one can be read.
  */
 export interface NotePlace {
+  kind: PartKind;
   key: string;
   before: NoteJSON | undefined;
 }
@@ -342,7 +344,7 @@ export function onOffToggle(technique: Exclude<OnOffTechnique, "dead">): NoteTog
   return plainToggle(technique);
 }
 
-function plainToggle(technique: OnOffTechnique): NoteToggle<boolean> {
+function plainToggle(technique: OnOffTechnique | "tie"): NoteToggle<boolean> {
   return {
     decide: (seen) => !seen.every((note) => note[technique] === true),
     turn(stored, on) {
@@ -367,6 +369,28 @@ export const deadToggle: NoteToggle<boolean> = {
   turn(stored, on, place) {
     if (stored === undefined) return on ? { dead: true } : null;
     return !on && stored.dead === true && stored.fret === undefined ? null : plainDead.turn(stored, on, place);
+  },
+};
+
+const plainTie = plainToggle("tie");
+
+/**
+ * Tie (docs/spec/commands.md, 5.4): on, unless every note seen has it already; on an empty line
+ * it is on too, to make the note there. Adding it takes the fret of the note before on the same
+ * string, the command's own doing, not a repair; with no fret before, the note keeps its own and
+ * is a dangling tie (docs/spec/flags.md). On an empty line it makes the note before's fret there,
+ * or on a staff (a pitched part's key is its pitch) the note before's pitch as it is spelled; with
+ * no such note before, nothing. Off takes the tie away and keeps the fret.
+ */
+export const tieToggle: NoteToggle<boolean> = {
+  decide: (seen) => seen.length === 0 || plainTie.decide(seen),
+  turn(stored, on, place) {
+    const { kind, before } = place;
+    // A note tied already, to the fret before or with none to take, is left as it is.
+    if (on && before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
+    if (!on || stored !== undefined) return plainTie.turn(stored, on, place);
+    if (before === undefined || kind !== "pitched") return null;
+    return before.spell === undefined ? { tie: true } : { spell: before.spell, tie: true };
   },
 };
 
@@ -438,7 +462,7 @@ export function toggleAt<D>(doc: Y.Doc, cursor: Cursor, key: string, toggle: Not
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
   const before = reader.note(key, notesBefore(doc, reader, cursor, place.voice, place.index)?.get(key));
   const decided = toggle.decide(seen === undefined ? [] : [seen]);
-  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { key, before }));
+  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { kind: reader.kind, key, before }));
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -524,7 +548,7 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
     turned.set(map, results);
     for (const { key, stored } of notes) {
       const previous = earlier?.has(key) ? (earlier.get(key) ?? undefined) : reader.note(key, before?.get(key));
-      const next = toggle.turn(stored, decided, { key, before: previous });
+      const next = toggle.turn(stored, decided, { kind: reader.kind, key, before: previous });
       results.set(key, next);
       if (next !== stored) changes.push({ map, key, next });
     }

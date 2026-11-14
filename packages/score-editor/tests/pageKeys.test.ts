@@ -1,5 +1,6 @@
-// The keys the page handles rather than the session: Space plays and pauses (docs/spec/keymap.md,
-// section 2; docs/spec/playback.md, section 4).
+// The keys the page handles rather than the session: Space plays and pauses, F8 goes to the next
+// flag (docs/spec/keymap.md, section 2; docs/spec/playback.md, section 4; docs/spec/flags.md,
+// section 4).
 import { expect, test } from "vitest";
 
 import { type KeyPlatform, pageEffectOf } from "../src/index";
@@ -23,4 +24,15 @@ test.each(["fretted", "percussion", "pitched"] as const)("the session leaves Spa
   const before = session.cursor;
   expect(press("Space")).toBe(false);
   expect(session.cursor).toEqual(before);
+});
+
+test.each<KeyPlatform>(["other", "mac"])("on %s, F8 goes to the next flag, with no modifier only, and the session leaves it to the page", (platform) => {
+  expect(pageEffectOf(keyOf("F8"), platform)).toBe("nextFlag");
+  expect(pageEffectOf(keyOf("F8", { shiftKey: true }), platform)).toBeNull();
+  for (const kind of ["fretted", "percussion", "pitched"] as const) {
+    const { session, press } = sessionOn(kind);
+    const before = session.cursor;
+    expect(press("F8")).toBe(false);
+    expect(session.cursor).toEqual(before);
+  }
 });

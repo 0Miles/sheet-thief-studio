@@ -1,6 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import type { ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
+import type { Flag } from "@studio/score-model";
 
 export const strings = {
   app: {
@@ -34,6 +35,19 @@ export const strings = {
       pause: "暫停",
       stop: "停止",
       bar: (bar: number) => `第 ${bar} 小節`,
+    },
+    // What is wrong in the score, pointed out only (docs/spec/flags.md): how many, the next one, and what each kind is.
+    flags: {
+      count: (count: number) => `標記 ${count}`,
+      next: "下一個標記",
+      nextKey: (key: string) => `跳到下一個標記（${key}）`,
+      kinds: {
+        underfull: "這條聲線的時值少於拍號",
+        overfull: "這條聲線的時值超出拍號",
+        danglingTie: "連結線前面沒有同一個音可以連接",
+        danglingLink: "搥弦、勾弦或連奏滑音後面沒有音可以連過去",
+        invalidContent: "這裡有讀不懂的內容，已經略過",
+      } satisfies Record<Flag["kind"], string>,
     },
     // Each member's own display options (docs/spec/views.md, section 6).
     display: {

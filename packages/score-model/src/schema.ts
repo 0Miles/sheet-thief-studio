@@ -206,6 +206,12 @@ export function isNoteKey(kind: PartKind, strings: number, key: string): boolean
   return Number(match[1]) <= (kind === "fretted" ? strings : 127);
 }
 
+/** The string a fretted note's key names ("s3" is string 3), undefined for a key of another kind. */
+export function stringOfNoteKey(key: string): number | undefined {
+  const match = NOTE_KEYS.fretted.exec(key);
+  return match === null ? undefined : Number(match[1]);
+}
+
 /**
  * The note a value stored at `key` reads as, on a part of `kind` with `strings` strings; undefined
  * when reading leaves it out (section 11): a key of another kind or string, or a note this kind

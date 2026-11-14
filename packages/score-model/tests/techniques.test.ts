@@ -9,6 +9,7 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  flagsOf,
   insertBars,
   type NoteJSON,
   type NotePlace,
@@ -18,6 +19,7 @@ import {
   type OnOffTechnique,
   setFret,
   setNote,
+  tieToggle,
   type Selection,
   toggleAt,
   techniqueToggle,
@@ -312,4 +314,99 @@ test("over a selection, a beat reading leaves out is neither seen nor changed, a
   toggleSelected(doc, range, cursor, "ghost");
   expect(string3()).toEqual([{ fret: 5 }, { fret: 5, tie: true }]);
   expect((unreadable.get("notes") as Y.Map<unknown>).get("s3")).toEqual({ fret: 7 });
+});
+
+// Tie (docs/spec/commands.md, 5.4): adding it takes the fret of the note before; that is what the
+// command does, not a repair.
+const toggleTie = (doc: Y.Doc, cursor: Cursor, key: string) => toggleAt(doc, cursor, key, tieToggle);
+const danglingTies = (doc: Y.Doc) => flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie");
+
+test("a tie takes the fret of the note before on its string, in its bar or the bar before, one undo step; again, it goes and the fret stays", () => {
+  const { doc, partId, cursor, notes } = guitar();
+  const [, nextBar] = docToJson(doc).bars.map((bar) => bar.id);
+  const second = appendBeat(doc, cursor);
+  setFret(doc, second, 7);
+  const opening = { ...setFret(doc, cursorAt(doc, partId, nextBar!, 3), 2), line: 3 };
+  const undo = undoOf(doc);
+  expect(toggleTie(doc, second, "s3")).toEqual(second);
+  expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 5, tie: true } }]);
+  toggleTie(doc, opening, "s3");
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 5, tie: true } }]);
+  expect(danglingTies(doc)).toEqual([]);
+  toggleTie(doc, opening, "s3");
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 5 } }]);
+  undo.undo();
+  undo.undo();
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 2 } }]);
+  undo.undo();
+  expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 7 } }]);
+});
+
+test("with no note before it, the tie is added all the same, the fret kept, and it is a dangling tie", () => {
+  const { doc, barId, partId, cursor, notes } = guitar();
+  toggleTie(doc, cursor, "s3");
+  expect(notes()).toEqual([{ s3: { fret: 5, tie: true } }]);
+  const second = appendBeat(doc, cursor);
+  setNote(doc, second, "s2", { fret: 4 });
+  toggleTie(doc, { ...second, line: 2 }, "s2");
+  expect(notes()[1]).toEqual({ s2: { fret: 4, tie: true } });
+  expect(danglingTies(doc)).toEqual([
+    { kind: "danglingTie", partId, barId, voice: "0:0", beatId: cursor.beatId, noteKey: "s3" },
+    { kind: "danglingTie", partId, barId, voice: "0:0", beatId: second.beatId, noteKey: "s2" },
+  ]);
+});
+
+test("on an empty string, a tie makes the note before's fret there, tied; with no note before, it makes nothing", () => {
+  const { doc, cursor, notes } = guitar();
+  const second = appendBeat(doc, cursor);
+  toggleTie(doc, second, "s3");
+  expect(notes()[1]).toEqual({ s3: { fret: 5, tie: true } });
+  const transactions = transactionsOf(doc);
+  toggleTie(doc, { ...second, line: 1 }, "s1");
+  expect(transactions.count).toBe(0);
+  // In the append slot, as a digit does: a new beat, the cursor on it.
+  const appended = toggleTie(doc, { ...second, at: "after" }, "s3");
+  expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 5, tie: true } }, { s3: { fret: 5, tie: true } }]);
+  expect(appended).toMatchObject({ at: "on" });
+});
+
+test("over a selection, a tie goes on every note unless all have it, each taking the fret of the note before it as it has just become; it makes no notes", () => {
+  const { doc, barId, partId, cursor, notes } = guitar();
+  let at = cursor;
+  for (const fret of [7, 9]) {
+    at = appendBeat(doc, at);
+    setNote(doc, at, "s3", { fret });
+  }
+  at = appendBeat(doc, at);
+  setNote(doc, at, "s1", { fret: 3 });
+  const ids = docToJson(doc).parts[0]!.content[barId]!["0:0"]!.map((beat) => beat.id);
+  const range: Selection = { kind: "beats", partId, barId, voice: "0:0", anchorBeatId: ids[0]!, focusBeatId: ids[3]! };
+  toggleOnSelection(doc, range, cursor, tieToggle);
+  expect(notes()).toEqual([{ s3: { fret: 5, tie: true } }, { s3: { fret: 5, tie: true } }, { s3: { fret: 5, tie: true } }, { s1: { fret: 3, tie: true } }]);
+  toggleOnSelection(doc, range, cursor, tieToggle);
+  expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 5 } }, { s3: { fret: 5 } }, { s1: { fret: 3 } }]);
+});
+
+test("a dead note without a fret before it gives no fret: the tie goes on a note there, none is made", () => {
+  const { doc, cursor, notes } = guitar();
+  setNote(doc, cursor, "s3", { dead: true });
+  const second = appendBeat(doc, cursor);
+  const transactions = transactionsOf(doc);
+  toggleTie(doc, second, "s3");
+  expect(transactions.count).toBe(0);
+  setNote(doc, second, "s3", { fret: 2 });
+  toggleTie(doc, second, "s3");
+  expect(notes()[1]).toEqual({ s3: { fret: 2, tie: true } });
+});
+
+test("on a pitched part, a tie on an empty line makes the note before's pitch there, as it is spelled", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Demo");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const partId = addPart(doc, { name: "Voice", kind: "pitched" });
+  const first = setNote(doc, cursorAt(doc, partId, barId!), "n61", { spell: "Db", staccato: true });
+  const second = appendBeat(doc, first);
+  toggleAt(doc, second, "n61", tieToggle);
+  expect(docToJson(doc).parts[0]!.content[barId!]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ n61: { spell: "Db", staccato: true } }, { n61: { spell: "Db", tie: true } }]);
+  expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId, voice: "0:0" }]);
 });

@@ -34,6 +34,7 @@ export type SessionEffect =
   | "undo"
   | "redo"
   | "fret"
+  | "tie"
   | OnOffTechnique;
 
 /**
@@ -42,8 +43,12 @@ export type SessionEffect =
  */
 export type NativeEffect = "copy" | "cut" | "paste";
 
-/** What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4). */
-export type PageEffect = "playPause";
+/**
+ * What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4),
+ * and going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
+ * section 4).
+ */
+export type PageEffect = "playPause" | "nextFlag";
 
 /** Where a key works: on the score whatever the kind of the part, or on parts of one kind only. */
 export type KeyContext = "score" | PartKind;
@@ -158,12 +163,17 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "cut", context: "score", keys: ["Mod+KeyX", "Shift+Delete"], mac: ["Mod+KeyX"], native: true, keymap: { other: ["Ctrl+KeyX", "Shift+Delete"], mac: ["Cmd+KeyX"] } },
   { effect: "paste", context: "score", keys: ["Mod+KeyV", "Shift+Insert"], mac: ["Mod+KeyV"], native: true, keymap: { other: ["Ctrl+KeyV", "Shift+Insert"], mac: ["Cmd+KeyV"] } },
   { effect: "playPause", context: "score", keys: ["Space"], page: true, keymap: both("Space") },
+  // Fn+F8 on a Mac, whose function keys are its own: the toolbar has the same button (keymap.md, section 5).
+  { effect: "nextFlag", context: "score", keys: ["F8"], page: true, keymap: both("F8") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
     return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
-  // Section 3: Shift and a letter turns a technique on and off, on a Mac as well.
+  // Section 3: Shift and a letter turns a technique on and off, on a Mac as well. Tie also takes
+  // the fret of the note before; on staves it waits, as the other techniques do, for their keys
+  // to name the notes drawn on a line (keymap.md, section 3).
+  { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };

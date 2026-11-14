@@ -59,7 +59,7 @@
 - 介面上顯示的鍵名（工具列的提示、說明文字）由同一張表與 `formatChord(chord, platform)` 產生，例如復原在 Windows 顯示 `Ctrl+Z`，在 Mac 顯示 `⌘Z`。`strings.ts` 裡不寫死任何鍵名。
   - **補充**（#20）：要某個動作的鍵名時用 `keyNameOf(effect, platform, fret?)`：取那個綁定的第一個組合，交給 `formatChord`。格號鍵用 `fret` 指定是哪一個數字。
   - **補充**（#20）：`+` 是 `Shift` 加 `=` 那個鍵；`Shift+Equal` 顯示成 `+`，不是 `Shift++` 或 `⇧+`。平台層的測試檢查表上每個組合的鍵名都沒有這種重複的 `+`。
-  - **補充**（#20）：提示句子裡怎麼把鍵名接在文字上（分隔符號、順序），由 `strings.ts` 的格式化函式負責；等第一個帶鍵名的提示（第 7 節工具列按鈕的提示）出現時再加，現在還沒有這種句子。
+  - **補充**（#20）：提示句子裡怎麼把鍵名接在文字上（分隔符號、順序），由 `strings.ts` 的格式化函式負責；等第一個帶鍵名的提示（第 7 節工具列按鈕的提示）出現時再加，現在還沒有這種句子。**補充**（#36）：第一句是「下一個標記」按鈕的提示，`strings.score.flags.nextKey(key)`，鍵名接在全形括號裡，例如「跳到下一個標記（F8）」；鍵名由 `keyNameOf("nextFlag", platform)` 產生。
 - 平台層的測試（vitest）對表上每一個綁定、兩個平台都檢查：
   - 解析出的組合和這份文件的表相同；
   - 不在第 1.2 節的禁用清單裡；
@@ -94,7 +94,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Ctrl+Z` | `Cmd+Z` | `KeyZ` 加 `Mod` | 復原 |
 | `Ctrl+Y`、`Ctrl+Shift+Z` | `Cmd+Shift+Z`（不用 `Cmd+Y`：那是 Safari 與 Chrome 的歷史記錄） | `KeyZ` 加 `Mod`、`shiftKey`；Windows、Linux 另有 `KeyY` 加 `ctrlKey` | 重做 |
 | `Alt+1` `Alt+2` | `Option+1` `Option+2` | `Digit1` `Digit2` 加 `altKey` | 切換到第 1／第 2 條聲線 |
-| `F8` | `Fn+F8` | `F8` | 跳到下一個 Flag；工具列另有同功能的按鈕 |
+| `F8` | `Fn+F8` | `F8` | 跳到下一個 Flag；工具列另有同功能的按鈕。補充（#36）：和 `Space` 一樣是 page 綁定（`pageEffectOf` 回傳 `nextFlag`），由殼從它畫的 `ScoreJSON` 算出下一個（`flags.ts` 的 `nextFlag`，[`flags.md`](flags.md) 第 4 節） |
 | `Space`（補充） | 同左 | `Space` | 播放／暫停（編輯視圖從游標所在小節開始，有選取時循環選取範圍，見 [`playback.md`](playback.md)）。補充（#31）：`EditorSession` 不處理這個鍵，由殼處理（綁定表上的 page 綁定，`pageEffectOf`） |
 | `Esc`（補充） | 同左 | `Escape` | 取消選取；關閉 popover 或面板，焦點回到譜面 |
 
@@ -104,7 +104,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 | 鍵 | `code` | 動作 | 適用的聲部 |
 |---|---|---|---|
-| `Shift+L` | `KeyL` | tie | fretted、pitched |
+| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#36：目前只綁 fretted，見本節最後的補充） |
 | `Shift+H` | `KeyH` | legato（搥弦、勾弦） | fretted |
 | `Shift+S` | `KeyS` | slideOut：legato → shift → outUp → outDown → 沒有 | fretted |
 | `Shift+E`（補充） | `KeyE` | slideIn：inBelow → inAbove → 沒有 | fretted |
@@ -128,6 +128,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
 
 **補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
+
+**補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
 
 ## 4. 各聲部種類的輸入鍵
 
