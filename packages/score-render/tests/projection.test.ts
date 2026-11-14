@@ -274,3 +274,38 @@ test("the flags of a beat become its alphaTab fields: stroke the brush, slap, po
   const staff = score.tracks[1]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!;
   expect([staff.dynamics, staff.text]).toEqual([DynamicValue.PP, "C"]);
 });
+
+test("replacing a bar whose dynamic changed rebuilds the bars after it up to the next written dynamic in that voice", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dynamics");
+  const barIds = insertBars(doc, { after: null, count: 4 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = barIds.map((barId) => write(doc, guitar, barId, [[2, { s1: { fret: 0 } }]]));
+  // The third bar has a dynamic of its own: the fourth goes on from it whatever the first says.
+  for (let step = 0; step < 6; step++) changeBeatAt(doc, first[2]!, dynamicCycle);
+  const projection = projectScore(docToJson(doc), settings);
+  const bars = () => projection.score.tracks[0]!.staves[0]!.bars;
+  const fourth = bars()[3];
+  const dynamics = () => bars().map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics));
+  expect(dynamics()).toEqual([
+    [DynamicValue.F, DynamicValue.F],
+    [DynamicValue.F, DynamicValue.F],
+    [DynamicValue.FF, DynamicValue.FF],
+    [DynamicValue.FF, DynamicValue.FF],
+  ]);
+
+  changeBeatAt(doc, first[0]!, dynamicCycle);
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  // The second bar, unchanged in the score, is played and drawn at the pp of the first; the rests filling a bar too.
+  expect(dynamics()).toEqual([
+    [DynamicValue.PP, DynamicValue.PP],
+    [DynamicValue.PP, DynamicValue.PP],
+    [DynamicValue.FF, DynamicValue.FF],
+    [DynamicValue.FF, DynamicValue.FF],
+  ]);
+  expect(bars()[1]!.voices[0]!.beats[0]!.notes[0]!.dynamics).toBe(DynamicValue.PP);
+  expect(bars()[3]).toBe(fourth);
+  const whole = projectScore(json, settings);
+  expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
+});

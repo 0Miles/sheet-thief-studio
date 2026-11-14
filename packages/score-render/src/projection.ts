@@ -9,6 +9,7 @@ type AtStaff = alphaTab.model.Staff;
 type AtBar = alphaTab.model.Bar;
 type AtBeat = alphaTab.model.Beat;
 type AtNote = alphaTab.model.Note;
+type AtDynamic = alphaTab.model.DynamicValue;
 
 const { model } = alphaTab;
 
@@ -159,7 +160,7 @@ export const STROKE_TICKS = 60;
 
 const BRUSH_TYPES = { down: model.BrushType.BrushDown, up: model.BrushType.BrushUp } as const;
 
-const DYNAMIC_VALUES: Record<(typeof DYNAMICS)[number], alphaTab.model.DynamicValue> = {
+const DYNAMIC_VALUES: Record<(typeof DYNAMICS)[number], AtDynamic> = {
   pp: model.DynamicValue.PP,
   p: model.DynamicValue.P,
   mp: model.DynamicValue.MP,
@@ -168,14 +169,27 @@ const DYNAMIC_VALUES: Record<(typeof DYNAMICS)[number], alphaTab.model.DynamicVa
   ff: model.DynamicValue.FF,
 };
 
-function rest(value: NoteValue): AtBeat {
+/** The dynamic of a voice before any is written: alphaTab's own, f. */
+const START_DYNAMIC = model.DynamicValue.F;
+
+/**
+ * The dynamic each voice of a projected bar leaves in force, for the bar after it (none: the
+ * start of the score).
+ */
+function dynamicsLeaving(bar: AtBar | null | undefined, voiceCount: number): AtDynamic[] {
+  return Array.from({ length: voiceCount }, (_, voice) => bar?.voices[voice]?.beats.at(-1)?.dynamics ?? START_DYNAMIC);
+}
+
+function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   const beat = new model.Beat();
   beat.duration = value as alphaTab.model.Duration;
+  beat.dynamics = dynamic;
   return beat;
 }
 
-function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
-  const beat = rest(json.value);
+/** A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when it has one. */
+function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat {
+  const beat = rest(json.value, dynamic);
   beat.dots = json.dots;
   if (json.tuplet) {
     beat.tupletNumerator = json.tuplet.actual;
@@ -187,8 +201,6 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
   }
   if (json.slap) beat.slap = true;
   if (json.pop) beat.pop = true;
-  // A beat without a dynamic keeps alphaTab's own, f: alphaTab marks a dynamic only where it changes.
-  if (json.dynamic) beat.dynamics = DYNAMIC_VALUES[json.dynamic];
   if (json.text) beat.text = json.text;
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson);
@@ -200,8 +212,12 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
   return beat;
 }
 
-/** One bar of one staff of a part, with every voice the staff has. Returns the ids of its beats by voice. */
-function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number): { bar: AtBar; beatIds: string[][] } {
+/**
+ * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
+ * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic `entering`
+ * gives it, the one in force at the end of the bar before. Returns the ids of its beats by voice.
+ */
+function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number, entering: readonly AtDynamic[]): { bar: AtBar; beatIds: string[][] } {
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
   const beatIds: string[][] = [];
@@ -211,17 +227,22 @@ function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: num
     atBar.addVoice(atVoice);
     const beats = content[`${staff}:${voice}`] ?? [];
     beatIds.push(beats.map((beat) => beat.id));
-    for (const beat of beats) atVoice.addBeat(projectBeat(part, beat));
+    // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
+    let dynamic = entering[voice] ?? START_DYNAMIC;
+    for (const beat of beats) {
+      if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
+      atVoice.addBeat(projectBeat(part, beat, dynamic));
+    }
     if (beats.length === 0) {
       // An empty first voice is a whole-bar rest; other voices stay invisible.
-      const filler = rest(1);
+      const filler = rest(1, dynamic);
       filler.isEmpty = voice > 0;
       atVoice.addBeat(filler);
       continue;
     }
     // A voice that does not fill its bar is completed with rests, here only (it stays flagged).
     const held = beats.reduce((sum, beat) => sum + beatTicks(beat), 0);
-    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value));
+    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
   }
   return { bar: atBar, beatIds };
 }
@@ -309,8 +330,9 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
     score.addTrack(track);
     track.staves.forEach((staff, staffIndex) => {
       setUpStaff(staff, part);
+      const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, staffIndex, voiceCounts[staffIndex] as number);
+        const built = projectBar(part, bar, staffIndex, voiceCount, dynamicsLeaving(staff.bars[barIndex - 1], voiceCount));
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -343,7 +365,9 @@ function retie(next: AtBar | null, replaced: AtBar): void {
 
 /**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
- * the alphaTab model as it is (same objects). Returns the index of the first rebuilt bar, or
+ * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
+ * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
+ * next written dynamic in each voice that changed. Returns the index of the first rebuilt bar, or
  * null when the change is not one this can do (a bar, a part or a voice count changed): the
  * caller then projects the whole score again.
  */
@@ -365,7 +389,10 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   if (!sameShape) return null;
 
   let finishing = 0;
-  for (const barIndex of indexes as number[]) {
+  const rebuilt = new Set(indexes as number[]);
+  const first = Math.min(...rebuilt);
+  for (let barIndex = first; barIndex < json.bars.length; barIndex++) {
+    if (!rebuilt.has(barIndex)) continue;
     const bar = json.bars[barIndex] as BarJSON;
     json.parts.forEach((part, trackIndex) => {
       const track = projection.score.tracks[trackIndex] as AtTrack;
@@ -375,7 +402,8 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         old.voices.forEach((_, voice) => {
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
-        const built = projectBar(part, bar, staffIndex, (voiceCounts[trackIndex] as number[])[staffIndex] as number);
+        const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
+        const built = projectBar(part, bar, staffIndex, voiceCount, dynamicsLeaving(staff.bars[barIndex - 1], voiceCount));
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;
@@ -398,6 +426,9 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         atBar.finish(settings, new Map());
         finishing += performance.now() - finishStarted;
         retie(atBar.nextBar, old);
+        // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
+        const before = dynamicsLeaving(old, voiceCount);
+        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
       });
     });
   }
@@ -405,5 +436,5 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
     timings.finish = finishing;
     timings.build = performance.now() - started - finishing;
   }
-  return Math.min(...(indexes as number[]));
+  return first;
 }

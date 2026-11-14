@@ -22,6 +22,7 @@ import { DRUM_PIECES } from "../src/drums";
 import { projectScore } from "../src/projection";
 
 const settings = new alphaTab.Settings();
+const { DynamicValue } = alphaTab.model;
 // alphaTab's default, which the engine keeps: let ring holds a note on in this mode only.
 settings.notation.notationMode = alphaTab.NotationMode.GuitarPro;
 
@@ -187,4 +188,34 @@ test("a stroke spreads the starts of the notes of its beat: down from the lowest
   expect(up[1]).toBeLessThan(up[0]!);
   // Slap and pop are only drawn: alphaTab plays them as any other beat, so they are tested in the projection only.
   expect(chordPlayed(slapPopCycle)).toEqual(chordPlayed());
+});
+
+test("a dynamic holds from its beat on, in its part and voice: the beats after it, in its bar and the next, are as soft and marked no f", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Softly");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const plain = addPart(doc, { name: "Other", kind: "fretted" });
+  let cursor = cursorAt(doc, guitar, barIds[0]!);
+  const beats = [0, 1, 2].map((index) => {
+    cursor = insertBeat(doc, { ...cursor, ...(index === 2 ? { barId: barIds[1]!, beatId: null } : {}), at: "after" }, { value: 4 });
+    setNote(doc, cursor, "s3", { fret: index });
+    return cursor;
+  });
+  changeBeatAt(doc, beats[0]!, dynamicCycle);
+  setNote(doc, insertBeat(doc, cursorAt(doc, plain, barIds[1]!), { value: 4 }), "s3", { fret: 4 });
+  const { score } = projectScore(docToJson(doc), settings);
+  const drawn = [0, 0, 1].map((bar, index) => score.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[bar === 0 ? index : 0]!);
+  expect(drawn.map((beat) => beat.dynamics)).toEqual([DynamicValue.PP, DynamicValue.PP, DynamicValue.PP]);
+  // The other part is not this one's voice: it plays at alphaTab's own f.
+  expect(score.tracks[1]!.staves[0]!.bars[1]!.voices[0]!.beats[0]!.dynamics).toBe(DynamicValue.F);
+
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  const ons = file.events.filter((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent);
+  const velocityOf = (key: number, tick: number) => ons.find((event) => event.noteKey === key && event.tick === tick)!.noteVelocity;
+  // G3, G#3 in the first bar, A3 in the next: all as soft as the pp, softer than the other part's B3 at f.
+  const soft = [velocityOf(55, 0), velocityOf(56, 960), velocityOf(57, 3840)];
+  expect(soft).toEqual([soft[0], soft[0], soft[0]]);
+  expect(soft[0]).toBeLessThan(velocityOf(59, 3840));
 });
