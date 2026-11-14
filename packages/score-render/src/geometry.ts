@@ -97,6 +97,27 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   return { x: (span.right + end - width) / 2, y, width, height };
 }
 
+/**
+ * Where playback is on the page, `offset` ticks into a bar (by index): the beat of the top staff
+ * drawn that is played then, as tall as the system the bar is on. At the start of a bar it is the
+ * bar's first beat, where the cursor stands in the append slot of an empty voice. Null when the
+ * bar is not drawn.
+ */
+export function playbackRect(lookup: BoundsLookup, barIndex: number, offset: number): Rect | null {
+  const masterBar = lookup.findMasterBarByIndex(barIndex);
+  if (masterBar === null) return null;
+  // The bar's box spans its whole system in y, from the top of the system to its bottom.
+  const system = masterBar.realBounds;
+  // The beats of the first voice: the last of them started by then.
+  let played: BeatBounds | undefined;
+  for (const beat of masterBar.bars[0]?.beats ?? []) {
+    if (beat.beat.voice.index !== 0) continue;
+    if (played === undefined || beat.beat.playbackStart <= offset) played = beat;
+  }
+  const box = played?.realBounds ?? system;
+  return { x: box.x, y: system.y, width: box.w, height: system.h };
+}
+
 /** alphaTab draws its mark on scores of more than this many bars ... */
 const MARK_FREE_BARS = 10;
 /** ... or when it draws more than this many tracks (`ScoreLayout._resolveShowAttribution`). */

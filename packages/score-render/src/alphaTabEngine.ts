@@ -2,9 +2,10 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, reservedRects, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
-import type { PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import { barAtTick } from "./ticks";
+import type { PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -13,6 +14,11 @@ export interface EngineOptions {
   soundFont: string | null;
   /** The element that scrolls the score, when it is not the page. */
   scrollElement?: HTMLElement;
+  /**
+   * A click on the score moves playback there (the Read view). Off, the default, a click is the
+   * page's alone: in the edit views it only moves the cursor (docs/spec/views.md, section 2).
+   */
+  seekOnClick?: boolean;
   /** Lay out and draw in a web worker (the default) or on the page's own thread. */
   useWorkers?: boolean;
   /**
@@ -70,13 +76,29 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private painted = new Listeners<string[]>();
   private states = new Listeners<PlayerState>();
   private positions = new Listeners<PlayerPosition>();
+  private finished = new Listeners<void>();
   private playerState: PlayerState = "loading";
   private playerIsReady = false;
   private lastPosition: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
-  /** Set while `load()` waits for alphaTab to take the new sound. */
-  private reload: { resume: boolean; tick: number; done: () => void } | null = null;
-  /** Where playback was sent back to after a reload, until alphaTab reports from there. */
-  private resumedAt: { tick: number; at: number } | null = null;
+  /**
+   * What the member asked for last: to play, or not. alphaTab's own state (`api.playerState`)
+   * comes from its worker, after the fact: a pause just asked for is not in it yet.
+   */
+  private intendsToPlay = false;
+  /**
+   * Where playback was sent (a seek, a stop, back after a new sound) until alphaTab reports from
+   * there; its position (`api.tickPosition`) comes from its worker too.
+   */
+  private sentTo: { tick: number; at: number } | null = null;
+  /**
+   * Set while alphaTab makes the sound again (`load()`, or a new model). It stops and goes back
+   * to the start meanwhile; once the sound is in place, playback goes back to `currentTick()`,
+   * playing if the member wants it to. What it reports meanwhile is not playback. `loads` is how
+   * many sounds are being made, each reporting its own `midiLoaded`: the last one counts.
+   */
+  private reload: { loads: number; done: () => void } | null = null;
+  /** The model changed in place since the sound was made: `load()` has something to do. */
+  private soundStale = false;
   private destroyed = false;
 
   constructor(
@@ -98,6 +120,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       settings.player.playerMode = alphaTab.PlayerMode.EnabledSynthesizer;
       settings.player.soundFont = options.soundFont;
       settings.player.scrollMode = alphaTab.ScrollMode.Off; // the page decides what scrolls
+      // The page draws where playback is (`boundsAtTick`), clear of the reserved areas.
+      settings.player.enableCursor = false;
+      settings.player.enableSeekToClick = options.seekOnClick ?? false;
+      // A loop comes from the member's selection, never from dragging over the score.
+      settings.player.enablePlaybackRangeSelection = false;
       if (options.scrollElement) settings.player.scrollElement = options.scrollElement;
     }
     this.api = new alphaTab.AlphaTabApi(element, settings);
@@ -110,9 +137,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       this.painted.emit(barIds);
     });
     api.error.on((error) => console.error("[score-render]", error));
+    // alphaTab makes a new sound in this order, its worker reporting each step: position 0,
+    // paused, ready, midiLoaded, ready again, position 0 (alphaTab.core.mjs, `loadMidiFile`).
     api.playerReady.on(() => {
+      // Said again after every new sound: only the first time is news.
+      if (this.playerIsReady) return;
       this.playerIsReady = true;
-      if (this.reload === null) this.setState(api.playerState === alphaTab.synth.PlayerState.Playing ? "playing" : "paused");
+      this.setState("paused");
     });
     api.playerStateChanged.on((event) => {
       // Not before the player can play (alphaTab reports "paused" as soon as a listener is
@@ -120,12 +151,19 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       if (!this.playerIsReady || this.reload) return;
       this.setState(event.state === alphaTab.synth.PlayerState.Playing ? "playing" : "paused");
     });
+    api.playerFinished.on(() => {
+      // At the end of a loop alphaTab goes back to its start and plays on.
+      if (this.reload !== null || api.isLooping) return;
+      this.intendsToPlay = false;
+      this.finished.emit();
+    });
     api.playerPositionChanged.on((event) => {
       // Taking a new sound rewinds alphaTab for a moment: not a position of the playback.
       if (this.reload) return;
-      if (this.resumedAt !== null) {
-        if (event.currentTick < this.resumedAt.tick && performance.now() - this.resumedAt.at < 500) return;
-        this.resumedAt = null;
+      // Nor what it reports from before it went where it was sent (the last position 0 of a new sound).
+      if (this.sentTo !== null) {
+        if (event.currentTick < this.sentTo.tick && performance.now() - this.sentTo.at < 500) return;
+        this.sentTo = null;
       }
       this.lastPosition = { tick: event.currentTick, endTick: event.endTick, milliseconds: event.currentTime, endMilliseconds: event.endTime };
       this.positions.emit(this.lastPosition);
@@ -141,6 +179,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   patchBars(score: ScoreJSON, barIds: readonly string[]): void {
+    // Until it is drawn, the sound is not that of the score either.
+    this.soundStale = true;
     this.request({ score, barIds: new Set(barIds) });
   }
 
@@ -156,6 +196,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return null;
     const rect = cursorRect(lookup, this.projection, this.parts, cursor, this.metrics());
+    return rect && this.fromSurface(rect);
+  }
+
+  boundsAtTick(tick: number): Rect | null {
+    const lookup = this.api.boundsLookup;
+    const cache = this.api.tickCache;
+    if (lookup === null || cache === null) return null;
+    // The bar from the sound (repeats), the beat from the drawing: a bar changed since the sound
+    // was made has new beats, already drawn.
+    const played = barAtTick(cache, tick);
+    const rect = played && playbackRect(lookup, played.index, played.offset);
     return rect && this.fromSurface(rect);
   }
 
@@ -202,33 +253,44 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   load(): Promise<void> {
     // Before the player is ready alphaTab makes the sound itself, once it is.
     if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
+    // Nothing to make, and none being made: the sound is that of the model.
+    if (!this.soundStale && this.reload === null) return Promise.resolve();
     return new Promise((resolve) => {
-      // A reload still waiting is replaced: its promise settles with this one.
+      // A new sound under way settles this promise too.
       const previous = this.reload;
-      const resume = previous?.resume ?? this.api.playerState === alphaTab.synth.PlayerState.Playing;
-      const tick = previous?.tick ?? this.api.tickPosition;
       this.reload = {
-        resume,
-        tick,
+        loads: previous?.loads ?? 0,
         done: () => {
           previous?.done();
           resolve();
         },
       };
+      // A new model's sound is being made already, of the model as it is now.
+      if (!this.soundStale) return;
+      this.soundStale = false;
+      this.reload.loads += 1;
       this.api.loadMidiForScore();
     });
   }
 
   play(): void {
-    this.api.play();
+    this.intendsToPlay = true;
+    // While a new sound is made, it plays once that is in place.
+    if (this.reload === null) this.api.play();
   }
 
   pause(): void {
+    this.intendsToPlay = false;
     this.api.pause();
+    // alphaTab has stopped to take the new sound, and reports nothing of the member's pause.
+    if (this.reload) this.setState("paused");
   }
 
   stop(): void {
+    this.intendsToPlay = false;
+    this.sentTo = { tick: 0, at: performance.now() };
     this.api.stop();
+    if (this.reload) this.setState("paused");
   }
 
   get state(): PlayerState {
@@ -240,7 +302,24 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   seek(tick: number): void {
+    // While a new sound is made, alphaTab goes back to the start after this: it comes back here then.
+    this.sentTo = { tick, at: performance.now() };
     this.api.tickPosition = tick;
+  }
+
+  tickOf(barId: string): number | null {
+    const index = this.projection?.barIndex.get(barId);
+    const masterBar = index === undefined ? undefined : this.projection?.score.masterBars[index];
+    // alphaTab makes the tick lookup of a new model as it gets the model, before the sound.
+    const cache = this.api.tickCache;
+    return masterBar === undefined || cache === null ? null : cache.getMasterBarStart(masterBar);
+  }
+
+  barAt(tick: number): PlayedBar | null {
+    const cache = this.api.tickCache;
+    const played = cache && barAtTick(cache, tick);
+    const barId = played && this.projection?.barIds[played.index];
+    return played && barId ? { barId, index: played.index } : null;
   }
 
   setMute(partId: string, mute: boolean): void {
@@ -283,6 +362,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return this.positions.add(listener);
   }
 
+  onFinished(listener: () => void): Unsubscribe {
+    return this.finished.add(listener);
+  }
+
   // --- internals ---
 
   /** One drawing at a time: changes arriving while alphaTab works are merged and drawn after it. */
@@ -322,11 +405,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       startedAt: performance.now(),
     };
     if (projection.score === this.api.score) {
+      this.soundStale = true;
       this.api.render(hints);
       return;
     }
-    // alphaTab makes the sound of a score it has not seen and, doing so, stops playback.
-    if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.reload ??= { resume: true, tick: this.api.tickPosition, done: () => {} };
+    // alphaTab makes the sound of a score it has not seen and, doing so, stops playback and goes
+    // back to the start, playing or paused: playback goes on from where it was.
+    this.soundStale = false;
+    if (this.playerIsReady && this.options.soundFont !== null) {
+      this.reload ??= { loads: 0, done: () => {} };
+      this.reload.loads += 1;
+    }
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
   }
 
@@ -390,18 +479,20 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     this.states.emit(state);
   }
 
+  /** Where playback is, as the engine knows it: where it was sent, until alphaTab reports from there. */
+  private currentTick(): number {
+    return this.sentTo?.tick ?? this.lastPosition.tick;
+  }
+
   /** alphaTab stops and rewinds when it takes a new sound: go back to where playback was. */
   private onMidiLoaded(): void {
     const reload = this.reload;
-    if (reload === null) return;
+    if (reload === null || --reload.loads > 0) return;
     this.reload = null;
-    if (reload.resume || reload.tick > 0) this.resumedAt = { tick: reload.tick, at: performance.now() };
-    if (reload.resume) {
-      this.api.tickPosition = reload.tick;
-      this.api.play();
-    } else if (reload.tick > 0) {
-      this.api.tickPosition = reload.tick;
-    }
+    this.seek(this.currentTick());
+    if (this.intendsToPlay) this.api.play();
+    // A pause asked for while the sound was made: alphaTab reported nothing of it.
+    else this.setState("paused");
     reload.done();
   }
 }

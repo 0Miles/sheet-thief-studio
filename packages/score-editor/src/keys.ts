@@ -2,7 +2,7 @@
 // chords, which become the keys of Windows and Linux, or of macOS, here and nowhere else.
 import type { PartKind } from "@studio/score-model";
 
-import { KEY_BINDINGS, type KeyBinding } from "./bindings";
+import { KEY_BINDINGS, type KeyBinding, type PageEffect } from "./bindings";
 
 /** The keys of Windows and Linux (`"other"`), or of macOS and iPadOS (`"mac"`). */
 export type KeyPlatform = "mac" | "other";
@@ -206,4 +206,13 @@ export function matchKey(key: Key, platform: KeyPlatform, kind: PartKind | undef
   return bindingsOn(platform)
     .get(comboName(combo, platform))
     ?.find((binding) => binding.context === "score" || binding.context === kind);
+}
+
+/**
+ * What a key does that the page handles, not the session (which leaves it alone): null when it
+ * is no such key. Matched as every key is (`matchKey`); these work on every kind of part.
+ */
+export function pageEffectOf(key: Key, platform: KeyPlatform): PageEffect | null {
+  const binding = matchKey(key, platform, undefined);
+  return binding?.page ? binding.effect : null;
 }

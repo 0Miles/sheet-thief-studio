@@ -1,38 +1,14 @@
 // Typing on a score the server keeps, in the edit view (#19; docs/spec/views.md, sections 1-4
 // and 9). Every key goes through the real keyboard, every click through the real mouse; the page
 // is read through `window.__studioTest` and the DOM only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import type { BeatJSON, Cursor, ScoreJSON } from "@studio/score-model";
 import type { Rect } from "@studio/score-render";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { loggedIn, pageErrors, seedScore } from "./pages";
-
-/** Every change typed here has reached the server. */
-async function synced(page: Page): Promise<void> {
-  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
-}
-
-/** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
-async function drawn(page: Page): Promise<void> {
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  await synced(page);
-}
-
-async function openScore(page: Page, id: string): Promise<void> {
-  await page.goto(`/scores/${id}`);
-  await drawn(page);
-}
-
-function scoreOf(page: Page): Promise<ScoreJSON> {
-  return page.evaluate(() => window.__studioTest!.scoreJson()!);
-}
-
-function cursorOf(page: Page): Promise<Cursor | null> {
-  return page.evaluate(() => window.__studioTest!.cursor());
-}
+import { cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
 
 /** The beats of the first voice of a bar (by index) of the first part. */
 function beatsIn(score: ScoreJSON, bar: number): BeatJSON[] {

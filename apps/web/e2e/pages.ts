@@ -1,9 +1,10 @@
 // Helpers for the end-to-end tests that go through the real pages: logging in, creating a score,
-// and collecting the errors a page throws or logs.
+// opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
 import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
 import type { Role } from "@studio/contracts";
+import type { Cursor, ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -82,4 +83,28 @@ export function seedScore(fixture: ScoreFixture): string {
   });
   if (made.status !== 0) throw new Error(`Could not make the score: ${made.stderr}`);
   return (JSON.parse(made.stdout) as { id: string }).id;
+}
+
+/** Every change typed here has reached the server. */
+export async function synced(page: Page): Promise<void> {
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+}
+
+/** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
+export async function drawn(page: Page): Promise<void> {
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await synced(page);
+}
+
+export async function openScore(page: Page, id: string): Promise<void> {
+  await page.goto(`/scores/${id}`);
+  await drawn(page);
+}
+
+export function scoreOf(page: Page): Promise<ScoreJSON> {
+  return page.evaluate(() => window.__studioTest!.scoreJson()!);
+}
+
+export function cursorOf(page: Page): Promise<Cursor | null> {
+  return page.evaluate(() => window.__studioTest!.cursor());
 }

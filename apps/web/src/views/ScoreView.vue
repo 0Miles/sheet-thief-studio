@@ -2,14 +2,16 @@
 // A score, opened on /collab: a member's by its id (`/scores/:id`), a guest's by its read-only
 // link (`/s/:token`, the address staying the link's). On a device that can be typed on, members
 // get the edit view: an Owner or an Editor types in it, a Viewer moves the cursor without
-// changing anything (docs/spec/views.md, sections 1-4). Anyone else, guests included, sees the
+// changing anything (docs/spec/views.md, sections 1-4); both play from the cursor's bar and keep
+// playback on screen (docs/spec/playback.md, section 4). Anyone else, guests included, sees the
 // score drawn read-only until the Read view comes (#32). Anyone who is not a member, and a link
 // that opens nothing, gets the 404 page.
 import { HocuspocusProvider } from "@hocuspocus/provider";
+import { AppButton } from "@karyl-chan/ui";
 import { type Role, scoreDetails } from "@studio/contracts";
-import { createEditorSession, decideView, type EditorSession, type View } from "@studio/score-editor";
+import { createEditorSession, decideView, type EditorSession, pageEffectOf, type View } from "@studio/score-editor";
 import { type Cursor, cursorAt, docToJson, flagsOf, observeScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
-import { createAlphaTabEngine, type Rect, type ScoreEngine } from "@studio/score-render";
+import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
@@ -17,7 +19,7 @@ import * as Y from "yjs";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import { canType, keyPlatform } from "../device";
-import { clearOf } from "../overlay";
+import { clearOf, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -86,6 +88,22 @@ const score = shallowRef<ScoreJSON | null>(null);
 const cursorRect = shallowRef<Rect | null>(null);
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
+const playerState = ref<PlayerState>("loading");
+/** Not playing and not paused: never started, stopped, or played to the end. */
+const stopped = ref(true);
+/** The bar playback is in, counted from 1, as the toolbar shows it; null while stopped. */
+const playingBar = ref<number | null>(null);
+/** Where playback is drawn, out of the reserved areas; null while stopped. */
+const playheadRect = shallowRef<Rect | null>(null);
+/** The member paused, and the cursor has not moved since: playing goes on from there. */
+let resumable = false;
+/** Playback is to be kept on screen: from pressing play until the member presses a key or scrolls. */
+let keepInSight = false;
+/** Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the cursor. */
+const isFollowing = () => keepInSight && playerState.value === "playing";
+/** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
+let ownScrollTop: number | null = null;
+let soundTimer: ReturnType<typeof setTimeout> | undefined;
 
 const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
@@ -111,6 +129,115 @@ function updateOverlay(): void {
   if (engine === undefined || !editing.value) return;
   reserved.value = engine.renderer.reservedRects();
   placeCursor();
+  showPlayback(engine.player.position.tick);
+}
+
+/** Room left above playback when the page scrolls to it. */
+const FOLLOW_MARGIN = 40;
+
+/** Show where playback is: the bar in the toolbar, the place on the page, kept on screen while following. */
+function showPlayback(tick: number): void {
+  if (engine === undefined || stopped.value) return;
+  const played = engine.player.barAt(tick);
+  if (played !== null) playingBar.value = played.index + 1;
+  const rect = engine.renderer.boundsAtTick(tick);
+  const placed = rect && clearOf(rect, reserved.value);
+  // Most positions fall on the beat drawn already: the page is not drawn again for them.
+  if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
+  const element = scroller.value;
+  if (!isFollowing() || rect === null || element === undefined) return;
+  const top = element.scrollTop;
+  if (rect.y >= top && rect.y + rect.height <= top + element.clientHeight) return;
+  scrollTo(Math.max(rect.y - FOLLOW_MARGIN, 0));
+}
+
+/**
+ * Play from the start of the cursor's bar (docs/spec/playback.md, section 4); after the member
+ * paused, from where it was, unless the cursor moved since.
+ */
+function play(): void {
+  const player = engine?.player;
+  if (player === undefined || player.state !== "paused") return;
+  if (!resumable) {
+    const at = session?.cursor ?? null;
+    player.seek((at && player.tickOf(at.barId)) ?? 0);
+  }
+  resumable = false;
+  stopped.value = false;
+  keepInSight = true;
+  player.play();
+}
+
+function pause(): void {
+  if (engine?.player.state !== "playing") return;
+  resumable = true;
+  engine.player.pause();
+}
+
+/** Nothing plays any more: stopped, or at the end of the score, where the player is back at its start. */
+function showStopped(): void {
+  resumable = false;
+  stopped.value = true;
+  playingBar.value = null;
+  playheadRect.value = null;
+}
+
+function stop(): void {
+  if (engine === undefined || engine.player.state === "loading") return;
+  showStopped();
+  engine.player.stop();
+}
+
+function togglePlay(): void {
+  if (playerState.value === "playing") pause();
+  else play();
+}
+
+/** A button of the toolbar did its work: the score has the keyboard again. */
+function onToolbar(action: () => void): void {
+  action();
+  scroller.value?.focus({ preventScroll: true });
+}
+
+/** The member looks over the score themselves: playback is no longer kept on screen, until they press play. */
+function stopFollowing(): void {
+  keepInSight = false;
+}
+
+/** Scroll the score, as the page: following playback, or showing the cursor. */
+function scrollTo(top: number): void {
+  const element = scroller.value;
+  if (element === undefined) return;
+  element.scrollTop = top;
+  // As far as it could go: at the end of the score, less than asked.
+  ownScrollTop = element.scrollTop;
+}
+
+/**
+ * A scroll the page did not make is the member's, however they made it: the wheel, a touch, a
+ * scroll bar (overlay scroll bars take no room, so a click on them cannot be told apart), keys.
+ */
+function onScroll(): void {
+  const element = scroller.value;
+  if (element === undefined) return;
+  if (ownScrollTop !== null) {
+    if (Math.abs(element.scrollTop - ownScrollTop) < 1) return;
+    // The score got shorter, or the view taller, than where the page had put it: the browser
+    // brought it back as far as it goes. Not the member.
+    if (element.scrollTop < ownScrollTop && element.scrollTop >= element.scrollHeight - element.clientHeight - 1) {
+      ownScrollTop = element.scrollTop;
+      return;
+    }
+  }
+  stopFollowing();
+}
+
+/** Changes are heard once typing stops for 400 ms (docs/spec/playback.md, section 3, behaviour (a)). */
+const SOUND_DELAY = 400;
+
+function soundLater(): void {
+  clearTimeout(soundTimer);
+  soundTimer = setTimeout(() => void engine?.player.load(), SOUND_DELAY);
 }
 
 /** Scroll so that the cursor is on screen, with some room around it. */
@@ -119,16 +246,21 @@ function reveal(): void {
   const box = cursorRect.value;
   if (element === undefined || box === null) return;
   const margin = 80;
-  if (box.y < element.scrollTop + margin) element.scrollTop = Math.max(box.y - margin, 0);
-  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) element.scrollTop = box.y + box.height - element.clientHeight + margin;
+  if (box.y < element.scrollTop + margin) scrollTo(Math.max(box.y - margin, 0));
+  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) scrollTo(box.y + box.height - element.clientHeight + margin);
 }
 
 function draw(change: ScoreChange): void {
   if (engine === undefined) return;
   const json = docToJson(doc);
   score.value = json;
-  if (change.kind === "structure") engine.renderer.setScore(json);
-  else engine.renderer.patchBars(json, [...change.barIds]);
+  if (change.kind === "structure") {
+    // A new set of bars or parts is a new model for the engine, which makes its sound itself.
+    engine.renderer.setScore(json);
+    return;
+  }
+  engine.renderer.patchBars(json, [...change.barIds]);
+  if (editing.value) soundLater();
 }
 
 /** The cursor a member starts with: the first place of the first bar of the first part. */
@@ -143,7 +275,9 @@ function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(() => {
     placeCursor();
-    reveal();
+    resumable = false;
+    // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
+    if (!isFollowing()) reveal();
   });
   session.onRefused(() => {
     notice.value = text.viewerCannotEdit;
@@ -162,13 +296,20 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
+  if (pageEffectOf(event, keyPlatform()) === "playPause") {
+    event.preventDefault();
+    if (!event.repeat) togglePlay();
+    return;
+  }
+  stopFollowing();
   if (session?.press(event)) event.preventDefault();
 }
 
-/** A click on the score only moves the cursor (docs/spec/views.md, section 2). */
+/** A click on the score only moves the cursor (docs/spec/views.md, section 2); playback goes on where it is. */
 function onPointer(event: PointerEvent): void {
-  // The main button only: not a right click for the context menu.
-  if (event.button !== 0) return;
+  // The main button only: not a right click for the context menu. Not on the scroller itself
+  // either: that is its scroll bar, or the room around the page.
+  if (event.button !== 0 || event.target === scroller.value) return;
   if (session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
@@ -202,12 +343,18 @@ onMounted(async () => {
   }
   if (host.value === undefined) return;
   view.value = decideView({ role: opened.role, isGuest, canType: canType() });
-  // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003).
-  engine = createAlphaTabEngine(host.value, { fontDirectory: "/font/", soundFont: null, useWorkers: !editing.value });
+  // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003). They
+  // play; the other views do not yet (#32).
+  engine = createAlphaTabEngine(host.value, { fontDirectory: "/font/", soundFont: editing.value ? "/soundfont/sonivox.sf3" : null, useWorkers: !editing.value });
   engine.renderer.onRendered(() => {
     ready.value = true;
     updateOverlay();
   });
+  engine.player.onState((state) => {
+    playerState.value = state;
+  });
+  engine.player.onFinished(showStopped);
+  engine.player.onPosition((position) => showPlayback(position.tick));
   provider = new HocuspocusProvider({
     url: collabUrl(),
     name: opened.scoreId,
@@ -222,9 +369,9 @@ onMounted(async () => {
       if (!gone.value) return;
       // Its link opens nothing any more: stop, rather than ask it for tickets again and again.
       sync.value = "offline";
-      const stopped = provider;
+      const dropped = provider;
       provider = undefined;
-      queueMicrotask(() => stopped?.destroy());
+      queueMicrotask(() => dropped?.destroy());
     },
     onSynced: () => {
       updateSync();
@@ -239,6 +386,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  clearTimeout(soundTimer);
   hideFromTests();
   stopObserving?.();
   session?.destroy();
@@ -256,6 +404,14 @@ onBeforeUnmount(() => {
       <header class="score__toolbar">
         <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
         <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ syncText[sync] }}</span>
+        <div v-if="editing" class="score__player" :data-player="playerState">
+          <AppButton variant="primary" size="sm" :disabled="playerState === 'loading'" @click="onToolbar(togglePlay)">
+            {{ playerState === "playing" ? text.player.pause : text.player.play }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" :disabled="playerState === 'loading' || stopped" @click="onToolbar(stop)">{{ text.player.stop }}</AppButton>
+          <span v-if="playerState === 'loading'" class="score__playing">{{ text.player.loading }}</span>
+          <span v-else-if="playingBar !== null" class="score__playing" data-playing-bar :data-bar="playingBar">{{ text.player.bar(playingBar) }}</span>
+        </div>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
@@ -272,12 +428,14 @@ onBeforeUnmount(() => {
         :aria-label="text.label"
         @keydown="onKey"
         @pointerdown="onPointer"
+        @scroll.passive="onScroll"
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready"></div>
           <svg v-if="editing" class="score__overlay" aria-hidden="true">
             <!-- Invisible: they only tell the e2e tests where no overlay may go. -->
             <rect v-for="(area, index) in reserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
+            <rect v-if="playheadRect" data-playhead class="score__playhead" :x="playheadRect.x" :y="playheadRect.y" :width="playheadRect.width" :height="playheadRect.height" />
             <rect v-if="cursorRect" data-cursor class="score__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
         </div>
@@ -324,6 +482,8 @@ onBeforeUnmount(() => {
 .score__scroller {
   flex: 1;
   overflow: auto;
+  /* The browser never scrolls on its own when the drawing changes size: any scroll the page did not make is the member's. */
+  overflow-anchor: none;
   outline: none;
   /* The score is drawn in black: keep its page white in either theme. */
   background: #fff;
@@ -338,6 +498,20 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+.score__player {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.score__playing {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+/* Filled only, as the cursor is. */
+.score__playhead {
+  fill: rgba(37, 99, 235, 0.12);
 }
 /* Filled only: a stroke would reach past the rectangle, into a reserved area. */
 .score__cursor {

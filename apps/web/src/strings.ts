@@ -25,6 +25,13 @@ export const strings = {
     viewerCannotEdit: "檢視者無法修改",
     dismiss: "關閉",
     settings: "設定",
+    player: {
+      loading: "音色載入中…",
+      play: "播放",
+      pause: "暫停",
+      stop: "停止",
+      bar: (bar: number) => `第 ${bar} 小節`,
+    },
   },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {

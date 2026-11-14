@@ -14,6 +14,9 @@ export type SessionEffect = "nextBeat" | "previousBeat" | "lineDown" | "lineUp" 
  */
 export type NativeEffect = "copy" | "cut" | "paste";
 
+/** What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4). */
+export type PageEffect = "playPause";
+
 /** Where a key works: on the score whatever the kind of the part, or on parts of one kind only. */
 export type KeyContext = "score" | PartKind;
 
@@ -38,6 +41,7 @@ interface BindingKeys {
 export interface SessionBinding extends BindingKeys {
   effect: SessionEffect;
   native?: undefined;
+  page?: undefined;
   /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
   repeat?: true;
   /** The fret a digit writes. */
@@ -48,9 +52,18 @@ export interface SessionBinding extends BindingKeys {
 export interface NativeBinding extends BindingKeys {
   effect: NativeEffect;
   native: true;
+  page?: undefined;
 }
 
-export type KeyBinding = SessionBinding | NativeBinding;
+/** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */
+export interface PageBinding extends BindingKeys {
+  effect: PageEffect;
+  native?: undefined;
+  page: true;
+  value?: undefined;
+}
+
+export type KeyBinding = SessionBinding | NativeBinding | PageBinding;
 
 const DIGITS = [..."0123456789"];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -83,6 +96,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "copy", context: "score", keys: ["Mod+KeyC"], native: true, keymap: { other: ["Ctrl+KeyC"], mac: ["Cmd+KeyC"] } },
   { effect: "cut", context: "score", keys: ["Mod+KeyX", "Shift+Delete"], mac: ["Mod+KeyX"], native: true, keymap: { other: ["Ctrl+KeyX", "Shift+Delete"], mac: ["Cmd+KeyX"] } },
   { effect: "paste", context: "score", keys: ["Mod+KeyV", "Shift+Insert"], mac: ["Mod+KeyV"], native: true, keymap: { other: ["Ctrl+KeyV", "Shift+Insert"], mac: ["Cmd+KeyV"] } },
+  { effect: "playPause", context: "score", keys: ["Space"], page: true, keymap: both("Space") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];

@@ -7,6 +7,11 @@ export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
+/** The same place, or both none. */
+export function sameRect(a: Rect | null, b: Rect | null): boolean {
+  return a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
+}
+
 /**
  * The rectangle moved out of every reserved area it reaches into. Reserved areas lie above a
  * staff, so it goes below them: what reaches lower than an area is cut at the area's bottom

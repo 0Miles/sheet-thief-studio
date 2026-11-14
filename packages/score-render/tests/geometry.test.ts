@@ -5,7 +5,7 @@ import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, ins
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { cursorRect, type PartShape, reservedRects, type StaffMetrics } from "../src/geometry";
+import { cursorRect, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "../src/geometry";
 import { projectScore } from "../src/projection";
 import type { Rect } from "../src/types";
 
@@ -53,6 +53,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
     mark,
     rect: (cursor: Cursor) => cursorRect(lookup, projection, parts, cursor, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
+    played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
   };
 }
 
@@ -122,4 +123,44 @@ test("the append slot after the last beat of a bar not full is drawn after that 
   const next = drawn.rect(cursorAt(doc, partIds[0]!, barIds[1]!, 1))!;
   expect(inSlot.x).toBeGreaterThanOrEqual(onAnchor.x + onAnchor.width);
   expect(inSlot.x + inSlot.width).toBeLessThanOrEqual(next.x);
+});
+
+test("at the start of every bar, playback is drawn where the cursor is in that empty bar, and as tall as its system", () => {
+  const { doc, barIds, partIds } = band(12, 2);
+  const drawn = layOut(docToJson(doc));
+  const tops = new Set<number>();
+  barIds.forEach((barId, index) => {
+    const played = drawn.played(index, 0)!;
+    expect(played, `bar ${index + 1}`).not.toBeNull();
+    // The append slot of the empty voice: at the left edge of the place of the beats.
+    const first = drawn.rect(cursorAt(doc, partIds[0]!, barId, 1))!;
+    const last = drawn.rect(cursorAt(doc, partIds[1]!, barId, 6))!;
+    expect(played.x).toBeCloseTo(first.x, 3);
+    expect(played.y).toBeLessThanOrEqual(first.y);
+    expect(played.y + played.height).toBeGreaterThanOrEqual(last.y + last.height);
+    tops.add(played.y);
+  });
+  // Twelve bars do not fit on one system of 1200 px.
+  expect(tops.size).toBeGreaterThan(1);
+});
+
+test("further into a bar, playback is drawn on the beat played then", () => {
+  const { doc, barIds, partIds } = band(2, 1);
+  const first = insertBeat(doc, cursorAt(doc, partIds[0]!, barIds[0]!, 1), { value: 2 });
+  setFret(doc, first, 3);
+  const second = setFret(doc, insertBeat(doc, { ...first, at: "after" }, { value: 2 }), 5);
+  const drawn = layOut(docToJson(doc));
+  const centre = (rect: Rect) => rect.x + rect.width / 2;
+  const inside = (rect: Rect, x: number) => rect.x <= x && x <= rect.x + rect.width;
+
+  // A half note is 1920 ticks.
+  expect(inside(drawn.played(0, 0)!, centre(drawn.rect(first)!))).toBe(true);
+  expect(inside(drawn.played(0, 1919)!, centre(drawn.rect(first)!))).toBe(true);
+  expect(inside(drawn.played(0, 1920)!, centre(drawn.rect(second)!))).toBe(true);
+  expect(inside(drawn.played(0, 1920)!, centre(drawn.rect(first)!))).toBe(false);
+});
+
+test("a bar that is not drawn has no place for playback", () => {
+  const { doc } = band(2, 1);
+  expect(layOut(docToJson(doc)).played(2, 0)).toBeNull();
 });
