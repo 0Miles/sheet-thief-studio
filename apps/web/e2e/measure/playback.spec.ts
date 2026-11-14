@@ -1,26 +1,29 @@
-// S5: an edit while the score plays. After each edit the sound is regenerated; the player must
+// S5: an edit while the score plays, in the edit view. After each edit the sound is regenerated; the player must
 // keep playing from about where it was, and nothing may throw. The audio itself cannot be heard
 // from here: what is checked is the player's state and the positions it reports.
 import { expect, test } from "@playwright/test";
 
-import { median, openScore, p95 } from "../studio";
+import { strings } from "../../src/strings";
+import { logInAsAdmin, median, openEditView, p95, runs } from "./editView";
 import { environment, MODE, writeData } from "./output";
+import { perfScore } from "./scores";
 
-const ROUNDS = 30;
+const ROUNDS = runs(30);
 /** 120 quarter notes a minute, 960 ticks a quarter. */
 const TICKS_PER_MS = (120 * 960) / 60_000;
 
 test("the player goes on from where it was after the sound is regenerated", async ({ page }) => {
-  await openScore(page, "/local?seed=perf");
-  await page.waitForFunction(() => window.__studio!.player.state() !== "loading", null, { timeout: 60_000 });
+  const scoreId = perfScore();
+  await logInAsAdmin(page);
+  await openEditView(page, scoreId);
   // The play button, as a member would: the browser lets audio start only from a gesture.
-  await page.getByRole("button").first().click();
-  await page.waitForFunction(() => window.__studio!.player.position().tick > 2000, null, { timeout: 20_000 });
+  await page.getByRole("button", { name: strings.score.player.play, exact: true }).click();
+  await page.waitForFunction(() => window.__studioMeasure!.player.position().tick > 2000, null, { timeout: 20_000 });
 
   const rounds: { generate: number; total: number; tickBefore: number; firstTickAfter: number; firstPositionAfterMs: number; behindMs: number; wentBack: boolean }[] = [];
   for (let round = 0; round < ROUNDS; round++) {
     const result = await page.evaluate(async (bar) => {
-      const studio = window.__studio!;
+      const studio = window.__studioMeasure!;
       await studio.editBar(0, bar);
       const before = studio.player.trace.at(-1)!;
       const startedAt = performance.now();
@@ -60,5 +63,5 @@ test("the player goes on from where it was after the sound is regenerated", asyn
   console.log(JSON.stringify(summary, null, 1));
   expect(rounds.filter((item) => item.wentBack)).toHaveLength(0);
   // Still playing at the end, and further than at the start.
-  expect(await page.evaluate(() => window.__studio!.player.state())).toBe("playing");
+  expect(await page.evaluate(() => window.__studioMeasure!.player.state())).toBe("playing");
 });

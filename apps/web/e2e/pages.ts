@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -63,7 +63,8 @@ export async function createScore(page: Page, title: string): Promise<string> {
 
 /**
  * What `seedScore` makes: account names, how many bars the score starts with (8 when left out),
- * and the parts it has after the first one every new score has (「吉他 1」).
+ * and the parts it has after the first one every new score has (「吉他 1」); or, for the measure
+ * suite, its whole content as a Yjs update in base64 (`state`).
  */
 export interface ScoreFixture {
   title: string;
@@ -71,6 +72,7 @@ export interface ScoreFixture {
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
   parts?: { name: string; kind: PartKind }[];
+  state?: string;
 }
 
 /**
@@ -114,6 +116,30 @@ export function scoreOf(page: Page): Promise<ScoreJSON> {
   return page.evaluate(() => window.__studioTest!.scoreJson()!);
 }
 
+/** The beats of the first voice of a bar of a part, both by index. */
+export function beatsIn(score: ScoreJSON, part: number, bar: number): BeatJSON[] {
+  const barId = score.bars[bar]!.id;
+  return score.parts[part]!.content[barId]?.["0:0"] ?? [];
+}
+
 export function cursorOf(page: Page): Promise<Cursor | null> {
   return page.evaluate(() => window.__studioTest!.cursor());
+}
+
+/**
+ * Type one beat per fret from the append slot, as someone entering notes does: the digit makes
+ * the beat, → goes on to the append slot after it. The first beat is made a sixteenth and the
+ * next ones take the length of the one before, so that two members typing six beats each in one
+ * bar of 4/4 never fill it, and → never leaves the bar.
+ */
+export async function typeBeats(page: Page, frets: number[]): Promise<void> {
+  for (const [index, fret] of frets.entries()) {
+    await page.keyboard.press(String(fret));
+    if (index === 0) {
+      await page.keyboard.press("+");
+      await page.keyboard.press("+");
+    }
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(20);
+  }
 }

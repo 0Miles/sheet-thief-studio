@@ -2,10 +2,14 @@ import { defineConfig } from "@playwright/test";
 
 import base from "./playwright.config";
 
-// The M0 measurements (docs/spike-report.md): not tests of behaviour, so they are not part of
-// `test:e2e`. Run with `pnpm --filter @studio/web measure`; HEADED=1 opens a real window.
-// Results go to docs/spike/data, screenshots to docs/spike. The viewport is the project's
+// The measurements (docs/spec/testing.md, section 4): not tests of behaviour, so they are not part
+// of `test:e2e`. Run with `pnpm --filter @studio/web measure`; HEADED=1 opens a real window, and
+// MEASURE_RUNS=3 makes every measurement short, to check that the suite works. They run in the
+// edit view of scores written into the end-to-end database, against the same server; results go
+// to docs/measurements/data, screenshots to docs/measurements. The viewport is the project's
 // (Desktop Chrome, 1280 × 720).
+const [server, page] = base.webServer as [Record<string, unknown>, Record<string, unknown>];
+
 export default defineConfig({
   ...base,
   testDir: "e2e/measure",
@@ -17,4 +21,6 @@ export default defineConfig({
     headless: process.env.HEADED !== "1",
     trace: "off",
   },
+  // The measurement build: it has `window.__studioMeasure` (src/measureHook.ts) and no other.
+  webServer: [server, { ...page, env: { VITE_MEASURE: "1" } }],
 });

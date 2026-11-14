@@ -24,6 +24,7 @@ import DisplayControls from "../components/DisplayControls.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
+import { measureEditView } from "../measureHook";
 import { clearOf, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -142,6 +143,13 @@ const hideFromTests = exposeForTests({
   scoreJson: () => (provider?.isSynced ? docToJson(doc) : null),
   cursor: () => session?.cursor ?? null,
   flags: () => (score.value ? flagsOf(score.value) : []),
+});
+const measurement = measureEditView({
+  doc,
+  engine: () => engine,
+  synced: () => provider !== undefined && provider.isSynced && provider.unsyncedChanges === 0,
+  cursor: () => session?.cursor ?? null,
+  moveCursor: (cursor) => session?.moveTo(cursor),
 });
 
 /** Draw the cursor and the selection again, where they are now: when they moved, or after a drawing. */
@@ -285,7 +293,9 @@ function reveal(): void {
 
 function draw(change: ScoreChange): void {
   if (engine === undefined) return;
+  const startedAt = performance.now();
   const json = docToJson(doc);
+  measurement.drawing(startedAt);
   score.value = json;
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
@@ -399,7 +409,10 @@ function onKey(event: KeyboardEvent): void {
     return;
   }
   stopFollowing();
-  if (session?.press(event)) event.preventDefault();
+  const measured = measurement.key(event);
+  const handled = session?.press(event) ?? false;
+  if (handled) event.preventDefault();
+  measured(handled);
 }
 
 /** A click on the score only moves the cursor (docs/spec/views.md, section 2); playback goes on where it is. */
@@ -463,6 +476,8 @@ onMounted(async () => {
   });
   engine.player.onFinished(showStopped);
   engine.player.onPosition((position) => showPlayback(position.tick));
+  // After the page's own listeners: a drawing is measured once the cursor is drawn on it.
+  measurement.watch(engine);
   provider = new HocuspocusProvider({
     url: collabUrl(),
     name: opened.scoreId,
@@ -496,6 +511,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearTimeout(soundTimer);
   hideFromTests();
+  measurement.stop();
   stopObserving?.();
   session?.destroy();
   provider?.destroy();
