@@ -91,10 +91,11 @@ interface NoteSound {
 }
 
 /**
- * How the note on string 3 of a guitar sounds (G3, so fret 5 is MIDI 60) when it is `note`: a
- * quarter beat, followed by a quarter with the open first string, then rests.
+ * The MIDI alphaTab makes of the note on string 3 of a guitar (G3, so fret 5 is MIDI 60) when it
+ * is `note`: a quarter beat, followed by a quarter with the open first string, then rests. With
+ * the note's MIDI key.
  */
-function soundOf(note: NoteJSON): NoteSound {
+function midiOf(note: NoteJSON): { file: alphaTab.midi.MidiFile; key: number } {
   const doc = new Y.Doc();
   createScore(doc, "Techniques");
   const [barId] = insertBars(doc, { after: null, count: 1 });
@@ -105,7 +106,12 @@ function soundOf(note: NoteJSON): NoteSound {
   const { score } = projectScore(docToJson(doc), settings);
   const file = new alphaTab.midi.MidiFile();
   new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
-  const key = 55 + (note.fret ?? 0);
+  return { file, key: 55 + (note.fret ?? 0) };
+}
+
+/** How the note on string 3 of a guitar sounds when it is `note` (`midiOf`). */
+function soundOf(note: NoteJSON): NoteSound {
+  const { file, key } = midiOf(note);
   const on = file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.noteKey === key)!;
   const off = file.events.find((event) => event instanceof alphaTab.midi.NoteOffEvent && event.noteKey === key && event.tick >= on.tick)!;
   const bends = file.events.filter((event) => event instanceof alphaTab.midi.NoteBendEvent && event.noteKey === key).length;
@@ -302,26 +308,17 @@ test("a dangling link sounds as the note would plain: alphaTab is not told of it
 
 /**
  * How a bent note's pitch goes, in semitones: the value of each pitch bend alphaTab sends the note
- * (fret 5 on string 3, MIDI 60, a quarter followed by another note), read against the pitch bend
+ * (fret 5 on string 3, MIDI 60, as `midiOf` plays it), read against the pitch bend
  * range it sets its channel to (RPN 0, the data entry controller). alphaTab sends a note its own
  * pitch bend, MIDI 2.0's, of 32 bits: 2^31 is no bend, and 2^31 above it the whole range.
  */
 function bendOf(bend: NoteJSON["bend"]): number[] {
-  const doc = new Y.Doc();
-  createScore(doc, "Bend");
-  const [barId] = insertBars(doc, { after: null, count: 1 });
-  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
-  const first = insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 4 });
-  setNote(doc, first, "s3", bend ? { fret: 5, bend } : { fret: 5 });
-  setNote(doc, insertBeat(doc, { ...first, at: "after" }, { value: 4 }), "s1", { fret: 0 });
-  const { score } = projectScore(docToJson(doc), settings);
-  const file = new alphaTab.midi.MidiFile();
-  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
-  const on = file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.noteKey === 60)!;
+  const { file, key } = midiOf(bend ? { fret: 5, bend } : { fret: 5 });
+  const on = file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.noteKey === key)!;
   const range = file.events.find(
     (event): event is alphaTab.midi.ControlChangeEvent => event instanceof alphaTab.midi.ControlChangeEvent && event.channel === on.channel && event.controller === alphaTab.midi.ControllerType.DataEntryCoarse,
   )!.value;
-  return file.events.filter((event): event is alphaTab.midi.NoteBendEvent => event instanceof alphaTab.midi.NoteBendEvent && event.noteKey === 60).map((event) => (event.value - 2 ** 31) / (2 ** 31 / range));
+  return file.events.filter((event): event is alphaTab.midi.NoteBendEvent => event instanceof alphaTab.midi.NoteBendEvent && event.noteKey === key).map((event) => (event.value - 2 ** 31) / (2 ** 31 / range));
 }
 
 test.each([1, 2, 3, 4])("a bend of %i semitones sends pitch bends whose highest is that many semitones up, for every shape", (semitones) => {

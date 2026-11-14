@@ -7,6 +7,7 @@ import * as Y from "yjs";
 import {
   BEND_SEMITONES,
   BEND_TYPES,
+  type BendType,
   barsOf,
   beatFieldFits,
   COMMON_TIME,
@@ -434,14 +435,11 @@ export const slideInCycle: NoteToggle<NoteJSON["slideIn"]> = noteCycle("slideIn"
  * stepped as the slides are (`noteCycle`). A new bend goes up 2 semitones; a bend that changes
  * shape keeps its own.
  */
-export const bendCycle: NoteToggle<NoteJSON["bend"]> = {
-  decide: (seen) => {
-    const type = nextOf(BEND_TYPES, seen[0]?.bend?.type);
-    return type && { type, semitones: BEND_SEMITONES.initial };
-  },
-  turn(stored, bend) {
-    if (stored === undefined || stored.bend?.type === bend?.type) return stored ?? null;
-    return withField(stored, "bend", bend && { type: bend.type, semitones: stored.bend?.semitones ?? bend.semitones });
+export const bendCycle: NoteToggle<BendType | undefined> = {
+  decide: (seen) => nextOf(BEND_TYPES, seen[0]?.bend?.type),
+  turn(stored, type) {
+    if (stored === undefined || stored.bend?.type === type) return stored ?? null;
+    return withField(stored, "bend", type && { type, semitones: stored.bend?.semitones ?? BEND_SEMITONES.initial });
   },
 };
 

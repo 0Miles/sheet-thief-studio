@@ -32,7 +32,7 @@ import {
   toggleOnSelection,
   voiceIn,
 } from "../src/index";
-import { appendBeat, transactionsOf, undoOf } from "./support";
+import { appendBeat, transactionsOf, undoEach, undoOf } from "./support";
 
 const toggleNote = (doc: Y.Doc, cursor: Cursor, key: string, technique: OnOffTechnique) => toggleAt(doc, cursor, key, techniqueToggle(technique));
 const toggleSelected = (doc: Y.Doc, selection: Selection, cursor: Cursor, technique: OnOffTechnique) => toggleOnSelection(doc, selection, cursor, techniqueToggle(technique));
@@ -341,7 +341,10 @@ test("a tie takes the fret of the note before on its string, in its bar or the b
   expect(danglingTies(doc)).toEqual([]);
   toggleTie(doc, opening, "s3");
   expect(notes(nextBar)).toEqual([{ s3: { fret: 5 } }]);
-  undoEach(undo, () => notes(nextBar)[0]!.s3!, [{ fret: 2 }, { fret: 5, tie: true }], {}, 1);
+  undo.undo();
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 5, tie: true } }]);
+  undo.undo();
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 2 } }]);
   undo.undo();
   expect(notes()).toEqual([{ s3: { fret: 5 } }, { s3: { fret: 7 } }]);
   expect(undo.canUndo()).toBe(false);
@@ -415,19 +418,6 @@ test("on a pitched part, a tie on an empty line makes the note before's pitch th
   expect(docToJson(doc).parts[0]!.content[barId!]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ n61: { spell: "Db", staccato: true } }, { n61: { spell: "Db", tie: true } }]);
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId, voice: "0:0" }]);
 });
-
-/**
- * Undo every step of a technique stepped through, last first: the note goes back through each of
- * `states` (what it held besides `base`, the first before any step) to the first. Then there is
- * nothing more to undo, unless `left` steps are, from before.
- */
-function undoEach(undo: Y.UndoManager, note: () => NoteJSON, states: Partial<NoteJSON>[], base: NoteJSON, left = 0): void {
-  for (const state of [...states].reverse()) {
-    undo.undo();
-    expect(note()).toEqual({ ...base, ...state });
-  }
-  expect(undo.canUndo()).toBe(left > 0);
-}
 
 // Links (#27; docs/spec/commands.md, 5.4): legato is on or off; a slide out and a slide in step
 // through their kinds and back to none.
@@ -522,8 +512,8 @@ test("a bend's semitones go up and down one at a time, from 1 to 4, kept when it
   const { doc, cursor, notes } = guitar();
   toggleAt(doc, cursor, "s3", bendCycle);
   const undo = undoOf(doc);
-  const semitones = [1, 1, 1, -1, -1, -1, -1].map((step) => {
-    toggleAt(doc, cursor, "s3", bendStep(step as 1 | -1));
+  const semitones = ([1, 1, 1, -1, -1, -1, -1] as const).map((step) => {
+    toggleAt(doc, cursor, "s3", bendStep(step));
     return notes()[0]!.s3!.bend!.semitones;
   });
   expect(semitones).toEqual([3, 4, 4, 3, 2, 1, 1]);

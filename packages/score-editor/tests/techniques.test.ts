@@ -208,7 +208,13 @@ test("on Windows and on a Mac, Shift+B steps the note of the cursor's string thr
       { type: "preBendRelease", semitones: 2 },
       null,
     ]);
-    undoEach(press, platform, () => beats()[0]!.notes.s6, [...bends.slice(0, -1).reverse().map((bend) => ({ fret: 5, bend })), { fret: 5 }]);
+    undoEach(press, platform, () => beats()[0]!.notes.s6, [
+      { fret: 5, bend: { type: "preBendRelease", semitones: 2 } },
+      { fret: 5, bend: { type: "preBend", semitones: 2 } },
+      { fret: 5, bend: { type: "bendRelease", semitones: 2 } },
+      { fret: 5, bend: { type: "bend", semitones: 2 } },
+      { fret: 5 },
+    ]);
   }
 });
 
