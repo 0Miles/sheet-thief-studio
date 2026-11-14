@@ -1,6 +1,6 @@
 // What a projected score sounds like: the MIDI alphaTab generates from it (question S6).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, cursorAt, docToJson, insertBars, insertBeat, setNote } from "@studio/score-model";
+import { addPart, createScore, cursorAt, docToJson, insertBars, insertBeat, type NoteJSON, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -57,4 +57,61 @@ test("a pitch sounds the same however it is spelled, and a fretted note sounds i
   // The two parts do not share a channel, and neither is the percussion channel.
   expect(new Set(played.map((note) => note.channel)).size).toBe(2);
   expect(played.map((note) => note.channel)).not.toContain(9);
+});
+
+/** How a note sounds: its loudness, how long it lasts in ticks, and how many times its pitch is bent. */
+interface NoteSound {
+  velocity: number;
+  length: number;
+  bends: number;
+}
+
+/**
+ * How the note on string 3 of a guitar sounds (G3, so fret 5 is MIDI 60) when it is `note`: a
+ * quarter beat, followed by a quarter with the open first string, then rests.
+ */
+function soundOf(note: NoteJSON): NoteSound {
+  const doc = new Y.Doc();
+  createScore(doc, "Techniques");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 4 });
+  setNote(doc, first, "s3", note);
+  setNote(doc, insertBeat(doc, { ...first, at: "after" }, { value: 4 }), "s1", { fret: 0 });
+  const { score } = projectScore(docToJson(doc), settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  const key = 55 + (note.fret ?? 0);
+  const on = file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.noteKey === key)!;
+  const off = file.events.find((event) => event instanceof alphaTab.midi.NoteOffEvent && event.noteKey === key && event.tick >= on.tick)!;
+  const bends = file.events.filter((event) => event instanceof alphaTab.midi.NoteBendEvent && event.noteKey === key).length;
+  return { velocity: on.noteVelocity, length: off.tick - on.tick, bends };
+}
+
+test("the flags alphaTab plays change how the note sounds: ghost softer, accent louder, staccato, palm mute and dead shorter, let ring longer, vibrato bent", () => {
+  const plain = soundOf({ fret: 5 });
+  expect(plain.length).toBe(960);
+  const ghost = soundOf({ fret: 5, ghost: true });
+  expect(ghost.velocity).toBeLessThan(plain.velocity);
+  expect({ ...ghost, velocity: plain.velocity }).toEqual(plain);
+  const accent = soundOf({ fret: 5, accent: true });
+  expect(accent.velocity).toBeGreaterThan(plain.velocity);
+  expect({ ...accent, velocity: plain.velocity }).toEqual(plain);
+  expect(soundOf({ fret: 5, staccato: true })).toEqual({ ...plain, length: 480 });
+  for (const short of [soundOf({ fret: 5, palmMute: true }), soundOf({ fret: 5, dead: true })]) {
+    expect(short.length).toBeLessThan(plain.length);
+    expect({ ...short, length: plain.length }).toEqual(plain);
+  }
+  // Let ring holds the note on while the next beat plays another string, up to the rest after it.
+  expect(soundOf({ fret: 5, letRing: true })).toEqual({ ...plain, length: 1920 });
+  const vibrato = soundOf({ fret: 5, vibrato: true });
+  expect(vibrato.bends).toBeGreaterThan(plain.bends);
+  expect({ ...vibrato, bends: plain.bends }).toEqual(plain);
+  // Tap is only drawn: alphaTab plays a tapped note as any other, so it is tested in the projection only.
+});
+
+test("a dead note without a fret sounds, short, on its open string", () => {
+  const fretless = soundOf({ dead: true });
+  expect(fretless).toEqual(soundOf({ fret: 0, dead: true }));
+  expect(fretless.length).toBeLessThan(soundOf({ fret: 0 }).length);
 });
