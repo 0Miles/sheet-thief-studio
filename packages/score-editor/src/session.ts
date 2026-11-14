@@ -131,8 +131,8 @@ export interface EditorSession {
   /**
    * Save the text of a beat, typed in the box `onEditText` asked for, one command: at `cursor`,
    * the cursor of the request, on whatever beat it names; an empty text takes it away. False,
-   * and nothing saved, while read-only (the member is told, as for a key), or for a text of more
-   * than 64 characters. The selection ends, as after any command that does not work on it.
+   * and nothing saved, while read-only (the member is told, as for a key), or for a text longer
+   * than `MAX_BEAT_TEXT`. The selection ends, as after any command that does not work on it.
    */
   setText(cursor: Cursor, text: string): boolean;
   destroy(): void;

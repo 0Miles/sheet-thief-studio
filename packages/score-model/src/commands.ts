@@ -29,6 +29,7 @@ import {
   type Staff,
   staffCountOf,
   startLine,
+  DYNAMICS,
   MAX_BEAT_TEXT,
   MAX_TITLE,
   stringCountOf,
@@ -658,26 +659,29 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omi
   return cursor;
 }
 
-/** The fields of a beat a key sets, its duration and notes apart (docs/spec/commands.md, 5.4 and 5.5). */
-export type BeatFlags = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text">;
+/**
+ * The markings of a beat a key sets, its duration and notes apart (docs/spec/commands.md, 5.4 and
+ * 5.5): stored in the score, unlike a flag (CONTEXT.md).
+ */
+export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text">;
 
-/** A beat as a `BeatChange` sees it: how long it lasts, whether it is a rest, and its flags as read. */
+/** A beat as a `BeatChange` sees it: how long it lasts, whether it is a rest, and its markings as read. */
 export interface SeenBeat {
   duration: BeatDuration;
   rest: boolean;
-  flags: BeatFlags;
+  markings: BeatMarkings;
 }
 
 /**
  * What a `BeatChange` writes on a beat: a note value, dots, a tuplet (null takes it away), its
- * notes taken away, or flags (`set`: a value puts one there, null takes it away).
+ * notes taken away, or markings (`set`: a value puts one there, null takes it away).
  */
 export interface BeatWrite {
   value?: NoteValue;
   dots?: 0 | 1 | 2;
   tuplet?: Tuplet | null;
   clear?: true;
-  set?: { [F in keyof BeatFlags]?: NonNullable<BeatFlags[F]> | null };
+  set?: { [F in keyof BeatMarkings]?: NonNullable<BeatMarkings[F]> | null };
 }
 
 /**
@@ -736,7 +740,7 @@ function seenBeat(reader: PartReader, beat: YBeat): SeenBeat | undefined {
   const fields = readBeatFields(reader.kind, beat);
   if (fields === undefined) return undefined;
   const { value, dots, tuplet, stroke, slap, pop, dynamic, text } = fields;
-  return { duration: { value, dots, tuplet }, rest: isRest(beat), flags: { stroke, slap, pop, dynamic, text } };
+  return { duration: { value, dots, tuplet }, rest: isRest(beat), markings: { stroke, slap, pop, dynamic, text } };
 }
 
 /** Whether a beat of a part of `kind` may hold what a write sets: stroke, slap and pop are a fretted part's only. */
@@ -797,32 +801,32 @@ function nextOf<T>(values: readonly T[], current: T | undefined): T | undefined 
 }
 
 /**
- * A beat flag that steps through `values` and back to none: every beat to the value after the
+ * A beat marking that steps through `values` and back to none: every beat to the value after the
  * one of the first beat seen, as `.` does with dots.
  */
-function flagCycle<F extends "stroke" | "dynamic">(field: F, values: readonly NonNullable<BeatFlags[F]>[]): BeatChange<NonNullable<BeatFlags[F]> | null> {
+function markingCycle<F extends "stroke" | "dynamic">(field: F, values: readonly NonNullable<BeatMarkings[F]>[]): BeatChange<NonNullable<BeatMarkings[F]> | null> {
   return {
-    decide: (seen) => nextOf(values, seen[0]?.flags[field] ?? undefined) ?? null,
-    turn: ({ flags }, next) => ((flags[field] ?? null) === next ? null : { set: { [field]: next } }),
+    decide: (seen) => nextOf(values, seen[0]?.markings[field] ?? undefined) ?? null,
+    turn: ({ markings }, next) => ((markings[field] ?? null) === next ? null : { set: { [field]: next } }),
   };
 }
 
 /** Shift+U: the beat strummed down, then up, then not at all. Fretted parts only. */
-export const strokeCycle: BeatChange<"down" | "up" | null> = flagCycle("stroke", ["down", "up"]);
+export const strokeCycle: BeatChange<"down" | "up" | null> = markingCycle("stroke", ["down", "up"]);
 
 /** Shift+F: the beat's dynamic, pp to ff, then none. */
-export const dynamicCycle: BeatChange<NonNullable<BeatFlags["dynamic"]> | null> = flagCycle("dynamic", ["pp", "p", "mp", "mf", "f", "ff"]);
+export const dynamicCycle: BeatChange<NonNullable<BeatMarkings["dynamic"]> | null> = markingCycle("dynamic", DYNAMICS);
 
 /** Shift+J: the beat slapped, then popped, then neither; never both (docs/spec/schema.md, section 6). Fretted parts only. */
 export const slapPopCycle: BeatChange<"slap" | "pop" | null> = {
   decide(seen) {
-    const first = seen[0]?.flags;
+    const first = seen[0]?.markings;
     return nextOf(["slap", "pop"] as const, first?.slap ? "slap" : first?.pop ? "pop" : undefined) ?? null;
   },
-  turn({ flags }, next) {
+  turn({ markings }, next) {
     const slap = next === "slap";
     const pop = next === "pop";
-    if ((flags.slap === true) === slap && (flags.pop === true) === pop) return null;
+    if ((markings.slap === true) === slap && (markings.pop === true) === pop) return null;
     return { set: { slap: slap ? true : null, pop: pop ? true : null } };
   },
 };
@@ -831,14 +835,14 @@ export const slapPopCycle: BeatChange<"slap" | "pop" | null> = {
 function beatText(text: string): BeatChange<void> {
   return {
     decide: () => undefined,
-    turn: ({ flags }) => ((flags.text ?? "") === text ? null : { set: { text: text === "" ? null : text } }),
+    turn: ({ markings }) => ((markings.text ?? "") === text ? null : { set: { text: text === "" ? null : text } }),
   };
 }
 
 /**
  * Put a text over the beat of the cursor (a chord name, say: never read nor transposed), one
- * command; an empty text takes it away. False, and nothing set, for a text longer than 64
- * characters (docs/spec/schema.md, section 13). Nothing in the append slot.
+ * command; an empty text takes it away. False, and nothing set, for a text longer than
+ * `MAX_BEAT_TEXT` (docs/spec/schema.md, section 13). Nothing in the append slot.
  */
 export function setText(doc: Y.Doc, cursor: Cursor, text: string): boolean {
   if (text.length > MAX_BEAT_TEXT) return false;
@@ -851,7 +855,7 @@ export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
   const reader = readerOf(doc, cursor.partId);
   const beat = beatAt(doc, cursor);
   const read = reader && beat && seenBeat(reader, beat);
-  return read ? (read.flags.text ?? "") : null;
+  return read ? (read.markings.text ?? "") : null;
 }
 
 /** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */

@@ -188,7 +188,7 @@ interface Cursor {
     - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。
     - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
     - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`。
-  - **補充**（#30）：拍點旗標沿用 5.3 的 `BeatChange<D>`（`changeBeatAt`、`changeBeatsOnSelection`，選取時走 `runsOf` 與 `selectedBeatsOf`），不另開一條選取的路。`decide` 看到的拍點（`SeenBeat`）多了 `flags`：讀取時讀出的 stroke、slap、pop、dynamic、text（`read.ts` 的 `readBeatFields`，同時有 slap 與 pop 時讀成只有 slap）；`turn` 回傳的 `BeatWrite` 多了 `set`：值是寫入，`null` 是移除。
+  - **補充**（#30）：拍點旗標沿用 5.3 的 `BeatChange<D>`（`changeBeatAt`、`changeBeatsOnSelection`，選取時走 `runsOf` 與 `selectedBeatsOf`），不另開一條選取的路。`decide` 看到的拍點（`SeenBeat`）多了 `markings`（`BeatMarkings`；不叫 flag，因為 Flag 不存在團譜裡，見 `CONTEXT.md`）：讀取時讀出的 stroke、slap、pop、dynamic、text（`read.ts` 的 `readBeatFields`，同時有 slap 與 pop 時讀成只有 slap）；`turn` 回傳的 `BeatWrite` 多了 `set`：值是寫入，`null` 是移除。
     - 三個循環型的旗標，選取時全部設成「範圍裡第一個拍點的值」的下一個，和 `.` 的附點一樣：`strokeCycle`（down → up → 沒有）、`slapPopCycle`（slap → pop → 沒有；切到 pop 時同一筆交易移除 slap，所以兩人同時寫成兩者都有的拍點，按一次就只剩 pop）、`dynamicCycle`（沒有 → pp → … → ff → 沒有）。
     - 休止拍點也照樣設上（拍點層級的切換作用在每一個拍點）；讀不懂的拍點不算、也不改；寫入時以儲存的原值為底，不認得的欄位保留。
     - 寫入不適用於該聲部種類的欄位（stroke、slap、pop 在鼓與五線譜）時整個不動，不寫入：寫了，讀取時整個拍點會被略過（`schema.ts` 的 `beatFieldFits`）。鍵本身也只綁在 fretted（[`keymap.md`](keymap.md) 第 3 節的補充）。

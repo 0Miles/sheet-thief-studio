@@ -26,6 +26,9 @@ export const MAX_BARS = 1000;
 /** The longest title of a score (docs/spec/commands.md, 7.3). */
 export const MAX_TITLE = 100;
 
+/** The dynamics a beat can be marked with, softest first. */
+export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
+
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
@@ -139,7 +142,7 @@ const beatFieldsSchema = z.object({
   stroke: z.enum(["down", "up"]).optional(),
   slap: z.literal(true).optional(),
   pop: z.literal(true).optional(),
-  dynamic: z.enum(["pp", "p", "mp", "mf", "f", "ff"]).optional(),
+  dynamic: z.enum(DYNAMICS).optional(),
   /** Free text over the beat, such as a chord name: never read nor transposed. */
   text: text(1, MAX_BEAT_TEXT).optional(),
   /** One syllable; empty continues the syllable before it (melisma). */
@@ -178,11 +181,16 @@ const BEAT_FIELD_KINDS: FieldKinds = { stroke: ["fretted"], slap: ["fretted"], p
 
 /** Whether a beat of a part of `kind` may hold `field` (docs/spec/schema.md, section 6). */
 export function beatFieldFits(field: string, kind: PartKind): boolean {
-  return BEAT_FIELD_KINDS[field]?.includes(kind) ?? true;
+  return fieldFits(BEAT_FIELD_KINDS, field, kind);
+}
+
+/** Whether a part of `kind` has `field`: every kind has a field not in `kinds`. */
+function fieldFits(kinds: FieldKinds, field: string, kind: PartKind): boolean {
+  return kinds[field]?.includes(kind) ?? true;
 }
 
 function onlyFieldsOf(kinds: FieldKinds, kind: PartKind) {
-  return (value: object) => Object.entries(value).every(([field, item]) => item === undefined || (kinds[field]?.includes(kind) ?? true));
+  return (value: object) => Object.entries(value).every(([field, item]) => item === undefined || fieldFits(kinds, field, kind));
 }
 
 /** Whether the fields of a beat fit a part of `kind`: none that only other kinds have, and not slap and pop together. */

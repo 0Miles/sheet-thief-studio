@@ -1,8 +1,6 @@
 // The platform layer of the keymap (docs/spec/keymap.md, 1.3): the keys are written as abstract
 // chords, which become the keys of Windows and Linux, or of macOS, here and nowhere else.
-import type { PartKind } from "@studio/score-model";
-
-import { KEY_BINDINGS, type KeyBinding, type PageEffect, type TextEntryEffect } from "./bindings";
+import { KEY_BINDINGS, type KeyBinding, type KeyContext, type PageEffect, type TextEntryEffect } from "./bindings";
 
 /** The keys of Windows and Linux (`"other"`), or of macOS and iPadOS (`"mac"`). */
 export type KeyPlatform = "mac" | "other";
@@ -215,12 +213,12 @@ function bindingsOn(platform: KeyPlatform): Map<string, KeyBinding[]> {
  * 1.1). A key that goes to an input method is no binding's: Safari ends a composition with a
  * keydown whose `isComposing` is false and whose `keyCode` is 229.
  */
-export function matchKey(key: Key, platform: KeyPlatform, kind: PartKind | "textEntry" | undefined): KeyBinding | undefined {
+export function matchKey(key: Key, platform: KeyPlatform, context: Exclude<KeyContext, "score"> | undefined): KeyBinding | undefined {
   if (key.isComposing === true || key.keyCode === 229) return undefined;
   const combo: KeyCombo = { code: key.code, ctrlKey: key.ctrlKey === true, altKey: key.altKey === true, shiftKey: key.shiftKey === true, metaKey: key.metaKey === true };
   return bindingsOn(platform)
     .get(comboName(combo, platform))
-    ?.find((binding) => binding.context === kind || (binding.context === "score" && kind !== "textEntry"));
+    ?.find((binding) => binding.context === context || (binding.context === "score" && context !== "textEntry"));
 }
 
 /**

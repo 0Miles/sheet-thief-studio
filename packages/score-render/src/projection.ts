@@ -1,7 +1,7 @@
 // The projection (CONTEXT.md): a score as plain data becomes the model alphaTab draws and plays.
 // One way only: nothing built here is ever written back to the score.
 import * as alphaTab from "@coderline/alphatab";
-import { type BarJSON, barTicks, type BeatJSON, beatTicks, type NoteJSON, type NoteValue, type PartJSON, type ScoreJSON, WHOLE } from "@studio/score-model";
+import { type BarJSON, barTicks, type BeatJSON, beatTicks, DYNAMICS, type NoteJSON, type NoteValue, type PartJSON, type ScoreJSON, WHOLE } from "@studio/score-model";
 
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
@@ -151,21 +151,22 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
 
 /**
  * How long a strummed beat takes to strum, in ticks (960 a quarter), from its first string to its
- * last: a 64th note, some 30 ms at 120 beats a minute. Without it alphaTab sounds every string at
- * once. How it sounds is for the owner to judge by ear (docs/spec/testing.md, section 6).
+ * last: a 64th note, some 30 ms at 120 beats a minute, and no more than a quarter of a short beat.
+ * Without it alphaTab sounds every string at once. How it sounds is for the owner to judge by ear
+ * (docs/spec/testing.md, section 6).
  */
 export const STROKE_TICKS = 60;
 
 const BRUSH_TYPES = { down: model.BrushType.BrushDown, up: model.BrushType.BrushUp } as const;
 
-const DYNAMICS = {
+const DYNAMIC_VALUES: Record<(typeof DYNAMICS)[number], alphaTab.model.DynamicValue> = {
   pp: model.DynamicValue.PP,
   p: model.DynamicValue.P,
   mp: model.DynamicValue.MP,
   mf: model.DynamicValue.MF,
   f: model.DynamicValue.F,
   ff: model.DynamicValue.FF,
-} as const;
+};
 
 function rest(value: NoteValue): AtBeat {
   const beat = new model.Beat();
@@ -182,12 +183,12 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
   }
   if (json.stroke) {
     beat.brushType = BRUSH_TYPES[json.stroke];
-    beat.brushDuration = STROKE_TICKS;
+    beat.brushDuration = Math.min(STROKE_TICKS, beatTicks(json) / 4);
   }
   if (json.slap) beat.slap = true;
   if (json.pop) beat.pop = true;
   // A beat without a dynamic keeps alphaTab's own, f: alphaTab marks a dynamic only where it changes.
-  if (json.dynamic) beat.dynamics = DYNAMICS[json.dynamic];
+  if (json.dynamic) beat.dynamics = DYNAMIC_VALUES[json.dynamic];
   if (json.text) beat.text = json.text;
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson);
