@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // A box over the score to type a short text in, at a place the page gives (docs/spec/keymap.md,
-// section 6): the text of a beat, and later the syllables of the lyrics. Enter saves what is
+// section 6), such as the text of a beat. Enter saves what is
 // typed, Esc leaves without saving, and so does leaving the box; a key with which an input method
 // ends a composition (a word chosen with Enter) does neither. Every other key is the box's own:
 // none of them reaches the score's keys.

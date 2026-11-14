@@ -5,7 +5,7 @@
 ## 1. 總規則
 
 - **不帶修飾鍵的字母和數字是「輸入音符」**，意義依聲部種類而定。
-- **`Shift`＋字母是技巧與拍點旗標**，三種聲部共用同一個字母；不適用於目前聲部種類的鍵，不動。
+- **`Shift`＋字母是技巧與拍點記號**，三種聲部共用同一個字母；不適用於目前聲部種類的鍵，不動。
 - **`Mod` 是結構、剪貼簿、復原**：Windows、Linux 是 `Ctrl`，macOS 是 `Cmd`（第 1.3 節）。
 - owner 在 2026-11-13 確認了這三條總規則（[`README.md`](README.md) 的「owner 的裁定」）。
 
@@ -98,7 +98,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Space`（補充） | 同左 | `Space` | 播放／暫停（編輯視圖從游標所在小節開始，有選取時循環選取範圍，見 [`playback.md`](playback.md)）。補充（#31）：`EditorSession` 不處理這個鍵，由殼處理（綁定表上的 page 綁定，`pageEffectOf`） |
 | `Esc`（補充） | 同左 | `Escape` | 取消選取；關閉 popover 或面板，焦點回到譜面 |
 
-## 3. `Shift`＋字母：技巧與拍點旗標
+## 3. `Shift`＋字母：技巧與拍點記號
 
 這一節的鍵在 macOS 相同：只帶 `Shift`，平台層不換，也沒有作業系統或瀏覽器的衝突。
 
@@ -205,7 +205,7 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 - 64 字元以內。
 - 段落名稱（`section`）從小節屬性面板編輯，不在這裡。
 - **補充**（#30）：輸入框的鍵也在綁定表上，情境是 `textEntry`（`bindings.ts` 的 `saveEntry`：`Enter`、`NumpadEnter`；`cancelEntry`：`Escape`），由 `textEntryEffectOf(key, platform)` 判斷；這個情境裡譜面的鍵都不作用，其餘的鍵是輸入框自己的（打字、`Backspace`、方向鍵），不傳到譜面。比對照第 1.1 節：`isComposing` 為真、或 `keyCode` 是 229 的鍵都不算，所以用注音選字的 `Enter` 不會存入。
-- **補充**（#30）：輸入框開在游標下方（`ScoreView.vue` 的 `openText`），照 [`views.md`](views.md) 第 9 節避開保留區域；開啟時選取現有的文字，所以直接打字就是取代、按 `Backspace` 就是清空。焦點離開輸入框（例如點譜面）時當成 `Esc`：不存。關閉後焦點回到譜面。輸入框是 `apps/web/src/components/InlineTextEntry.vue`，歌詞模式（6.2）沿用它。
+- **補充**（#30）：輸入框開在游標下方（`apps/web/src/overlay.ts` 的 `entryRect`），照 [`views.md`](views.md) 第 9 節避開保留區域：會伸進保留區域時整個移到它下方，高度不變（不像 `clearOf` 那樣切掉）；開啟時選取現有的文字，所以直接打字就是取代、按 `Backspace` 就是清空。焦點離開輸入框（例如點譜面）時當成 `Esc`：不存。關閉後焦點回到譜面。輸入框是 `apps/web/src/components/InlineTextEntry.vue`。
 
 ### 6.2 歌詞模式（只有 pitched 聲部）
 

@@ -225,9 +225,9 @@ test("each on/off technique of a fretted note becomes its alphaTab field, and a 
   expect(beats.map((beat) => beat.tap)).toEqual([false, false, false, false, false, false, false, true]);
 });
 
-test("the flags of a beat become its alphaTab fields: stroke the brush, slap, pop, dynamic and text; a beat without them has alphaTab's own", () => {
+test("the markings of a beat become its alphaTab fields: stroke the brush, slap, pop, dynamic and text; a beat without them has alphaTab's own", () => {
   const doc = new Y.Doc();
-  createScore(doc, "Beat flags");
+  createScore(doc, "Beat markings");
   const [barId] = insertBars(doc, { after: null, count: 1 });
   const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
   const keys = addPart(doc, { name: "Keys", kind: "pitched" });

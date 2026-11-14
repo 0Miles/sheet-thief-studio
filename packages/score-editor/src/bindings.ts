@@ -204,7 +204,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
   }),
-  // Section 3: the flags of a beat a fretted part only has.
+  // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
   // Section 6: in a text box. Return, on a Mac, is the same key.

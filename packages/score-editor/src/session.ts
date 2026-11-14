@@ -144,6 +144,8 @@ export interface EditorSession {
  */
 interface KeyCommand {
   changes: boolean;
+  /** It changes nothing itself, but asks for a change the member makes next (Enter's text box): refused while read-only all the same. */
+  leadsToChange?: true;
   run(at: Cursor): LocalPresence;
 }
 
@@ -338,10 +340,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
 
   /**
    * Enter: ask the shell for the text of the cursor's beat, which a box there then changes (one
-   * command, `setText`). It changes nothing itself, but leads to a change: refused while read-only.
+   * command, `setText`).
    */
   const askForText: KeyCommand = {
-    changes: true,
+    changes: false,
+    leadsToChange: true,
     run: (at) => {
       const text = textAt(doc, at);
       if (text !== null) for (const listener of textListeners) listener({ cursor: at, text });
@@ -452,7 +455,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       const previous = lastDigit;
       lastDigit = null;
       const command = commandOf(binding, previous);
-      if (command.changes && readOnly) {
+      if ((command.changes || command.leadsToChange) && readOnly) {
         refuse();
         return true;
       }

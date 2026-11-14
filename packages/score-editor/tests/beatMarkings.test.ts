@@ -1,4 +1,4 @@
-// The keys of the flags of a beat (docs/spec/keymap.md, sections 3, 5 and 6): Shift+U strokes,
+// The keys of the markings of a beat (docs/spec/keymap.md, sections 3, 5 and 6): Shift+U strokes,
 // Shift+J slaps and pops, Shift+F gives a dynamic, and Enter opens the text of the beat, whose
 // box saves it with Enter and leaves it with Esc, a key that ends a composition doing neither.
 import { cursorAt } from "@studio/score-model";

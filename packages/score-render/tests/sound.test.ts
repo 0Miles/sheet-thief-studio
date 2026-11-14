@@ -140,7 +140,7 @@ test("a dead note without a fret sounds, short, on its open string", () => {
 
 /**
  * The notes alphaTab plays for one beat of a guitar, a chord of three strings (the open G, B and
- * high E), after `flag` changed it: key, velocity and tick of each note-on, lowest string first.
+ * high E), after `changes` marked it: key, velocity and tick of each note-on, lowest string first.
  */
 function chordPlayed(...changes: BeatChange<unknown>[]): { key: number; velocity: number; tick: number }[] {
   const doc = new Y.Doc();

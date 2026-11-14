@@ -1,4 +1,4 @@
-// The fields of a beat a key sets (docs/spec/commands.md, 5.4 and 5.5): stroke, slap or pop,
+// The markings of a beat a key sets (docs/spec/commands.md, 5.4 and 5.5): stroke, slap or pop,
 // dynamic and text, at the cursor and over a selection.
 import { expect, test } from "vitest";
 import * as Y from "yjs";
@@ -122,7 +122,7 @@ test.each(["percussion", "pitched"] as const)("a dynamic goes on a beat of a %s 
   expect(beats()).toHaveLength(3);
 });
 
-test("over a selection, each flag takes every beat to the value after the one of its first beat, in one undo step, and rests among them too", () => {
+test("over a selection, each marking takes every beat to the value after the one of its first beat, in one undo step, and rests among them too", () => {
   const { doc, beats, on, range, stored } = part();
   (stored(1).get("notes") as Y.Map<unknown>).clear();
   changeBeatAt(doc, on(0), strokeCycle);
@@ -167,7 +167,7 @@ test("a text goes over the cursor's beat in one undo step, an empty one takes it
   expect(beats().map((beat) => beat.text ?? null)).toEqual([null, null, null]);
 });
 
-test("in the append slot there is no beat for a flag or a text; an empty text on a beat without one writes nothing", () => {
+test("in the append slot there is no beat for a marking or a text; an empty text on a beat without one writes nothing", () => {
   const { doc, on, partId, barIds } = part();
   const transactions = transactionsOf(doc);
   for (const change of [strokeCycle, slapPopCycle, dynamicCycle]) {
@@ -179,7 +179,7 @@ test("in the append slot there is no beat for a flag or a text; an empty text on
   expect(transactions.count).toBe(0);
 });
 
-test("a flag keeps the fields of the beat this version does not know, and a beat reading leaves out is not changed", () => {
+test("a marking keeps the fields of the beat this version does not know, and a beat reading leaves out is not changed", () => {
   const { doc, beats, on, range, stored } = part();
   stored(0).set("future", 1);
   // A dynamic no version has: the beat is left out when read.
