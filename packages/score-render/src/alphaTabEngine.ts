@@ -224,7 +224,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   boundsOfSelection(selection: Selection): Rect[] {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
-    return selectionRects(lookup, this.projection, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+    return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
   }
 
   boundsAtTick(tick: number): Rect | null {

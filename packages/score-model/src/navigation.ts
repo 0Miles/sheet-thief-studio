@@ -29,15 +29,15 @@ function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
 
 /**
  * Where the cursor enters the bar after (`step` 1) or before (-1) its own: the first beat of its
- * voice there, or the last; the append slot of an empty voice. The cursor itself at either end
- * of the score.
+ * voice there going forward, the last going back, unless `entry` says which; the append slot of
+ * an empty voice. The cursor itself at either end of the score.
  */
-function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1, entry: "first" | "last" = step === 1 ? "first" : "last"): Cursor {
   const order = ordered(barsOf(doc));
   const barId = order[order.indexOf(cursor.barId) + step];
   if (barId === undefined) return cursor;
   const ids = beatIds(voiceOf(doc, cursor, barId));
-  const beatId = step === 1 ? ids[0] : ids.at(-1);
+  const beatId = entry === "first" ? ids[0] : ids.at(-1);
   return beatId === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId, at: "on" };
 }
 
@@ -47,11 +47,7 @@ function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
  * score it stays.
  */
 export function moveByBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
-  const order = ordered(barsOf(doc));
-  const barId = order[order.indexOf(cursor.barId) + step];
-  if (barId === undefined || !order.includes(cursor.barId)) return cursor;
-  const first = beatIds(voiceOf(doc, cursor, barId))[0];
-  return first === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId: first, at: "on" };
+  return toNextBar(doc, cursor, step, "first");
 }
 
 /** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */

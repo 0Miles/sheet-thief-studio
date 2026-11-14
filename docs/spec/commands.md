@@ -101,7 +101,7 @@ interface Cursor {
   - `Delete` 之後，選取的拍點或小節還在時選取保留（所以拍點範圍再按一次 `Delete` 就刪除那些休止）；拍點被刪除時選取結束，游標落在接替它們位置的拍點上，沒有時落在附加位置（同 5.2 的 `deleteBeat`）。小節範圍清空後，游標所在的聲線變空，游標落在空聲線的附加位置。
   - 起點或終點的拍點、小節或聲部不在了（別人刪除、自己復原），選取結束（`settleSelection`）。
   - 唯讀編輯視圖也可以選取（[`views.md`](views.md) 第 4 節）；`Delete` 被拒絕。
-  - 選取框：拍點範圍是一個框，從第一個拍點到最後一個拍點、蓋住那條聲線的譜表；小節範圍在每一行譜（system）各一個框，從那一行的第一個選取小節到最後一個、蓋住這個聲部的所有譜表。上下延伸到外側弦上的游標所及之處。位置由 `ScoreRenderer.boundsOfSelection` 給出（`geometry.ts` 的 `selectionRects`），殼照 [`views.md`](views.md) 第 9 節避開保留區域。
+  - 選取框：拍點範圍是一個框，從第一個拍點到最後一個拍點、蓋住那條聲線的譜表；小節範圍在每一行譜（system）各一個框，從那一行的第一個選取小節到最後一個、蓋住這個聲部的所有譜表。上下延伸到外側的線（弦或譜線）上的游標所及之處。位置由 `ScoreRenderer.boundsOfSelection` 給出（`geometry.ts` 的 `selectionRects`），殼照 [`views.md`](views.md) 第 9 節避開保留區域。
 
 ## 5. 內容操作
 

@@ -52,7 +52,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
   return {
     mark,
     rect: (cursor: Cursor) => cursorRect(lookup, projection, parts, cursor, metrics),
-    selected: (selection: Selection) => selectionRects(lookup, projection, selection, metrics),
+    selected: (selection: Selection) => selectionRects(lookup, projection, parts, selection, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
     played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
   };
@@ -209,4 +209,15 @@ test("a selection whose part or bars are not drawn has no box", () => {
   const drawn = layOut(docToJson(doc), 1);
   expect(drawn.selected({ kind: "bars", partId: partIds[1]!, anchorBarId: barIds[0]!, focusBarId: barIds[1]! })).toEqual([]);
   expect(drawn.selected({ kind: "beats", partId: partIds[0]!, barId: barIds[0]!, voice: "0:0", anchorBeatId: "gone", focusBeatId: "gone" })).toEqual([]);
+});
+
+test("on a staff of five lines, the box of a selection holds the cursor on its top and bottom lines", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Demo");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const partId = addPart(doc, { name: "Voice", kind: "pitched" });
+  const drawn = layOut(docToJson(doc));
+  const boxes = drawn.selected({ kind: "bars", partId, anchorBarId: barIds[0]!, focusBarId: barIds[1]! });
+  expect(boxes).toHaveLength(1);
+  for (const barId of barIds) for (const line of [0, 8]) expect(contains(boxes[0]!, drawn.rect(cursorAt(doc, partId, barId, line))!), `line ${line}`).toBe(true);
 });

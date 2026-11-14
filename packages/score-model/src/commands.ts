@@ -296,10 +296,30 @@ export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON 
   return writeNote(doc, cursor, key, () => note);
 }
 
+/** The notes of a beat, as the commands change them; none when they cannot be read. */
+function notesOf(beat: YBeat | undefined): Y.Map<NoteJSON> | undefined {
+  const notes = beat?.get("notes");
+  return notes instanceof Y.Map ? (notes as Y.Map<NoteJSON>) : undefined;
+}
+
+/** A beat without notes: a rest. */
+function isRest(beat: YBeat | undefined): boolean {
+  return notesOf(beat)?.size === 0;
+}
+
 /** Whether the cursor stands on a beat without notes: a rest. */
 export function isRestAt(doc: Y.Doc, cursor: Cursor): boolean {
-  const notes = beatAt(doc, cursor)?.get("notes");
-  return notes instanceof Y.Map && notes.size === 0;
+  return isRest(beatAt(doc, cursor));
+}
+
+/**
+ * The cursor once the beats from `index` on were removed from its voice: on the beat that takes
+ * their place, or, when they were the last, in the append slot after the new last beat (an
+ * empty voice's when none is left).
+ */
+function afterRemoval(cursor: Cursor, voice: YVoice, index: number): Cursor {
+  if (index < voice.length) return { ...cursor, beatId: voice.get(index).get("id") as string, at: "on" };
+  return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };
 }
 
 /**
@@ -322,8 +342,7 @@ export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
   if (found === undefined) return cursor;
   const { voice, index } = found;
   doc.transact(() => voice.delete(index, 1), LOCAL);
-  if (index < voice.length) return { ...cursor, beatId: voice.get(index).get("id") as string };
-  return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };
+  return afterRemoval(cursor, voice, index);
 }
 
 /**
@@ -348,18 +367,13 @@ export function deleteSelection(doc: Y.Doc, selection: Selection, cursor: Cursor
   if (found === undefined) return cursor;
   const { voice, first, last } = found;
   const beats = voice.slice(first, last + 1);
-  const notesOf = (beat: YBeat) => {
-    const notes = beat.get("notes");
-    return notes instanceof Y.Map ? (notes as Y.Map<NoteJSON>) : undefined;
-  };
-  if (beats.some((beat) => (notesOf(beat)?.size ?? 0) > 0)) {
-    doc.transact(() => beats.forEach((beat) => notesOf(beat)?.clear()), LOCAL);
-    return cursor;
+  if (beats.every(isRest)) {
+    doc.transact(() => voice.delete(first, beats.length), LOCAL);
+    return afterRemoval(cursor, voice, first);
   }
-  doc.transact(() => voice.delete(first, beats.length), LOCAL);
-  const next = voice.length > first ? voice.get(first) : undefined;
-  if (next !== undefined) return { ...cursor, beatId: next.get("id") as string, at: "on" };
-  return { ...cursor, beatId: first > 0 ? (voice.get(first - 1).get("id") as string) : null, at: "after" };
+  const notes = beats.map(notesOf).filter((each): each is Y.Map<NoteJSON> => each !== undefined && each.size > 0);
+  if (notes.length > 0) doc.transact(() => notes.forEach((each) => each.clear()), LOCAL);
+  return cursor;
 }
 
 /** Give the beat of the cursor a note value and dots; its tuplet stays. */

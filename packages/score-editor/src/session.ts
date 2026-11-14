@@ -90,16 +90,13 @@ export interface EditorSession {
   destroy(): void;
 }
 
-/** Where a key leaves the member: the cursor, and what is selected. */
-interface Place {
-  cursor: Cursor | null;
-  selection: Selection | null;
-}
-
-/** What a key does: the command it runs at a cursor, and whether that changes the score. */
+/**
+ * What a key does: the command it runs at a cursor, where that leaves the cursor and the
+ * selection, and whether it changes the score.
+ */
 interface KeyCommand {
   changes: boolean;
-  run(at: Cursor): Place;
+  run(at: Cursor): LocalPresence;
 }
 
 /** A move or a command that does not work on the selection: the selection ends. */
@@ -147,8 +144,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return { cursor, selection };
   }
 
-  /** Put the member there, and tell the presence when anything moved. */
-  function show({ cursor: next, selection: selected }: Place): void {
+  /** Put the cursor and the selection there, and tell the presence when either moved. */
+  function putAt({ cursor: next, selection: selected }: LocalPresence): void {
     const moved = !same(next, cursor);
     if (!moved && same(selected, selection)) return;
     if (moved) {
@@ -167,7 +164,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     if (running) return;
     // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
     if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
-    show({ cursor: settled(cursor), selection: selection && settleSelection(doc, selection) });
+    putAt({ cursor: settled(cursor), selection: selection && settleSelection(doc, selection) });
   };
   doc.on("afterTransaction", settle);
 
@@ -215,6 +212,12 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
   });
 
+  /** A command that works on the selection: it stays as long as what it holds is there. */
+  const onSelection = (selected: Selection, run: (at: Cursor) => Cursor): KeyCommand => ({
+    changes: true,
+    run: (at) => ({ cursor: run(at), selection: settleSelection(doc, selected) }),
+  });
+
   /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
   function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
     switch (effect) {
@@ -241,8 +244,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "delete":
         if (selection !== null) {
           const selected = selection;
-          // Delete works on the selection, which stays as long as what it holds is there.
-          return { changes: true, run: (at) => ({ cursor: deleteSelection(doc, selected, at), selection: settleSelection(doc, selected) }) };
+          return onSelection(selected, (at) => deleteSelection(doc, selected, at));
         }
         return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
       case "shorter":
@@ -292,17 +294,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return true;
       }
       running = true;
-      let next: Place;
+      let next: LocalPresence;
       try {
         next = command.run(cursor);
       } finally {
         running = false;
       }
-      show(next);
+      putAt(next);
       return true;
     },
     moveTo(next) {
-      show({ cursor: next, selection: null });
+      putAt({ cursor: next, selection: null });
     },
     onRefused(listener) {
       refusedListeners.add(listener);

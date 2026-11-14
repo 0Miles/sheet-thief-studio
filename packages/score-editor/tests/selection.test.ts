@@ -244,3 +244,10 @@ test("when another member removes a beat the selection ends on, the selection en
   expect(session.cursor).toMatchObject({ beatId: ids[2] });
   expect(told.at(-1)).toEqual({ cursor: session.cursor, selection: null });
 });
+
+test("with no selection, Shift with Nav and → at the end of the score selects the cursor's bar", () => {
+  const { session, press, partId, barIds } = sessionOn("fretted", 1);
+  expect(press("ArrowRight", 1000, { ctrlKey: true, shiftKey: true })).toBe(true);
+  expect(session.cursor).toMatchObject({ barId: barIds[0] });
+  expect(session.selection).toEqual({ kind: "bars", partId, anchorBarId: barIds[0], focusBarId: barIds[0] });
+});

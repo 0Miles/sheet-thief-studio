@@ -108,14 +108,17 @@ function around(boxes: readonly alphaTab.rendering.Bounds[], margin: number): Re
 
 /**
  * Where a selection is drawn (docs/spec/commands.md, section 4): over the staves it is on, and
- * as far above and below them as the cursor on their outer strings reaches. A beat range: one box from its first beat to its last, over the staff of its
- * voice. A bar range: one box for each system it is on, from its first bar there to its last,
- * over every staff of its part. None when its part, bars or beats are not drawn.
+ * as far above and below them as the cursor on their outer lines (strings or staff lines)
+ * reaches. A beat range: one box from its first beat to its last, over the staff of its voice.
+ * A bar range: one box for each system it is on, from its first bar there to its last, over
+ * every staff of its part. None when its part, bars or beats are not drawn.
  */
-export function selectionRects(lookup: BoundsLookup, projection: Projection, selection: Selection, metrics: StaffMetrics): Rect[] {
+export function selectionRects(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, selection: Selection, metrics: StaffMetrics): Rect[] {
   const track = projection.partIndex.get(selection.partId);
-  if (track === undefined) return [];
-  const margin = metrics.tabLineSpacing / 2 + metrics.lineThickness;
+  const shape = parts.get(selection.partId);
+  if (track === undefined || shape === undefined) return [];
+  // Half the cursor's height (`cursorRect`) past the line's centre, which is half a line thinner than the box's edge.
+  const margin = (shape.kind === "fretted" ? metrics.tabLineSpacing : metrics.staffSpace) / 2 + metrics.lineThickness;
   if (selection.kind === "beats") {
     const barIndex = projection.barIndex.get(selection.barId);
     const [staff = 0] = selection.voice.split(":").map(Number);
