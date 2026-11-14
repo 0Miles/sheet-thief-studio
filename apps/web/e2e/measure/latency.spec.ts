@@ -11,7 +11,7 @@ import { expect, type Page, test } from "@playwright/test";
 import type { KeySample, RenderSample } from "../../src/measureHook";
 import { logInAsAdmin, median, openEditView, p95, placeCursor, runs } from "./editView";
 import { environment, MODE, writeData, writeText } from "./output";
-import { perfScore } from "./scores";
+import { perfScore, type SeededScore } from "./scores";
 
 const RUNS = runs(50);
 /** Pause between two edits of the stage measurement, in milliseconds. */
@@ -35,10 +35,10 @@ interface Cell<T> {
 const ms = (value: number): string => value.toFixed(1);
 const stat = (values: number[]): string => `${ms(median(values))} / ${ms(p95(values))}`;
 
-let scoreId = "";
+let score: SeededScore;
 
 test.beforeAll(() => {
-  scoreId = perfScore();
+  score = perfScore();
 });
 
 test.beforeEach(async ({ page }) => {
@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
 test("stages of an edit", async ({ page }) => {
   const cells: Cell<RenderSample>[] = [];
   for (const shown of SHOWN) {
-    await openEditView(page, scoreId, shown.only);
+    await openEditView(page, score, shown.only);
     // A few edits first: the first ones pay for code that has not run yet.
     for (let i = 0; i < 5; i++) await page.evaluate((part) => window.__studioMeasure!.editBar(part, 10), PART);
     for (const bar of BARS) {
@@ -83,7 +83,7 @@ test("key press to painted frame", async ({ page }) => {
     return 150 + (state % 500);
   };
   for (const shown of SHOWN) {
-    await openEditView(page, scoreId, shown.only);
+    await openEditView(page, score, shown.only);
     for (const bar of BARS) {
       await placeCursor(page, PART, bar, 0, 2);
       await page.waitForTimeout(500);

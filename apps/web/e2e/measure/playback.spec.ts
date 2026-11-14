@@ -13,9 +13,9 @@ const ROUNDS = runs(30);
 const TICKS_PER_MS = (120 * 960) / 60_000;
 
 test("the player goes on from where it was after the sound is regenerated", async ({ page }) => {
-  const scoreId = perfScore();
+  const score = perfScore();
   await logInAsAdmin(page);
-  await openEditView(page, scoreId);
+  await openEditView(page, score);
   // The play button, as a member would: the browser lets audio start only from a gesture.
   await page.getByRole("button", { name: strings.score.player.play, exact: true }).click();
   await page.waitForFunction(() => window.__studioMeasure!.player.position().tick > 2000, null, { timeout: 20_000 });

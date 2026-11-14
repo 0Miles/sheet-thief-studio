@@ -1,7 +1,7 @@
 // The scores the measurements open in the edit view: made here, in the test, and written into the
 // end-to-end database as a score of the admin's (`seedScore`). No page or API of the app makes
 // them: a 100 × 5 score has no place in any build (docs/spec/testing.md, section 2).
-import { addPart, createScore, type Cursor, cursorAt, insertBars, insertBeat, LOCAL, type NewPart, type NoteJSON, type NoteValue, setNote } from "@studio/score-model";
+import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, LOCAL, type NewPart, type NoteJSON, type NoteValue, setNote } from "@studio/score-model";
 import { DRUM_PIECES } from "@studio/score-render";
 import * as Y from "yjs";
 
@@ -148,19 +148,26 @@ function seedPerf(doc: Y.Doc, bars: number): void {
   }, LOCAL);
 }
 
-/** Write a score made here into the end-to-end database, owned by the admin; returns its id. */
-function seeded(title: string, seed: (doc: Y.Doc) => void): string {
-  const doc = new Y.Doc();
-  seed(doc);
-  return seedScore({ title, owner: ADMIN.username, state: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64") });
+/** A score written into the end-to-end database: its id, and the ids of its parts in order. */
+export interface SeededScore {
+  id: string;
+  partIds: string[];
 }
 
-/** A new demo score of the band; returns its id. */
-export function demoScore(options: DemoOptions): string {
+/** Write a score made here into the end-to-end database, owned by the admin. */
+function seeded(title: string, seed: (doc: Y.Doc) => void): SeededScore {
+  const doc = new Y.Doc();
+  seed(doc);
+  const id = seedScore({ title, owner: ADMIN.username, state: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64") });
+  return { id, partIds: docToJson(doc).parts.map((part) => part.id) };
+}
+
+/** A new demo score of the band. */
+export function demoScore(options: DemoOptions): SeededScore {
   return seeded(DEMO_TITLE, (doc) => seedDemo(doc, options));
 }
 
-/** A new score the latency is measured on (100 bars × 5 parts unless told otherwise); returns its id. */
-export function perfScore(bars = 100): string {
+/** A new score the latency is measured on (100 bars × 5 parts unless told otherwise). */
+export function perfScore(bars = 100): SeededScore {
   return seeded(perfTitle(bars), (doc) => seedPerf(doc, bars));
 }

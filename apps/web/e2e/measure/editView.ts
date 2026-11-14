@@ -3,8 +3,10 @@
 // enough by hand (an edit timed from the change, a cursor put on an exact beat).
 import { expect, type Page } from "@playwright/test";
 
+import { type DisplayOptions, displayKey } from "../../src/display";
 import { ADMIN } from "../environment";
 import { logInFromStart, soundReady } from "../pages";
+import type { SeededScore } from "./scores";
 
 /** Log the page in as the admin, who owns every score the measurements make. */
 export async function logInAsAdmin(page: Page): Promise<void> {
@@ -14,33 +16,19 @@ export async function logInAsAdmin(page: Page): Promise<void> {
 /**
  * Open the edit view of a score, showing only the part of index `only` (all of them when left
  * out), as the member's display options would; wait until it is drawn, in step with the server,
- * and its sound is ready.
+ * and its sound is ready. The page must already be on the app (logged in).
  */
-export async function openEditView(page: Page, scoreId: string, only?: number): Promise<void> {
-  await page.goto(`/scores/${scoreId}`);
-  await drawnAndSynced(page);
+export async function openEditView(page: Page, score: SeededScore, only?: number): Promise<void> {
   // The parts shown are the member's own option, stored in this browser (src/display.ts): stored
-  // here before the score opens again, so that it is drawn with them from the start.
-  const json = await page.evaluate(() => window.__studioMeasure!.json());
-  const hidden = only === undefined ? [] : json.parts.filter((_, index) => index !== only).map((part) => part.id);
-  const stored = await page.evaluate(([id, hide]) => {
-    const key = `studio.display.${id}`;
-    const before = localStorage.getItem(key);
-    localStorage.setItem(key, JSON.stringify({ hidden: hide, scale: 1 }));
-    return before;
-  }, [scoreId, hidden] as const);
-  if (stored !== JSON.stringify({ hidden, scale: 1 })) {
-    await page.reload();
-    await drawnAndSynced(page);
-  }
-  const shown = (only === undefined ? json.parts : [json.parts[only]!]).map((part) => part.id).join(",");
-  await expect(page.locator(`[data-parts="${shown}"]`)).toBeAttached();
-  await soundReady(page);
-}
-
-/** The score is drawn, the cursor placed, and the page in step with the server. */
-async function drawnAndSynced(page: Page): Promise<void> {
+  // before the score opens, so that it is drawn with them from the start.
+  const options: DisplayOptions = { hidden: only === undefined ? [] : score.partIds.filter((_, index) => index !== only), scale: 1 };
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [displayKey(score.id), JSON.stringify(options)] as const);
+  await page.goto(`/scores/${score.id}`);
+  // The score is drawn, the cursor placed, and the page in step with the server.
   await page.waitForFunction(() => window.__studioMeasure?.ready === true && window.__studioMeasure.synced(), null, { timeout: 60_000 });
+  const shown = only === undefined ? score.partIds : [score.partIds[only]!];
+  await expect(page.locator(`[data-parts="${shown.join(",")}"]`)).toBeAttached();
+  await soundReady(page);
 }
 
 /** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, and give the score the keyboard. */

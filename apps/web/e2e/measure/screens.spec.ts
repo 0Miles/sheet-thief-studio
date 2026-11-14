@@ -95,12 +95,12 @@ test("S4: the edit view with two members' input, for the report", async ({ brows
 
 test("S2: the score the latency is measured on, all five parts and one part", async ({ page }) => {
   // The 100 × 5 score, as latency.spec.ts measures it.
-  const scoreId = perfScore();
+  const score = perfScore();
   for (const [only, name] of [
     [undefined, "s2-score-5-parts.png"],
     [0, "s2-score-1-part.png"],
   ] as const) {
-    await openEditView(page, scoreId, only);
+    await openEditView(page, score, only);
     await placeCursor(page, 0, 2, 0, 2);
     await page.waitForTimeout(800);
     await page.screenshot({ path: screenshotPath(name) });

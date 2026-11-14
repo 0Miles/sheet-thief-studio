@@ -2,7 +2,7 @@
 // from it (docs/spec/testing.md, sections 2 and 4). Only in a build made with VITE_MEASURE=1: in
 // any other build `measureEditView` gives a measurement that does nothing, the code below it is
 // dead, and the bundle does not even hold the name.
-import { type Cursor, cursorAt, docToJson, insertBeat, LOCAL, type ScoreJSON, setFret, stepDuration } from "@studio/score-model";
+import { type Cursor, cursorAt, docToJson, insertBeat, LOCAL, type PartJSON, type ScoreJSON, setFret, stepDuration } from "@studio/score-model";
 import type { NoteHead, PlayerPosition, PlayerState, Rect, RenderedEvent, RenderTimings, ScoreEngine } from "@studio/score-render";
 import * as Y from "yjs";
 
@@ -95,12 +95,8 @@ export interface Measurement {
   stop(): void;
 }
 
-const NO_MEASUREMENT: Measurement = {
-  watch: () => {},
-  drawing: () => {},
-  key: () => () => {},
-  stop: () => {},
-};
+const nothing = (): void => {};
+const NO_MEASUREMENT: Measurement = { watch: nothing, drawing: nothing, key: () => nothing, stop: nothing };
 
 /** The measurements of the edit view, in a measurement build only; in any other, nothing. */
 export function measureEditView(view: MeasuredView): Measurement {
@@ -144,23 +140,19 @@ function measuring(view: MeasuredView): Measurement {
       return at && engine ? engine.renderer.noteHeadsOf(at) : [];
     },
     placeCursor(part, bar, beat, line) {
-      const json = docToJson(doc);
-      const partJson = json.parts[part];
-      const barId = json.bars[bar]?.id;
-      if (partJson === undefined || barId === undefined) return null;
-      const beatId = beat < 0 ? null : (partJson.content[barId]?.["0:0"]?.[beat]?.id ?? null);
-      view.moveCursor({ partId: partJson.id, barId, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line });
+      const at = partAndBar(part, bar);
+      if (at === null) return null;
+      const beatId = beat < 0 ? null : (at.part.content[at.barId]?.["0:0"]?.[beat]?.id ?? null);
+      view.moveCursor({ partId: at.part.id, barId: at.barId, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line });
       return view.cursor();
     },
     editBar(part, bar) {
-      const json = docToJson(doc);
-      const partId = json.parts[part]?.id;
-      const barId = json.bars[bar]?.id;
-      if (partId === undefined || barId === undefined) return Promise.reject(new Error("no such part or bar"));
+      const at = partAndBar(part, bar);
+      if (at === null) return Promise.reject(new Error("no such part or bar"));
       return new Promise((resolve) => {
         onNextRender = resolve;
         editCount += 1;
-        setFret(doc, cursorAt(doc, partId, barId, 2), 1 + (editCount % 12));
+        setFret(doc, cursorAt(doc, at.part.id, at.barId, 2), 1 + (editCount % 12));
       });
     },
     bulkEdit(count) {
@@ -202,6 +194,14 @@ function measuring(view: MeasuredView): Measurement {
     },
     errors: [],
   };
+
+  /** A part and the id of a bar, both by index; null when there is no such part or bar. */
+  function partAndBar(part: number, bar: number): { part: PartJSON; barId: string } | null {
+    const json = docToJson(doc);
+    const partJson = json.parts[part];
+    const barId = json.bars[bar]?.id;
+    return partJson === undefined || barId === undefined ? null : { part: partJson, barId };
+  }
 
   function finishKey(sample: KeySample): void {
     requestAnimationFrame(() => {
@@ -266,21 +266,17 @@ function measuring(view: MeasuredView): Measurement {
     },
     key(event) {
       const at = view.cursor();
-      if (at === null) return () => {};
+      if (at === null) return nothing;
       // The key is watched from before its command runs: the edit view lays out on the page's own
       // thread, so the layout is finished by the time the command returns.
       const sample: KeySample = { key: event.key, pressed: event.timeStamp, started: performance.now(), handled: 0, rendered: null, painted: null, frame: 0, nextFrame: 0 };
       const pending: PendingKey = { sample, barId: at.barId, drawing: drawings + 1 };
       pendingKeys.add(pending);
       return (handled) => {
-        if (!handled) {
+        if (handled) sample.handled = performance.now();
+        if (!handled || drawings < pending.drawing) {
           pendingKeys.delete(pending);
-          return;
-        }
-        sample.handled = performance.now();
-        if (drawings < pending.drawing) {
-          pendingKeys.delete(pending);
-          finishKey(sample); // the key only moved the cursor
+          if (handled) finishKey(sample); // the key only moved the cursor
           return;
         }
         pending.barId = view.cursor()?.barId ?? at.barId;

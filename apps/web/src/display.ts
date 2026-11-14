@@ -11,7 +11,8 @@ export interface DisplayOptions {
   scale: number;
 }
 
-const displayKey = (scoreId: string) => `studio.display.${scoreId}`;
+/** Where a score's options are stored; the measure suite stores them there before opening it (e2e/measure/editView.ts). */
+export const displayKey = (scoreId: string) => `studio.display.${scoreId}`;
 const narrowKey = (scoreId: string) => `studio.narrowPart.${scoreId}`;
 
 /** What is stored under a key; null when nothing is, or it cannot be read (storage blocked, or not JSON). */

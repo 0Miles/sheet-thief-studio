@@ -69,6 +69,17 @@ function beatSpan(beat: BeatBounds, metrics: StaffMetrics): { left: number; righ
   return { left: beat.onNotesX - half, right: beat.onNotesX + half };
 }
 
+/** The drawn bar of the cursor's part, staff and bar, with the part's shape and the cursor's voice; null when it is not drawn. */
+function drawnBarOf(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor): { bar: BarBounds; barIndex: number; shape: PartShape; voice: number } | null {
+  const track = projection.partIndex.get(cursor.partId);
+  const barIndex = projection.barIndex.get(cursor.barId);
+  const shape = parts.get(cursor.partId);
+  if (track === undefined || barIndex === undefined || shape === undefined) return null;
+  const [staff = 0, voice = 0] = cursor.voice.split(":").map(Number);
+  const bar = barBoundsOf(lookup, barIndex, track, staff);
+  return bar === null ? null : { bar, barIndex, shape, voice };
+}
+
 /**
  * The rectangle of a cursor: centred on the notes of its beat and on its line. In the append
  * slot of an empty voice it is a thin caret at the left edge of the place of the beats. In an
@@ -78,13 +89,9 @@ function beatSpan(beat: BeatBounds, metrics: StaffMetrics): { left: number; righ
  * drawn.
  */
 export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor, metrics: StaffMetrics): Rect | null {
-  const track = projection.partIndex.get(cursor.partId);
-  const barIndex = projection.barIndex.get(cursor.barId);
-  const shape = parts.get(cursor.partId);
-  if (track === undefined || barIndex === undefined || shape === undefined) return null;
-  const [staff = 0, voice = 0] = cursor.voice.split(":").map(Number);
-  const bar = barBoundsOf(lookup, barIndex, track, staff);
-  if (bar === null) return null;
+  const place = drawnBarOf(lookup, projection, parts, cursor);
+  if (place === null) return null;
+  const { bar, barIndex, shape, voice } = place;
 
   const height = cursorHeight(shape, metrics);
   const y = bar.visualBounds.y + lineOffset(shape, cursor.line, metrics) - height / 2;
@@ -119,15 +126,12 @@ function noteKeyOf(note: alphaTab.model.Note, shape: PartShape): string {
  * slot, or when the beat is not drawn.
  */
 export function noteHeads(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor): NoteHead[] {
-  const track = projection.partIndex.get(cursor.partId);
-  const barIndex = projection.barIndex.get(cursor.barId);
-  const shape = parts.get(cursor.partId);
-  const address = cursor.beatId === null ? undefined : projection.addresses.get(cursor.beatId);
-  if (cursor.at !== "on" || track === undefined || barIndex === undefined || shape === undefined || address === undefined || address.bar !== barIndex) return [];
-  const [staff = 0] = cursor.voice.split(":").map(Number);
-  const bar = barBoundsOf(lookup, barIndex, track, staff);
-  const beat = bar && drawnBeat(bar, address.voice, address.beat);
-  return (beat?.notes ?? []).map(({ note, noteHeadBounds: box }) => ({ key: noteKeyOf(note, shape), rect: { x: box.x, y: box.y, width: box.w, height: box.h } }));
+  if (cursor.at !== "on" || cursor.beatId === null) return [];
+  const place = drawnBarOf(lookup, projection, parts, cursor);
+  const address = projection.addresses.get(cursor.beatId);
+  if (place === null || address === undefined || address.bar !== place.barIndex) return [];
+  const beat = drawnBeat(place.bar, address.voice, address.beat);
+  return (beat?.notes ?? []).map(({ note, noteHeadBounds: box }) => ({ key: noteKeyOf(note, place.shape), rect: { x: box.x, y: box.y, width: box.w, height: box.h } }));
 }
 
 /** The box around boxes, reaching `margin` above and below them. */

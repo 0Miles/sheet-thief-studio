@@ -6,9 +6,9 @@ import { environment, writeData } from "./output";
 import { perfScore } from "./scores";
 
 test("size of the Yjs state of the 100 × 5 score, before and after 2,000 edits", async ({ page }) => {
-  const scoreId = perfScore();
+  const score = perfScore();
   await logInAsAdmin(page);
-  await openEditView(page, scoreId);
+  await openEditView(page, score);
   const measure = (): Promise<{ stateBytes: number; jsonBytes: number; beats: number }> =>
     page.evaluate(() => {
       const studio = window.__studioMeasure!;
