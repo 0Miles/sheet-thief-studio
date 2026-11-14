@@ -51,12 +51,15 @@ jobs:
         name: Build the web app
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studio/web build
-      # Only the end-to-end build may expose window.__studioTest (docs/spec/testing.md, section 2).
-      - name: The production build holds no test hook
+      # Only the end-to-end build may expose window.__studioTest, and only the measurement build
+      # window.__studioMeasure: this one, made without VITE_E2E or VITE_MEASURE, holds neither
+      # (docs/spec/testing.md, section 2).
+      - name: The production build holds no test or measurement hook
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          if grep -rq "__studioTest" apps/web/dist; then
-            echo "apps/web/dist holds __studioTest: the test hook is in the production build" >&2
+          if grep -rq "__studio" apps/web/dist; then
+            echo "apps/web/dist holds __studio: a test or measurement hook is in the production build" >&2
+            grep -rl "__studio" apps/web/dist >&2
             exit 1
           fi
 

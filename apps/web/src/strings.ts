@@ -86,23 +86,6 @@ export const strings = {
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",
-  // The M0 spike page. Temporary: it goes away when the real editor arrives.
-  spike: {
-    title: "技術驗證",
-    local: "本機（不共編）",
-    connecting: "連線中…",
-    connected: "已連線",
-    disconnected: "已斷線",
-    parts: "顯示聲部",
-    allParts: "全部聲部",
-    play: "播放",
-    pause: "暫停",
-    playerLoading: "音色載入中…",
-    // What the keys do; their names come from the keymap, for this platform (docs/spec/keymap.md, 1.3).
-    keys: { move: "移動", fret: "輸入格號", insertBeat: "新增拍點", duration: "改時值", delete: "清除", undo: "復原", redo: "重做" },
-    flags: (count: number) => `${count} 個標記`,
-    scoreLabel: "譜面",
-  },
 } as const;
 
 /** What to tell the person about an error answer. */
