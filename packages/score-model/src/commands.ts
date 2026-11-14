@@ -739,8 +739,8 @@ export const clearNotes: BeatChange<void> = {
 function seenBeat(reader: PartReader, beat: YBeat): SeenBeat | undefined {
   const fields = readBeatFields(reader.kind, beat);
   if (fields === undefined) return undefined;
-  const { value, dots, tuplet, stroke, slap, pop, dynamic, text } = fields;
-  return { duration: { value, dots, tuplet }, rest: isRest(beat), markings: { stroke, slap, pop, dynamic, text } };
+  const { value, dots, tuplet } = fields;
+  return { duration: { value, dots, tuplet }, rest: isRest(beat), markings: fields };
 }
 
 /** Whether a beat of a part of `kind` may hold what a write sets: stroke, slap and pop are a fretted part's only. */
@@ -819,17 +819,14 @@ export const dynamicCycle: BeatChange<NonNullable<BeatMarkings["dynamic"]> | nul
 
 /** Shift+J: the beat slapped, then popped, then neither; never both (docs/spec/schema.md, section 6). Fretted parts only. */
 export const slapPopCycle: BeatChange<"slap" | "pop" | null> = {
-  decide(seen) {
-    const first = seen[0]?.markings;
-    return nextOf(["slap", "pop"] as const, first?.slap ? "slap" : first?.pop ? "pop" : undefined) ?? null;
-  },
-  turn({ markings }, next) {
-    const slap = next === "slap";
-    const pop = next === "pop";
-    if ((markings.slap === true) === slap && (markings.pop === true) === pop) return null;
-    return { set: { slap: slap ? true : null, pop: pop ? true : null } };
-  },
+  decide: (seen) => nextOf(["slap", "pop"] as const, (seen[0] && slapPopOf(seen[0].markings)) ?? undefined) ?? null,
+  turn: ({ markings }, next) => (slapPopOf(markings) === next ? null : { set: { slap: next === "slap" || null, pop: next === "pop" || null } }),
 };
+
+/** Whether a beat, as read, is slapped or popped (reading keeps slap only when it has both). */
+function slapPopOf({ slap, pop }: BeatMarkings): "slap" | "pop" | null {
+  return slap ? "slap" : pop ? "pop" : null;
+}
 
 /** The text over a beat (docs/spec/commands.md, 5.5): this text, or none for an empty one. */
 function beatText(text: string): BeatChange<void> {

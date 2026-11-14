@@ -67,7 +67,8 @@ export type TextEntryEffect = "saveEntry" | "cancelEntry";
 export type KeyContext = "score" | PartKind | "textEntry";
 
 interface BindingKeys {
-  context: KeyContext;
+  /** Every binding but a text box's works on the score (`TextEntryBinding`). */
+  context: Exclude<KeyContext, "textEntry">;
   /** The keys, on every platform unless `mac` says otherwise; the first is the one shown (`formatChord`). */
   keys: readonly Chord[];
   /**
@@ -86,7 +87,6 @@ interface BindingKeys {
 interface SessionKeys extends BindingKeys {
   native?: undefined;
   page?: undefined;
-  entry?: undefined;
   /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
   repeat?: true;
 }
@@ -99,7 +99,6 @@ export interface NativeBinding extends BindingKeys {
   effect: NativeEffect;
   native: true;
   page?: undefined;
-  entry?: undefined;
   fret?: undefined;
 }
 
@@ -108,15 +107,13 @@ export interface PageBinding extends BindingKeys {
   effect: PageEffect;
   native?: undefined;
   page: true;
-  entry?: undefined;
   fret?: undefined;
 }
 
 /** A key of a text box of the score: the box does what it is for (`textEntryEffectOf`). */
-export interface TextEntryBinding extends BindingKeys {
+export interface TextEntryBinding extends Omit<BindingKeys, "context"> {
   effect: TextEntryEffect;
   context: "textEntry";
-  entry: true;
   native?: undefined;
   page?: undefined;
   fret?: undefined;
@@ -211,8 +208,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
   // Section 6: in a text box. Return, on a Mac, is the same key.
-  { effect: "saveEntry", context: "textEntry", keys: ["Enter", "NumpadEnter"], entry: true, keymap: both("Enter", "NumpadEnter") },
-  { effect: "cancelEntry", context: "textEntry", keys: ["Escape"], entry: true, keymap: both("Escape") },
+  { effect: "saveEntry", context: "textEntry", keys: ["Enter", "NumpadEnter"], keymap: both("Enter", "NumpadEnter") },
+  { effect: "cancelEntry", context: "textEntry", keys: ["Escape"], keymap: both("Escape") },
 ];
 
 /**

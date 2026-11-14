@@ -445,7 +445,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (cursor === null) return false;
       // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
       const binding = matchKey(key, platform, partKindOf(partsOf(doc).get(cursor.partId)));
-      if (binding === undefined || binding.native || binding.page || binding.entry) return false;
+      if (binding === undefined || binding.native || binding.page || binding.context === "textEntry") return false;
       // Held down, only moves, + and - run again; the repeats of the others are still not the browser's.
       if (key.repeat === true && !binding.repeat) return true;
       // A digit waits for a second one; any other key that runs something ends the wait.

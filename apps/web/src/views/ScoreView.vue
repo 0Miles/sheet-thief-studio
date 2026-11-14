@@ -683,8 +683,7 @@ onBeforeUnmount(() => {
             :initial="textEntry.request.text"
             :max-length="MAX_BEAT_TEXT"
             :label="text.beatText"
-            @save="closeText"
-            @cancel="closeText(null)"
+            @close="closeText"
           />
         </div>
       </div>

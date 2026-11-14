@@ -237,5 +237,5 @@ export function pageEffectOf(key: Key, platform: KeyPlatform): PageEffect | null
  */
 export function textEntryEffectOf(key: Key, platform: KeyPlatform): TextEntryEffect | null {
   const binding = matchKey(key, platform, "textEntry");
-  return binding?.entry ? binding.effect : null;
+  return binding?.context === "textEntry" ? binding.effect : null;
 }

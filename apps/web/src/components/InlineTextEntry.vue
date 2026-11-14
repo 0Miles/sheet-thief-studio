@@ -18,17 +18,18 @@ const props = defineProps<{
   maxLength: number;
   label: string;
 }>();
-const emit = defineEmits<{ save: [text: string]; cancel: [] }>();
+/** Closed: with what is typed, saved, or with null, left without saving. */
+const emit = defineEmits<{ close: [text: string | null] }>();
 
 const input = ref<HTMLInputElement>();
 const value = ref(props.initial);
 /** Saved or left: a blur that follows is not another way out. */
 let closed = false;
 
-function close(then: () => void): void {
+function close(text: string | null): void {
   if (closed) return;
   closed = true;
-  then();
+  emit("close", text);
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -37,8 +38,7 @@ function onKey(event: KeyboardEvent): void {
   const effect = textEntryEffectOf(event, keyPlatform());
   if (effect === null) return;
   event.preventDefault();
-  if (effect === "saveEntry") close(() => emit("save", value.value));
-  else close(() => emit("cancel"));
+  close(effect === "saveEntry" ? value.value : null);
 }
 
 onMounted(() => {
@@ -59,7 +59,7 @@ onMounted(() => {
     :style="{ left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
     @keydown="onKey"
     @pointerdown.stop
-    @blur="close(() => emit('cancel'))"
+    @blur="close(null)"
   />
 </template>
 
