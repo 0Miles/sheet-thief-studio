@@ -45,13 +45,34 @@ test("the fixtures hold the cases the contract names: six, four and seven string
   expect(new Set(failures.flatMap((failure) => failure.error.pages.map((page) => page.code)))).toEqual(new Set(["no_staff", "no_notes", "invalid_image", "image_too_large"]));
 });
 
-// As the predecessor warns (converter.py, _flag_estimated_rhythm): only when another bar of the
-// part read its printed rhythm, and naming every bar estimated from the spacing.
-test.each([...fixtures].filter(([, fixture]) => recognizerResult.safeParse(fixture).success))("the fixture %s warns of estimated rhythm as the recognizer would", (_, fixture) => {
-  const result = fixture as RecognizerResult;
+/**
+ * The predecessor warns of estimated rhythm when some bar of the part read its printed rhythm
+ * (converter.py:671, stats.notated), and only bars with notes other than ties count as read or
+ * estimated (rhythm.py:418-432): a rest bar or a bar of ties counts for neither.
+ */
+function expectRhythmWarningAsRead(result: RecognizerResult) {
   const estimated = result.bars.flatMap((bar, index) => (bar.rhythmEstimated ? [index + 1] : []));
+  const read = result.bars.some((bar) => !bar.rhythmEstimated && bar.beats.some((beat) => beat.notes.some((note) => !note.tie)));
   const warned = result.warnings.flatMap((warning) => (warning.code === "rhythm_estimated" ? [warning.params.bars] : []));
-  expect(warned).toEqual(estimated.length > 0 && estimated.length < result.bars.length ? [estimated] : []);
+  expect(warned.length).toBeLessThanOrEqual(1);
+  if (warned.length > 0) {
+    expect(warned[0]).toEqual(estimated);
+    expect(read).toBe(true);
+  }
+  if (estimated.length > 0 && read) expect(warned).toHaveLength(1);
+}
+
+test.each([...fixtures].filter(([, fixture]) => recognizerResult.safeParse(fixture).success))("the fixture %s warns of estimated rhythm as the recognizer would", (_, fixture) => {
+  expectRhythmWarningAsRead(fixture as RecognizerResult);
+});
+
+test("every bar with notes estimated and one rest bar: no bar read its rhythm, so no warning is needed", () => {
+  const result = structuredClone(fixtures.get("tuning-unrecognized")) as RecognizerResult;
+  result.bars.forEach((bar) => (bar.rhythmEstimated = true));
+  result.bars.push({ ...result.bars[0], rhythmEstimated: false, beats: [{ units: 32, tuplet: false, notes: [] }] });
+  result.warnings = result.warnings.filter((warning) => warning.code !== "rhythm_estimated");
+  expect(recognizerResult.safeParse(result).error).toBeUndefined();
+  expectRhythmWarningAsRead(result);
 });
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -75,12 +96,14 @@ test.each<[string, string, (json: Json) => void]>([
   ["a note on a string the TAB does not have", "four-strings", (json) => (firstNote(json).string = 5)],
   ["a note on string 7 of a six-string TAB", "six-strings", (json) => (firstNote(json).string = 7)],
   ["two notes on one string", "six-strings", (json) => (json.bars[0].beats[0].notes[1].string = 6)],
+  ["a detected tuning with its text", "six-strings", (json) => (json.tuning.raw = "E A D G B E")],
+  ["a tuning not found with a text", "seven-strings", (json) => (json.tuning.raw = "B E A D G B E")],
   ["a detected tuning with a reason", "six-strings", (json) => (json.tuning.reason = "unrecognized")],
   ["an unreadable tuning without its text", "tuning-unrecognized", (json) => (json.tuning.raw = null)],
   ["a tuning from somewhere else", "six-strings", (json) => (json.tuning.source = "manual")],
   ["a default capo on a fret", "six-strings", (json) => (json.capo.fret = 2)],
   ["a capo past fret 24", "capo", (json) => (json.capo.fret = 25)],
-  ["a time signature over 3", "six-strings", (json) => (json.timeSignature.denominator = 3)],
+  ["a song in 4/3", "six-strings", (json) => (json.timeSignature.denominator = 3)],
   ["a song in 17/4", "six-strings", (json) => (json.timeSignature.numerator = 17)],
   ["a song in 4/32", "six-strings", (json) => (json.timeSignature.denominator = 32)],
   ["a bar in 33/8", "four-strings", (json) => (json.bars[1].timeSignature = { numerator: 33, denominator: 8 })],
@@ -96,6 +119,7 @@ test.each<[string, string, (json: Json) => void]>([
   ["a length longer than a dotted whole note", "six-strings", (json) => (json.bars[0].beats[0].units = 64)],
   ["a repeat played once", "six-strings", (json) => (json.bars[1].repeatTimes = 1)],
   ["a sign by its printed name", "seven-strings", (json) => (json.bars[0].sign = "Segno")],
+  ["a jump by its printed name", "seven-strings", (json) => (json.bars[2].jump = "Da Segno al Coda")],
   ["a fret past 29", "six-strings", (json) => (firstNote(json).fret = 30)],
   ["a dead note with a fret", "six-strings", (json) => Object.assign(firstNote(json), { dead: true })],
   ["a note with no fret", "six-strings", (json) => (firstNote(json).fret = null)],
@@ -107,6 +131,7 @@ test.each<[string, string, (json: Json) => void]>([
   ["a warning in words", "six-strings", (json) => json.warnings.push({ code: "other", params: {}, message: "Ritmo estimado" })],
   ["a warning with no code", "six-strings", (json) => json.warnings.push({ code: "rhythm_guessed", params: {} })],
   ["a warning missing its parameters", "six-strings", (json) => (json.warnings[0].params = {})],
+  ["an estimated bar named twice", "six-strings", (json) => (json.warnings[0].params.bars = [2, 2])],
   ["an error with a message", "error-timeout", (json) => (json.error.message = "Tempo esgotado")],
   ["an error code from another layer", "error-busy", (json) => (json.error.code = "no_staff")],
   ["pages on an error that is not about them", "error-busy", (json) => json.error.pages.push({ page: 1, code: "no_notes" })],

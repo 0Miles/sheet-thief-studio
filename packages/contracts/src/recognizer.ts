@@ -56,6 +56,7 @@ export const recognizerSongTimeSignature = z.strictObject({
   numerator: z.int().min(1).max(16),
   denominator: z.literal([2, 4, 8, 16]),
 });
+export type RecognizerSongTimeSignature = z.infer<typeof recognizerSongTimeSignature>;
 
 /** One printed later in the song: the range the predecessor reads on the staff. */
 export const recognizerTimeSignature = z.strictObject({

@@ -138,7 +138,7 @@
 
 | code | `params` | 意思 |
 |---|---|---|
-| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致（前身 `converter.py` 的 `_flag_estimated_rhythm`，只在讀到印出的節奏時才發） |
+| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致。出口（#61）從 `_build_track` 的小節與 `report["rhythm_from_notation"]` 重新算，只在讀到印出的節奏（有不是 tie 的音、沒有估時值的小節）時才發；不沿用前身的 `_flag_estimated_rhythm`，因為它跑在 `_align_by_numbers`、`_unify_bars`、`_expand_repeats` 之後，小節號碼已經變了 |
 | `overlapping_notes` | `{ page, count }` | 那一頁同一條弦上重疊的音符，略過了幾個（前身 `rhythm.py:81`） |
 | `staves_ignored` | `{ count }` | 弦數和多數不同的譜表，略過了幾行（前身 `converter.py` 的 `_main_staves`） |
 | `bar_too_dense` | `{ page, notes }` | 那一頁有個小節讀到的音多到超出拍號，這個小節的音都當成 32 分音符（前身 `rhythm.py:447`） |
