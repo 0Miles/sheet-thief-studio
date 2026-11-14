@@ -2,6 +2,7 @@
 import { detectKeyPlatform, type KeyPlatform } from "@studio/score-editor";
 
 let typeable: boolean | undefined;
+let narrowWindow: boolean | undefined;
 let platform: KeyPlatform | undefined;
 
 /**
@@ -12,6 +13,15 @@ let platform: KeyPlatform | undefined;
 export function canType(): boolean {
   typeable ??= window.matchMedia("(pointer: fine)").matches && window.innerWidth >= 1024;
   return typeable;
+}
+
+/**
+ * The window is narrower than 768 px: the Read view shows one part at a time there, its player
+ * at the bottom (docs/spec/views.md, section 7). Measured once, as `canType` is.
+ */
+export function isNarrow(): boolean {
+  narrowWindow ??= window.innerWidth < 768;
+  return narrowWindow;
 }
 
 /**

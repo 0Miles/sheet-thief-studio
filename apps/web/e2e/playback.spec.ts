@@ -8,7 +8,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore } from "./pages";
+import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, soundReady } from "./pages";
 
 const text = strings.score.player;
 
@@ -27,7 +27,7 @@ function seed(bars?: number): string {
 /** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
 async function openToPlay(page: Page, id: string): Promise<void> {
   await openScore(page, id);
-  await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
+  await soundReady(page);
 }
 
 /**

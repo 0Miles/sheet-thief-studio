@@ -32,6 +32,16 @@ export const strings = {
       stop: "停止",
       bar: (bar: number) => `第 ${bar} 小節`,
     },
+    // Each member's own display options (docs/spec/views.md, section 6).
+    display: {
+      parts: "顯示聲部",
+      zoom: "縮放",
+      scale: (scale: number) => `${Math.round(scale * 100)}%`,
+      // The narrow Read view: one part at a time, the rest of the options in a drawer.
+      part: "聲部",
+      options: "選項",
+      closeOptions: "收起選項",
+    },
   },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {

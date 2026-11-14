@@ -41,6 +41,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 自動跟隨播放位置：成員按任何鍵或手動捲動時暫停，直到下一次按播放。
 - alphaTab 的捲動已經關掉（`alphaTabEngine.ts` 的 `ScrollMode.Off`），跟隨由殼自己做，所以 `ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（#31，細節見 [`playback.md`](playback.md) 4.1）。
 - **補充**（#31）：`EngineOptions.seekOnClick` 預設關閉；Read view 要點譜面跳過去時再打開。
+  - **補充**（#32）：alphaTab 1.9 只有在它自己的播放游標打開時（`enableCursor`）才會點譜面跳過去，而我們把它關掉了；所以 `seekOnClick` 由引擎自己做：聽 `beatMouseUp`，用 tick lookup 算出那個拍點第一次播到的 tick，走和 `seek` 一樣的路（聲音產生期間點的，聲音換好之後跳到那裡）。
 - 排版：Page 版面、lazy loading、`useWorkers: false`、以小節為單位就地更新（ADR 0003）。
 
 ## 3. 可編輯視圖
@@ -60,9 +61,11 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 
 ## 5. Read view（看譜檢視）
 
-- 點譜面就跳到那裡播放。**補充**：點擊只移動播放位置；正在播放就從那裡接著播，暫停中則停在新位置，等按播放才開始（避免一點譜面就突然出聲；iOS 也要在使用者的手勢裡啟動音訊）。在這個視圖裡 `enableSeekToClick` 是 `true`。
+- 點譜面就跳到那裡播放。**補充**：點擊只移動播放位置；正在播放就從那裡接著播，暫停中則停在新位置，等按播放才開始（避免一點譜面就突然出聲；iOS 也要在使用者的手勢裡啟動音訊）。在這個視圖裡 `enableSeekToClick` 是 `true`（補充：真正跳過去的是引擎，見第 2 節 #32 的補充）。
 - 沒有 Selection、沒有 Cursor。
-- 播放時一直自動跟隨。
+- 播放時一直自動跟隨。**補充**（#32）：手動捲動不會停止跟隨；正在播的 system 沒有整個在畫面上時，照 [`playback.md`](playback.md) 4.1 的規則捲回去。
+- **補充**（#32）：播放的起點是目前的播放位置；工具列一直顯示播放位置所在的小節（一開始是第 1 小節），疊層畫出播放位置。停止回到開頭，仍然顯示第 1 小節。`Space` 一樣是播放／暫停。
+- **補充**（#32）：其他成員的修改照 [`playback.md`](playback.md) 第 3 節的 (a) 重新產生聲音，和編輯視圖相同。
 - 用 worker 排版。
 - 成員在 Read view 裡：Presence 的 `mode` 是 `"read"`、`cursor` 是 `null`，出現在成員列表上。
 - 訪客在 Read view 裡：不出現在 Presence，也看不到 Presence；沒有匯出按鈕。這只是介面上的限制，**不是安全邊界**：訪客的瀏覽器裡已經有完整的內容。
@@ -75,6 +78,9 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
   - 顯示哪些聲部（`ScoreRenderer.showParts`）。
   - 縮放。
 - 兩者存在 localStorage，以團譜 id 區分（補充：鍵是 `studio.display.<scoreId>`）。
+  - **補充**（#32）：值是 `{ hidden: string[]; scale: number }`。存的是**隱藏**的聲部，所以之後新增的聲部預設顯示；全部被隱藏時（例如隱藏的聲部之外的都被刪掉）顯示全部。縮放只有 50%、75%、100%、125%、150%、200%，讀不懂的值當成 100%。最後一個顯示中的聲部不能隱藏。實作在 `apps/web/src/display.ts`，介面是工具列的「顯示聲部」選單與「縮放」。
+  - **補充**（#32）：在編輯視圖隱藏了游標所在的聲部時，游標移到第一個顯示中的聲部的同一個小節。
+  - **補充**（#32）：排版進行中改了顯示的聲部或縮放，等這次排版完成後整份重新排版（`ScoreRenderer.showParts`、`setScale`）。
 - 寬版的 Read view 預設顯示全部聲部。
 
 ## 7. 寬度的界線與手機版面
@@ -91,6 +97,8 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 預設一次只顯示一個聲部，用聲部切換器換。各團譜上次選的聲部存在 localStorage（補充：鍵是 `studio.narrowPart.<scoreId>`）；沒有紀錄時用第一個聲部。
 - 用 Page 版面，每行小節數交給 alphaTab 依寬度決定。
 - 播放列固定在底部，混音面板收在抽屜裡。
+  - **補充**（#32）：播放列是頁面版面的最後一列，譜面捲動區在它上面結束，所以播放列從不疊在譜面上；抽屜打開時在播放列上方，把譜面往上推，也不疊在譜面上。目前抽屜裡只有縮放，混音的內容由 #33 加上。聲部切換器在上方的工具列。
+  - **補充**（#32）：窄螢幕與否和視圖一樣，只在載入頁面時判定一次。
 - 捲動到頂端時，底部的播放列不能蓋住 alphaTab 的標記（見第 9 節）。
 
 手機與平板（`canType` 為假的裝置）不能打譜（ROADMAP 的「不做的事」）。在這些裝置上可以：
