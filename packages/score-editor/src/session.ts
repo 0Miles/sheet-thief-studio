@@ -7,17 +7,22 @@ import {
   type Cursor,
   deleteBeat,
   deleteNote,
+  deleteSelection,
+  extendSelection,
   insertBeat,
   isRestAt,
   LOCAL,
+  moveByBar,
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
   partKindOf,
   partsOf,
   type Selection,
+  type SelectionStep,
   setFret,
   settleCursor,
+  settleSelection,
   stepDuration,
 } from "@studio/score-model";
 import * as Y from "yjs";
@@ -37,7 +42,6 @@ const MAX_FRET = 36;
  */
 export interface LocalPresence {
   cursor: Cursor | null;
-  /** Until selecting comes (#21), the session has none. */
   selection: Selection | null;
 }
 
@@ -61,6 +65,11 @@ export interface EditorSession {
    * it moves to the nearest place still there; null once its part or bar is gone.
    */
   readonly cursor: Cursor | null;
+  /**
+   * What this member selected (docs/spec/commands.md, section 4): extended with Shift, it ends
+   * with a move without Shift, Esc, a click, or any command that does not work on it. Null once
+   * a beat, bar or part it starts or ends on is gone.
+   */
   readonly selection: Selection | null;
   presence(): LocalPresence;
   /** Called with the presence each time the cursor or the selection changes. */
@@ -71,7 +80,7 @@ export interface EditorSession {
    * browser fires for them, and the page's keys (`pageEffectOf`: Space plays) are left alone.
    */
   press(key: Key): boolean;
-  /** Put the cursor somewhere else (a click on the page). Never changes the score. */
+  /** Put the cursor somewhere else (a click on the page), ending the selection. Never changes the score. */
   moveTo(cursor: Cursor | null): void;
   /**
    * Called the first time a key that would change the score is refused because the session is
@@ -81,19 +90,27 @@ export interface EditorSession {
   destroy(): void;
 }
 
+/** Where a key leaves the member: the cursor, and what is selected. */
+interface Place {
+  cursor: Cursor | null;
+  selection: Selection | null;
+}
+
 /** What a key does: the command it runs at a cursor, and whether that changes the score. */
 interface KeyCommand {
   changes: boolean;
-  run(at: Cursor): Cursor | null;
+  run(at: Cursor): Place;
 }
 
-const move = (run: (at: Cursor) => Cursor): KeyCommand => ({ changes: false, run });
-const change = (run: (at: Cursor) => Cursor | null): KeyCommand => ({ changes: true, run });
+/** A move or a command that does not work on the selection: the selection ends. */
+const move = (run: (at: Cursor) => Cursor): KeyCommand => ({ changes: false, run: (at) => ({ cursor: run(at), selection: null }) });
+const change = (run: (at: Cursor) => Cursor | null): KeyCommand => ({ changes: true, run: (at) => ({ cursor: run(at), selection: null }) });
 
-function samePlace(a: Cursor | null, b: Cursor | null): boolean {
+/** The same fields with the same values, or both none: two cursors at one place, two selections of the same. */
+function same<T extends object>(a: T | null, b: T | null): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
-  const keys = Object.keys(a) as (keyof Cursor)[];
+  const keys = Object.keys(a) as (keyof T)[];
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
 
@@ -108,6 +125,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   // Only what this member did is undone (docs/adr/0001); one command, one step.
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
   let cursor = start;
+  let selection: Selection | null = null;
   let lastDigit: TypedDigit | null = null;
   /**
    * The beat this member just made in the append slot, while the cursor is still on it: the next
@@ -126,14 +144,19 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
 
   function presence(): LocalPresence {
-    return { cursor, selection: null };
+    return { cursor, selection };
   }
 
-  function moveTo(next: Cursor | null): void {
-    if (samePlace(next, cursor)) return;
-    if (next?.at !== "on" || next.beatId !== appended) appended = null;
-    cursor = next;
-    position = next && beatPositionOf(doc, next);
+  /** Put the member there, and tell the presence when anything moved. */
+  function show({ cursor: next, selection: selected }: Place): void {
+    const moved = !same(next, cursor);
+    if (!moved && same(selected, selection)) return;
+    if (moved) {
+      if (next?.at !== "on" || next.beatId !== appended) appended = null;
+      cursor = next;
+      position = next && beatPositionOf(doc, next);
+    }
+    selection = selected;
     const told = presence();
     for (const listener of presenceListeners) listener(told);
   }
@@ -144,7 +167,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     if (running) return;
     // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
     if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
-    moveTo(settled(cursor));
+    show({ cursor: settled(cursor), selection: selection && settleSelection(doc, selection) });
   };
   doc.on("afterTransaction", settle);
 
@@ -180,13 +203,35 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return next;
   }
 
+  /** → from the cursor: after a beat just made in the append slot, as if it were still the last of its voice. */
+  const nextBeat = (at: Cursor): Cursor => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1));
+
+  /** A move with Shift held: the selection is extended to where the cursor goes (docs/spec/commands.md, section 4). */
+  const extend = (step: SelectionStep, run: (at: Cursor) => Cursor): KeyCommand => ({
+    changes: false,
+    run: (at) => {
+      const next = run(at);
+      return { cursor: next, selection: extendSelection(selection, at, next, step) };
+    },
+  });
+
   /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
   function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
     switch (effect) {
       case "nextBeat":
-        return move((at) => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
+        return move(nextBeat);
       case "previousBeat":
         return move((at) => moveByBeat(doc, at, -1));
+      case "selectNextBeat":
+        return extend("beat", nextBeat);
+      case "selectPreviousBeat":
+        return extend("beat", (at) => moveByBeat(doc, at, -1));
+      case "selectNextBar":
+        return extend("bar", (at) => moveByBar(doc, at, 1));
+      case "selectPreviousBar":
+        return extend("bar", (at) => moveByBar(doc, at, -1));
+      case "deselect":
+        return move((at) => at);
       case "lineDown":
         return move((at) => moveByLine(doc, at, 1));
       case "lineUp":
@@ -194,6 +239,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "insertBeat":
         return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
       case "delete":
+        if (selection !== null) {
+          const selected = selection;
+          // Delete works on the selection, which stays as long as what it holds is there.
+          return { changes: true, run: (at) => ({ cursor: deleteSelection(doc, selected, at), selection: settleSelection(doc, selected) }) };
+        }
         return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
       case "shorter":
         return change((at) => stepDuration(doc, at, 1));
@@ -216,7 +266,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       return cursor;
     },
     get selection() {
-      return null;
+      return selection;
     },
     presence,
     onPresence(listener) {
@@ -242,16 +292,18 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return true;
       }
       running = true;
-      let next: Cursor | null;
+      let next: Place;
       try {
         next = command.run(cursor);
       } finally {
         running = false;
       }
-      moveTo(next);
+      show(next);
       return true;
     },
-    moveTo,
+    moveTo(next) {
+      show({ cursor: next, selection: null });
+    },
     onRefused(listener) {
       refusedListeners.add(listener);
       return () => refusedListeners.delete(listener);

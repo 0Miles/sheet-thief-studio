@@ -41,6 +41,19 @@ function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   return beatId === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId, at: "on" };
 }
 
+/**
+ * The cursor at the first place of the bar after its own (`step` 1, Nav+→) or before it (-1):
+ * the first beat of its voice there, or the append slot of an empty voice. At either end of the
+ * score it stays.
+ */
+export function moveByBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  const order = ordered(barsOf(doc));
+  const barId = order[order.indexOf(cursor.barId) + step];
+  if (barId === undefined || !order.includes(cursor.barId)) return cursor;
+  const first = beatIds(voiceOf(doc, cursor, barId))[0];
+  return first === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId: first, at: "on" };
+}
+
 /** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */
 function pastLastBeat(doc: Y.Doc, cursor: Cursor): Cursor {
   return isUnderfull(doc, cursor) ? { ...cursor, at: "after" } : toNextBar(doc, cursor, 1);

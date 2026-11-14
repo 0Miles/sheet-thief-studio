@@ -34,6 +34,7 @@ import {
   type YVoice,
   voiceKeys,
 } from "./schema";
+import { selectedBars, selectedBeats } from "./selection";
 
 /**
  * Where a member is typing (docs/spec/commands.md, section 2). On a beat (`at: "on"`), or in the
@@ -323,6 +324,42 @@ export function deleteBeat(doc: Y.Doc, cursor: Cursor): Cursor {
   doc.transact(() => voice.delete(index, 1), LOCAL);
   if (index < voice.length) return { ...cursor, beatId: voice.get(index).get("id") as string };
   return { ...cursor, beatId: index > 0 ? (voice.get(index - 1).get("id") as string) : null, at: "after" };
+}
+
+/**
+ * Delete on a selection (docs/spec/commands.md, 5.6), one command, in the part selected only. A
+ * beat range: its beats become rests, keeping their durations and everything else they hold;
+ * when all of them are rests already, they are removed, and the cursor moves onto the beat that
+ * takes their place, or into the append slot after the new last beat. A bar range: every voice
+ * of the part in those bars is emptied, a bar's rest; the cursor in one of them moves into the
+ * append slot of its empty voice. Changes nothing when what the selection names is gone.
+ */
+export function deleteSelection(doc: Y.Doc, selection: Selection, cursor: Cursor): Cursor {
+  if (selection.kind === "bars") {
+    const part = partsOf(doc).get(selection.partId);
+    const voices = part === undefined ? [] : selectedBars(doc, selection).flatMap((barId) => [...(contentOf(part).get(barId)?.values() ?? [])]);
+    if (!voices.some((voice) => voice.length > 0)) return cursor;
+    // Each voice is emptied where it is, not replaced: beats someone types there meanwhile are kept (docs/spec/commands.md, 5.7).
+    doc.transact(() => voices.forEach((voice) => voice.delete(0, voice.length)), LOCAL);
+    const mine = voiceAt(doc, cursor);
+    return mine !== undefined && voices.includes(mine) ? { ...cursor, beatId: null, at: "after" } : cursor;
+  }
+  const found = selectedBeats(doc, selection);
+  if (found === undefined) return cursor;
+  const { voice, first, last } = found;
+  const beats = voice.slice(first, last + 1);
+  const notesOf = (beat: YBeat) => {
+    const notes = beat.get("notes");
+    return notes instanceof Y.Map ? (notes as Y.Map<NoteJSON>) : undefined;
+  };
+  if (beats.some((beat) => (notesOf(beat)?.size ?? 0) > 0)) {
+    doc.transact(() => beats.forEach((beat) => notesOf(beat)?.clear()), LOCAL);
+    return cursor;
+  }
+  doc.transact(() => voice.delete(first, beats.length), LOCAL);
+  const next = voice.length > first ? voice.get(first) : undefined;
+  if (next !== undefined) return { ...cursor, beatId: next.get("id") as string, at: "on" };
+  return { ...cursor, beatId: first > 0 ? (voice.get(first - 1).get("id") as string) : null, at: "after" };
 }
 
 /** Give the beat of the cursor a note value and dots; its tuplet stays. */

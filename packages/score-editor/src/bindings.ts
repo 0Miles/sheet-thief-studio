@@ -6,7 +6,23 @@ import type { PartKind } from "@studio/score-model";
 import type { Chord, KeyPlatform } from "./keys";
 
 /** What a key the session handles does: a move, or a command (docs/spec/commands.md). */
-export type SessionEffect = "nextBeat" | "previousBeat" | "lineDown" | "lineUp" | "insertBeat" | "delete" | "shorter" | "longer" | "undo" | "redo" | "fret";
+export type SessionEffect =
+  | "nextBeat"
+  | "previousBeat"
+  | "lineDown"
+  | "lineUp"
+  | "selectNextBeat"
+  | "selectPreviousBeat"
+  | "selectNextBar"
+  | "selectPreviousBar"
+  | "deselect"
+  | "insertBeat"
+  | "delete"
+  | "shorter"
+  | "longer"
+  | "undo"
+  | "redo"
+  | "fret";
 
 /**
  * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
@@ -83,6 +99,12 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "previousBeat", context: "score", keys: ["ArrowLeft"], repeat: true, keymap: both("ArrowLeft") },
   { effect: "lineDown", context: "score", keys: ["ArrowDown"], repeat: true, keymap: both("ArrowDown") },
   { effect: "lineUp", context: "score", keys: ["ArrowUp"], repeat: true, keymap: both("ArrowUp") },
+  // Selecting (docs/spec/commands.md, section 4): Shift extends a beat range, Shift with Nav a bar range.
+  { effect: "selectNextBeat", context: "score", keys: ["Shift+ArrowRight"], repeat: true, keymap: both("Shift+ArrowRight") },
+  { effect: "selectPreviousBeat", context: "score", keys: ["Shift+ArrowLeft"], repeat: true, keymap: both("Shift+ArrowLeft") },
+  { effect: "selectNextBar", context: "score", keys: ["Nav+Shift+ArrowRight"], repeat: true, keymap: { other: ["Ctrl+Shift+ArrowRight"], mac: ["Option+Shift+ArrowRight"] } },
+  { effect: "selectPreviousBar", context: "score", keys: ["Nav+Shift+ArrowLeft"], repeat: true, keymap: { other: ["Ctrl+Shift+ArrowLeft"], mac: ["Option+Shift+ArrowLeft"] } },
+  { effect: "deselect", context: "score", keys: ["Escape"], keymap: both("Escape") },
   { effect: "insertBeat", context: "score", keys: ["Insert"], mac: ["Alt+Enter"], keymap: { other: ["Insert"], mac: ["Option+Enter"] } },
   // The key marked delete on a Mac keyboard sends Backspace, and comes first there; Fn+delete sends Delete.
   { effect: "delete", context: "score", keys: ["Delete", "Backspace"], mac: ["Backspace", "Delete"], keymap: both("Delete", "Backspace") },
