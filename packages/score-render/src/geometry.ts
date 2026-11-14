@@ -7,7 +7,7 @@
 // so the y of a string or staff position is computed from the top line and the line spacing of
 // alphaTab's engraving settings.
 import type * as alphaTab from "@coderline/alphatab";
-import type { Cursor, PartKind } from "@studio/score-model";
+import type { Cursor, PartKind, Selection } from "@studio/score-model";
 
 import { beatIdOf, type Projection } from "./projection";
 import type { Rect } from "./types";
@@ -95,6 +95,57 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   const end = next === undefined ? bar.visualBounds.x + bar.visualBounds.w : beatSpan(next, metrics).left;
   const width = Math.min(CARET_WIDTH * metrics.staffSpace, Math.max(end - span.right, 0));
   return { x: (span.right + end - width) / 2, y, width, height };
+}
+
+/** The box around boxes, reaching `margin` above and below them. */
+function around(boxes: readonly alphaTab.rendering.Bounds[], margin: number): Rect {
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.w));
+  const top = Math.min(...boxes.map((box) => box.y)) - margin;
+  const bottom = Math.max(...boxes.map((box) => box.y + box.h)) + margin;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/**
+ * Where a selection is drawn (docs/spec/commands.md, section 4): over the staves it is on, and
+ * as far above and below them as the cursor on their outer strings reaches. A beat range: one box from its first beat to its last, over the staff of its
+ * voice. A bar range: one box for each system it is on, from its first bar there to its last,
+ * over every staff of its part. None when its part, bars or beats are not drawn.
+ */
+export function selectionRects(lookup: BoundsLookup, projection: Projection, selection: Selection, metrics: StaffMetrics): Rect[] {
+  const track = projection.partIndex.get(selection.partId);
+  if (track === undefined) return [];
+  const margin = metrics.tabLineSpacing / 2 + metrics.lineThickness;
+  if (selection.kind === "beats") {
+    const barIndex = projection.barIndex.get(selection.barId);
+    const [staff = 0] = selection.voice.split(":").map(Number);
+    const bar = barIndex === undefined ? null : barBoundsOf(lookup, barIndex, track, staff);
+    const ends = [selection.anchorBeatId, selection.focusBeatId].map((beatId) => {
+      const address = projection.addresses.get(beatId);
+      if (bar === null || address === undefined || address.bar !== barIndex) return undefined;
+      return bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat);
+    });
+    if (bar === null || ends.some((beat) => beat === undefined)) return [];
+    const spans = (ends as BeatBounds[]).map((beat) => beatSpan(beat, metrics));
+    const left = Math.min(...spans.map((span) => span.left));
+    const right = Math.max(...spans.map((span) => span.right));
+    const staffBox = around([bar.visualBounds], margin);
+    return [{ ...staffBox, x: left, width: right - left }];
+  }
+  const ends = [selection.anchorBarId, selection.focusBarId].map((barId) => projection.barIndex.get(barId));
+  if (ends.some((index) => index === undefined)) return [];
+  const [first, last] = [Math.min(...(ends as number[])), Math.max(...(ends as number[]))];
+  // The staves of the part in each bar, by the system they are drawn on.
+  const bySystem = new Map<unknown, alphaTab.rendering.Bounds[]>();
+  for (let index = first; index <= last; index++) {
+    const masterBar = lookup.findMasterBarByIndex(index);
+    if (masterBar === null) continue;
+    const staves = masterBar.bars.filter((item) => item.bar.staff.track.index === track).map((item) => item.visualBounds);
+    if (staves.length === 0) continue;
+    const system = bySystem.get(masterBar.staffSystemBounds) ?? [];
+    bySystem.set(masterBar.staffSystemBounds, [...system, ...staves]);
+  }
+  return [...bySystem.values()].map((boxes) => around(boxes, margin));
 }
 
 /**

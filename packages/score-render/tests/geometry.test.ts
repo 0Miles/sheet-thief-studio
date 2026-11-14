@@ -1,11 +1,11 @@
 // Where the cursor is drawn and which areas no overlay may cover, read from a real alphaTab layout
 // made without a browser (alphaTab lays out and draws SVG in Node).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type ScoreJSON, setFret } from "@studio/score-model";
+import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type ScoreJSON, type Selection, setFret } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { cursorRect, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "../src/geometry";
+import { cursorRect, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
 import { projectScore } from "../src/projection";
 import type { Rect } from "../src/types";
 
@@ -52,6 +52,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
   return {
     mark,
     rect: (cursor: Cursor) => cursorRect(lookup, projection, parts, cursor, metrics),
+    selected: (selection: Selection) => selectionRects(lookup, projection, selection, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
     played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
   };
@@ -163,4 +164,49 @@ test("further into a bar, playback is drawn on the beat played then", () => {
 test("a bar that is not drawn has no place for playback", () => {
   const { doc } = band(2, 1);
   expect(layOut(docToJson(doc)).played(2, 0)).toBeNull();
+});
+
+test("a beat range is drawn as one box around its beats, from the first to the last, over the whole staff of its part", () => {
+  const { doc, barIds, partIds } = band(2, 2);
+  const partId = partIds[0]!;
+  let at = cursorAt(doc, partId, barIds[0]!, 1);
+  const beats: Cursor[] = [];
+  for (const fret of [1, 2, 3, 4]) {
+    at = setFret(doc, beats.length === 0 ? at : { ...at, at: "after" }, fret);
+    beats.push(at);
+  }
+  const drawn = layOut(docToJson(doc));
+  const boxes = drawn.selected({ kind: "beats", partId, barId: barIds[0]!, voice: "0:0", anchorBeatId: beats[2]!.beatId!, focusBeatId: beats[0]!.beatId! });
+  expect(boxes).toHaveLength(1);
+  const box = boxes[0]!;
+  for (const line of [1, 6]) for (const beat of beats.slice(0, 3)) expect(contains(box, drawn.rect({ ...beat, line })!), `line ${line}`).toBe(true);
+  const fourth = drawn.rect(beats[3]!)!;
+  expect(box.x + box.width).toBeLessThanOrEqual(fourth.x);
+  // Not over the staff of the other part: short of its first string.
+  const below = drawn.rect(cursorAt(doc, partIds[1]!, barIds[0]!, 1))!;
+  expect(box.y + box.height).toBeLessThan(below.y + below.height / 2);
+});
+
+test("a bar range is drawn as one box for each system it is on, over its part only", () => {
+  const { doc, barIds, partIds } = band(12, 2);
+  const partId = partIds[1]!;
+  const drawn = layOut(docToJson(doc));
+  const boxes = drawn.selected({ kind: "bars", partId, anchorBarId: barIds[11]!, focusBarId: barIds[0]! });
+  // Twelve bars do not fit on one system of 1200 px.
+  expect(boxes.length).toBeGreaterThan(1);
+  for (const barId of barIds) {
+    const inBar = [1, 6].map((line) => drawn.rect(cursorAt(doc, partId, barId, line))!);
+    const holding = boxes.filter((box) => inBar.every((rect) => contains(box, rect)));
+    expect(holding).toHaveLength(1);
+    // Short of the last string of the part above.
+    const above = drawn.rect(cursorAt(doc, partIds[0]!, barId, 6))!;
+    expect(holding[0]!.y).toBeGreaterThan(above.y + above.height / 2);
+  }
+});
+
+test("a selection whose part or bars are not drawn has no box", () => {
+  const { doc, barIds, partIds } = band(2, 2);
+  const drawn = layOut(docToJson(doc), 1);
+  expect(drawn.selected({ kind: "bars", partId: partIds[1]!, anchorBarId: barIds[0]!, focusBarId: barIds[1]! })).toEqual([]);
+  expect(drawn.selected({ kind: "beats", partId: partIds[0]!, barId: barIds[0]!, voice: "0:0", anchorBeatId: "gone", focusBeatId: "gone" })).toEqual([]);
 });
