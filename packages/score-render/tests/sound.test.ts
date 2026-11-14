@@ -259,6 +259,9 @@ test("a hammer-on, a legato slide and a shift slide sound otherwise than the sam
     const [firstOn, secondOn] = ons(hammer).map((event) => Number(event.split(" ")[3]));
     expect(secondOn).toBeLessThan(Number(ons(plain)[1]!.split(" ")[3]));
     expect(firstOn).toBe(Number(ons(plain)[0]!.split(" ")[3]));
+    // A pull-off, from fret 9 down to 7, as well.
+    const pullOff = ons(twoNotes({ fret: 9, legato: true }, { across })).map((event) => Number(event.split(" ")[3]));
+    expect(pullOff[1]).toBeLessThan(Number(ons(twoNotes({ fret: 9 }, { across }))[1]!.split(" ")[3]));
     // A legato slide bends the first note up to the second, which is not struck again.
     const legato = twoNotes({ slideOut: "legato" }, { across });
     expect(ons(legato)).toHaveLength(1);

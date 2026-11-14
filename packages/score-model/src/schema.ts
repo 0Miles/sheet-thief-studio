@@ -36,9 +36,11 @@ export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
 
 /** How a note slides out of itself, in the order Shift+S steps through them (docs/spec/commands.md, 5.4). */
 export const SLIDE_OUTS = ["legato", "shift", "outUp", "outDown"] as const;
+export type SlideOut = (typeof SLIDE_OUTS)[number];
 
 /** How a note slides into itself, in the order Shift+E steps through them. */
 export const SLIDE_INS = ["inBelow", "inAbove"] as const;
+export type SlideIn = (typeof SLIDE_INS)[number];
 
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
@@ -448,13 +450,14 @@ export function contentOf(part: YPart): Y.Map<YBarContent> {
   return part.get("content") as Y.Map<YBarContent>;
 }
 
-/** A voice of a part in a bar; undefined when the part, the bar's content or the voice is not there. */
 /** Which voice: of a part, in a bar, "staff:voice". */
 export interface VoiceAddress {
   partId: string;
   barId: string;
   voice: string;
 }
+
+/** A voice of a part in a bar; undefined when the part, the bar's content or the voice is not there. */
 
 export function voiceIn(doc: Y.Doc, { partId, barId, voice }: VoiceAddress): YVoice | undefined {
   const part = partsOf(doc).get(partId);

@@ -13,8 +13,9 @@ import {
   type NoteValue,
   type PartJSON,
   type ScoreJSON,
-  type SLIDE_INS,
-  type SLIDE_OUTS,
+  type SlideIn,
+  type SlideOut,
+  slideGoesOn,
   WHOLE,
 } from "@studio/score-model";
 
@@ -130,14 +131,14 @@ function accidentalModeOf(spell: string | undefined): alphaTab.model.NoteAcciden
   }
 }
 
-const SLIDE_OUT_TYPES: Record<(typeof SLIDE_OUTS)[number], alphaTab.model.SlideOutType> = {
+const SLIDE_OUT_TYPES: Record<SlideOut, alphaTab.model.SlideOutType> = {
   legato: model.SlideOutType.Legato,
   shift: model.SlideOutType.Shift,
   outUp: model.SlideOutType.OutUp,
   outDown: model.SlideOutType.OutDown,
 };
 
-const SLIDE_IN_TYPES: Record<(typeof SLIDE_INS)[number], alphaTab.model.SlideInType> = {
+const SLIDE_IN_TYPES: Record<SlideIn, alphaTab.model.SlideInType> = {
   inBelow: model.SlideInType.IntoFromBelow,
   inAbove: model.SlideInType.IntoFromAbove,
 };
@@ -177,10 +178,10 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   if (json.letRing) note.isLetRing = true;
   if (json.palmMute) note.isPalmMute = true;
   if (json.vibrato) note.vibrato = model.VibratoType.Slight;
-  const goesOn = after?.notes[key] !== undefined;
-  if (json.legato && goesOn) note.isHammerPullOrigin = true;
+  const reaches = after?.notes[key] !== undefined;
+  if (json.legato && reaches) note.isHammerPullOrigin = true;
   // A slide out up or down goes on to no note: it needs none after it.
-  if (json.slideOut && (goesOn || json.slideOut === "outUp" || json.slideOut === "outDown")) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
+  if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
   if (json.slideIn) note.slideInType = SLIDE_IN_TYPES[json.slideIn];
   return note;
 }
@@ -410,7 +411,7 @@ function retie(next: AtBar | null, replaced: AtBar): void {
 }
 
 /** Whether a note of a bar of the model goes on, by a link, to a note of another bar: a link across a bar line. */
-function linksOutOf(bar: AtBar | undefined): boolean {
+function modelLinksOutOf(bar: AtBar | undefined): boolean {
   return (
     bar?.voices.some((voice) =>
       voice.beats.some((beat) => beat.notes.some((note) => [note.hammerPullDestination, note.slideTarget].some((target) => target !== null && target.beat.voice.bar !== bar))),
@@ -419,7 +420,7 @@ function linksOutOf(bar: AtBar | undefined): boolean {
 }
 
 /** Whether a note of the bar at `index` of the score goes on, by a link, to the first beat of the bar after it. */
-function linksOutOfBar(json: ScoreJSON, index: number): boolean {
+function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
   const bar = json.bars[index];
   const next = json.bars[index + 1];
   if (bar === undefined || next === undefined) return false;
@@ -467,7 +468,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   if (!sameShape) return null;
 
   /** Whether a link crosses the line after bar `index`: in the score, or in the model, read before that bar is replaced. */
-  const crossed = (index: number) => index + 1 < json.bars.length && (linksOutOfBar(json, index) || tracks.some((track) => track.staves.some((staff) => linksOutOf(staff.bars[index]))));
+  const crossed = (index: number) => index + 1 < json.bars.length && (scoreLinksOutOf(json, index) || tracks.some((track) => track.staves.some((staff) => modelLinksOutOf(staff.bars[index]))));
   const rebuilt = new Set(indexes as number[]);
   // The bars before the ones to rebuild that a link reaches them from, and the bars before those;
   // the bars after are seen to below, as each is rebuilt.

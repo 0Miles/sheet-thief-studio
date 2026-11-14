@@ -1,6 +1,6 @@
 // What is wrong in a score but is never rewritten for the members: only pointed out.
 import type { Cursor } from "./commands";
-import { type BeatDuration, type BeatJSON, isVoiceKey, MAIN_VOICE, type NoteJSON, type PartJSON, type ScoreJSON, startLine, stringOfNoteKey, type TimeSignature } from "./schema";
+import { type BeatDuration, type BeatJSON, isVoiceKey, MAIN_VOICE, type NoteJSON, type PartJSON, type ScoreJSON, type SlideOut, startLine, stringOfNoteKey, type TimeSignature } from "./schema";
 
 /** Ticks in a whole note (960 in a quarter). */
 export const WHOLE = 3840;
@@ -78,7 +78,12 @@ function continues(kind: PartJSON["kind"], tied: NoteJSON, before: NoteJSON | un
  * starts from): a hammer-on or pull-off, or a slide out legato or shift.
  */
 export function linksOn(note: NoteJSON): boolean {
-  return note.legato === true || note.slideOut === "legato" || note.slideOut === "shift";
+  return note.legato === true || (note.slideOut !== undefined && slideGoesOn(note.slideOut));
+}
+
+/** Whether a slide out goes on to the next note on the string, a link: legato and shift; out up and out down go on to none. */
+export function slideGoesOn(slide: SlideOut): boolean {
+  return slide === "legato" || slide === "shift";
 }
 
 /**
