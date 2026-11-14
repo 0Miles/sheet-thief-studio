@@ -3,7 +3,7 @@
 import * as Y from "yjs";
 
 import type { Cursor, Selection } from "./commands";
-import { barsOf, contentOf, ordered, partsOf, type YVoice } from "./schema";
+import { barsOf, ordered, partsOf, voiceIn, type YVoice } from "./schema";
 
 /** How a selection is extended: beat by beat (Shift+←/→), or bar by bar (Shift+Nav+←/→). */
 export type SelectionStep = "beat" | "bar";
@@ -30,33 +30,28 @@ export function extendSelection(selection: Selection | null, from: Cursor, to: C
   return { kind: "beats", partId: to.partId, barId: to.barId, voice: to.voice, anchorBeatId, focusBeatId: to.beatId };
 }
 
-function voiceOf(doc: Y.Doc, partId: string, barId: string, voice: string): YVoice | undefined {
-  const part = partsOf(doc).get(partId);
-  return part && contentOf(part).get(barId)?.get(voice);
-}
-
-/** The ids from one to the other, both included, in the order of `ids`; none when either is not there. */
-function between(ids: readonly string[], a: string, b: string): string[] {
+/** Where the ids from one to the other are in `ids`, first to last, both included; none when either is not there. */
+function span(ids: readonly string[], a: string, b: string): { first: number; last: number } | undefined {
   const start = ids.indexOf(a);
   const end = ids.indexOf(b);
-  if (start < 0 || end < 0) return [];
-  return ids.slice(Math.min(start, end), Math.max(start, end) + 1);
+  if (start < 0 || end < 0) return undefined;
+  return { first: Math.min(start, end), last: Math.max(start, end) };
 }
 
 /** The voice of a beat range, and the indexes of its beats there, first to last; none when anything it names is gone. */
 export function selectedBeats(doc: Y.Doc, selection: Extract<Selection, { kind: "beats" }>): { voice: YVoice; first: number; last: number } | undefined {
-  const voice = voiceOf(doc, selection.partId, selection.barId, selection.voice);
+  const voice = voiceIn(doc, selection);
   if (voice === undefined || !barsOf(doc).has(selection.barId)) return undefined;
-  const ids = voice.map((beat) => beat.get("id") as string);
-  const selected = between(ids, selection.anchorBeatId, selection.focusBeatId);
-  if (selected.length === 0) return undefined;
-  return { voice, first: ids.indexOf(selected[0]!), last: ids.indexOf(selected.at(-1)!) };
+  const found = span(voice.map((beat) => beat.get("id") as string), selection.anchorBeatId, selection.focusBeatId);
+  return found && { voice, ...found };
 }
 
 /** The bars of a bar range, in the order of the score; none when its part or either end is gone. */
 export function selectedBars(doc: Y.Doc, selection: Extract<Selection, { kind: "bars" }>): string[] {
   if (!partsOf(doc).has(selection.partId)) return [];
-  return between(ordered(barsOf(doc)), selection.anchorBarId, selection.focusBarId);
+  const ids = ordered(barsOf(doc));
+  const found = span(ids, selection.anchorBarId, selection.focusBarId);
+  return found ? ids.slice(found.first, found.last + 1) : [];
 }
 
 /**

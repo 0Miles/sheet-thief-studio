@@ -48,6 +48,16 @@ function lineOffset(shape: PartShape, line: number, metrics: StaffMetrics): numb
   return (shape.kind === "fretted" ? line - 1 : line) * lineStep(shape, metrics) - metrics.lineThickness / 2;
 }
 
+/** Height of the cursor: a string for tablature, a staff space otherwise. */
+function cursorHeight(shape: PartShape, metrics: StaffMetrics): number {
+  return shape.kind === "fretted" ? metrics.tabLineSpacing : metrics.staffSpace;
+}
+
+/** The drawn beat of a voice of a bar, by its index there. */
+function drawnBeat(bar: BarBounds, voice: number, index: number): BeatBounds | undefined {
+  return bar.beats.find((item) => item.beat.voice.index === voice && item.beat.index === index);
+}
+
 function barBoundsOf(lookup: BoundsLookup, barIndex: number, track: number, staff: number): BarBounds | null {
   const masterBar = lookup.findMasterBarByIndex(barIndex);
   return masterBar?.bars.find((item) => item.bar.staff.track.index === track && item.bar.staff.index === staff) ?? null;
@@ -76,8 +86,7 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   const bar = barBoundsOf(lookup, barIndex, track, staff);
   if (bar === null) return null;
 
-  const step = lineStep(shape, metrics);
-  const height = shape.kind === "fretted" ? step : metrics.staffSpace;
+  const height = cursorHeight(shape, metrics);
   const y = bar.visualBounds.y + lineOffset(shape, cursor.line, metrics) - height / 2;
 
   if (cursor.beatId === null) {
@@ -87,11 +96,11 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   }
   const address = projection.addresses.get(cursor.beatId);
   if (address === undefined || address.bar !== barIndex) return null;
-  const beat = bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat);
+  const beat = drawnBeat(bar, address.voice, address.beat);
   if (beat === undefined) return null;
   const span = beatSpan(beat, metrics);
   if (cursor.at === "on") return { x: span.left, y, width: span.right - span.left, height };
-  const next = bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat + 1);
+  const next = drawnBeat(bar, address.voice, address.beat + 1);
   const end = next === undefined ? bar.visualBounds.x + bar.visualBounds.w : beatSpan(next, metrics).left;
   const width = Math.min(CARET_WIDTH * metrics.staffSpace, Math.max(end - span.right, 0));
   return { x: (span.right + end - width) / 2, y, width, height };
@@ -118,35 +127,38 @@ export function selectionRects(lookup: BoundsLookup, projection: Projection, par
   const shape = parts.get(selection.partId);
   if (track === undefined || shape === undefined) return [];
   // Half the cursor's height (`cursorRect`) past the line's centre, which is half a line thinner than the box's edge.
-  const margin = (shape.kind === "fretted" ? metrics.tabLineSpacing : metrics.staffSpace) / 2 + metrics.lineThickness;
+  const margin = cursorHeight(shape, metrics) / 2 + metrics.lineThickness;
   if (selection.kind === "beats") {
     const barIndex = projection.barIndex.get(selection.barId);
     const [staff = 0] = selection.voice.split(":").map(Number);
     const bar = barIndex === undefined ? null : barBoundsOf(lookup, barIndex, track, staff);
-    const ends = [selection.anchorBeatId, selection.focusBeatId].map((beatId) => {
+    if (bar === null) return [];
+    const drawn = (beatId: string): BeatBounds | undefined => {
       const address = projection.addresses.get(beatId);
-      if (bar === null || address === undefined || address.bar !== barIndex) return undefined;
-      return bar.beats.find((item) => item.beat.voice.index === address.voice && item.beat.index === address.beat);
-    });
-    if (bar === null || ends.some((beat) => beat === undefined)) return [];
-    const spans = (ends as BeatBounds[]).map((beat) => beatSpan(beat, metrics));
-    const left = Math.min(...spans.map((span) => span.left));
-    const right = Math.max(...spans.map((span) => span.right));
+      return address === undefined || address.bar !== barIndex ? undefined : drawnBeat(bar, address.voice, address.beat);
+    };
+    const anchor = drawn(selection.anchorBeatId);
+    const focus = drawn(selection.focusBeatId);
+    if (anchor === undefined || focus === undefined) return [];
+    const [a, b] = [beatSpan(anchor, metrics), beatSpan(focus, metrics)];
+    const left = Math.min(a.left, b.left);
+    const right = Math.max(a.right, b.right);
     const staffBox = around([bar.visualBounds], margin);
     return [{ ...staffBox, x: left, width: right - left }];
   }
-  const ends = [selection.anchorBarId, selection.focusBarId].map((barId) => projection.barIndex.get(barId));
-  if (ends.some((index) => index === undefined)) return [];
-  const [first, last] = [Math.min(...(ends as number[])), Math.max(...(ends as number[]))];
+  const anchor = projection.barIndex.get(selection.anchorBarId);
+  const focus = projection.barIndex.get(selection.focusBarId);
+  if (anchor === undefined || focus === undefined) return [];
   // The staves of the part in each bar, by the system they are drawn on.
   const bySystem = new Map<unknown, alphaTab.rendering.Bounds[]>();
-  for (let index = first; index <= last; index++) {
+  for (let index = Math.min(anchor, focus); index <= Math.max(anchor, focus); index++) {
     const masterBar = lookup.findMasterBarByIndex(index);
     if (masterBar === null) continue;
     const staves = masterBar.bars.filter((item) => item.bar.staff.track.index === track).map((item) => item.visualBounds);
     if (staves.length === 0) continue;
-    const system = bySystem.get(masterBar.staffSystemBounds) ?? [];
-    bySystem.set(masterBar.staffSystemBounds, [...system, ...staves]);
+    const system = bySystem.get(masterBar.staffSystemBounds);
+    if (system === undefined) bySystem.set(masterBar.staffSystemBounds, staves);
+    else system.push(...staves);
   }
   return [...bySystem.values()].map((boxes) => around(boxes, margin));
 }

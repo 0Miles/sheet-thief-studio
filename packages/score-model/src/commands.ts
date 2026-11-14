@@ -31,6 +31,7 @@ import {
   type YBar,
   type YBeat,
   type YPart,
+  voiceIn,
   type YVoice,
   voiceKeys,
 } from "./schema";
@@ -170,8 +171,7 @@ export function fillMissingContent(doc: Y.Doc): void {
 }
 
 function voiceAt(doc: Y.Doc, cursor: Cursor): YVoice | undefined {
-  const part = partsOf(doc).get(cursor.partId);
-  return part && contentOf(part).get(cursor.barId)?.get(cursor.voice);
+  return voiceIn(doc, cursor);
 }
 
 function indexOfBeat(voice: YVoice, beatId: string | null): number {

@@ -4,11 +4,10 @@ import * as Y from "yjs";
 
 import type { Cursor } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
-import { barsOf, COMMON_TIME, contentOf, durationOf, ordered, type PartKind, partsOf, timeSigSchema, type YVoice } from "./schema";
+import { barsOf, COMMON_TIME, durationOf, ordered, type PartKind, partsOf, timeSigSchema, voiceIn, type YVoice } from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
-  const part = partsOf(doc).get(cursor.partId);
-  return part && contentOf(part).get(barId)?.get(cursor.voice);
+  return voiceIn(doc, { ...cursor, barId });
 }
 
 function beatIds(voice: YVoice | undefined): string[] {

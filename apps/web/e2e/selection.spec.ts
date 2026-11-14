@@ -2,16 +2,12 @@
 // and 5.6; docs/spec/views.md, section 9). Every key goes through the real keyboard; the page is
 // read through `window.__studioTest` and the DOM only.
 import { expect, type Page, test } from "@playwright/test";
-import type { BeatJSON, ScoreJSON } from "@studio/score-model";
+import type { BeatJSON } from "@studio/score-model";
 
 import { overlaps } from "../src/overlay";
 import { ADMIN, EDITOR } from "./environment";
 import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
-
-/** The beats of the first voice of a bar (by index) of the first part. */
-function beatsIn(score: ScoreJSON, bar: number): BeatJSON[] {
-  return score.parts[0]!.content[score.bars[bar]!.id]?.["0:0"] ?? [];
-}
+import { beatsIn } from "./studio";
 
 const frets = (beats: BeatJSON[]) => beats.map((beat) => beat.notes.s1?.fret ?? null);
 
@@ -30,7 +26,7 @@ test("three beats selected with Shift+→ become rests with Delete, and Ctrl+Z b
   await openScore(page, id);
   await typeQuarters(page, [1, 2, 3, 4]);
   for (let step = 0; step < 3; step++) await page.keyboard.press("ArrowLeft");
-  const typed = beatsIn(await scoreOf(page), 0);
+  const typed = beatsIn(await scoreOf(page), 0, 0);
   expect(frets(typed)).toEqual([1, 2, 3, 4]);
   expect(await cursorOf(page)).toMatchObject({ beatId: typed[0]!.id, at: "on" });
 
@@ -40,14 +36,14 @@ test("three beats selected with Shift+→ become rests with Delete, and Ctrl+Z b
   await page.keyboard.press("Shift+ArrowRight");
   await expect(selection).toHaveCount(1);
   await page.keyboard.press("Delete");
-  const cleared = beatsIn(await scoreOf(page), 0);
+  const cleared = beatsIn(await scoreOf(page), 0, 0);
   expect(cleared.map((beat) => [beat.id, beat.value])).toEqual(typed.map((beat) => [beat.id, beat.value]));
   expect(frets(cleared)).toEqual([null, null, null, 4]);
   expect(cleared.slice(0, 3).map((beat) => beat.notes)).toEqual([{}, {}, {}]);
   await synced(page);
 
   await page.keyboard.press("Control+z");
-  expect(frets(beatsIn(await scoreOf(page), 0))).toEqual([1, 2, 3, 4]);
+  expect(frets(beatsIn(await scoreOf(page), 0, 0))).toEqual([1, 2, 3, 4]);
   // Undo works on no selection: it ends it.
   await expect(selection).toHaveCount(0);
   await synced(page);
@@ -101,7 +97,7 @@ test("at the top of a score of more than 10 bars, a selection never covers an ar
   await page.keyboard.press("Shift+ArrowLeft");
   await page.keyboard.press("Shift+ArrowLeft");
   await expect(selection).toHaveCount(1);
-  expect(beatsIn(await scoreOf(page), lastOfFirstSystem)).toHaveLength(3);
+  expect(beatsIn(await scoreOf(page), 0, lastOfFirstSystem)).toHaveLength(3);
   await clear("a beat range under the mark");
   expect(errors).toEqual([]);
 });

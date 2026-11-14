@@ -2,10 +2,9 @@
 // of one bar, a bar range in one part, how each is extended and collapsed, and Delete on them.
 import { addPart, contentOf, cursorAt, docToJson, partsOf, setFret } from "@studio/score-model";
 import { expect, test } from "vitest";
-import * as Y from "yjs";
 
 import { createEditorSession, type LocalPresence } from "../src/index";
-import { keyOf, sessionOn } from "./support";
+import { keyOf, otherMember, sessionOn } from "./support";
 
 /** A session whose first bar holds quarter beats with these frets, the cursor on the first of them. */
 function typed(frets: number[], bars = 3, platform: "other" | "mac" = "other") {
@@ -236,10 +235,9 @@ test("when another member removes a beat the selection ends on, the selection en
   press("ArrowRight", 1000, shift);
   const told: LocalPresence[] = [];
   session.onPresence((presence) => told.push(presence));
-  const other = new Y.Doc();
-  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  const { other, send } = otherMember(doc);
   other.transact(() => contentOf(partsOf(other).get(partId)!).get(barIds[0]!)!.get("0:0")!.delete(1, 1));
-  Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, Y.encodeStateVector(doc)));
+  send();
   expect(session.selection).toBeNull();
   expect(session.cursor).toMatchObject({ beatId: ids[2] });
   expect(told.at(-1)).toEqual({ cursor: session.cursor, selection: null });

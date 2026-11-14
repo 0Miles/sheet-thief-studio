@@ -5,15 +5,7 @@ import { expect, test } from "vitest";
 import * as Y from "yjs";
 
 import { createEditorSession, type LocalPresence } from "../src/index";
-import { sessionOn } from "./support";
-
-/** Another member's copy of the score, and a way to hand their changes to ours. */
-function otherMember(doc: Y.Doc) {
-  const other = new Y.Doc();
-  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
-  const send = () => Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, Y.encodeStateVector(doc)));
-  return { other, send };
-}
+import { otherMember, sessionOn } from "./support";
 
 test("the local presence is the cursor without a selection, told each time the cursor moves", () => {
   const { session, press } = sessionOn();
