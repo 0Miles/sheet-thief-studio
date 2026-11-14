@@ -36,6 +36,7 @@
 - 作業系統先拿走、瀏覽器收不到：`Ctrl`＋方向鍵（Mission Control、App Exposé、切換桌面）、`Ctrl+Space` 與 `Ctrl+Option+Space`（切換輸入法；成員切換注音時常用）、`Cmd+Space`（Spotlight）、`Cmd+Tab`、`` Cmd+` ``、`Cmd+H`、`Cmd+Option+H`、`Cmd+M`、`Cmd+Q`、`Cmd+Option+Esc`、`Cmd+Shift+3`、`Cmd+Shift+4`、`Cmd+Shift+5`（截圖）、`Ctrl+Cmd+Q`（鎖定螢幕）、`Ctrl+Cmd+Space`（表情符號）、`Cmd+Option+D`（Dock）。
 - 瀏覽器保留或會搶走焦點：`Cmd+T`、`Cmd+W`、`Cmd+N`、`Cmd+Shift+T`、`Cmd+Shift+N`、`Cmd+Shift+W`；切換分頁的 `Cmd+1`–`Cmd+9`、`Cmd+Option+←`、`Cmd+Option+→`、`Cmd+Shift+[`、`Cmd+Shift+]`、`Ctrl+Tab`；`Cmd+L`（網址列）；`Cmd+R`、`Cmd+Shift+R`（重新整理）；`Cmd+[`、`Cmd+]`、`Cmd+←`、`Cmd+→`（上一頁、下一頁）；`Cmd+F`、`Cmd+G`、`Cmd+E`（尋找）；`Cmd+P`、`Cmd+S`、`Cmd+D`；`Cmd+Y`（歷史記錄）；`Cmd+I`（Safari 用郵件寄送網頁）；`Cmd+Shift+B`、`Cmd+Option+B`（書籤）；`Cmd+,`（設定）；`Cmd+=`、`Cmd+-`、`Cmd+0`（縮放）；`Cmd+Option+I`、`Cmd+Option+J`、`Cmd+Option+C`、`Cmd+Option+U`（開發者工具、原始碼）；`Ctrl+Cmd+F`（全螢幕）。
 - 不帶 `Fn` 的 `F1`–`F12`：macOS 預設是亮度、Mission Control、Spotlight、聽寫、媒體與音量鍵。用到功能鍵的地方，Mac 寫成 `Fn`＋功能鍵，而且介面上要有同功能的按鈕（第 5、7 節）。
+  - **補充**：頁面分不出「不帶 `Fn` 的 `F1`–`F12`」和「`Fn`＋功能鍵」：兩者送出同一個 `code`（例如 `F8`）。所以這一項不寫進平台層的禁用資料（`packages/score-editor/src/bindings.ts` 的 `FORBIDDEN_KEYS.mac`），測試也擋不了；用到功能鍵的功能，靠介面上同功能的按鈕保住（第 5、7 節）。
 - `Option`＋字母、`Option`＋數字會打出字元：例如 `Option+1` 是「¡」；`Option+E`、`Option+I`、`Option+N`、`Option+U`、`` Option+` `` 是組合重音符號用的 dead key。焦點在譜面時，因為用 `code` 比對，不會打出字；焦點在文字輸入框時，按鍵屬於輸入框（第 1.1 節）。Mac 只用 `Option+1`、`Option+2`、`Option`＋方向鍵與 `Option+Return`，不綁 `Option`＋字母，避免和 dead key 互相干擾。
 
 ### 1.3 平台層
