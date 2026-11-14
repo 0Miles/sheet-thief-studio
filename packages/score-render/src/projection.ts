@@ -8,6 +8,7 @@ import {
   type BeatJSON,
   beatTicks,
   DYNAMICS,
+  linkReaches,
   linksOn,
   type NoteJSON,
   type NoteValue,
@@ -178,7 +179,7 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   if (json.letRing) note.isLetRing = true;
   if (json.palmMute) note.isPalmMute = true;
   if (json.vibrato) note.vibrato = model.VibratoType.Slight;
-  const reaches = after?.notes[key] !== undefined;
+  const reaches = linkReaches(key, after);
   if (json.legato && reaches) note.isHammerPullOrigin = true;
   // A slide out up or down goes on to no note: it needs none after it.
   if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
@@ -427,7 +428,7 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
   return json.parts.some((part) =>
     Object.entries(part.content[bar.id] ?? {}).some(([voice, beats]) => {
       const after = beatAfter(beats, beats.length - 1, part.content[next.id]?.[voice]);
-      return Object.entries(beats.at(-1)?.notes ?? {}).some(([key, note]) => linksOn(note) && after?.notes[key] !== undefined);
+      return Object.entries(beats.at(-1)?.notes ?? {}).some(([key, note]) => linksOn(note) && linkReaches(key, after));
     }),
   );
 }
