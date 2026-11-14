@@ -4,7 +4,7 @@
 // and deleting are for devices that can be typed on only (`canType`); a phone or a tablet lists,
 // filters and searches.
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
+import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseLimits, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
 import { blankFragment, PART_PRESETS, type PartPresetId } from "@studio/score-model";
 import { onMounted, ref, watch } from "vue";
 
@@ -48,12 +48,20 @@ async function load(): Promise<void> {
 }
 
 onMounted(load);
-watch(kind, load);
 let searching: ReturnType<typeof setTimeout> | undefined;
-watch(search, () => {
+// A new kind asks at once, for the search as typed so far too: the search's pending ask is not needed.
+watch(kind, () => {
   clearTimeout(searching);
-  searching = setTimeout(load, SEARCH_DELAY_MS);
+  return load();
 });
+// Only a change of what is searched for: spaces around it are not sent.
+watch(
+  () => search.value.trim(),
+  () => {
+    clearTimeout(searching);
+    searching = setTimeout(load, SEARCH_DELAY_MS);
+  },
+);
 
 /** What the list says of a phrase besides its name: its kind, its strings or staves, its bars. */
 function detailsOf(phrase: PhraseSummary): string {
@@ -138,7 +146,7 @@ function remove(): Promise<void> {
           <option v-for="item in KINDS" :key="item" :value="item">{{ text.kinds[item] }}</option>
         </select>
       </label>
-      <AppTextField v-model="search" class="phrases__search" :label="text.search" name="q" type="search" :maxlength="100" />
+      <AppTextField v-model="search" class="phrases__search" :label="text.search" name="q" type="search" :maxlength="phraseLimits.name.max" />
     </Cluster>
     <!-- A refusal of a button that opens no dialog (copying). -->
     <p v-if="error && dialog === null" class="phrases__error" role="alert">{{ error }}</p>
@@ -161,7 +169,7 @@ function remove(): Promise<void> {
       <AppModal :visible="dialog === 'create'" :title="strings.newPhrase.title" :close-label="strings.newPhrase.close" @close="close">
         <form @submit.prevent="create">
           <Stack gap="4">
-            <AppTextField v-model="name" :label="strings.newPhrase.name" name="name" :maxlength="100" autofocus required />
+            <AppTextField v-model="name" :label="strings.newPhrase.name" name="name" :maxlength="phraseLimits.name.max" autofocus required />
             <label class="phrases__preset">
               <span>{{ strings.newPhrase.preset }}</span>
               <select v-model="preset" name="preset">
@@ -179,7 +187,7 @@ function remove(): Promise<void> {
       <AppModal :visible="dialog === 'rename'" :title="strings.renamePhrase.title" :close-label="strings.renamePhrase.close" @close="close">
         <form @submit.prevent="rename">
           <Stack gap="4">
-            <AppTextField v-model="name" :label="strings.renamePhrase.name" name="name" :maxlength="100" autofocus required />
+            <AppTextField v-model="name" :label="strings.renamePhrase.name" name="name" :maxlength="phraseLimits.name.max" autofocus required />
             <p v-if="error" class="phrases__error" role="alert">{{ error }}</p>
             <Cluster gap="2" justify="end">
               <AppButton type="button" variant="ghost" @click="close">{{ strings.renamePhrase.cancel }}</AppButton>

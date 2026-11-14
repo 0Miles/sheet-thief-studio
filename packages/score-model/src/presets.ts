@@ -1,12 +1,13 @@
 // The part presets (docs/spec/commands.md, section 10): what a new part, or a new blank phrase,
 // starts as. Their names are texts of the interface, kept in the web app's strings by preset id.
+import { STANDARD_GUITAR } from "./commands";
 import type { PartJSON } from "./schema";
 
 export type PartPreset = Pick<PartJSON, "kind" | "tuning" | "staves" | "program">;
 
 export const PART_PRESETS = {
-  guitar6: { kind: "fretted", tuning: [64, 59, 55, 50, 45, 40], staves: [{ clef: "tab" }], program: 25 },
-  guitar7: { kind: "fretted", tuning: [64, 59, 55, 50, 45, 40, 35], staves: [{ clef: "tab" }], program: 25 },
+  guitar6: { kind: "fretted", tuning: STANDARD_GUITAR, staves: [{ clef: "tab" }], program: 25 },
+  guitar7: { kind: "fretted", tuning: [...STANDARD_GUITAR, 35], staves: [{ clef: "tab" }], program: 25 },
   bass4: { kind: "fretted", tuning: [43, 38, 33, 28], staves: [{ clef: "tab" }], program: 33 },
   bass5: { kind: "fretted", tuning: [43, 38, 33, 28, 23], staves: [{ clef: "tab" }], program: 33 },
   drums: { kind: "percussion", tuning: [], staves: [{ clef: "neutral" }], program: 0 },

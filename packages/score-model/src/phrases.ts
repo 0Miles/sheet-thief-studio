@@ -11,6 +11,7 @@ import {
   checkBeats,
   COMMON_TIME,
   isVoiceKey,
+  jsonBytes,
   KIND_DEFAULTS,
   type PartJSON,
   type PartKind,
@@ -18,18 +19,12 @@ import {
   SCHEMA_VERSION,
   type ScoreJSON,
   timeSigSchema,
-  utf8Length,
   voiceKey,
   voiceKeys,
 } from "./schema";
 
 /** The largest fragment, serialized as JSON in UTF-8 (docs/spec/schema.md, section 13). */
 export const MAX_FRAGMENT_BYTES = 1024 * 1024;
-
-/** How many bytes a fragment, or anything else, takes as JSON in UTF-8. */
-export function jsonBytes(value: unknown): number {
-  return utf8Length(JSON.stringify(value) ?? "");
-}
 
 /** A beat as a fragment holds it: anything a beat of a score has but its id, which it must not have. */
 const fragmentBeatSchema = beatSchema.omit({ id: true }).extend({ id: z.never().optional() });
@@ -57,8 +52,8 @@ function withinSize(fragment: object): boolean {
 }
 
 /** Strings of the part a fragment comes from: those of its tuning when fretted, none otherwise. */
-function stringsOf(fragment: object): number {
-  return "tuning" in fragment && Array.isArray(fragment.tuning) ? fragment.tuning.length : 0;
+function stringsOf(fragment: { tuning?: readonly number[] }): number {
+  return fragment.tuning?.length ?? 0;
 }
 
 /** What no fragment has: an id, a capo, the fields of a part's other kinds, and the other fragment's beats or bars. */

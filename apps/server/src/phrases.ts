@@ -7,6 +7,7 @@ import {
   createPhraseRequest,
   duplicatedPhrase,
   phraseDetails,
+  phraseLimits,
   phraseList,
   phraseQuery,
   phraseRevision,
@@ -25,9 +26,6 @@ const FRAGMENT_BODY_LIMIT = MAX_FRAGMENT_BYTES + 64 * 1024;
 
 /** What the name of a copy ends with. */
 const COPY = "（副本）";
-
-/** The longest name of a phrase. */
-const MAX_NAME = 100;
 
 /** The counts kept beside a phrase's content, for the lists and the phrase sidebar. */
 function countsOf(fragment: BarsFragment): Pick<Phrase, "kind" | "stringCount" | "staffCount" | "barCount"> {
@@ -49,7 +47,7 @@ function refusedAsTooLarge(body: unknown, reply: FastifyReply): boolean {
 
 /** The name of a copy: the name and 「（副本）」, the name cut short when both would not fit. */
 function copyName(name: string): string {
-  let kept = name.slice(0, MAX_NAME - COPY.length);
+  let kept = name.slice(0, phraseLimits.name.max - COPY.length);
   // Not half of a character that takes two code units.
   if (/[\uD800-\uDBFF]$/.test(kept)) kept = kept.slice(0, -1);
   return kept + COPY;
@@ -73,7 +71,7 @@ async function ownPhrase(id: string, ownerId: string): Promise<Phrase | null> {
 async function writePhrase(reply: FastifyReply, { id, ownerId, baseRevision }: { id: string; ownerId: string; baseRevision: number }, fields: Partial<Phrase>) {
   if (!isUuid(id)) return notFound(reply);
   // One statement, so that two writes made from the same revision cannot both pass.
-  const [written, rows] = await Phrase.update({ ...fields, revision: literal("revision + 1") as unknown as number }, { where: { id, ownerId, revision: baseRevision }, returning: true });
+  const [written, rows] = await Phrase.update({ ...fields, revision: literal("revision + 1") as unknown as number }, { where: { id, ownerId, revision: baseRevision }, returning: ["revision"] });
   if (written === 1) return phraseRevision.parse({ revision: rows[0]!.revision });
   if ((await Phrase.count({ where: { id, ownerId } })) === 0) return notFound(reply);
   return reply.code(409).send({ code: "revision_conflict" });
@@ -96,18 +94,7 @@ export function registerPhrases(app: FastifyInstance): void {
         ["id", "ASC"],
       ],
     });
-    return phraseList.parse({
-      phrases: phrases.map((phrase) => ({
-        id: phrase.id,
-        name: phrase.name,
-        kind: phrase.kind,
-        stringCount: phrase.stringCount,
-        staffCount: phrase.staffCount,
-        barCount: phrase.barCount,
-        updatedAt: phrase.updatedAt.toISOString(),
-        revision: phrase.revision,
-      })),
-    });
+    return phraseList.parse({ phrases: phrases.map((phrase) => ({ ...phrase.get({ plain: true }), updatedAt: phrase.updatedAt.toISOString() })) });
   });
 
   app.post("/api/phrases", { bodyLimit: FRAGMENT_BODY_LIMIT }, async (request, reply) => {
@@ -115,7 +102,8 @@ export function registerPhrases(app: FastifyInstance): void {
     const body = createPhraseRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
     const { name, fragment } = body.data;
-    const phrase = await Phrase.create({ ownerId: request.account!.id, name, content: fragment, revision: 1, ...countsOf(fragment) });
+    // Not the content back: it is what was just sent.
+    const phrase = await Phrase.create({ ownerId: request.account!.id, name, content: fragment, revision: 1, ...countsOf(fragment) }, { returning: ["id", "revision"] });
     return reply.code(201).send(createdPhrase.parse({ id: phrase.id, revision: phrase.revision }));
   });
 
@@ -144,7 +132,7 @@ export function registerPhrases(app: FastifyInstance): void {
     const phrase = await ownPhrase(request.params.id, request.account!.id);
     if (phrase === null) return notFound(reply);
     const { ownerId, content, kind, stringCount, staffCount, barCount } = phrase;
-    const copy = await Phrase.create({ ownerId, name: copyName(phrase.name), content, kind, stringCount, staffCount, barCount, revision: 1 });
+    const copy = await Phrase.create({ ownerId, name: copyName(phrase.name), content, kind, stringCount, staffCount, barCount, revision: 1 }, { returning: ["id"] });
     return reply.code(201).send(duplicatedPhrase.parse({ id: copy.id }));
   });
 

@@ -177,12 +177,16 @@ function onlyFieldsOf(kinds: FieldKinds, kind: PartKind) {
   return (value: object) => Object.entries(value).every(([field, item]) => item === undefined || (kinds[field]?.includes(kind) ?? true));
 }
 
+/** Whether the fields of a beat fit a part of `kind`: none that only other kinds have, and not slap and pop together. */
+function beatFits(kind: PartKind): (beat: { slap?: true; pop?: true }) => boolean {
+  const fieldsFit = onlyFieldsOf(BEAT_FIELD_KINDS, kind);
+  return (beat) => fieldsFit(beat) && !(beat.slap && beat.pop);
+}
+
 function kindRules(kind: PartKind) {
   const note = noteSchema.refine(onlyFieldsOf(NOTE_FIELD_KINDS, kind), "a field this kind of part does not have");
   return {
-    beat: beatFieldsSchema
-      .refine(onlyFieldsOf(BEAT_FIELD_KINDS, kind), "a field this kind of part does not have")
-      .refine((beat) => !(beat.slap && beat.pop), "slap and pop on the same beat"),
+    beat: beatFieldsSchema.refine(beatFits(kind), "a field this kind of part does not have, or slap and pop on the same beat"),
     note: kind === "fretted" ? note.refine((item) => item.fret !== undefined || item.dead === true, "neither a fret nor dead") : note,
   };
 }
@@ -306,9 +310,9 @@ export function checkBeats(
   path: (string | number)[],
 ): void {
   // The fields themselves passed the caller's schema: only whether they fit the kind is left.
-  const fieldsFit = onlyFieldsOf(BEAT_FIELD_KINDS, kind);
+  const fits = beatFits(kind);
   beats.forEach((beat, index) => {
-    if (!fieldsFit(beat) || (beat.slap && beat.pop)) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
+    if (!fits(beat)) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
     for (const [key, note] of Object.entries(beat.notes)) {
       if (readNote(kind, strings, key, note)) continue;
       context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
@@ -366,13 +370,18 @@ export const scoreSchema = metaSchema
 export type ScoreJSON = z.infer<typeof scoreSchema>;
 
 /** How many bytes a string takes in UTF-8. */
-export function utf8Length(value: string): number {
+function utf8Length(value: string): number {
   let bytes = 0;
   for (const character of value) {
     const code = character.codePointAt(0) as number;
     bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
   }
   return bytes;
+}
+
+/** How many bytes a value takes as JSON in UTF-8. */
+export function jsonBytes(value: unknown): number {
+  return utf8Length(JSON.stringify(value) ?? "");
 }
 
 /**
@@ -384,7 +393,7 @@ export const importedScoreSchema = scoreSchema.superRefine((score, context) => {
   if (score.bars.length > MAX_BARS) issue(`more than ${MAX_BARS} bars`, ["bars"]);
   if (score.parts.length > MAX_PARTS) issue(`more than ${MAX_PARTS} parts`, ["parts"]);
   if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);
-  if (utf8Length(JSON.stringify(score)) > MAX_IMPORT_BYTES) issue(`more than ${MAX_IMPORT_BYTES} bytes of JSON`, []);
+  if (jsonBytes(score) > MAX_IMPORT_BYTES) issue(`more than ${MAX_IMPORT_BYTES} bytes of JSON`, []);
 });
 
 // The Yjs document ------------------------------------------------------------------------------

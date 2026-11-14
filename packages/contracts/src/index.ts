@@ -110,26 +110,30 @@ export const guestTicket = z.object({ scoreId: z.string(), title: z.string(), ti
 export type GuestTicket = z.infer<typeof guestTicket>;
 
 // Phrases (docs/spec/routes.md, 3.7; docs/spec/phrases.md, section 4).
-/** Trimmed, 1 to 100 characters. */
-export const phraseName = z.string().trim().min(1).max(100);
+/** The lengths a phrase's name may have, in characters. */
+export const phraseLimits = { name: { min: 1, max: 100 } } as const;
+/** Trimmed. */
+export const phraseName = z.string().trim().min(phraseLimits.name.min).max(phraseLimits.name.max);
+/** A revision of a phrase: the first is 1. */
+const revision = z.int().min(1);
 
 /** A new phrase (`POST /api/phrases`): a blank one, or bars saved from a score. */
 export const createPhraseRequest = z.object({ name: phraseName, fragment: barsFragmentSchema });
 export type CreatePhraseRequest = z.infer<typeof createPhraseRequest>;
 
 /** Every write of a phrase counts one more revision; one made from an older revision is refused (409 `revision_conflict`). */
-export const phraseRevision = z.object({ revision: z.int().min(1) });
+export const phraseRevision = z.object({ revision });
 export type PhraseRevision = z.infer<typeof phraseRevision>;
 
-export const createdPhrase = z.object({ id: z.string(), revision: z.int().min(1) });
+export const createdPhrase = z.object({ id: z.string(), revision });
 export type CreatedPhrase = z.infer<typeof createdPhrase>;
 
 /** The whole content of a phrase, written over what it held (`PUT /api/phrases/:id`). */
-export const savePhraseRequest = z.object({ fragment: barsFragmentSchema, baseRevision: z.int().min(1) });
+export const savePhraseRequest = z.object({ fragment: barsFragmentSchema, baseRevision: revision });
 export type SavePhraseRequest = z.infer<typeof savePhraseRequest>;
 
 /** A new name (`PATCH /api/phrases/:id`). */
-export const renamePhraseRequest = z.object({ name: phraseName, baseRevision: z.int().min(1) });
+export const renamePhraseRequest = z.object({ name: phraseName, baseRevision: revision });
 export type RenamePhraseRequest = z.infer<typeof renamePhraseRequest>;
 
 /** One of my phrases, as `/phrases` lists them (`GET /api/phrases`), most recently updated first. */
@@ -151,7 +155,7 @@ export const phraseList = z.object({ phrases: z.array(phraseSummary) });
 export type PhraseList = z.infer<typeof phraseList>;
 
 /** What `GET /api/phrases` filters by: a kind, and a part of the name (either case). */
-export const phraseQuery = z.object({ kind: partKindSchema.optional(), q: z.string().max(100).optional() });
+export const phraseQuery = z.object({ kind: partKindSchema.optional(), q: z.string().max(phraseLimits.name.max).optional() });
 export type PhraseQuery = z.infer<typeof phraseQuery>;
 
 /** One phrase, with its content (`GET /api/phrases/:id`). */
