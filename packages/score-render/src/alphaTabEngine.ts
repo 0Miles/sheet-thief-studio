@@ -2,10 +2,10 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
-import type { PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import type { NoteHead, PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -225,6 +225,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
     return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+  }
+
+  noteHeadsOf(cursor: Cursor): NoteHead[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return noteHeads(lookup, this.projection, this.parts, cursor).map((head) => ({ ...head, rect: this.fromSurface(head.rect) }));
   }
 
   boundsAtTick(tick: number): Rect | null {

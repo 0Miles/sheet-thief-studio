@@ -10,7 +10,7 @@ import type * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, Selection } from "@studio/score-model";
 
 import { beatIdOf, type Projection } from "./projection";
-import type { Rect } from "./types";
+import type { NoteHead, Rect } from "./types";
 
 type BoundsLookup = alphaTab.rendering.BoundsLookup;
 type BarBounds = alphaTab.rendering.BarBounds;
@@ -104,6 +104,30 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   const end = next === undefined ? bar.visualBounds.x + bar.visualBounds.w : beatSpan(next, metrics).left;
   const width = Math.min(CARET_WIDTH * metrics.staffSpace, Math.max(end - span.right, 0));
   return { x: (span.right + end - width) / 2, y, width, height };
+}
+
+/** The key of a note of the score as alphaTab has it: strings count from the highest there, from the lowest in alphaTab. */
+function noteKeyOf(note: alphaTab.model.Note, shape: PartShape): string {
+  if (shape.kind === "fretted") return `s${shape.strings - note.string + 1}`;
+  if (shape.kind === "percussion") return `p${note.percussionArticulation}`;
+  return `n${note.octave * 12 + note.tone}`;
+}
+
+/**
+ * The note heads of the beat the cursor is on, where alphaTab reports it drew them (fret numbers,
+ * in tablature). Diagnostic: the measurements compare them with `cursorRect`. None in an append
+ * slot, or when the beat is not drawn.
+ */
+export function noteHeads(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor): NoteHead[] {
+  const track = projection.partIndex.get(cursor.partId);
+  const barIndex = projection.barIndex.get(cursor.barId);
+  const shape = parts.get(cursor.partId);
+  const address = cursor.beatId === null ? undefined : projection.addresses.get(cursor.beatId);
+  if (cursor.at !== "on" || track === undefined || barIndex === undefined || shape === undefined || address === undefined || address.bar !== barIndex) return [];
+  const [staff = 0] = cursor.voice.split(":").map(Number);
+  const bar = barBoundsOf(lookup, barIndex, track, staff);
+  const beat = bar && drawnBeat(bar, address.voice, address.beat);
+  return (beat?.notes ?? []).map(({ note, noteHeadBounds: box }) => ({ key: noteKeyOf(note, shape), rect: { x: box.x, y: box.y, width: box.w, height: box.h } }));
 }
 
 /** The box around boxes, reaching `margin` above and below them. */

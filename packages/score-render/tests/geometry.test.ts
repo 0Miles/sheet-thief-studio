@@ -1,11 +1,11 @@
 // Where the cursor is drawn and which areas no overlay may cover, read from a real alphaTab layout
 // made without a browser (alphaTab lays out and draws SVG in Node).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type ScoreJSON, type Selection, setFret } from "@studio/score-model";
+import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type ScoreJSON, type Selection, setFret, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { cursorRect, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
+import { cursorRect, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
 import { projectScore } from "../src/projection";
 import type { Rect } from "../src/types";
 
@@ -55,6 +55,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
     selected: (selection: Selection) => selectionRects(lookup, projection, parts, selection, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
     played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
+    heads: (cursor: Cursor) => noteHeads(lookup, projection, parts, cursor),
   };
 }
 
@@ -220,4 +221,48 @@ test("on a staff of five lines, the box of a selection holds the cursor on its t
   const boxes = drawn.selected({ kind: "bars", partId, anchorBarId: barIds[0]!, focusBarId: barIds[1]! });
   expect(boxes).toHaveLength(1);
   for (const barId of barIds) for (const line of [0, 8]) expect(contains(boxes[0]!, drawn.rect(cursorAt(doc, partId, barId, line))!), `line ${line}`).toBe(true);
+});
+
+test("the note heads of the cursor's beat are where alphaTab drew them, each under the cursor on its own string", () => {
+  const { doc, barIds, partIds } = band(2, 1);
+  const partId = partIds[0]!;
+  const beat = setFret(doc, cursorAt(doc, partId, barIds[0]!, 2), 5);
+  setNote(doc, { ...beat, line: 5 }, "s5", { fret: 12 });
+  const drawn = layOut(docToJson(doc));
+  const heads = drawn.heads(beat);
+  expect(heads.map((head) => head.key).sort()).toEqual(["s2", "s5"]);
+  for (const { key, rect } of heads) {
+    const cursor = drawn.rect({ ...beat, line: Number(key.slice(1)) })!;
+    const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    expect(centre.x, key).toBeGreaterThanOrEqual(cursor.x);
+    expect(centre.x, key).toBeLessThanOrEqual(cursor.x + cursor.width);
+    expect(centre.y, key).toBeGreaterThanOrEqual(cursor.y);
+    expect(centre.y, key).toBeLessThanOrEqual(cursor.y + cursor.height);
+  }
+});
+
+test("the note heads of a drum beat and of a pitched beat carry the keys of the score", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Demo");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched" });
+  const hit = setNote(doc, insertBeat(doc, cursorAt(doc, drums, barIds[0]!, 3)), "p38", {});
+  setNote(doc, hit, "p36", {});
+  const chord = setNote(doc, insertBeat(doc, cursorAt(doc, keys, barIds[0]!, 4)), "n61", { spell: "Db" });
+  setNote(doc, chord, "n72", {});
+  const drawn = layOut(docToJson(doc));
+  expect(drawn.heads(hit).map((head) => head.key).sort()).toEqual(["p36", "p38"]);
+  expect(drawn.heads(chord).map((head) => head.key).sort()).toEqual(["n61", "n72"]);
+});
+
+test("an append slot, a beat not drawn and a part not drawn have no note heads", () => {
+  const { doc, barIds, partIds } = band(2, 2);
+  const beat = setFret(doc, cursorAt(doc, partIds[0]!, barIds[0]!, 1), 3);
+  const hidden = setFret(doc, cursorAt(doc, partIds[1]!, barIds[0]!, 1), 3);
+  const drawn = layOut(docToJson(doc), 1);
+  expect(drawn.heads({ ...beat, at: "after" })).toEqual([]);
+  expect(drawn.heads(cursorAt(doc, partIds[0]!, barIds[1]!, 1))).toEqual([]);
+  expect(drawn.heads({ ...beat, beatId: "gone" })).toEqual([]);
+  expect(drawn.heads(hidden)).toEqual([]);
 });

@@ -10,7 +10,7 @@ export interface Rect {
   height: number;
 }
 
-/** How long each step of the last drawing took, in milliseconds. Diagnostic: the spike reads it. */
+/** How long each step of the last drawing took, in milliseconds. Diagnostic: the measurements read it. */
 export interface RenderTimings {
   /** Building the engine's model from the score (the projection). */
   project: number;
@@ -18,6 +18,12 @@ export interface RenderTimings {
   finish: number;
   /** From handing the model to the engine to its layout being ready. */
   render: number;
+}
+
+/** A note head as the engine drew it (a fret number, in tablature), under the key the score gives its note ("s2", "p38", "n61"). */
+export interface NoteHead {
+  key: string;
+  rect: Rect;
 }
 
 export interface RenderedEvent {
@@ -47,6 +53,12 @@ export interface ScoreRenderer {
    * range is on. None when its place is not drawn (yet).
    */
   boundsOfSelection(selection: Selection): Rect[];
+  /**
+   * Where the note heads of the cursor's beat are drawn, as the engine reports them; none in an
+   * append slot, or when the beat is not drawn. Diagnostic: the measurements compare them with
+   * `boundsOf`.
+   */
+  noteHeadsOf(cursor: Cursor): NoteHead[];
   /**
    * Where playback is on the page at a tick (`ScorePlayer.position`): the beat played then, as
    * tall as its system, so that the page can keep it on screen. At the start of a bar it is
