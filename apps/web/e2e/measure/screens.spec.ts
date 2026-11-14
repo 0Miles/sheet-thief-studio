@@ -2,8 +2,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { Rect } from "@studio/score-render";
 
-import { ADMIN } from "../environment";
-import { createScore, loggedIn, openScore, typeBeats } from "../pages";
+import { ADMIN, EDITOR } from "../environment";
+import { loggedIn, openScore, seedScore, typeBeats } from "../pages";
 import { logInAsAdmin, openEditView, placeCursor } from "./editView";
 import { screenshotPath, writeData } from "./output";
 import { demoScore, perfScore } from "./scores";
@@ -80,9 +80,9 @@ test("S6: drum pieces and the spelling of pitches as the score has them", async 
 
 test("S4: the edit view with two members' input, for the report", async ({ browser }) => {
   const viewport = { width: 1280, height: 420 };
+  const id = seedScore({ title: "量測", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }] });
   const anna = await loggedIn(browser, ADMIN, { viewport });
-  const ben = await loggedIn(browser, ADMIN, { viewport });
-  const id = await createScore(anna, "量測");
+  const ben = await loggedIn(browser, EDITOR, { viewport });
   await openScore(anna, id);
   await openScore(ben, id);
   await placeCursor(anna, 0, 3, -1, 6);

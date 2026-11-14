@@ -18,7 +18,7 @@ export async function logInAsAdmin(page: Page): Promise<void> {
  */
 export async function openEditView(page: Page, scoreId: string, only?: number): Promise<void> {
   await page.goto(`/scores/${scoreId}`);
-  await page.waitForFunction(() => window.__studioMeasure?.ready === true && window.__studioMeasure.synced(), null, { timeout: 60_000 });
+  await drawnAndSynced(page);
   // The parts shown are the member's own option, stored in this browser (src/display.ts): stored
   // here before the score opens again, so that it is drawn with them from the start.
   const json = await page.evaluate(() => window.__studioMeasure!.json());
@@ -31,11 +31,16 @@ export async function openEditView(page: Page, scoreId: string, only?: number): 
   }, [scoreId, hidden] as const);
   if (stored !== JSON.stringify({ hidden, scale: 1 })) {
     await page.reload();
-    await page.waitForFunction(() => window.__studioMeasure?.ready === true && window.__studioMeasure.synced(), null, { timeout: 60_000 });
+    await drawnAndSynced(page);
   }
   const shown = (only === undefined ? json.parts : [json.parts[only]!]).map((part) => part.id).join(",");
   await expect(page.locator(`[data-parts="${shown}"]`)).toBeAttached();
   await soundReady(page);
+}
+
+/** The score is drawn, the cursor placed, and the page in step with the server. */
+async function drawnAndSynced(page: Page): Promise<void> {
+  await page.waitForFunction(() => window.__studioMeasure?.ready === true && window.__studioMeasure.synced(), null, { timeout: 60_000 });
 }
 
 /** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, and give the score the keyboard. */

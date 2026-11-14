@@ -1,6 +1,6 @@
 // Where the measurements write: screenshots in docs/measurements, numbers in
-// docs/measurements/data, for the report of each milestone (docs/measurements.md). Those of M0
-// stay as they were, in docs/spike.
+// docs/measurements/data, for the report of each milestone that measures again
+// (docs/spec/testing.md, section 4). Those of M0 stay as they were, in docs/spike.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

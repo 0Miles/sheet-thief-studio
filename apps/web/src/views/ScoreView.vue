@@ -147,7 +147,7 @@ const hideFromTests = exposeForTests({
 const measurement = measureEditView({
   doc,
   engine: () => engine,
-  synced: () => provider !== undefined && provider.isSynced && provider.unsyncedChanges === 0,
+  synced: isSynced,
   cursor: () => session?.cursor ?? null,
   moveCursor: (cursor) => session?.moveTo(cursor),
 });
@@ -431,9 +431,14 @@ function dismissNotice(): void {
   scroller.value?.focus();
 }
 
+/** Every change made here has reached the server. */
+function isSynced(): boolean {
+  return provider !== undefined && provider.isSynced && provider.unsyncedChanges === 0;
+}
+
 function updateSync(): void {
   if (provider === undefined) return;
-  if (provider.isSynced && provider.unsyncedChanges === 0) sync.value = "synced";
+  if (isSynced()) sync.value = "synced";
   else if (sync.value !== "offline") sync.value = "syncing";
 }
 
