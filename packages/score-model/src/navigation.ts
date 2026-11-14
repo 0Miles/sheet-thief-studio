@@ -4,7 +4,21 @@ import * as Y from "yjs";
 
 import type { Cursor } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
-import { barsOf, COMMON_TIME, durationOf, ordered, type PartKind, partsOf, stringCountOf, timeSigSchema, voiceIn, type YVoice } from "./schema";
+import {
+  barsOf,
+  COMMON_TIME,
+  durationOf,
+  ordered,
+  type PartKind,
+  partKindOf,
+  partsOf,
+  staffCountOf,
+  stringCountOf,
+  timeSigSchema,
+  voiceIn,
+  type YBeat,
+  type YVoice,
+} from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
   return voiceIn(doc, { ...cursor, barId });
@@ -26,27 +40,61 @@ function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
   return fillOf(held, barTicks(timeSig.success ? timeSig.data : COMMON_TIME)) === "underfull";
 }
 
+/** The bar `step` bars after (1) or before (-1) `barId`; none past either end of the score. */
+function barBeside(doc: Y.Doc, barId: string, step: 1 | -1): string | undefined {
+  const order = ordered(barsOf(doc));
+  const index = order.indexOf(barId);
+  return index < 0 ? undefined : order[index + step];
+}
+
+/**
+ * Where in its bar the cursor goes: its first place (Home), on its last beat, or the last place →
+ * reaches there (End: the append slot when the bar is not full, else the last beat). Each is the
+ * append slot of an empty voice.
+ */
+type BarPlace = "first" | "last" | "end";
+
+/** The cursor at a place of its own bar. */
+function placeIn(doc: Y.Doc, cursor: Cursor, place: BarPlace): Cursor {
+  const ids = beatIds(voiceOf(doc, cursor));
+  const beatId = place === "first" ? ids[0] : ids.at(-1);
+  if (beatId === undefined) return { ...cursor, beatId: null, at: "after" };
+  return { ...cursor, beatId, at: place === "end" && isUnderfull(doc, cursor) ? "after" : "on" };
+}
+
 /**
  * Where the cursor enters the bar after (`step` 1) or before (-1) its own: the first beat of its
- * voice there going forward, the last going back, unless `entry` says which; the append slot of
- * an empty voice. The cursor itself at either end of the score.
+ * voice there going forward, the last going back, unless `place` says otherwise; the append slot
+ * of an empty voice. The cursor itself at either end of the score.
  */
-function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1, entry: "first" | "last" = step === 1 ? "first" : "last"): Cursor {
-  const order = ordered(barsOf(doc));
-  const barId = order[order.indexOf(cursor.barId) + step];
-  if (barId === undefined) return cursor;
-  const ids = beatIds(voiceOf(doc, cursor, barId));
-  const beatId = entry === "first" ? ids[0] : ids.at(-1);
-  return beatId === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId, at: "on" };
+function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1, place: BarPlace = step === 1 ? "first" : "last"): Cursor {
+  const barId = barBeside(doc, cursor.barId, step);
+  return barId === undefined ? cursor : placeIn(doc, { ...cursor, barId }, place);
 }
 
 /**
  * The cursor at the first place of the bar after its own (`step` 1, Nav+→) or before it (-1):
  * the first beat of its voice there, or the append slot of an empty voice. At either end of the
- * score it stays.
+ * score it stays, and so does a cursor whose part or bar is gone.
  */
-export function moveByBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
-  return toNextBar(doc, cursor, step, "first");
+export function moveByBar(doc: Y.Doc, from: Cursor, step: 1 | -1): Cursor {
+  const cursor = settleCursor(doc, from);
+  return cursor === null ? from : toNextBar(doc, cursor, step, "first");
+}
+
+/** The cursor at the first place of its bar (Home): its first beat, or the append slot of an empty voice. */
+export function moveToBarStart(doc: Y.Doc, from: Cursor): Cursor {
+  const cursor = settleCursor(doc, from);
+  return cursor === null ? from : placeIn(doc, cursor, "first");
+}
+
+/**
+ * The cursor at the last place of its bar that → reaches (End): the append slot when the bar is
+ * not full, else its last beat; the append slot of an empty voice.
+ */
+export function moveToBarEnd(doc: Y.Doc, from: Cursor): Cursor {
+  const cursor = settleCursor(doc, from);
+  return cursor === null ? from : placeIn(doc, cursor, "end");
 }
 
 /** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */
@@ -96,12 +144,114 @@ function lineRange(kind: PartKind, strings: number): { first: number; last: numb
   return kind === "fretted" ? { first: 1, last: Math.max(strings, 1) } : { first: -4, last: 12 };
 }
 
+/** A line kept within those of a part. */
+function keptOn(kind: PartKind, strings: number, line: number): number {
+  const { first, last } = lineRange(kind, strings);
+  return Math.min(Math.max(line, first), last);
+}
+
+/**
+ * The line the cursor starts on in a part of this kind, the first time it comes there
+ * (docs/spec/commands.md, section 2): the first string, the highest, of a fretted part; the
+ * middle line of the staff of the others.
+ */
+export function startLine(kind: PartKind): number {
+  return kind === "fretted" ? 1 : 4;
+}
+
 /** The cursor one line lower on the page (`step` 1) or higher (-1), kept on the staff. */
 export function moveByLine(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   const part = partsOf(doc).get(cursor.partId);
+  const kind = partKindOf(part);
   if (part === undefined) return cursor;
-  const { first, last } = lineRange(part.get("kind") as PartKind, stringCountOf(part));
-  return { ...cursor, line: Math.min(Math.max(cursor.line + step, first), last) };
+  // A part whose kind cannot be read is not drawn; the cursor is kept as if on a staff.
+  return { ...cursor, line: keptOn(kind ?? "pitched", stringCountOf(part), cursor.line + step) };
+}
+
+/** How many voices each staff of a part of this kind offers: a fretted part only its first (docs/spec/commands.md, section 3). */
+export function voicesOffered(kind: PartKind): 1 | 2 {
+  return kind === "fretted" ? 1 : 2;
+}
+
+/** The staff of a voice ("staff:voice") and the voice on that staff. */
+function staffAndVoice(voice: string): [staff: number, number: number] {
+  const [staff = 0, number = 0] = voice.split(":").map(Number);
+  return [staff, number];
+}
+
+/** How many ticks a beat lasts; none when its length cannot be read, as reading leaves it out. */
+function lengthOf(beat: YBeat): number {
+  const duration = durationOf(beat);
+  return duration === undefined ? 0 : beatTicks(duration);
+}
+
+/** The tick of its bar the cursor stands at: where its beat starts, or in the append slot where its anchor ends. */
+function tickAt(doc: Y.Doc, cursor: Cursor): number {
+  let tick = 0;
+  for (const beat of voiceOf(doc, cursor)?.toArray() ?? []) {
+    const here = beat.get("id") === cursor.beatId;
+    if (here && cursor.at === "on") return tick;
+    tick += lengthOf(beat);
+    if (here) return tick;
+  }
+  return 0;
+}
+
+/**
+ * The cursor in another voice of the same bar (docs/spec/commands.md, section 3): on the beat of
+ * that voice that holds `tick`, else where End goes there. Half a tick either way is the same
+ * tick: tuplets of 5 or 7 do not add up evenly.
+ */
+function landAt(doc: Y.Doc, cursor: Cursor, tick: number): Cursor {
+  let start = 0;
+  for (const beat of voiceOf(doc, cursor)?.toArray() ?? []) {
+    const end = start + lengthOf(beat);
+    if (tick > start - 0.5 && tick < end - 0.5) return { ...cursor, beatId: beat.get("id") as string, at: "on" };
+    start = end;
+  }
+  return placeIn(doc, cursor, "end");
+}
+
+/**
+ * The cursor on the next staff of its part (`step` 1, Nav+↓) or the one before (-1, Nav+↑), in
+ * the order of `staves`; past the last, on the first staff of the next part, past the first, on
+ * the last staff of the part before. It stays in its bar and in the voice it is in, where the part
+ * offers it (`voicesOffered`), and lands on the beat that holds the tick it stood at, else where
+ * End goes. In another part it takes the line `lineIn` says it had there, else the part's
+ * `startLine`, kept within its strings. It stays at either end of the score, and when its part
+ * or bar is gone.
+ */
+export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (partId: string) => number | undefined = () => undefined): Cursor {
+  const cursor = settleCursor(doc, from);
+  if (cursor === null) return from;
+  const parts = partsOf(doc);
+  const [staff, number] = staffAndVoice(cursor.voice);
+  const tick = tickAt(doc, cursor);
+  if (staff + step >= 0 && staff + step < staffCountOf(parts.get(cursor.partId)!)) return landAt(doc, { ...cursor, voice: `${staff + step}:${number}` }, tick);
+  // Parts whose kind cannot be read are not drawn: the cursor goes past them.
+  const order = ordered(parts).filter((id) => partKindOf(parts.get(id)) !== undefined);
+  const index = order.indexOf(cursor.partId);
+  const partId = index < 0 ? undefined : order[index + step];
+  if (partId === undefined) return cursor;
+  const part = parts.get(partId)!;
+  const kind = partKindOf(part)!;
+  const voice = `${step === 1 ? 0 : staffCountOf(part) - 1}:${Math.min(number, voicesOffered(kind) - 1)}`;
+  const line = keptOn(kind, stringCountOf(part), lineIn(partId) ?? startLine(kind));
+  return landAt(doc, { ...cursor, partId, voice, line }, tick);
+}
+
+/**
+ * The cursor in the first (`number` 0, Alt+1) or second voice (1, Alt+2) of its staff, in the
+ * same bar, on the beat that holds the tick it stood at, else where End goes. It stays where it is
+ * in that voice already, and on a fretted part, which offers no second voice.
+ */
+export function moveToVoice(doc: Y.Doc, from: Cursor, number: 0 | 1): Cursor {
+  const cursor = settleCursor(doc, from);
+  const kind = partKindOf(partsOf(doc).get(from.partId));
+  if (cursor === null || kind === undefined) return from;
+  const [staff, current] = staffAndVoice(cursor.voice);
+  if (number === current || number >= voicesOffered(kind)) return cursor;
+  return landAt(doc, { ...cursor, voice: `${staff}:${number}` }, tickAt(doc, cursor));
 }
 
 /**

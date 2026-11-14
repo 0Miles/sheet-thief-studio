@@ -13,9 +13,14 @@ import {
   insertBars,
   insertBeat,
   LOCAL,
+  moveByBar,
   moveByBeat,
   moveByLine,
+  moveByStaff,
   moveFromAppendedBeat,
+  moveToBarEnd,
+  moveToBarStart,
+  moveToVoice,
   type Duration,
   observeScore,
   partsOf,
@@ -23,6 +28,7 @@ import {
   setDuration,
   setFret,
   settleCursor,
+  startLine,
   stepDuration,
 } from "../src/index";
 import { appendBeat } from "./support";
@@ -160,6 +166,163 @@ test("→ from a beat just made in the append slot takes it as the new anchor, w
   setDuration(doc, cursorAt(doc, partId, barIds[4]!), { value: 1 });
   const last = cursorAt(doc, partId, barIds[4]!);
   expect(moveFromAppendedBeat(doc, last)).toEqual(last);
+});
+
+test("Home goes to the first place of the bar: its first beat, or the append slot of an empty voice", () => {
+  const { doc, barIds, partId, beats } = score();
+  const places = [0, 1, 2, 3].map((bar) => {
+    const last = beats[bar]!.at(-1);
+    const from: Cursor = last === undefined ? cursorAt(doc, partId, barIds[bar]!) : { ...cursorAt(doc, partId, barIds[bar]!), beatId: last, at: bar === 0 ? "after" : "on" };
+    return placeOf(barIds, beats, moveToBarStart(doc, from));
+  });
+  expect(places).toEqual([
+    [0, 0, "on"],
+    [1, -1, "after"],
+    [2, 0, "on"],
+    [3, 0, "on"],
+  ]);
+});
+
+test("End goes to the last place → reaches in the bar: the append slot when the bar is not full, else its last beat", () => {
+  const { doc, barIds, partId, beats } = score();
+  const places = [0, 1, 2, 3].map((bar) => placeOf(barIds, beats, moveToBarEnd(doc, cursorAt(doc, partId, barIds[bar]!))));
+  expect(places).toEqual([
+    [0, 1, "after"], // two quarters of four
+    [1, -1, "after"], // an empty voice
+    [2, 1, "on"], // full
+    [3, 1, "on"], // overfull
+  ]);
+  // From the append slot, End stays there; Home goes back to the first beat.
+  const slot: Cursor = { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]!, at: "after" };
+  expect(moveToBarEnd(doc, slot)).toEqual(slot);
+});
+
+test("Nav+→ and Nav+← go to the first place of the next and the bar before, and stay at either end of the score", () => {
+  const { doc, barIds, partId, beats } = score();
+  const last: Cursor = { ...cursorAt(doc, partId, barIds[0]!), beatId: beats[0]![1]! };
+  expect(placeOf(barIds, beats, moveByBar(doc, last, 1))).toEqual([1, -1, "after"]);
+  expect(placeOf(barIds, beats, moveByBar(doc, cursorAt(doc, partId, barIds[3]!), -1))).toEqual([2, 0, "on"]);
+  const first = cursorAt(doc, partId, barIds[0]!);
+  expect(moveByBar(doc, first, -1)).toEqual(first);
+  const end = cursorAt(doc, partId, barIds[4]!);
+  expect(moveByBar(doc, end, 1)).toEqual(end);
+});
+
+test("a cursor whose bar is gone stays where it is when it moves by bar or within its bar, rather than jump to the first bar", () => {
+  const { doc, barIds, partId } = score();
+  const cursor = cursorAt(doc, partId, barIds[2]!);
+  barsOf(doc).delete(barIds[2]!);
+  expect(moveByBar(doc, cursor, 1)).toEqual(cursor);
+  expect(moveByBar(doc, cursor, -1)).toEqual(cursor);
+  expect(moveToBarStart(doc, cursor)).toEqual(cursor);
+  expect(moveToBarEnd(doc, cursor)).toEqual(cursor);
+});
+
+/**
+ * A guitar, a keyboard on two staves and drums, over two bars of 4/4. The first bar: the guitar
+ * holds a half and two quarters; the keyboard's upper staff four quarters, its lower staff a
+ * whole, its upper staff's second voice a half; the drums nothing.
+ */
+function band() {
+  const doc = new Y.Doc();
+  createScore(doc, "Band");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const bar = barIds[0]!;
+  const voice = (partId: string, key: string, durations: Duration[]) => writeVoice(doc, partId, bar, key, durations);
+  const beats = {
+    guitar: voice(guitar, "0:0", [{ value: 2 }, quarter, quarter]),
+    upper: voice(keys, "0:0", [quarter, quarter, quarter, quarter]),
+    second: voice(keys, "0:1", [{ value: 2 }]),
+    lower: voice(keys, "1:0", [{ value: 1 }]),
+  };
+  return { doc, barIds, guitar, keys, drums, beats };
+}
+
+/** Write beats of these durations into a voice of a bar, from its start; returns their ids. */
+function writeVoice(doc: Y.Doc, partId: string, barId: string, voice: string, durations: Duration[]): string[] {
+  let cursor: Cursor = { ...cursorAt(doc, partId, barId), voice, beatId: null, at: "after" };
+  return durations.map((duration) => {
+    cursor = appendBeat(doc, cursor, duration);
+    return cursor.beatId!;
+  });
+}
+
+test("a fretted part starts on its first string, the other kinds on the middle line of the staff", () => {
+  expect(startLine("fretted")).toBe(1);
+  expect(startLine("percussion")).toBe(4);
+  expect(startLine("pitched")).toBe(4);
+  const { doc, barIds, guitar, keys, drums } = band();
+  expect([guitar, keys, drums].map((partId) => cursorAt(doc, partId, barIds[1]!).line)).toEqual([1, 4, 4]);
+});
+
+test("Nav+↓ goes through the staves of a part, then to the first staff of the next part; Nav+↑ back to the last staff of the one before", () => {
+  const { doc, barIds, guitar, keys, drums, beats } = band();
+  // On the guitar's third quarter: tick 3 of 4.
+  const start: Cursor = { ...cursorAt(doc, guitar, barIds[0]!, 3), beatId: beats.guitar[2]! };
+  const down = [start];
+  for (let step = 0; step < 4; step++) down.push(moveByStaff(doc, down.at(-1)!, 1));
+  expect(down.map(({ partId, voice, beatId, at }) => [partId, voice, beatId, at])).toEqual([
+    [guitar, "0:0", beats.guitar[2], "on"],
+    [keys, "0:0", beats.upper[3], "on"], // the quarter that starts the fourth beat of the bar
+    [keys, "1:0", beats.lower[0], "on"], // the whole holds that tick
+    [drums, "0:0", null, "after"], // an empty voice: where End goes
+    [drums, "0:0", null, "after"], // the last staff of the last part: it stays
+  ]);
+  const up = [down.at(-1)!];
+  for (let step = 0; step < 4; step++) up.push(moveByStaff(doc, up.at(-1)!, -1));
+  expect(up.map(({ partId, voice }) => [partId, voice])).toEqual([
+    [drums, "0:0"],
+    [keys, "1:0"],
+    [keys, "0:0"],
+    [guitar, "0:0"],
+    [guitar, "0:0"],
+  ]);
+});
+
+test("moving to another part, the cursor takes the line it had there, else where the part starts, kept within its strings", () => {
+  const { doc, barIds, guitar, keys } = band();
+  const bass = addPart(doc, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
+  const onGuitar: Cursor = { ...cursorAt(doc, guitar, barIds[1]!), line: 6 };
+  const lines = new Map([[keys, 9]]);
+  expect(moveByStaff(doc, onGuitar, 1, (partId) => lines.get(partId)).line).toBe(9);
+  expect(moveByStaff(doc, onGuitar, 1).line).toBe(4);
+  // From the keyboard's lower staff, through the drums, to the bass, which has four strings.
+  const lower: Cursor = { ...cursorAt(doc, keys, barIds[1]!), voice: "1:0", line: 7 };
+  const toBass = moveByStaff(doc, moveByStaff(doc, lower, 1), 1, () => 6);
+  expect(toBass).toMatchObject({ partId: bass, line: 4 });
+  // Through the staves of one part the line stays.
+  expect(moveByStaff(doc, { ...cursorAt(doc, keys, barIds[1]!), line: 11 }, 1, () => 2)).toMatchObject({ voice: "1:0", line: 11 });
+});
+
+test("Nav+↑/↓ keeps the voice of the staff it leaves where the part has it; a fretted part has only its first", () => {
+  const { doc, barIds, guitar, keys, beats } = band();
+  const second: Cursor = { ...cursorAt(doc, keys, barIds[0]!), voice: "0:1", beatId: beats.second[0]! };
+  expect(moveByStaff(doc, second, 1)).toMatchObject({ partId: keys, voice: "1:1", beatId: null, at: "after" });
+  expect(moveByStaff(doc, second, -1)).toMatchObject({ partId: guitar, voice: "0:0", beatId: beats.guitar[0], at: "on" });
+});
+
+test("in the append slot the cursor stands at the end of its beats: in another voice, on the beat that holds that tick, else where End goes", () => {
+  const { doc, barIds, keys, beats } = band();
+  // After the upper staff's first quarter: tick 1 of 4, inside the half of the second voice.
+  const slot: Cursor = { ...cursorAt(doc, keys, barIds[0]!), beatId: beats.upper[0]!, at: "after" };
+  expect(moveToVoice(doc, slot, 1)).toMatchObject({ voice: "0:1", beatId: beats.second[0], at: "on" });
+  // From the third quarter, past the half: the second voice is not full, so its append slot.
+  const third: Cursor = { ...slot, beatId: beats.upper[2]!, at: "on" };
+  expect(moveToVoice(doc, third, 1)).toMatchObject({ voice: "0:1", beatId: beats.second[0], at: "after" });
+  // Back from that append slot, at the end of the half: the third quarter.
+  expect(moveToVoice(doc, moveToVoice(doc, third, 1), 0)).toMatchObject({ voice: "0:0", beatId: beats.upper[2], at: "on" });
+});
+
+test("a voice the cursor is in already, or a fretted part's second voice, leaves the cursor where it is", () => {
+  const { doc, barIds, guitar, keys, beats } = band();
+  const onGuitar: Cursor = { ...cursorAt(doc, guitar, barIds[0]!), beatId: beats.guitar[1]! };
+  expect(moveToVoice(doc, onGuitar, 1)).toEqual(onGuitar);
+  expect(moveToVoice(doc, onGuitar, 0)).toEqual(onGuitar);
+  const lower: Cursor = { ...cursorAt(doc, keys, barIds[0]!), voice: "1:0", beatId: beats.lower[0]! };
+  expect(moveToVoice(doc, lower, 1)).toMatchObject({ voice: "1:1", beatId: null, at: "after" });
 });
 
 test("the cursor moves across the strings of its part and stops at the outer ones", () => {

@@ -37,6 +37,7 @@ import {
   type YVoice,
   voiceKeys,
 } from "./schema";
+import { startLine } from "./navigation";
 import { readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
@@ -615,8 +616,11 @@ export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   return cursor;
 }
 
-/** The cursor at the first place of the first voice of a bar of a part: its first beat, or the append slot of an empty voice. */
-export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = 1): Cursor {
+/**
+ * The cursor at the first place of the first voice of a bar of a part: its first beat, or the
+ * append slot of an empty voice. On `line`, else where the part starts (`startLine`).
+ */
+export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = startLine(partKindOf(partsOf(doc).get(partId)) ?? "fretted")): Cursor {
   const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
   return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;
