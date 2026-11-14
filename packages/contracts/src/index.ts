@@ -25,6 +25,9 @@ export {
   scoreSchema,
 } from "@studio/score-model";
 
+// The recognizer's answers (docs/spec/recognizer.md, section 5).
+export * from "./recognizer";
+
 export const health = z.object({ status: z.literal("ok") });
 export type Health = z.infer<typeof health>;
 
