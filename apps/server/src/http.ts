@@ -27,6 +27,11 @@ export function registerErrorAnswers(app: FastifyInstance): void {
   app.setNotFoundHandler((_request, reply) => reply.code(404).send({ code: "not_found" }));
 }
 
+/** Over a rate limit (docs/spec/security.md, section 4). */
+export function rateLimited(reply: FastifyReply, retryAfterSeconds: number) {
+  return reply.code(429).header("retry-after", String(retryAfterSeconds)).send({ code: "rate_limited" });
+}
+
 export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
   const issues = error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code }));
   return reply.code(400).send({ code: "invalid_request", params: { issues } });

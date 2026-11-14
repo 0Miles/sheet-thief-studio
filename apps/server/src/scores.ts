@@ -63,7 +63,7 @@ async function makeScore(collab: Collab, ownerId: string, title: string): Promis
 }
 
 /** Not a member, no such score and a deleted score all look the same (docs/spec/security.md, 8). */
-function notFound(reply: FastifyReply) {
+export function notFound(reply: FastifyReply) {
   return reply.code(404).send({ code: "not_found" });
 }
 

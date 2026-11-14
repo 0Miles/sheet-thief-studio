@@ -15,9 +15,8 @@ export interface Session {
 
 /**
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account
- * (`sessionId` null) — and with them every connection the account has in the register, those of
- * a session that was kept included. A connection whose document is still loading is not in the
- * register yet: it checks its own session once loaded, so one of a kept session stays open.
+ * (`sessionId` null) — and with them every connection the account has, those of a session that
+ * was kept included (they reconnect with a new ticket), and those whose document is still loading.
  */
 export interface SessionsEnded {
   accountId: string;

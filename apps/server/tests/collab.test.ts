@@ -242,18 +242,3 @@ test("a session that ends while the document is being loaded leaves no connectio
   expect(loading).toHaveBeenCalledOnce();
   expect(closed).toBe(4401);
 });
-
-test("a connection whose session cannot be checked once its document is loaded is closed", async () => {
-  const { app, url } = await startApp();
-  const session = await sessionOf(app, "anna", PASSWORD);
-  const id = await createScore(app, session);
-  const ticket = await ticketFor(app, id, session);
-  // onAuthenticate's check passes; the one after the document is loaded fails (Redis down).
-  const checks = vi.spyOn(app.sessions, "isActive").mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("Redis is not answering"));
-
-  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
-  opened.push({ provider, doc: provider.document });
-
-  expect(await socketClosed(provider)).toBe(4401);
-  expect(checks).toHaveBeenCalledTimes(2);
-});

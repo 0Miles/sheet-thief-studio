@@ -10,6 +10,7 @@ export interface Limit {
 
 export const LOGIN_BY_USERNAME: Limit = { name: "login-username", max: 10, windowSeconds: 15 * 60 };
 export const LOGIN_BY_IP: Limit = { name: "login-ip", max: 10, windowSeconds: 15 * 60 };
+export const GUEST_TICKET_BY_IP: Limit = { name: "guest-ticket-ip", max: 30, windowSeconds: 60 };
 
 /** An attempt within the limit (`giveBack` uncounts it, for limits that count failures only), or one over it. */
 export type Attempt = { ok: true; giveBack(): Promise<void> } | { ok: false; retryAfterSeconds: number };

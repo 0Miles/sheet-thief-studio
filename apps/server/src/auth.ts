@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { checkCredentials, normalizeUsername } from "./accounts";
 import type { CookieSettings } from "./config";
 import { Account } from "./db/models";
-import { invalidRequest } from "./http";
+import { invalidRequest, rateLimited } from "./http";
 import { LOGIN_BY_IP, LOGIN_BY_USERNAME, type RateLimiter } from "./rateLimit";
 import { SESSION_TTL_SECONDS, type Session, type Sessions } from "./sessions";
 
@@ -88,8 +88,4 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
       mustChangePassword: account.mustChangePassword,
     });
   });
-}
-
-function rateLimited(reply: FastifyReply, retryAfterSeconds: number) {
-  return reply.code(429).header("retry-after", String(retryAfterSeconds)).send({ code: "rate_limited" });
 }
