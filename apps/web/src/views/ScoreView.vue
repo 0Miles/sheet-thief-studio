@@ -86,7 +86,7 @@ const view = ref<View | null>(null);
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
 const reading = computed(() => view.value === "read");
 /** The Read view of a window narrower than 768 px: one part at a time, the player at the bottom. */
-const narrow = ref(false);
+const narrow = computed(() => reading.value && isNarrow());
 /** The member's own display options of this score, as stored in this browser. */
 const display = ref<DisplayOptions>({ hidden: [], scale: 1 });
 /** The one part the narrow Read view shows; null until the score is there. */
@@ -101,7 +101,7 @@ const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
 /** The parts of the score, to choose from. */
-const parts = computed(() => score.value?.parts.map((part) => ({ id: part.id, name: part.name })) ?? []);
+const parts = computed(() => score.value?.parts ?? []);
 /** Where the cursor is drawn, out of the reserved areas; null when its place is not drawn. */
 const cursorRect = shallowRef<Rect | null>(null);
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
@@ -430,7 +430,6 @@ onMounted(async () => {
   }
   if (host.value === undefined) return;
   view.value = decideView({ role: opened.role, isGuest, canType: canType() });
-  narrow.value = reading.value && isNarrow();
   display.value = loadDisplay(opened.scoreId);
   if (reading.value) stopped.value = false;
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
@@ -502,8 +501,10 @@ onBeforeUnmount(() => {
       <header class="score__toolbar">
         <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
         <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ syncText[sync] }}</span>
-        <PlayerControls v-if="view && !narrow" :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
-        <DisplayControls v-if="view && !narrow" :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
+        <template v-if="view && !narrow">
+          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+          <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
+        </template>
         <label v-if="narrow && parts.length > 0" class="score__part">
           {{ text.display.part }}
           <select data-part-switcher :value="narrowPart ?? undefined" @change="onNarrowPart">

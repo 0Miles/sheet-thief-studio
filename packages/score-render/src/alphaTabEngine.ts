@@ -99,8 +99,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private reload: { loads: number; done: () => void } | null = null;
   /** The parts shown or the scale changed while a drawing was under way: the whole score is drawn again after it. */
   private layoutChanged = false;
-  /** `load()` asked for while a change waited to be drawn: it makes the sound once that is in the model. */
-  private loadAfterDrawing: (() => void) | null = null;
+  /** `load()`s asked for while a change waited to be drawn: their sound is made once that is in the model. */
+  private loadsAfterDrawing: (() => void)[] = [];
   /** The model changed in place since the sound was made: `load()` has something to do. */
   private soundStale = false;
   private destroyed = false;
@@ -172,10 +172,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       this.lastPosition = { tick: event.currentTick, endTick: event.endTick, milliseconds: event.currentTime, endMilliseconds: event.endTime };
       this.positions.emit(this.lastPosition);
     });
-    api.midiLoaded.on(() => this.onMidiLoaded());
+    api.midiLoaded.on(() => this.onSoundSettled());
     // A sound the worker could not take is over too (alphaTab tells the API only as an error):
     // nothing is to wait for it, and playback goes back to where it was.
-    api.player?.midiLoadFailed.on(() => this.onMidiLoaded());
+    api.player?.midiLoadFailed.on(() => this.onSoundSettled());
     // alphaTab seeks on a click only with its own cursor, which is off: the engine does it.
     if (options.seekOnClick) {
       api.beatMouseUp.on((beat) => {
@@ -261,9 +261,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     if (waiting) this.run(waiting);
     else if (this.layoutChanged) this.drawAll();
     // Every change asked for is in the model now: the sound asked for meanwhile can be made.
-    const load = this.loadAfterDrawing;
-    this.loadAfterDrawing = null;
-    load?.();
+    const loads = this.loadsAfterDrawing;
+    if (loads.length === 0) return;
+    this.loadsAfterDrawing = [];
+    this.makeSound(() => {
+      for (const done of loads) done();
+    });
   }
 
   destroy(): void {
@@ -276,23 +279,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   load(): Promise<void> {
     // Before the player is ready alphaTab makes the sound itself, once it is.
     if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
-    // Nothing to make, none being made, and no change waiting to be drawn: the sound is that of the model.
-    if (!this.soundStale && this.reload === null && this.waiting === null) return Promise.resolve();
     return new Promise((resolve) => {
       // A change waiting for the drawing under way is not in the model yet: the sound is made once it is.
-      if (this.waiting !== null) {
-        const before = this.loadAfterDrawing;
-        this.loadAfterDrawing = () => {
-          before?.();
-          this.makeSound(resolve);
-        };
-        return;
-      }
-      this.makeSound(resolve);
+      if (this.waiting !== null) this.loadsAfterDrawing.push(resolve);
+      else this.makeSound(resolve);
     });
   }
 
-  /** Make the sound of the model as it is now, unless one is being made of it already; `done` once it is in place. */
+  /**
+   * Make the sound of the model as it is now, unless one is being made of it already; `done` once
+   * it is in place, or at once when the sound is that of the model already.
+   */
   private makeSound(done: () => void): void {
     if (!this.soundStale && this.reload === null) {
       done();
@@ -550,8 +547,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return this.sentTo?.tick ?? this.lastPosition.tick;
   }
 
-  /** alphaTab stops and rewinds when it takes a new sound: go back to where playback was. */
-  private onMidiLoaded(): void {
+  /**
+   * A new sound is in place, or the worker could not take it: alphaTab stopped and rewound either
+   * way, so go back to where playback was.
+   */
+  private onSoundSettled(): void {
     const reload = this.reload;
     if (reload === null || --reload.loads > 0) return;
     this.reload = null;

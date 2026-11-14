@@ -8,7 +8,7 @@ import { type BrowserContextOptions, expect, type Page, test } from "@playwright
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { cursorOf, drawn, loggedIn, pageErrors, scoreOf, seedScore } from "./pages";
+import { cursorOf, drawn, loggedIn, pageErrors, scoreOf, seedScore, soundReady } from "./pages";
 
 const text = strings.score;
 
@@ -35,7 +35,7 @@ function seed(bars?: number): string {
 async function openToRead(page: Page, path: string): Promise<void> {
   await page.goto(path);
   await drawn(page);
-  await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
+  await soundReady(page);
 }
 
 /** The parts the page shows, by id, as it asked the renderer to draw them. */
@@ -70,8 +70,9 @@ test("on a phone a member sees one part at a time; the part chosen is shown agai
   await openToRead(page, `/scores/${id}`);
   await expect(page.locator("main")).toHaveAttribute("data-view", "read");
   await expect(page.locator("main")).toHaveAttribute("data-layout", "narrow");
-  const [first, second] = (await scoreOf(page)).parts;
-  const names = (await scoreOf(page)).parts.map((part) => part.name);
+  const { parts } = await scoreOf(page);
+  const [first, second] = parts;
+  const names = parts.map((part) => part.name);
   // The first part, when none was chosen yet.
   await expect(partsShown(page)).toHaveAttribute("data-parts", first!.id);
   await expect.poll(() => namesDrawn(page, names)).toEqual([first!.name]);
@@ -81,7 +82,7 @@ test("on a phone a member sees one part at a time; the part chosen is shown agai
   await expect(partsShown(page)).toHaveAttribute("data-parts", second!.id);
   await expect.poll(() => namesDrawn(page, names)).toEqual([second!.name]);
 
-  await page.reload();
+  // Opened again: the page loads anew.
   await openToRead(page, `/scores/${id}`);
   await expect(partsShown(page)).toHaveAttribute("data-parts", second!.id);
   await expect(page.locator("[data-part-switcher]")).toHaveValue(second!.id);
@@ -181,7 +182,7 @@ test("a part hidden and a zoom chosen in the edit view are kept after a reload, 
   await page.getByLabel(text.display.zoom).selectOption({ label: text.display.scale(1.5) });
   await expect.poll(cursorHeight).toBeCloseTo(before * 1.5, 0);
 
-  await page.reload();
+  // Opened again: the page loads anew.
   await openToRead(page, `/scores/${id}`);
   await expect(partsShown(page)).toHaveAttribute("data-parts", `${first!.id},${third!.id}`);
   await page.getByText(text.display.parts).click();

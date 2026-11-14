@@ -105,6 +105,11 @@ export async function openScore(page: Page, id: string): Promise<void> {
   await drawn(page);
 }
 
+/** Wait until the score's sound is ready: the player is there, paused. */
+export async function soundReady(page: Page): Promise<void> {
+  await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
+}
+
 export function scoreOf(page: Page): Promise<ScoreJSON> {
   return page.evaluate(() => window.__studioTest!.scoreJson()!);
 }
