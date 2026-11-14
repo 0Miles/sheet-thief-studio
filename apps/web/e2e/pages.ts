@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import type { Cursor, ScoreJSON } from "@studio/score-model";
+import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -61,12 +61,16 @@ export async function createScore(page: Page, title: string): Promise<string> {
   return ((await response.json()) as { id: string }).id;
 }
 
-/** What `seedScore` makes: account names, and how many bars the score starts with (8 when left out). */
+/**
+ * What `seedScore` makes: account names, how many bars the score starts with (8 when left out),
+ * and the parts it has after the first one every new score has (「吉他 1」).
+ */
 export interface ScoreFixture {
   title: string;
   owner: string;
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
+  parts?: { name: string; kind: PartKind }[];
 }
 
 /**

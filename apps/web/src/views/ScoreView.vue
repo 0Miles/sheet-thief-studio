@@ -3,9 +3,11 @@
 // link (`/s/:token`, the address staying the link's). On a device that can be typed on, members
 // get the edit view: an Owner or an Editor types in it, a Viewer moves the cursor without
 // changing anything (docs/spec/views.md, sections 1-4); both play from the cursor's bar and keep
-// playback on screen (docs/spec/playback.md, section 4). Anyone else, guests included, sees the
-// score drawn read-only until the Read view comes (#32). Anyone who is not a member, and a link
-// that opens nothing, gets the 404 page.
+// playback on screen (docs/spec/playback.md, section 4). Anyone else, guests included, gets the
+// Read view (section 5): no cursor, a click sends playback there, and playback is always kept on
+// screen; narrower than 768 px it shows one part at a time, its player at the bottom (section 7).
+// The parts shown and the zoom are each member's own (section 6). Anyone who is not a member, and
+// a link that opens nothing, gets the 404 page.
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
 import { type Role, scoreDetails } from "@studio/contracts";
@@ -18,7 +20,10 @@ import * as Y from "yjs";
 
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
-import { canType, keyPlatform } from "../device";
+import DisplayControls from "../components/DisplayControls.vue";
+import PlayerControls from "../components/PlayerControls.vue";
+import { canType, isNarrow, keyPlatform } from "../device";
+import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { clearOf, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -77,19 +82,35 @@ const ready = ref(false);
 /** `syncing` while a change made here has not reached the server yet. */
 const sync = ref<"syncing" | "synced" | "offline">("syncing");
 const view = ref<View | null>(null);
-/** One of the two edit views: the cursor, the keyboard and the overlay are there. */
+/** One of the two edit views: the cursor and the keys of the score are there. */
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
+const reading = computed(() => view.value === "read");
+/** The Read view of a window narrower than 768 px: one part at a time, the player at the bottom. */
+const narrow = ref(false);
+/** The member's own display options of this score, as stored in this browser. */
+const display = ref<DisplayOptions>({ hidden: [], scale: 1 });
+/** The one part the narrow Read view shows; null until the score is there. */
+const narrowPart = ref<string | null>(null);
+/** The parts the renderer was asked to show, in the score's order (`data-parts`, for the e2e tests). */
+const shown = shallowRef<string[]>([]);
+/** The narrow Read view's drawer, with the options that do not fit in its bars, is open. */
+const drawerOpen = ref(false);
 /** A notice for the member, shown above the score, never over it; null when there is none. */
 const notice = ref<string | null>(null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
+/** The parts of the score, to choose from. */
+const parts = computed(() => score.value?.parts.map((part) => ({ id: part.id, name: part.name })) ?? []);
 /** Where the cursor is drawn, out of the reserved areas; null when its place is not drawn. */
 const cursorRect = shallowRef<Rect | null>(null);
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 const playerState = ref<PlayerState>("loading");
-/** Not playing and not paused: never started, stopped, or played to the end. */
+/**
+ * Not playing and not paused: never started, stopped, or played to the end. Never in the Read
+ * view, which always shows where playback is (where a click sent it, the start after a stop).
+ */
 const stopped = ref(true);
 /** The bar playback is in, counted from 1, as the toolbar shows it; null while stopped. */
 const playingBar = ref<number | null>(null);
@@ -99,8 +120,11 @@ const playheadRect = shallowRef<Rect | null>(null);
 let resumable = false;
 /** Playback is to be kept on screen: from pressing play until the member presses a key or scrolls. */
 let keepInSight = false;
-/** Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the cursor. */
-const isFollowing = () => keepInSight && playerState.value === "playing";
+/**
+ * Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the
+ * cursor. The Read view follows it whenever it plays (docs/spec/views.md, section 5).
+ */
+const isFollowing = () => (keepInSight || reading.value) && playerState.value === "playing";
 /** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
 let ownScrollTop: number | null = null;
 let soundTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,7 +150,7 @@ function placeCursor(): void {
 
 /** Draw the overlay again after a drawing: the reserved areas change only then. */
 function updateOverlay(): void {
-  if (engine === undefined || !editing.value) return;
+  if (engine === undefined) return;
   reserved.value = engine.renderer.reservedRects();
   placeCursor();
   showPlayback(engine.player.position.tick);
@@ -153,12 +177,13 @@ function showPlayback(tick: number): void {
 
 /**
  * Play from the start of the cursor's bar (docs/spec/playback.md, section 4); after the member
- * paused, from where it was, unless the cursor moved since.
+ * paused, from where it was, unless the cursor moved since. The Read view plays from where
+ * playback is.
  */
 function play(): void {
   const player = engine?.player;
   if (player === undefined || player.state !== "paused") return;
-  if (!resumable) {
+  if (!resumable && editing.value) {
     const at = session?.cursor ?? null;
     player.seek((at && player.tickOf(at.barId)) ?? 0);
   }
@@ -177,6 +202,8 @@ function pause(): void {
 /** Nothing plays any more: stopped, or at the end of the score, where the player is back at its start. */
 function showStopped(): void {
   resumable = false;
+  // The Read view shows playback back at the start.
+  if (reading.value) return;
   stopped.value = true;
   playingBar.value = null;
   playheadRect.value = null;
@@ -256,23 +283,79 @@ function draw(change: ScoreChange): void {
   score.value = json;
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
-    engine.renderer.setScore(json);
+    shown.value = partsToShow(json);
+    engine.renderer.setScore(json, shown.value);
+    keepCursorShown();
     return;
   }
   engine.renderer.patchBars(json, [...change.barIds]);
-  if (editing.value) soundLater();
+  // Another member's changes are heard as one's own are (docs/spec/playback.md, section 3).
+  soundLater();
 }
 
-/** The cursor a member starts with: the first place of the first bar of the first part. */
-function firstCursor(json: ScoreJSON): Cursor | null {
-  const part = json.parts[0];
-  const bar = json.bars[0];
+/** The first place of a bar of a part (the first bar when left out); null when either is not in the score. */
+function firstCursor(json: ScoreJSON, partId: string | undefined, barId = json.bars[0]?.id): Cursor | null {
+  const part = json.parts.find((each) => each.id === partId);
   // Fretted parts start on the top string, the others on the middle line (docs/spec/commands.md, section 2).
-  return part && bar ? cursorAt(doc, part.id, bar.id, part.kind === "fretted" ? 1 : 4) : null;
+  return part && barId ? cursorAt(doc, part.id, barId, part.kind === "fretted" ? 1 : 4) : null;
+}
+
+/** The parts to show: the narrow Read view's one part, or all but those the member hid. */
+function partsToShow(json: ScoreJSON): string[] {
+  const ids = json.parts.map((part) => part.id);
+  if (!narrow.value) return shownParts(ids, display.value.hidden);
+  const kept = narrowPart.value !== null && ids.includes(narrowPart.value);
+  if (!kept) narrowPart.value = opening.value ? loadNarrowPart(opening.value.scoreId, ids) : (ids[0] ?? null);
+  return narrowPart.value === null ? [] : [narrowPart.value];
+}
+
+/** Show the parts the options say now, if they are not those shown already. */
+function showChosenParts(): void {
+  const json = score.value;
+  if (engine === undefined || json === null) return;
+  const next = partsToShow(json);
+  if (next.join() === shown.value.join()) return;
+  shown.value = next;
+  engine.renderer.showParts(next);
+  keepCursorShown();
+}
+
+/** A cursor in a part no longer shown goes to the same bar of the first part shown: it is typed on where it is seen. */
+function keepCursorShown(): void {
+  const at = session?.cursor;
+  if (session === undefined || at == null || shown.value.includes(at.partId) || score.value === null) return;
+  session.moveTo(firstCursor(score.value, shown.value[0], at.barId));
+}
+
+function saveOptions(): void {
+  if (opening.value) saveDisplay(opening.value.scoreId, display.value);
+}
+
+function onHide(partId: string, hidden: boolean): void {
+  const rest = display.value.hidden.filter((id) => id !== partId);
+  display.value = { ...display.value, hidden: hidden ? [...rest, partId] : rest };
+  saveOptions();
+  showChosenParts();
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function onScale(scale: number): void {
+  display.value = { ...display.value, scale };
+  saveOptions();
+  engine?.renderer.setScale(scale);
+  scroller.value?.focus({ preventScroll: true });
+}
+
+/** The narrow Read view's part switcher: the part chosen is the one shown, now and the next time this score is opened here. */
+function onNarrowPart(event: Event): void {
+  const partId = (event.target as HTMLSelectElement).value;
+  narrowPart.value = partId;
+  if (opening.value) saveNarrowPart(opening.value.scoreId, partId);
+  showChosenParts();
 }
 
 function startEditing(json: ScoreJSON): void {
-  session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json), readOnly: view.value === "readOnlyEdit" });
+  session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(() => {
     placeCursor();
     resumable = false;
@@ -293,6 +376,8 @@ function start(): void {
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, draw);
   if (editing.value && score.value) startEditing(score.value);
+  // Space plays and pauses in the Read view too.
+  else scroller.value?.focus({ preventScroll: true });
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -343,15 +428,26 @@ onMounted(async () => {
   }
   if (host.value === undefined) return;
   view.value = decideView({ role: opened.role, isGuest, canType: canType() });
-  // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003). They
-  // play; the other views do not yet (#32).
-  engine = createAlphaTabEngine(host.value, { fontDirectory: "/font/", soundFont: editing.value ? "/soundfont/sonivox.sf3" : null, useWorkers: !editing.value });
+  narrow.value = reading.value && isNarrow();
+  display.value = loadDisplay(opened.scoreId);
+  if (reading.value) stopped.value = false;
+  // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
+  // Read view in a worker, and a click on it sends playback there.
+  engine = createAlphaTabEngine(host.value, {
+    fontDirectory: "/font/",
+    soundFont: "/soundfont/sonivox.sf3",
+    useWorkers: reading.value,
+    seekOnClick: reading.value,
+    scale: display.value.scale,
+  });
   engine.renderer.onRendered(() => {
     ready.value = true;
     updateOverlay();
   });
   engine.player.onState((state) => {
     playerState.value = state;
+    // Once the first sound is in, the Read view can show where playback is.
+    if (engine) showPlayback(engine.player.position.tick);
   });
   engine.player.onFinished(showStopped);
   engine.player.onPosition((position) => showPlayback(position.tick));
@@ -400,18 +496,18 @@ onBeforeUnmount(() => {
   <NotFoundView v-if="notFound" />
   <template v-else>
     <AppHeader />
-    <main class="score">
+    <main class="score" :data-view="view" :data-layout="view && (narrow ? 'narrow' : 'wide')">
       <header class="score__toolbar">
         <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
         <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ syncText[sync] }}</span>
-        <div v-if="editing" class="score__player" :data-player="playerState">
-          <AppButton variant="primary" size="sm" :disabled="playerState === 'loading'" @click="onToolbar(togglePlay)">
-            {{ playerState === "playing" ? text.player.pause : text.player.play }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" :disabled="playerState === 'loading' || stopped" @click="onToolbar(stop)">{{ text.player.stop }}</AppButton>
-          <span v-if="playerState === 'loading'" class="score__playing">{{ text.player.loading }}</span>
-          <span v-else-if="playingBar !== null" class="score__playing" data-playing-bar :data-bar="playingBar">{{ text.player.bar(playingBar) }}</span>
-        </div>
+        <PlayerControls v-if="view && !narrow" :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+        <DisplayControls v-if="view && !narrow" :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
+        <label v-if="narrow && parts.length > 0" class="score__part">
+          {{ text.display.part }}
+          <select data-part-switcher :value="narrowPart ?? undefined" @change="onNarrowPart">
+            <option v-for="part in parts" :key="part.id" :value="part.id">{{ part.name }}</option>
+          </select>
+        </label>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
@@ -424,15 +520,15 @@ onBeforeUnmount(() => {
         ref="scroller"
         class="score__scroller"
         data-scroller
-        :tabindex="editing ? 0 : undefined"
+        :tabindex="view ? 0 : undefined"
         :aria-label="text.label"
         @keydown="onKey"
         @pointerdown="onPointer"
         @scroll.passive="onScroll"
       >
         <div class="score__page">
-          <div ref="host" :data-ready="ready"></div>
-          <svg v-if="editing" class="score__overlay" aria-hidden="true">
+          <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
+          <svg v-if="view" class="score__overlay" aria-hidden="true">
             <!-- Invisible: they only tell the e2e tests where no overlay may go. -->
             <rect v-for="(area, index) in reserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
             <rect v-if="playheadRect" data-playhead class="score__playhead" :x="playheadRect.x" :y="playheadRect.y" :width="playheadRect.width" :height="playheadRect.height" />
@@ -440,6 +536,16 @@ onBeforeUnmount(() => {
           </svg>
         </div>
       </div>
+      <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
+      <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
+        <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
+      </section>
+      <footer v-if="narrow" class="score__playbar" data-playbar>
+        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+        <AppButton variant="ghost" size="sm" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
+          {{ drawerOpen ? text.display.closeOptions : text.display.options }}
+        </AppButton>
+      </footer>
     </main>
   </template>
 </template>
@@ -449,13 +555,37 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 3rem);
+  /* A phone's browser bars come and go: the player at the bottom stays in sight. */
+  height: calc(100dvh - 3rem);
 }
 .score__toolbar {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
   padding: 0.5rem 1.5rem;
   border-bottom: 1px solid var(--border);
+}
+.score[data-layout="narrow"] .score__toolbar {
+  padding: 0.5rem 1rem;
+}
+.score__part {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+}
+.score__playbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.score__drawer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
 }
 .score__title {
   margin: 0;
@@ -498,16 +628,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
-}
-.score__player {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.score__playing {
-  color: var(--text-muted);
-  font-size: 0.875rem;
-  font-variant-numeric: tabular-nums;
 }
 /* Filled only, as the cursor is. */
 .score__playhead {
