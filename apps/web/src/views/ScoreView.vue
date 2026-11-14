@@ -313,8 +313,8 @@ function draw(change: ScoreChange): void {
 /** The first place of a bar of a part (the first bar when left out); null when either is not in the score. */
 function firstCursor(json: ScoreJSON, partId: string | undefined, barId = json.bars[0]?.id): Cursor | null {
   const part = json.parts.find((each) => each.id === partId);
-  // Fretted parts start on the top string, the others on the middle line (docs/spec/commands.md, section 2).
-  return part && barId ? cursorAt(doc, part.id, barId, part.kind === "fretted" ? 1 : 4) : null;
+  // On the line the part starts on (`startLine`, docs/spec/commands.md, section 2).
+  return part && barId ? cursorAt(doc, part.id, barId) : null;
 }
 
 /** The narrow Read view's one part, as long as the score has it; else the one chosen last here, or the first. */
@@ -386,6 +386,9 @@ function startEditing(json: ScoreJSON): void {
   });
   session.onRefused(() => {
     notice.value = text.viewerCannotEdit;
+  });
+  session.onHint((hint) => {
+    notice.value = text.hints[hint];
   });
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
   placeCursor();

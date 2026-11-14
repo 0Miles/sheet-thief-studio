@@ -49,6 +49,7 @@ interface Cursor {
 - **補充**：游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
 - 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。**補充**：看的人這邊沒有那位成員的拍點位置，所以不帶位置解析：那位成員所在的拍點被刪除時，在看的人這邊先落在那條聲線的最後一個拍點，直到那位成員自己的 session 送出新的 presence。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
+  - **補充**（#20）：起始的 `line` 由 `navigation.ts` 的 `startLine(kind)` 給出，`cursorAt` 沒給 `line` 時用它（Vue 殼放第一個游標時也是）。`Ctrl+↑/↓` 換到另一個聲部時，`moveByStaff` 取 `EditorSession` 記下的那個聲部的 `line`，沒有記錄就用 `startLine`，再夾在範圍內。
 
 ## 3. 移動
 
@@ -70,7 +71,10 @@ interface Cursor {
 - 「下一小節的第一個位置」：它的第一個拍點；空聲線則是附加位置。
 - 新增小節一律要明確操作（`Ctrl+Insert` 一類的鍵，或譜尾的「＋小節」按鈕）。
 - **補充**：`Ctrl+↑/↓` 與 `Alt+1/2` 換到另一條聲線時，留在同一個小節，落在「包含目前拍點起點 tick」的那個拍點上；那條聲線沒有拍點涵蓋這個 tick 時，落在它用 `End` 會到的位置。
-- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。
+  - **補充**（#20）：在附加位置上，「目前的 tick」是錨點拍點的結尾；空聲線是小節的開頭。時值讀不懂的拍點長度算 0（讀取時被略過）。
+  - **補充**（#20）：`Ctrl+↑/↓` 依 `staves` 的順序經過聲部的各個譜表；過了最後一個（或第一個）譜表，到下一個聲部的第一個譜表（或上一個聲部的最後一個譜表）。聲線的編號不變（第二聲線到下一個譜表的第二聲線），目標聲部不提供時（fretted）落在第一聲線。讀不懂種類的聲部不畫出來，跳過。在第一個聲部的第一個譜表按 `Ctrl+↑`、最後一個聲部的最後一個譜表按 `Ctrl+↓`：不動。寫法是 `navigation.ts` 的 `moveByStaff`、`moveToVoice`；`Home`、`End` 是 `moveToBarStart`、`moveToBarEnd`。
+  - **補充**（#20）：`Ctrl+←/→`、`Home`、`End`、`Ctrl+↑/↓`、`Alt+1/2` 都先用 `settleCursor` 解析游標，和 `←`、`→` 一樣；游標的聲部或小節不在了就不動（不會跳到第一小節）。
+- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `navigation.ts` 的 `voicesOffered` 決定。
 
 ## 4. Selection
 
@@ -92,12 +96,13 @@ interface Cursor {
   ```
 
 - **補充**（#21）：延伸的細節。規則寫在 `packages/score-model` 的 `selection.ts`（`extendSelection`），`EditorSession` 照它更新選取；測試在 `packages/score-editor/tests/selection.test.ts`。
-  - 沒有選取時，從游標所在的拍點（`Shift+←/→`）或小節（`Shift+Ctrl+←/→`）開始。游標在附加位置時，它的拍點是錨點，也就是那條聲線的最後一個拍點；空聲線沒有拍點可選，`Shift+←/→` 不建立拍點範圍（例如譜的開頭）。
+  - 沒有選取時，從游標所在的拍點（`Shift+←/→`）或小節（`Shift+Ctrl+←/→`）開始。游標在附加位置時，它的拍點是錨點，也就是那條聲線的最後一個拍點；空聲線沒有拍點可選，`Shift+←/→` 不建立拍點範圍。
+    - **補充**（#20）：空聲線的 `Shift+←/→` 照升級規則處理：游標照 `←`、`→` 離開這個小節時（樂譜中段），建立從這個小節到游標小節的小節範圍；游標留在同一個小節時（譜的開頭按 `Shift+←`、譜的結尾按 `Shift+→`），不建立選取。測試在 `selection.test.ts` 的「in an empty voice in the middle of the score」。
   - `Shift+←/→` 的游標照 `←`、`→` 移動（第 3 節，包括 5.1 剛輸入的拍點）。游標進入附加位置時，終點是它的錨點。
   - `Shift+Ctrl+←/→` 的游標照 `Ctrl+←/→` 移到上一個／下一個小節的第一個位置（`navigation.ts` 的 `moveByBar`）；在譜的兩端不動，範圍保留。拍點範圍用它延伸時，從拍點範圍的小節起。
   - 升級成小節範圍之後就一直是小節範圍：`Shift+←/→` 照樣移動游標，終點是游標的小節；回到起點的小節時是那一個小節的範圍。
-  - 結束選取的動作：不帶 `Shift` 的移動（含 `↑`、`↓`）、`Esc`、點譜面、復原與重做，以及其他不作用在選取上的 Command（輸入音符、`Insert`、`+`、`-`）。被唯讀拒絕的 Command 沒有執行，選取不變。
-  - 選取作用的 Command 目前有 `Delete`（5.6），以及 #26 的開關型技巧：dead、ghost、accent、staccato、vibrato、palmMute、letRing、tap（5.4）。時值（5.3）與其餘技巧作用在選取範圍的規則還沒做，在那之前它們只作用在游標拍點，並結束選取。
+  - 結束選取的動作：不帶 `Shift` 的移動（含 `↑`、`↓`、`Home`、`End`、`Ctrl+←/→`、`Ctrl+↑/↓`、`Alt+1/2`）、`Esc`、點譜面、復原與重做，以及其他不作用在選取上的 Command（輸入音符、`Insert`）。被唯讀拒絕的 Command 沒有執行，選取不變。
+  - 選取作用的 Command 目前有 `Delete`（5.6）、#26 的開關型技巧：dead、ghost、accent、staccato、vibrato、palmMute、letRing、tap（5.4），以及 #20 的時值（`+`、`-`、`.`、`Shift+T`，5.3）與 `Shift+R`（5.6）；選取在它們之後保留。其餘技巧作用在選取範圍的規則還沒做，在那之前它們只作用在游標拍點，並結束選取。
   - `Delete` 之後，選取的拍點或小節還在時選取保留（所以拍點範圍再按一次 `Delete` 就刪除那些休止）；拍點被刪除時選取結束，游標落在接替它們位置的拍點上，沒有時落在附加位置（同 5.2 的 `deleteBeat`）。小節範圍清空後，游標所在的聲線變空，游標落在空聲線的附加位置。
   - 起點或終點的拍點、小節或聲部不在了（別人刪除、自己復原），選取結束（`settleSelection`）。
   - 唯讀編輯視圖也可以選取（[`views.md`](views.md) 第 4 節）；`Delete` 被拒絕。
@@ -113,7 +118,8 @@ interface Cursor {
 | percussion | 鼓件字母、`1`–`4` | 切換：拍點上沒有這個鼓件就加上，有就移除 |
 | pitched | `A`–`G` | 在最靠近游標位置的那個八度輸入該音名的音，依調號套用升降；拍點上已經有音時，加入和弦音 |
 
-- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts` 的 `TWO_DIGIT_WINDOW`、`MAX_FRET` 與 `typeDigit`；測試在 `packages/score-editor/tests/typing.test.ts`）。現在的做法（暫時調大 `captureTimeout`）可以換掉。
+- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts` 的 `TWO_DIGIT_WINDOW`、`MAX_FRET` 與 `typeDigit`；測試在 `packages/score-editor/tests/typing.test.ts`）。
+  - **補充**（#20）：復原步驟在哪裡分開由 `EditorSession` 決定，不靠時鐘：`UndoManager` 的 `captureTimeout` 是無限大，這個成員的每一筆交易之前呼叫 `stopCapturing()`，只有第二個數字那一筆不呼叫，所以併進第一個數字的步驟。別人的修改夾在兩個數字之間，不影響合併；這個成員不經按鍵的修改（例如之後的面板）夾在中間時，結束等待，第二個數字當成新的一次輸入。
 - **在附加位置輸入**：建立一個新拍點並寫入音符，是一個 Command。新拍點的時值取錨點拍點的時值（`value`、`dots`、`tuplet`）；沒有錨點時是四分音符。輸入後游標移到新拍點（`at: "on"`），下一次 `→` 以它為新的錨點。
   - **補充**：別人的拍點已經接在新拍點之後時也一樣。游標還停在新拍點上（只換弦、換線不算離開）時，`→` 把它當成聲線的最後一個拍點：小節未滿就進它的附加位置，已滿或超過就到下一小節（`navigation.ts` 的 `moveFromAppendedBeat`）。否則 `→` 會走到別人的拍點上，同時打譜的兩人的拍點就不再成段。游標離開新拍點之後，`→` 照第 3 節。`Insert` 在附加位置建立的拍點也一樣。
 - 在既有拍點上輸入：游標留在原拍點（這樣才能疊和弦），fretted 與 pitched 可以接著換弦、換線再輸入。
@@ -142,6 +148,12 @@ interface Cursor {
 | `toggleTriplet` | `Shift+T` | 沒有連音時設成 `{ actual: 3, normal: 2 }`，有任何連音時移除（補充） |
 
 有選取時，套用到選取範圍內的每個拍點（補充，規則同 5.4）。
+
+- **補充**（#20）：和 5.4 一樣「一次決定、逐一套用」，寫法是 `commands.ts` 的 `BeatChange<D>`（`decide(seen)`、`turn(beat, decided)`），由 `changeBeatAt`（游標拍點）與 `changeBeatsOnSelection`（選取，沿用 `runsOf` 的走訪）套用，都是一個 Command，只寫入有改變的拍點。讀取時被略過的拍點不算、也不改。游標在附加位置時沒有拍點，不動。
+  - `+`、`-`（`durationStep`）：每個拍點各自變短、變長一級；已經到 64 分或全音符的拍點不動。
+  - `.`（`dotCycle`）：所有拍點都設成「範圍裡第一個拍點的附點」的下一個（0 → 1 → 2 → 0）。
+  - `Shift+T`（`tripletToggle`）：所有拍點都已經有連音時，全部移除；否則沒有連音的拍點設成三連音，已經有別種連音的拍點保留原本的連音。
+  - `Shift+R`（`clearNotes`）：見 5.6。
 
 ### 5.4 技巧與拍點旗標
 
@@ -187,7 +199,7 @@ interface Cursor {
 | Command | 沒有選取 | 拍點範圍 | 小節範圍 |
 |---|---|---|---|
 | `Delete` | 見 5.2 | **補充**：範圍內的拍點變成休止（移除音符，保留時值與其他拍點欄位）；範圍內全部已經是休止時，刪除這些拍點 | 清空目前聲部在這些小節裡的所有聲線（變成空的聲線，也就是整小節休止）；補充（#21）：在原本的聲線上刪除，不換掉聲線，同 5.7 第 3 點 |
-| `Shift+R` | 清空游標拍點的音符，成為休止（補充：只移除 `notes`，其他拍點欄位保留） | 同左，作用在範圍內每個拍點 | 同左 |
+| `Shift+R` | 清空游標拍點的音符，成為休止（補充：只移除 `notes`，其他拍點欄位保留） | 同左，作用在範圍內每個拍點；和 `Delete` 不同，全部是休止時也不刪除拍點（補充，#20） | 同左，目前聲部在這些小節裡所有聲線的拍點（補充，#20：`clearNotes`，見 5.3） |
 | 複製 | 不動 | 拍點段 | 小節段 |
 | 剪下 | 不動 | 複製加上「清空」 | 複製加上「清空」 |
 | 貼上 | 依剪貼簿的片段種類 | 同左 | 同左 |
@@ -271,9 +283,10 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
 - `UndoManager` 以分頁為單位，重新整理後清空。
 - `trackedOrigins` 是 `LOCAL`：只復原自己的動作（ADR 0001）。
-- 追蹤範圍是 `bars`、`parts`，**加上 `meta`**；現在只追蹤 `bars`、`parts`（`packages/score-editor/src/session.ts` 的 `createEditorSession`），要改。
+- 追蹤範圍是 `bars`、`parts`，**加上 `meta`**（`packages/score-editor/src/session.ts` 的 `createEditorSession`，#20）。改標題的 Command 是 `commands.ts` 的 `setTitle`。
 - 所有 Command 都可以復原，包含結構操作、設定類與 `replaceScore`。
 - `Ctrl+Z` 復原；`Ctrl+Y` 或 `Ctrl+Shift+Z` 重做。復原之後，游標用 `settleCursor` 重新解析。
+- **補充**（#20）：每個 Command 一個步驟，由 `EditorSession` 在這個成員的每一筆交易之前呼叫 `stopCapturing()` 分開（唯一的例外是兩位數格號的第二個數字，見 5.1）；所以不經按鍵執行的 Command 也各是一個步驟。測試在 `packages/score-editor/tests/undo.test.ts`：每一個 Command、兩個平台的每一個組合。
 - 樂句編輯器的復原堆疊也在本機，重新整理後清空（[`phrases.md`](phrases.md)）。
 
 ## 9. 同時修改時的規定

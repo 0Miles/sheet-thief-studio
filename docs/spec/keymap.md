@@ -57,6 +57,9 @@
   - `userAgentData.platform` 是 `"macOS"`，或 `platform` 以 `Mac`、`iPhone`、`iPad`、`iPod` 開頭時，結果是 `"mac"`；其他情況（Windows、Linux、ChromeOS、兩者都讀不到）是 `"other"`。iPadOS 的 Safari 回報 `MacIntel`；iPad 接實體鍵盤時也是用 `Cmd`，所以照 Mac 的鍵位。
   - Vue 殼在載入頁面時用 `navigator` 呼叫一次，把結果交給 `EditorSession`。其他地方不判斷平台，也不解析 `userAgent` 字串。
 - 介面上顯示的鍵名（工具列的提示、說明文字）由同一張表與 `formatChord(chord, platform)` 產生，例如復原在 Windows 顯示 `Ctrl+Z`，在 Mac 顯示 `⌘Z`。`strings.ts` 裡不寫死任何鍵名。
+  - **補充**（#20）：要某個動作的鍵名時用 `keyNameOf(effect, platform, fret?)`：取那個綁定的第一個組合，交給 `formatChord`。格號鍵用 `fret` 指定是哪一個數字。
+  - **補充**（#20）：`+` 是 `Shift` 加 `=` 那個鍵；`Shift+Equal` 顯示成 `+`，不是 `Shift++` 或 `⇧+`。平台層的測試檢查表上每個組合的鍵名都沒有這種重複的 `+`。
+  - **補充**（#20）：提示句子裡怎麼把鍵名接在文字上（分隔符號、順序），由 `strings.ts` 的格式化函式負責；等第一個帶鍵名的提示（第 7 節工具列按鈕的提示）出現時再加，現在還沒有這種句子。
 - 平台層的測試（vitest）對表上每一個綁定、兩個平台都檢查：
   - 解析出的組合和這份文件的表相同；
   - 不在第 1.2 節的禁用清單裡；
