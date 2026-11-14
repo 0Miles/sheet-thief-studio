@@ -75,6 +75,21 @@ test("in an empty voice there is no beat to select: Shift+← at the start of th
   expect(session.selection).toBeNull();
 });
 
+test("in an empty voice in the middle of the score, Shift+→ and Shift+← leave the bar, so they make a bar range from it, as any beat range extended past its bar", () => {
+  const { session, press, partId, barIds, doc } = sessionOn("fretted", 3);
+  session.moveTo(cursorAt(doc, partId, barIds[1]!, 6));
+  expect(press("ArrowRight", 1000, shift)).toBe(true);
+  expect(session.cursor).toMatchObject({ barId: barIds[2], beatId: null, at: "after" });
+  expect(session.selection).toEqual({ kind: "bars", partId, anchorBarId: barIds[1], focusBarId: barIds[2] });
+  session.moveTo(cursorAt(doc, partId, barIds[1]!, 6));
+  press("ArrowLeft", 1000, shift);
+  expect(session.selection).toEqual({ kind: "bars", partId, anchorBarId: barIds[1], focusBarId: barIds[0] });
+  // At the end of the score the cursor stays in the bar: there is still no beat to select.
+  session.moveTo(cursorAt(doc, partId, barIds[2]!, 6));
+  press("ArrowRight", 1000, shift);
+  expect(session.selection).toBeNull();
+});
+
 test.each([
   ["→", "ArrowRight", {}],
   ["←", "ArrowLeft", {}],
@@ -82,7 +97,6 @@ test.each([
   ["↓", "ArrowDown", {}],
   ["Esc", "Escape", {}],
   ["a digit", "7", {}],
-  ["+", "+", {}],
   ["Insert", "Insert", {}],
   ["undo", "z", { ctrlKey: true }],
 ])("%s ends the selection", (_, key, modifiers) => {

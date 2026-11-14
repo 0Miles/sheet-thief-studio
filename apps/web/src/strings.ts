@@ -1,5 +1,6 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import type { ErrorCode } from "@studio/contracts";
+import type { SessionHint } from "@studio/score-editor";
 
 export const strings = {
   app: {
@@ -23,6 +24,8 @@ export const strings = {
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
     viewerCannotEdit: "檢視者無法修改",
+    // What a key that did nothing tells the member (`SessionHint`).
+    hints: { oneVoice: "弦樂聲部只有一條聲線" } satisfies Record<SessionHint, string>,
     dismiss: "關閉",
     settings: "設定",
     player: {

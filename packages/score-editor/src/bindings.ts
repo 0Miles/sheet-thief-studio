@@ -11,6 +11,14 @@ export type SessionEffect =
   | "previousBeat"
   | "lineDown"
   | "lineUp"
+  | "barStart"
+  | "barEnd"
+  | "nextBar"
+  | "previousBar"
+  | "nextStaff"
+  | "previousStaff"
+  | "firstVoice"
+  | "secondVoice"
   | "selectNextBeat"
   | "selectPreviousBeat"
   | "selectNextBar"
@@ -20,6 +28,9 @@ export type SessionEffect =
   | "delete"
   | "shorter"
   | "longer"
+  | "dots"
+  | "triplet"
+  | "clear"
   | "undo"
   | "redo"
   | "fret"
@@ -54,22 +65,22 @@ interface BindingKeys {
   keymap: Record<KeyPlatform, readonly string[]>;
 }
 
-/** A key the session handles: the shell then calls `preventDefault`. */
-export interface SessionBinding extends BindingKeys {
-  effect: SessionEffect;
+interface SessionKeys extends BindingKeys {
   native?: undefined;
   page?: undefined;
   /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
   repeat?: true;
-  /** The fret a digit writes. */
-  value?: number;
 }
+
+/** A key the session handles: the shell then calls `preventDefault`. A digit names the fret it writes. */
+export type SessionBinding = (SessionKeys & { effect: "fret"; fret: number }) | (SessionKeys & { effect: Exclude<SessionEffect, "fret">; fret?: undefined });
 
 /** A key left to the browser: it is not `preventDefault`-ed, so that the browser fires its event. */
 export interface NativeBinding extends BindingKeys {
   effect: NativeEffect;
   native: true;
   page?: undefined;
+  fret?: undefined;
 }
 
 /** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */
@@ -77,7 +88,7 @@ export interface PageBinding extends BindingKeys {
   effect: PageEffect;
   native?: undefined;
   page: true;
-  value?: undefined;
+  fret?: undefined;
 }
 
 export type KeyBinding = SessionBinding | NativeBinding | PageBinding;
@@ -112,6 +123,17 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "previousBeat", context: "score", keys: ["ArrowLeft"], repeat: true, keymap: both("ArrowLeft") },
   { effect: "lineDown", context: "score", keys: ["ArrowDown"], repeat: true, keymap: both("ArrowDown") },
   { effect: "lineUp", context: "score", keys: ["ArrowUp"], repeat: true, keymap: both("ArrowUp") },
+  // On a Mac's laptop keyboard, Fn+← and Fn+→ send Home and End.
+  { effect: "barStart", context: "score", keys: ["Home"], repeat: true, keymap: both("Home") },
+  { effect: "barEnd", context: "score", keys: ["End"], repeat: true, keymap: both("End") },
+  // Nav: Ctrl, and Option on a Mac, where macOS takes Ctrl with the arrows and Cmd+←/→ is back and forward.
+  { effect: "nextBar", context: "score", keys: ["Nav+ArrowRight"], repeat: true, keymap: { other: ["Ctrl+ArrowRight"], mac: ["Option+ArrowRight"] } },
+  { effect: "previousBar", context: "score", keys: ["Nav+ArrowLeft"], repeat: true, keymap: { other: ["Ctrl+ArrowLeft"], mac: ["Option+ArrowLeft"] } },
+  { effect: "nextStaff", context: "score", keys: ["Nav+ArrowDown"], repeat: true, keymap: { other: ["Ctrl+ArrowDown"], mac: ["Option+ArrowDown"] } },
+  { effect: "previousStaff", context: "score", keys: ["Nav+ArrowUp"], repeat: true, keymap: { other: ["Ctrl+ArrowUp"], mac: ["Option+ArrowUp"] } },
+  // Alt, and Option on a Mac: Cmd with a digit switches the browser's tabs there.
+  { effect: "firstVoice", context: "score", keys: ["Alt+Digit1"], repeat: true, keymap: { other: ["Alt+Digit1"], mac: ["Option+Digit1"] } },
+  { effect: "secondVoice", context: "score", keys: ["Alt+Digit2"], repeat: true, keymap: { other: ["Alt+Digit2"], mac: ["Option+Digit2"] } },
   // Selecting (docs/spec/commands.md, section 4): Shift extends a beat range, Shift with Nav a bar range.
   { effect: "selectNextBeat", context: "score", keys: ["Shift+ArrowRight"], repeat: true, keymap: both("Shift+ArrowRight") },
   { effect: "selectPreviousBeat", context: "score", keys: ["Shift+ArrowLeft"], repeat: true, keymap: both("Shift+ArrowLeft") },
@@ -124,6 +146,10 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // `+` is Shift+= on most keyboards: with or without Shift.
   { effect: "shorter", context: "score", keys: ["Equal", "Shift+Equal", "NumpadAdd"], repeat: true, keymap: both("Equal", "Shift+Equal", "NumpadAdd") },
   { effect: "longer", context: "score", keys: ["Minus", "NumpadSubtract"], repeat: true, keymap: both("Minus", "NumpadSubtract") },
+  { effect: "dots", context: "score", keys: ["Period", "NumpadDecimal"], keymap: both("Period", "NumpadDecimal") },
+  // Section 3: Shift and a letter, on every kind of part.
+  { effect: "triplet", context: "score", keys: ["Shift+KeyT"], keymap: both("Shift+KeyT") },
+  { effect: "clear", context: "score", keys: ["Shift+KeyR"], keymap: both("Shift+KeyR") },
   { effect: "undo", context: "score", keys: ["Mod+KeyZ"], keymap: { other: ["Ctrl+KeyZ"], mac: ["Cmd+KeyZ"] } },
   // Not Cmd+Y on a Mac: it is the history of Safari and Chrome.
   { effect: "redo", context: "score", keys: ["Mod+KeyY", "Mod+Shift+KeyZ"], mac: ["Mod+Shift+KeyZ"], keymap: { other: ["Ctrl+KeyY", "Ctrl+Shift+KeyZ"], mac: ["Cmd+Shift+KeyZ"] } },
@@ -135,7 +161,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
-    return { effect: "fret", value: Number(digit), context: "fretted", keys, keymap: both(...keys) };
+    return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
   // Section 3: Shift and a letter turns a technique on and off, on a Mac as well.
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {

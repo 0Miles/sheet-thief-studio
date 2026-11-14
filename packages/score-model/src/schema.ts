@@ -23,6 +23,9 @@ export const MAX_NON_PERCUSSION_PARTS = 15;
 
 export const MAX_BARS = 1000;
 
+/** The longest title of a score (docs/spec/commands.md, 7.3). */
+export const MAX_TITLE = 100;
+
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
@@ -65,7 +68,7 @@ export type Tuplet = z.infer<typeof tupletSchema>;
 /** The fields of `meta`. The title may be empty when read (co-editing can empty it). */
 export const metaSchema = z.object({
   schemaVersion: z.int().min(0),
-  title: text(0, 100),
+  title: text(0, MAX_TITLE),
   artist: text(1, 100).optional(),
 });
 
@@ -219,9 +222,20 @@ export function isVoiceKey(key: string, staves: number): boolean {
   return voiceKeys(staves).includes(key);
 }
 
+/** The key of a voice: its staff, then the voice on that staff, both from 0 ("1:0"). */
+export function voiceKey(staff: number, voiceIndex: number): string {
+  return `${staff}:${voiceIndex}`;
+}
+
+/** The staff of a voice key and the index of the voice on that staff. */
+export function staffAndVoiceOf(key: string): [staff: number, voiceIndex: number] {
+  const [staff = 0, voiceIndex = 0] = key.split(":").map(Number);
+  return [staff, voiceIndex];
+}
+
 /** Every voice of a part with `staves` staves, in order: "0:0", "0:1", "1:0", "1:1". */
 export function voiceKeys(staves: number): string[] {
-  return Array.from({ length: staves }, (_, staff) => [`${staff}:0`, `${staff}:1`]).flat();
+  return Array.from({ length: staves }, (_, staff) => [voiceKey(staff, 0), voiceKey(staff, 1)]).flat();
 }
 
 // Parts -----------------------------------------------------------------------------------------
@@ -423,6 +437,29 @@ export function durationOf(beat: YBeat): BeatDuration | undefined {
 export function partKindOf(part: unknown): PartKind | undefined {
   const kind = partKindSchema.safeParse(part instanceof Y.Map ? part.get("kind") : undefined);
   return kind.success ? kind.data : undefined;
+}
+
+/*
+ * The lines and voices a part offers, by its kind (docs/spec/commands.md, sections 2 and 3). A
+ * part whose kind cannot be read is not drawn: these count it as a staff, as any kind but fretted.
+ */
+
+/** The lines the cursor can stand on in a part: its strings when fretted, else the staff positions of a five-line staff with two ledger lines each side. */
+export function lineRange(kind: PartKind | undefined, strings: number): { first: number; last: number } {
+  return kind === "fretted" ? { first: 1, last: Math.max(strings, 1) } : { first: -4, last: 12 };
+}
+
+/**
+ * The line the cursor starts on in a part of this kind, the first time it comes there: the first
+ * string, the highest, of a fretted part; the middle line of the staff of the others.
+ */
+export function startLine(kind: PartKind | undefined): number {
+  return kind === "fretted" ? 1 : 4;
+}
+
+/** How many voices each staff of a part of this kind offers: a fretted part only its first. */
+export function voicesOffered(kind: PartKind | undefined): 1 | 2 {
+  return kind === "fretted" ? 1 : 2;
 }
 
 /** How many staves a part has: as its `staves` say, or as its kind has by default when they cannot be read. */

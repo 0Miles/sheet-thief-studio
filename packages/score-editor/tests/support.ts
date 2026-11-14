@@ -9,7 +9,7 @@ export type Modifiers = Omit<Key, "code">;
 
 /** A key as a US keyboard sends it, named by what it types: `code` is where the key is. */
 export function keyOf(key: string, modifiers: Modifiers = {}): Key {
-  const code = /^[0-9]$/.test(key) ? `Digit${key}` : /^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : key === "+" ? "Equal" : key === "-" ? "Minus" : key;
+  const code = /^[0-9]$/.test(key) ? `Digit${key}` : /^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : key === "+" ? "Equal" : key === "-" ? "Minus" : key === "." ? "Period" : key;
   return { code, ...(key === "+" ? { shiftKey: true } : {}), ...modifiers };
 }
 

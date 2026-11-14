@@ -27,9 +27,12 @@ import {
   SCHEMA_VERSION,
   type Staff,
   staffCountOf,
+  startLine,
+  MAX_TITLE,
   stringCountOf,
   contentMapOf,
   type TimeSignature,
+  type Tuplet,
   type YBar,
   type YBeat,
   type YPart,
@@ -455,8 +458,37 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
   }
   const part = partsOf(doc).get(selection.partId);
   if (part === undefined) return [];
-  return selectedBars(doc, selection).flatMap((barId) =>
-    [...(contentOf(part).get(barId)?.entries() ?? [])].map(([voiceKey, voice]) => ({ barId, voiceKey, voice, first: 0, last: voice.length - 1 })),
+  // The voices reading reads, in their order (docs/spec/schema.md, section 11): not a voice of a
+  // staff the part does not have, and not one stored as something else than beats.
+  const keys = voiceKeys(staffCountOf(part));
+  return selectedBars(doc, selection).flatMap((barId) => {
+    const voices: unknown = contentMapOf(part)?.get(barId);
+    if (!(voices instanceof Y.Map)) return [];
+    return keys.flatMap((voiceKey) => {
+      const voice: unknown = voices.get(voiceKey);
+      return voice instanceof Y.Array ? [{ barId, voiceKey, voice: voice as YVoice, first: 0, last: voice.length - 1 }] : [];
+    });
+  });
+}
+
+/** A beat of a selection that reading keeps, and where it is. */
+interface SelectedBeat {
+  at: { partId: string; barId: string; voice: string };
+  voice: YVoice;
+  index: number;
+  beat: YBeat;
+}
+
+/**
+ * The beats of a selection, in the part selected, runs in score order and beats in the order of
+ * their voice; those reading leaves out are not among them.
+ */
+function selectedBeatsOf(doc: Y.Doc, reader: PartReader, selection: Selection): SelectedBeat[] {
+  return runsOf(doc, selection).flatMap(({ barId, voiceKey, voice, first, last }) =>
+    Array.from({ length: last - first + 1 }, (_, offset) => first + offset).flatMap((index) => {
+      const beat = voice.get(index);
+      return readsAsBeat(reader.kind, beat) ? [{ at: { partId: selection.partId, barId, voice: voiceKey }, voice, index, beat }] : [];
+    }),
   );
 }
 
@@ -471,18 +503,14 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
 export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: Cursor, toggle: NoteToggle<D>): Cursor {
   const reader = readerOf(doc, selection.partId);
   if (reader === undefined) return cursor;
-  const beats = runsOf(doc, selection).flatMap(({ barId, voiceKey, voice, first, last }) =>
-    Array.from({ length: last - first + 1 }, (_, offset) => first + offset).flatMap((index) => {
-      const beat = voice.get(index);
-      if (!readsAsBeat(reader.kind, beat)) return [];
-      const map = notesOf(beat) as Y.Map<NoteJSON>;
-      const notes = [...map.entries()].flatMap(([key, stored]) => {
-        const seen = reader.note(key, stored);
-        return seen ? [{ key, stored, seen }] : [];
-      });
-      return [{ at: { partId: selection.partId, barId, voice: voiceKey }, voice, index, map, notes }];
-    }),
-  );
+  const beats = selectedBeatsOf(doc, reader, selection).map(({ at, voice, index, beat }) => {
+    const map = notesOf(beat) as Y.Map<NoteJSON>;
+    const notes = [...map.entries()].flatMap(([key, stored]) => {
+      const seen = reader.note(key, stored);
+      return seen ? [{ key, stored, seen }] : [];
+    });
+    return { at, voice, index, map, notes };
+  });
   const seen = beats.flatMap(({ notes }) => notes.map((note) => note.seen));
   if (seen.length === 0) return cursor;
   const decided = toggle.decide(seen);
@@ -603,20 +631,138 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omi
   return cursor;
 }
 
-/** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
-export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
-  const beat = beatAt(doc, cursor);
-  if (beat === undefined) return cursor;
-  const value = NOTE_VALUES[NOTE_VALUES.indexOf(beat.get("value") as NoteValue) + step];
-  if (value === undefined) return cursor;
+/** A beat as a `BeatChange` sees it: how long it lasts, and whether it is a rest. */
+export interface SeenBeat {
+  duration: BeatDuration;
+  rest: boolean;
+}
+
+/** What a `BeatChange` writes on a beat: a note value, dots, a tuplet (null takes it away), or its notes taken away. */
+export interface BeatWrite {
+  value?: NoteValue;
+  dots?: 0 | 1 | 2;
+  tuplet?: Tuplet | null;
+  clear?: true;
+}
+
+/**
+ * A change a key makes to whole beats (docs/spec/commands.md, 5.3 and 5.6), on the cursor's beat
+ * or on every beat of a selection. As with `NoteToggle`, what the beats are to become is decided
+ * once, from every beat seen, then each beat is changed to it.
+ */
+export interface BeatChange<D> {
+  decide(seen: readonly SeenBeat[]): D;
+  /**
+   * What to write on a beat to make it `decided`; null when there is nothing to write (unlike
+   * `NoteToggle.turn`, whose null removes a note: a beat is never removed here).
+   */
+  turn(beat: SeenBeat, decided: D): BeatWrite | null;
+}
+
+/** `+` (`step` 1) and `-` (-1): each beat one note value shorter or longer, keeping its dots; a beat at either end of the values stays. */
+export function durationStep(step: 1 | -1): BeatChange<void> {
+  return {
+    decide: () => undefined,
+    turn({ duration }) {
+      const value = NOTE_VALUES[NOTE_VALUES.indexOf(duration.value) + step];
+      return value === undefined ? null : { value };
+    },
+  };
+}
+
+/** `.`: every beat to the dots after those of the first beat seen: none, one, two, none. */
+export const dotCycle: BeatChange<0 | 1 | 2> = {
+  decide: (seen) => (((seen[0]?.duration.dots ?? 0) + 1) % 3) as 0 | 1 | 2,
+  turn: ({ duration }, dots) => (duration.dots === dots ? null : { dots }),
+};
+
+const TRIPLET: Tuplet = { actual: 3, normal: 2 };
+
+/**
+ * `Shift+T`: every tuplet comes off when every beat seen has one (on one beat: any tuplet);
+ * otherwise every beat becomes a triplet, a beat with another tuplet among them.
+ */
+export const tripletToggle: BeatChange<boolean> = {
+  decide: (seen) => seen.some((beat) => beat.duration.tuplet === undefined),
+  turn({ duration: { tuplet } }, on) {
+    if (!on) return tuplet === undefined ? null : { tuplet: null };
+    return tuplet?.actual === TRIPLET.actual && tuplet.normal === TRIPLET.normal ? null : { tuplet: { ...TRIPLET } };
+  },
+};
+
+/** `Shift+R`: every beat a rest, its notes taken away and everything else it holds kept. */
+export const clearNotes: BeatChange<void> = {
+  decide: () => undefined,
+  turn: ({ rest }) => (rest ? null : { clear: true }),
+};
+
+/** How a `BeatChange` sees a beat; none when reading leaves it out. */
+function seenBeat(reader: PartReader, beat: YBeat): SeenBeat | undefined {
+  if (!readsAsBeat(reader.kind, beat)) return undefined;
+  const duration = durationOf(beat);
+  return duration && { duration, rest: isRest(beat) };
+}
+
+/** Change beats as decided, in one transaction; none when nothing changes. */
+function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: BeatChange<D>): void {
+  const seen = beats.flatMap((beat) => {
+    const read = seenBeat(reader, beat);
+    return read ? [{ beat, read }] : [];
+  });
+  if (seen.length === 0) return;
+  const decided = change.decide(seen.map(({ read }) => read));
+  const writes = seen.flatMap(({ beat, read }) => {
+    const write = change.turn(read, decided);
+    return write === null ? [] : [{ beat, write }];
+  });
+  if (writes.length === 0) return;
   doc.transact(() => {
-    beat.set("value", value);
+    for (const { beat, write } of writes) {
+      if (write.value !== undefined) beat.set("value", write.value);
+      if (write.dots !== undefined) beat.set("dots", write.dots);
+      if (write.tuplet === null) beat.delete("tuplet");
+      else if (write.tuplet !== undefined) beat.set("tuplet", write.tuplet);
+      if (write.clear) notesOf(beat)?.clear();
+    }
   }, LOCAL);
+}
+
+/** Change the beat of the cursor, one command; nothing in the append slot, or on a beat reading leaves out. The cursor stays. */
+export function changeBeatAt<D>(doc: Y.Doc, cursor: Cursor, change: BeatChange<D>): Cursor {
+  const reader = readerOf(doc, cursor.partId);
+  const beat = beatAt(doc, cursor);
+  if (reader !== undefined && beat !== undefined) writeBeats(doc, [beat], reader, change);
   return cursor;
 }
 
-/** The cursor at the first place of the first voice of a bar of a part: its first beat, or the append slot of an empty voice. */
-export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = 1): Cursor {
+/**
+ * Change every beat of a selection, in the part selected (docs/spec/commands.md, 5.3 and 5.6),
+ * one command, decided once from all of them. Beats reading leaves out are neither seen nor
+ * changed. The cursor stays.
+ */
+export function changeBeatsOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: Cursor, change: BeatChange<D>): Cursor {
+  const reader = readerOf(doc, selection.partId);
+  if (reader !== undefined) writeBeats(doc, selectedBeatsOf(doc, reader, selection).map(({ beat }) => beat), reader, change);
+  return cursor;
+}
+
+/** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
+export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return changeBeatAt(doc, cursor, durationStep(step));
+}
+
+/** Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false, and nothing set, for any other length. */
+export function setTitle(doc: Y.Doc, title: string): boolean {
+  if (title.length < 1 || title.length > MAX_TITLE) return false;
+  doc.transact(() => metaOf(doc).set("title", title), LOCAL);
+  return true;
+}
+
+/**
+ * The cursor at the first place of the first voice of a bar of a part: its first beat, or the
+ * append slot of an empty voice. On `line`, else where the part starts (`startLine`).
+ */
+export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = startLine(partKindOf(partsOf(doc).get(partId)))): Cursor {
   const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
   return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;

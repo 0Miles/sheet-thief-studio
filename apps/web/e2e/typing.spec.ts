@@ -78,6 +78,34 @@ test("a digit in the append slot makes a new beat, and the cursor is on it; anot
   expect(errors.flat()).toEqual([]);
 });
 
+test("an Editor jumps a bar with Ctrl+→, dots a beat with ., goes back with Home and undoes with Ctrl+Z; Alt+2 on a guitar says it has one voice", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+  const start = await scoreOf(page);
+
+  await page.keyboard.press("Control+ArrowRight");
+  expect(await cursorOf(page)).toMatchObject({ barId: start.bars[1]!.id, beatId: null, at: "after" });
+  await page.keyboard.press("3");
+  await page.keyboard.press(".");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Home");
+  const beat = beatsIn(await scoreOf(page), 1)[0]!;
+  expect(beat).toMatchObject({ value: 4, dots: 1, notes: { s1: { fret: 3 } } });
+  expect(await cursorOf(page)).toMatchObject({ barId: start.bars[1]!.id, beatId: beat.id, at: "on" });
+
+  await page.keyboard.press("Control+z");
+  expect(beatsIn(await scoreOf(page), 1)[0]).toMatchObject({ dots: 0 });
+
+  const notice = page.getByRole("status").filter({ hasText: strings.score.hints.oneVoice });
+  await page.keyboard.press("Alt+2");
+  await expect(notice).toBeVisible();
+  expect(await cursorOf(page)).toMatchObject({ voice: "0:0", beatId: beat.id });
+  await synced(page);
+  expect(errors).toEqual([]);
+});
+
 test("a Viewer moves the cursor but changes nothing; the notice that a Viewer cannot edit shows only the first time", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, VIEWER);
