@@ -10,20 +10,24 @@ import {
   cursorAt,
   docToJson,
   insertBars,
+  type NoteJSON,
+  type NotePlace,
+  type NoteToggle,
+  noteKeyAt,
   ON_OFF_TECHNIQUES,
-  onOffToggle,
   type OnOffTechnique,
   setFret,
   setNote,
   type Selection,
   toggleAt,
+  techniqueToggle,
   toggleOnSelection,
   voiceIn,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
 
-const toggleNote = (doc: Y.Doc, cursor: Cursor, key: string, technique: OnOffTechnique) => toggleAt(doc, cursor, key, onOffToggle(technique));
-const toggleSelected = (doc: Y.Doc, selection: Selection, cursor: Cursor, technique: OnOffTechnique) => toggleOnSelection(doc, selection, cursor, onOffToggle(technique));
+const toggleNote = (doc: Y.Doc, cursor: Cursor, key: string, technique: OnOffTechnique) => toggleAt(doc, cursor, key, techniqueToggle(technique));
+const toggleSelected = (doc: Y.Doc, selection: Selection, cursor: Cursor, technique: OnOffTechnique) => toggleOnSelection(doc, selection, cursor, techniqueToggle(technique));
 
 /** A guitar with one bar, its first beat holding fret 5 on string 3; the cursor on that beat and string. */
 function guitar() {
@@ -172,4 +176,91 @@ test("over a selection, notes reading leaves out neither count nor change: off i
   expect([stored.get("s4"), stored.get("p38")]).toEqual([{ fret: 99 }, {}]);
   toggleSelected(doc, range, cursor, "dead");
   expect([stored.get("s4"), stored.get("p38")]).toEqual([{ fret: 99 }, {}]);
+});
+
+test("at the cursor, a note reading leaves out is left alone: no technique key changes it", () => {
+  const { doc, cursor } = guitar();
+  setNote(doc, cursor, "s3", { fret: 99 });
+  const transactions = transactionsOf(doc);
+  for (const technique of ON_OFF_TECHNIQUES) toggleNote(doc, cursor, "s3", technique);
+  expect(transactions.count).toBe(0);
+  expect(storedNotes(doc, cursor).get("s3")).toEqual({ fret: 99 });
+});
+
+test("the key of the note on the cursor's line is its string on a fretted part, and none yet on drums and staves", () => {
+  const { doc, cursor, barId } = guitar();
+  expect(noteKeyAt(doc, cursor)).toBe("s3");
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched" });
+  expect(noteKeyAt(doc, cursorAt(doc, drums, barId, 4))).toBeNull();
+  expect(noteKeyAt(doc, cursorAt(doc, keys, barId, 4))).toBeNull();
+});
+
+/**
+ * A technique of three states, as a cycling one is (#27, #29): none → natural → pinch → none.
+ * The state is decided once for all the notes: the one after the state they share, natural when
+ * they do not share one.
+ */
+const cycling: NoteToggle<NoteJSON["harmonic"]> = {
+  decide(seen) {
+    const first = seen[0]?.harmonic;
+    if (first === undefined || !seen.every((note) => note.harmonic === first)) return "natural";
+    return first === "natural" ? "pinch" : undefined;
+  },
+  turn(stored, harmonic) {
+    if (stored === undefined) return null;
+    const note = { ...stored };
+    delete note.harmonic;
+    return harmonic === undefined ? note : { ...note, harmonic };
+  },
+};
+
+test("over a selection, a cycling technique takes every note to the one state decided for them all", () => {
+  const { doc, cursor, notes, range } = selected();
+  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, harmonic: "pinch" });
+  const harmonics = () => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note.harmonic ?? null));
+  // One note is pinch, the others none: not one shared state, so all go to the first, not each to its own next.
+  toggleOnSelection(doc, range, cursor, cycling);
+  expect(harmonics()).toEqual(["natural", "natural", "natural"]);
+  toggleOnSelection(doc, range, cursor, cycling);
+  expect(harmonics()).toEqual(["pinch", "pinch", "pinch"]);
+  toggleOnSelection(doc, range, cursor, cycling);
+  expect(harmonics()).toEqual([null, null, null]);
+});
+
+test("a toggle is told the note with the same key on the beat before, in the bar before when the beat is the first of its bar", () => {
+  const { doc, barId, partId, cursor, notes } = selected();
+  const [, nextBar] = docToJson(doc).bars.map((bar) => bar.id);
+  setNote(doc, cursorAt(doc, partId, nextBar!), "s3", { fret: 9 });
+  const told: [string, NoteJSON | null][] = [];
+  const telling: NoteToggle<null> = {
+    decide: () => null,
+    turn(stored, _, place: NotePlace) {
+      told.push([place.key, place.before ?? null]);
+      return stored ?? null;
+    },
+  };
+  const transactions = transactionsOf(doc);
+  toggleOnSelection(doc, { kind: "bars", partId, anchorBarId: barId, focusBarId: nextBar! }, cursor, telling);
+  // A toggle that gives back each note as stored changes nothing.
+  expect(transactions.count).toBe(0);
+  expect(told.sort()).toEqual(
+    [
+      ["s3", null],
+      ["s1", null],
+      ["s2", null],
+      ["s3", null],
+      ["s3", { fret: 7 }],
+    ].sort(),
+  );
+  // At the cursor, in the append slot as on a beat: what a tie needs to take the fret of the note before.
+  const tie: NoteToggle<true> = { decide: () => true, turn: (stored, _, { before }) => (before?.fret === undefined ? (stored ?? null) : { ...stored, fret: before.fret, tie: true }) };
+  const first = cursorAt(doc, partId, nextBar!, 3);
+  toggleAt(doc, { ...first, line: 2 }, "s2", tie);
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 9 } }]);
+  toggleAt(doc, first, "s3", tie);
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 7, tie: true } }]);
+  const appended = toggleAt(doc, { ...first, at: "after" }, "s3", tie);
+  expect(notes(nextBar)).toEqual([{ s3: { fret: 7, tie: true } }, { s3: { fret: 7, tie: true } }]);
+  expect(appended).toMatchObject({ at: "on" });
 });

@@ -433,6 +433,13 @@ export function staffCountOf(part: YPart): number {
   return staves.success ? staves.data.length : KIND_DEFAULTS[kind].staves.length;
 }
 
+/** How many strings a part has, as reading counts them: those of its tuning; none when its kind or its tuning cannot be read. */
+export function stringCountOf(part: YPart): number {
+  const kind = partKindOf(part);
+  const tuning = kind === undefined ? undefined : partSchemas[kind].shape.tuning.safeParse(part.get("tuning"));
+  return tuning?.success ? tuning.data.length : 0;
+}
+
 /**
  * The content of one bar of a part, every voice of every staff in place: two members writing
  * the first beats of the same voice at once would each make the voice, and one would lose

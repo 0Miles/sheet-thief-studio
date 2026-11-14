@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 import type { Cursor } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
-import { barsOf, COMMON_TIME, durationOf, ordered, type PartKind, partsOf, timeSigSchema, voiceIn, type YVoice } from "./schema";
+import { barsOf, COMMON_TIME, durationOf, ordered, type PartKind, partsOf, stringCountOf, timeSigSchema, voiceIn, type YVoice } from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
   return voiceIn(doc, { ...cursor, barId });
@@ -100,7 +100,7 @@ function lineRange(kind: PartKind, strings: number): { first: number; last: numb
 export function moveByLine(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   const part = partsOf(doc).get(cursor.partId);
   if (part === undefined) return cursor;
-  const { first, last } = lineRange(part.get("kind") as PartKind, (part.get("tuning") as number[]).length);
+  const { first, last } = lineRange(part.get("kind") as PartKind, stringCountOf(part));
   return { ...cursor, line: Math.min(Math.max(cursor.line + step, first), last) };
 }
 

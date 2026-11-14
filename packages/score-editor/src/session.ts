@@ -16,8 +16,8 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
+  noteKeyAt,
   type OnOffTechnique,
-  onOffToggle,
   partKindOf,
   partsOf,
   type Selection,
@@ -26,6 +26,7 @@ import {
   settleCursor,
   settleSelection,
   stepDuration,
+  techniqueToggle,
   toggleAt,
   toggleOnSelection,
 } from "@studio/score-model";
@@ -230,14 +231,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
 
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
-   * else on the note of the cursor's string, where dead may make a note, and a beat for it in
-   * the append slot. Fretted parts only, until the keys of drums and staves name their notes.
+   * else on the note of the cursor's line (`noteKeyAt`), where dead may make a note, and a beat
+   * for it in the append slot.
    */
   function toggleTechnique(technique: OnOffTechnique): KeyCommand {
-    const toggle = onOffToggle(technique);
+    const toggle = techniqueToggle(technique);
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
-      (at) => markAppended(at, (here) => toggleAt(doc, here, `s${here.line}`, toggle)),
+      (at) => {
+        const key = noteKeyAt(doc, at);
+        return key === null ? at : markAppended(at, (here) => toggleAt(doc, here, key, toggle));
+      },
     );
   }
 

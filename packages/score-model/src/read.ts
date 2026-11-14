@@ -26,6 +26,7 @@ import {
   readNote,
   SCHEMA_VERSION,
   type ScoreJSON,
+  stringCountOf,
   contentMapOf,
   type YBeat,
 } from "./schema";
@@ -212,7 +213,7 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
   }
   const defaults = KIND_DEFAULTS[kind];
   const staves = readField(shape.staves, part.get("staves"), defaults.staves.map((staff) => ({ ...staff })), invalid, place, "part.staves");
-  const strings = tuning.success ? tuning.data.length : 0;
+  const strings = stringCountOf(part);
   const fit: Fit = { kind, strings, key: `${kind}:${strings}`, reuse };
   // Built from entries, so that a bar id __proto__ is a key like any other.
   const content: [string, Record<string, BeatJSON[]>][] = [];

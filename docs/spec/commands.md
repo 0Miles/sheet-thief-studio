@@ -167,7 +167,14 @@ interface Cursor {
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
   - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
-  - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`：一個技巧是一個 `NoteToggle`（音符有沒有它、開或關之後的音符），`toggleAt` 作用在游標那條線上的音符、`toggleOnSelection` 作用在選取；開關型的技巧（`ON_OFF_TECHNIQUES`）由 `onOffToggle` 產生。其他技巧的票沿用這兩個函式，只寫自己的 `NoteToggle`。選取時只算成員看得到的音符：讀取時被略過的音符（[`schema.md`](schema.md) 第 11 節）不算、也不改（`schema.ts` 的 `readNote`）。
+  - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
+    - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
+    - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值，沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。tie 用它取前一個音的格號。
+    - `toggleAt(doc, cursor, key, toggle)` 作用在游標拍點上 `key` 的音，鍵由 `noteKeyAt` 給出（目前只有 fretted 有：那條弦；鼓與五線譜是 `null`，按鍵不動）。在附加位置上，`toggle` 建立的音放在新拍點上，`place.before` 是錨點拍點的音。`toggleOnSelection` 作用在選取，不建立音符。兩者都是一個 Command，只寫入有改變的音。
+    - 開關型的技巧（`ON_OFF_TECHNIQUES`）由 `techniqueToggle` 給出：`onOffToggle` 的 `decide` 是「不是全部都有」，只改已經有的音；dead 是 `deadToggle`（上面兩條補充）。
+    - 讀取時被略過的音符（[`schema.md`](schema.md) 第 11 節，`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。
+    - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
+    - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`：#30 加一個給拍點、同樣「一次決定、逐一套用」的同類函式，沿用同一個選取走訪（`commands.ts` 的 `runsOf`）。
 
 ### 5.5 文字與歌詞
 
