@@ -332,18 +332,20 @@ function saveOptions(): void {
 }
 
 function onHide(partId: string, hidden: boolean): void {
-  const rest = display.value.hidden.filter((id) => id !== partId);
-  display.value = { ...display.value, hidden: hidden ? [...rest, partId] : rest };
-  saveOptions();
-  showChosenParts();
-  scroller.value?.focus({ preventScroll: true });
+  onToolbar(() => {
+    const rest = display.value.hidden.filter((id) => id !== partId);
+    display.value = { ...display.value, hidden: hidden ? [...rest, partId] : rest };
+    saveOptions();
+    showChosenParts();
+  });
 }
 
 function onScale(scale: number): void {
-  display.value = { ...display.value, scale };
-  saveOptions();
-  engine?.renderer.setScale(scale);
-  scroller.value?.focus({ preventScroll: true });
+  onToolbar(() => {
+    display.value = { ...display.value, scale };
+    saveOptions();
+    engine?.renderer.setScale(scale);
+  });
 }
 
 /** The narrow Read view's part switcher: the part chosen is the one shown, now and the next time this score is opened here. */

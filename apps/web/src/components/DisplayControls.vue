@@ -3,7 +3,7 @@
 // shown, and the zoom. The narrow Read view picks its one part elsewhere and shows the zoom only.
 import { computed } from "vue";
 
-import { SCALES } from "../display";
+import { SCALES, shownParts } from "../display";
 import { strings } from "../strings";
 
 const props = defineProps<{
@@ -17,8 +17,8 @@ const text = strings.score.display;
 
 /** The one part still shown cannot be hidden: a score shows at least one. */
 const lastShown = computed(() => {
-  const shown = props.parts?.filter((part) => !props.hidden.includes(part.id)) ?? [];
-  return shown.length === 1 ? shown[0]!.id : null;
+  const shown = shownParts(props.parts?.map((part) => part.id) ?? [], props.hidden);
+  return shown.length === 1 ? shown[0]! : null;
 });
 
 function onScale(event: Event): void {

@@ -41,6 +41,15 @@ async function openToRead(page: Page, path: string): Promise<void> {
 /** The parts the page shows, by id, as it asked the renderer to draw them. */
 const partsShown = (page: Page) => page.locator("[data-parts]");
 
+/**
+ * The parts drawn, by name, in the score's order: the renderer writes each part's name beside
+ * its staff, as text of the drawing.
+ */
+async function namesDrawn(page: Page, names: string[]): Promise<string[]> {
+  const drawing = (await page.locator("[data-ready]").textContent()) ?? "";
+  return names.filter((name) => drawing.includes(name));
+}
+
 /** No overlay and no bar of the page covers a reserved area, with the score scrolled to its top. */
 async function clearOfReserved(page: Page, playbar: string): Promise<void> {
   expect(await page.locator("[data-scroller]").evaluate((element) => element.scrollTop)).toBe(0);
@@ -62,17 +71,21 @@ test("on a phone a member sees one part at a time; the part chosen is shown agai
   await expect(page.locator("main")).toHaveAttribute("data-view", "read");
   await expect(page.locator("main")).toHaveAttribute("data-layout", "narrow");
   const [first, second] = (await scoreOf(page)).parts;
+  const names = (await scoreOf(page)).parts.map((part) => part.name);
   // The first part, when none was chosen yet.
   await expect(partsShown(page)).toHaveAttribute("data-parts", first!.id);
+  await expect.poll(() => namesDrawn(page, names)).toEqual([first!.name]);
   await expect(page.locator("[data-cursor]")).toHaveCount(0);
 
   await page.locator("[data-part-switcher]").selectOption({ label: second!.name });
   await expect(partsShown(page)).toHaveAttribute("data-parts", second!.id);
+  await expect.poll(() => namesDrawn(page, names)).toEqual([second!.name]);
 
   await page.reload();
   await openToRead(page, `/scores/${id}`);
   await expect(partsShown(page)).toHaveAttribute("data-parts", second!.id);
   await expect(page.locator("[data-part-switcher]")).toHaveValue(second!.id);
+  await expect.poll(() => namesDrawn(page, names)).toEqual([second!.name]);
   expect(errors).toEqual([]);
 });
 
@@ -84,6 +97,8 @@ test("900 px wide, a member gets the wide Read view: every part, no cursor, and 
   await expect(page.locator("main")).toHaveAttribute("data-layout", "wide");
   const json = await scoreOf(page);
   await expect(partsShown(page)).toHaveAttribute("data-parts", json.parts.map((part) => part.id).join(","));
+  const names = json.parts.map((part) => part.name);
+  await expect.poll(() => namesDrawn(page, names)).toEqual(names);
   await expect(page.locator("[data-cursor]")).toHaveCount(0);
   expect(await cursorOf(page)).toBeNull();
   const playing = page.locator("[data-playing-bar]");
@@ -155,12 +170,14 @@ test("a part hidden and a zoom chosen in the edit view are kept after a reload, 
   await openToRead(page, `/scores/${id}`);
   await expect(page.locator("main")).toHaveAttribute("data-view", "editable");
   const [first, second, third] = (await scoreOf(page)).parts;
+  const names = [first!.name, second!.name, third!.name];
   const cursorHeight = async () => (await page.locator("[data-cursor]").boundingBox())!.height;
   const before = await cursorHeight();
 
   await page.getByText(text.display.parts).click();
   await page.getByRole("checkbox", { name: second!.name }).uncheck();
   await expect(partsShown(page)).toHaveAttribute("data-parts", `${first!.id},${third!.id}`);
+  await expect.poll(() => namesDrawn(page, names)).toEqual([first!.name, third!.name]);
   await page.getByLabel(text.display.zoom).selectOption({ label: text.display.scale(1.5) });
   await expect.poll(cursorHeight).toBeCloseTo(before * 1.5, 0);
 
@@ -171,12 +188,14 @@ test("a part hidden and a zoom chosen in the edit view are kept after a reload, 
   await expect(page.getByRole("checkbox", { name: second!.name })).not.toBeChecked();
   await expect(page.getByLabel(text.display.zoom)).toHaveValue("1.5");
   expect(await cursorHeight()).toBeCloseTo(before * 1.5, 0);
+  expect(await namesDrawn(page, names)).toEqual([first!.name, third!.name]);
 
   // The same browser, 900 px wide: the Read view, with the same options.
   await page.setViewportSize({ width: 900, height: 900 });
   await openToRead(page, `/scores/${id}`);
   await expect(page.locator("main")).toHaveAttribute("data-view", "read");
   await expect(partsShown(page)).toHaveAttribute("data-parts", `${first!.id},${third!.id}`);
+  await expect.poll(() => namesDrawn(page, names)).toEqual([first!.name, third!.name]);
   await expect(page.getByLabel(text.display.zoom)).toHaveValue("1.5");
   expect(errors).toEqual([]);
 });

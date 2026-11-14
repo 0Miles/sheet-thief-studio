@@ -1,8 +1,8 @@
 // A score for an end-to-end test, written straight into the end-to-end database while the
 // server runs (apps/web/e2e/pages.ts, `seedScore`): its Owner, its other members, how many bars
-// it starts with and the parts it has besides the first, given as JSON on stdin; prints its id. Members are added here until the
-// pages that add them exist (#13). The score is new, so no server holds it in memory yet. It
-// refuses any database whose name does not end in `_e2e`.
+// it starts with and the parts it has besides the first, given as JSON on stdin; prints its id.
+// Members are added here until the pages that add them exist (#13). The score is new, so no
+// server holds it in memory yet. It refuses any database whose name does not end in `_e2e`.
 import { text } from "node:stream/consumers";
 
 import type { Role } from "@studio/contracts";
