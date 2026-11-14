@@ -43,6 +43,11 @@ export async function postFor<T>(path: string, body: unknown, shape: { parse(val
   return shape.parse(await (await call("POST", path, body)).json());
 }
 
+/** PATCH, the answer checked against its shape in @studio/contracts. */
+export async function patchFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
+  return shape.parse(await (await call("PATCH", path, body)).json());
+}
+
 /** The WebSocket address of /collab on this server (docs/adr/0001). */
 export function collabUrl(): string {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;

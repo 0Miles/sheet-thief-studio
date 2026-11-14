@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import type { ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import type { Flag } from "@studio/score-model";
+import type { Flag, PartKind, PartPresetId } from "@studio/score-model";
 
 export const strings = {
   app: {
@@ -11,6 +11,7 @@ export const strings = {
     title: "我的團譜",
     newScore: "新增團譜",
     empty: "還沒有團譜。按「新增團譜」建立第一份。",
+    phrases: "樂句庫",
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
   },
   newScore: {
@@ -60,6 +61,55 @@ export const strings = {
       closeOptions: "收起選項",
     },
   },
+  // The phrase library (/phrases; docs/spec/phrases.md, section 4).
+  phrases: {
+    title: "樂句庫",
+    newPhrase: "新增樂句",
+    empty: "還沒有樂句。",
+    noMatch: "沒有符合的樂句。",
+    kind: "種類",
+    allKinds: "全部",
+    kinds: { fretted: "弦樂 TAB", percussion: "鼓", pitched: "五線譜" } satisfies Record<PartKind, string>,
+    search: "搜尋名稱",
+    strings: (count: number) => `${count} 弦`,
+    staves: (count: number) => `${count} 個譜表`,
+    bars: (count: number) => `${count} 小節`,
+    rename: "改名",
+    duplicate: "複製",
+    delete: "刪除",
+  },
+  newPhrase: {
+    title: "新增樂句",
+    name: "名稱",
+    defaultName: "未命名樂句",
+    preset: "聲部",
+    create: "建立",
+    cancel: "取消",
+    close: "關閉",
+  },
+  renamePhrase: {
+    title: "樂句改名",
+    name: "名稱",
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+  },
+  deletePhrase: {
+    title: "刪除樂句",
+    message: (name: string) => `要刪除「${name}」嗎？刪除之後無法復原。`,
+    confirm: "刪除",
+    cancel: "取消",
+  },
+  // The part presets (docs/spec/commands.md, section 10).
+  presets: {
+    guitar6: "吉他 6 弦",
+    guitar7: "吉他 7 弦",
+    bass4: "貝斯 4 弦",
+    bass5: "貝斯 5 弦",
+    drums: "鼓",
+    keys: "鍵盤",
+    vocals: "人聲",
+  } satisfies Record<PartPresetId, string>,
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
@@ -100,6 +150,8 @@ export const strings = {
     invalid_credentials: "帳號名稱或密碼錯誤。",
     rate_limited: "嘗試太多次，請稍後再試。",
     forbidden: "你的角色不能做這件事。",
+    revision_conflict: "這個樂句在別處被修改過。",
+    phrase_too_large: "樂句太大。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",

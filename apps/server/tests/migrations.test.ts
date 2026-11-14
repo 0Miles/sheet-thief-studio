@@ -31,6 +31,7 @@ test("migrating an empty database creates the tables, and migrating again change
     identities: ["account_id", "created_at", "id", "provider", "secret_hash", "subject"],
     scores: ["artist", "created_at", "deleted_at", "doc_state", "id", "link_token", "schema_version", "title", "updated_at"],
     score_members: ["account_id", "added_at", "role", "score_id"],
+    phrases: ["bar_count", "content", "created_at", "id", "kind", "name", "owner_id", "revision", "staff_count", "string_count", "updated_at"],
   };
   const tables = async () => Object.fromEntries(await Promise.all(Object.keys(expected).map(async (table) => [table, await columns(table)])));
   expect(await tables()).toEqual(expected);

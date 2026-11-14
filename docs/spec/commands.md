@@ -311,6 +311,7 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 | 鍵盤 | pitched | `[]` | `[{ clef: "treble" }, { clef: "bass" }]` | 0 |
 | 人聲 | pitched | `[]` | `[{ clef: "treble" }]` | 53 |
 
+- **補充**（#53）：這張表在 `score-model` 的 `PART_PRESETS`（`src/presets.ts`），名稱在 `apps/web/src/strings.ts` 的 `presets`；樂句庫的「新增樂句」先用它。
 - program 的依據：吉他沿用 spike 的預設 25（`schema.ts` 的 `KIND_DEFAULTS`）；人聲沿用前身的 `VOICE_PROGRAM`（前身 `converter.py:506`）。
 - 新聲部的 `capo` 是 0。
 - 名稱用預設的名稱加編號：「吉他 1」「吉他 2」「貝斯 1」「鼓 1」……（補充：7 弦吉他與 6 弦吉他共用「吉他」這個名稱的編號，4 弦與 5 弦貝斯共用「貝斯」）。

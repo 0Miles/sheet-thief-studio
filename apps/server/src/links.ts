@@ -8,9 +8,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Score } from "./db/models";
-import { rateLimited } from "./http";
+import { notFound, rateLimited } from "./http";
 import { GUEST_TICKET_BY_IP, type RateLimiter } from "./rateLimit";
-import { membership, notFound } from "./scores";
+import { membership } from "./scores";
 import { isToken, newToken } from "./tokens";
 
 /** The page of a read-only link and the API behind it, with the token as the segment after `s/`. */

@@ -2,26 +2,23 @@
 // creating one, listing mine, opening one, and the collab ticket to edit it.
 import { collabTicket, createdScore, createScoreRequest, type Role, scoreDetails, scoreList } from "@studio/contracts";
 import { addPart, COMMON_TIME, createScore, insertBars, SCHEMA_VERSION } from "@studio/score-model";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Account, Score, ScoreMember } from "./db/models";
-import { invalidRequest } from "./http";
-
-/** Score ids are UUIDs; anything else is no score, without asking Postgres. */
-const SCORE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { invalidRequest, isUuid, notFound } from "./http";
 
 /** The score with this id, unless it does not exist or is deleted. */
 export async function liveScore(id: string): Promise<Score | null> {
-  if (!SCORE_ID.test(id)) return null;
+  if (!isUuid(id)) return null;
   return Score.findOne({ where: { id, deletedAt: null } });
 }
 
 /** The account's role in the score, with the score; null when either is missing, the score is deleted or the account is no member. */
 export async function membership(scoreId: string, accountId: string): Promise<{ score: Score; role: Role } | null> {
-  if (!SCORE_ID.test(scoreId)) return null;
+  if (!isUuid(scoreId)) return null;
   const member = await ScoreMember.findOne({
     where: { scoreId, accountId },
     // Not the Yjs state: no caller needs it, and it is the largest column of the table.
@@ -60,11 +57,6 @@ async function makeScore(collab: Collab, ownerId: string, title: string): Promis
     throw error;
   }
   return score.id;
-}
-
-/** Not a member, no such score and a deleted score all look the same (docs/spec/security.md, 8). */
-export function notFound(reply: FastifyReply) {
-  return reply.code(404).send({ code: "not_found" });
 }
 
 export function registerScores(app: FastifyInstance, { collab, tickets }: { collab: Collab; tickets: CollabTickets }): void {

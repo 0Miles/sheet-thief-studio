@@ -73,7 +73,8 @@ export type Selection =
 /** Standard guitar tuning, from the first string: E4 B3 G3 D3 A2 E2. */
 export const STANDARD_GUITAR = [64, 59, 55, 50, 45, 40];
 
-function newId(): string {
+/** A new id of a bar, a part or a beat (docs/spec/schema.md, section 1). */
+export function newId(): string {
   return nanoid(10);
 }
 

@@ -177,12 +177,16 @@ function onlyFieldsOf(kinds: FieldKinds, kind: PartKind) {
   return (value: object) => Object.entries(value).every(([field, item]) => item === undefined || (kinds[field]?.includes(kind) ?? true));
 }
 
+/** Whether the fields of a beat fit a part of `kind`: none that only other kinds have, and not slap and pop together. */
+function beatFits(kind: PartKind): (beat: { slap?: true; pop?: true }) => boolean {
+  const fieldsFit = onlyFieldsOf(BEAT_FIELD_KINDS, kind);
+  return (beat) => fieldsFit(beat) && !(beat.slap && beat.pop);
+}
+
 function kindRules(kind: PartKind) {
   const note = noteSchema.refine(onlyFieldsOf(NOTE_FIELD_KINDS, kind), "a field this kind of part does not have");
   return {
-    beat: beatFieldsSchema
-      .refine(onlyFieldsOf(BEAT_FIELD_KINDS, kind), "a field this kind of part does not have")
-      .refine((beat) => !(beat.slap && beat.pop), "slap and pop on the same beat"),
+    beat: beatFieldsSchema.refine(beatFits(kind), "a field this kind of part does not have, or slap and pop on the same beat"),
     note: kind === "fretted" ? note.refine((item) => item.fret !== undefined || item.dead === true, "neither a fret nor dead") : note,
   };
 }
@@ -294,20 +298,35 @@ export const partSchemas = {
   }),
 };
 
+/**
+ * Check beats against the kind of the part they belong to, one with `strings` strings: their own
+ * fields, and their notes (keys and fields). A phrase fragment's beats are checked the same way.
+ */
+export function checkBeats(
+  context: z.RefinementCtx,
+  kind: PartKind,
+  strings: number,
+  beats: readonly { notes: Record<string, unknown>; slap?: true; pop?: true }[],
+  path: (string | number)[],
+): void {
+  // The fields themselves passed the caller's schema: only whether they fit the kind is left.
+  const fits = beatFits(kind);
+  beats.forEach((beat, index) => {
+    if (!fits(beat)) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
+    for (const [key, note] of Object.entries(beat.notes)) {
+      if (readNote(kind, strings, key, note)) continue;
+      context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
+    }
+  });
+}
+
 /** A part, its content checked against its kind: voices of its staves, notes of its kind. */
 export const partSchema = z.discriminatedUnion("kind", [partSchemas.fretted, partSchemas.percussion, partSchemas.pitched]).superRefine((part, context) => {
-  const rules = kindSchemas[part.kind];
   for (const [barId, voices] of Object.entries(part.content)) {
     for (const [voice, beats] of Object.entries(voices)) {
       const path = ["content", barId, voice];
       if (!isVoiceKey(voice, part.staves.length)) context.addIssue({ code: "custom", message: "not a voice of this part", path });
-      beats.forEach((beat, index) => {
-        if (!rules.beat.safeParse(beat).success) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
-        for (const [key, note] of Object.entries(beat.notes)) {
-          if (readNote(part.kind, part.tuning.length, key, note)) continue;
-          context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
-        }
-      });
+      checkBeats(context, part.kind, part.tuning.length, beats, path);
     }
   }
 });
@@ -360,6 +379,11 @@ function utf8Length(value: string): number {
   return bytes;
 }
 
+/** How many bytes a value takes as JSON in UTF-8. */
+export function jsonBytes(value: unknown): number {
+  return utf8Length(JSON.stringify(value) ?? "");
+}
+
 /**
  * A score to import as a new one (section 13): a legal score within the limits on bars and
  * parts, of at most 5 MB once serialized.
@@ -369,7 +393,7 @@ export const importedScoreSchema = scoreSchema.superRefine((score, context) => {
   if (score.bars.length > MAX_BARS) issue(`more than ${MAX_BARS} bars`, ["bars"]);
   if (score.parts.length > MAX_PARTS) issue(`more than ${MAX_PARTS} parts`, ["parts"]);
   if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);
-  if (utf8Length(JSON.stringify(score)) > MAX_IMPORT_BYTES) issue(`more than ${MAX_IMPORT_BYTES} bytes of JSON`, []);
+  if (jsonBytes(score) > MAX_IMPORT_BYTES) issue(`more than ${MAX_IMPORT_BYTES} bytes of JSON`, []);
 });
 
 // The Yjs document ------------------------------------------------------------------------------
