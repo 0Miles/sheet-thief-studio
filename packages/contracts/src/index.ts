@@ -9,8 +9,8 @@ import {
   NEW_SCORE,
   PART_PRESET_IDS,
   PART_PRESETS,
-  type PartKind,
   partKindSchema,
+  type PartPresetId,
   timeSigSchema,
   withinPartLimits,
 } from "@studio/score-model";
@@ -85,16 +85,21 @@ export type Role = z.infer<typeof role>;
 export const partPresetId = z.enum(PART_PRESET_IDS);
 
 /**
- * Parts of a new score: a preset, how many parts of it, and for fretted ones a tuning of its
- * number of strings (the preset's when left out).
+ * Parts of a new score, a line of its dialog: a preset, how many parts of it, and for fretted ones
+ * a tuning of its number of strings (the preset's when left out).
  */
-export const newScoreParts = z
+export const partChoice = z
   .object({ preset: partPresetId, count: z.int().min(1).max(MAX_PARTS).default(1), tuning: z.array(z.int().min(0).max(127)).optional() })
   .refine(({ preset, tuning }) => tuning === undefined || (PART_PRESETS[preset].kind === "fretted" && tuning.length === PART_PRESETS[preset].tuning.length), {
     message: "a tuning of the preset's number of strings, for fretted parts only",
     path: ["tuning"],
   });
-export type NewScoreParts = z.input<typeof newScoreParts>;
+export type PartChoice = z.input<typeof partChoice>;
+
+/** Every part these choices make, in order: each choice as many times as its count (once when left out). */
+export function eachPart(choices: readonly PartChoice[]): { preset: PartPresetId; tuning?: number[] }[] {
+  return choices.flatMap(({ preset, count = 1, tuning }) => Array.from({ length: Math.max(0, count) }, () => (tuning === undefined ? { preset } : { preset, tuning })));
+}
 
 /**
  * A new score (`POST /api/scores`), as the dialog chooses it (docs/spec/commands.md, section 10):
@@ -104,11 +109,11 @@ export type NewScoreParts = z.input<typeof newScoreParts>;
 export const createScoreRequest = z.object({
   title: z.string().trim().min(1).max(MAX_TITLE),
   parts: z
-    .array(newScoreParts)
+    .array(partChoice)
     .min(1)
     .max(MAX_PARTS)
     .refine(
-      (parts) => withinPartLimits(parts.flatMap(({ preset, count }) => Array<PartKind>(count).fill(PART_PRESETS[preset].kind))),
+      (parts) => withinPartLimits(eachPart(parts).map(({ preset }) => PART_PRESETS[preset].kind)),
       `at most ${MAX_PARTS} parts, ${MAX_NON_PERCUSSION_PARTS} of them other than drums`,
     )
     .default(() => [{ preset: "guitar6" as const, count: 1 }]),

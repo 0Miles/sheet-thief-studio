@@ -43,9 +43,8 @@ export const PRESET_BASE_NAMES: Record<PartPresetId, string> = {
 export function partNames(presets: readonly PartPresetId[], taken: Iterable<string> = []): string[] {
   const highest = new Map<string, number>();
   const count = (name: string) => {
-    const match = /^(.+) ([1-9][0-9]*)$/.exec(name);
-    if (match === null) return;
-    const [, base, number] = match as unknown as [string, string, string];
+    const { base, number } = /^(?<base>.+) (?<number>[1-9][0-9]*)$/.exec(name)?.groups ?? {};
+    if (base === undefined || number === undefined) return;
     highest.set(base, Math.max(highest.get(base) ?? 0, Number(number)));
   };
   for (const name of taken) count(name);

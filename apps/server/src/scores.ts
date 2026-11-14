@@ -1,7 +1,7 @@
 // Scores and their members (docs/spec/routes.md, 3.3; docs/spec/collab.md, sections 2 and 3):
 // creating one, listing mine, opening one, and the collab ticket to edit it.
-import { collabTicket, createdScore, createScoreRequest, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
-import { addPart, barsOf, createScore, insertBars, PART_PRESETS, type PartPresetId, partNames, SCHEMA_VERSION } from "@studio/score-model";
+import { collabTicket, createdScore, createScoreRequest, eachPart, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
+import { addPart, barsOf, createScore, insertBars, PART_PRESETS, partNames, SCHEMA_VERSION } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
@@ -28,19 +28,18 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
 }
 
 /**
- * What a new score starts with (docs/spec/commands.md, section 10), written by the server through
- * the commands of score-model: the parts chosen, each as its preset with the tuning chosen and
- * numbered by the name of its preset, then the bars, of the time signature chosen, the first at
- * the tempo chosen.
+ * What a new score starts with (docs/spec/commands.md, section 10): the parts chosen, each as its
+ * preset with the tuning chosen and numbered by the name of its preset, then the bars, of the time
+ * signature chosen, the first at the tempo chosen. Written by the server through the commands of
+ * score-model, but for the tempo: the command that sets one comes with the bar properties (#22).
  */
 export function startContent(doc: Y.Doc, { title, parts, timeSig, tempo, bars }: NewScore): void {
   createScore(doc, title);
-  const presets = parts.flatMap(({ preset, count }) => Array<PartPresetId>(count).fill(preset));
-  const names = partNames(presets);
-  const tunings = parts.flatMap(({ count, tuning }) => Array<number[] | undefined>(count).fill(tuning));
-  presets.forEach((preset, index) => {
+  const each = eachPart(parts);
+  const names = partNames(each.map(({ preset }) => preset));
+  each.forEach(({ preset, tuning }, index) => {
     const { kind, tuning: standard, staves, program } = PART_PRESETS[preset];
-    addPart(doc, { name: names[index] as string, kind, tuning: [...(tunings[index] ?? standard)], staves: staves.map((staff) => ({ ...staff })), program });
+    addPart(doc, { name: names[index] as string, kind, tuning: [...(tuning ?? standard)], staves: staves.map((staff) => ({ ...staff })), program });
   });
   const [first] = insertBars(doc, { after: null, count: bars, timeSig });
   // Written even when it is 120, which an unwritten tempo reads as: the first bar says what was chosen.

@@ -3,14 +3,14 @@
 // each as many times as wanted, fretted ones with a tuning), its time signature and its tempo.
 // The server makes the content from what is chosen here; once made, the score opens.
 import { AppButton, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
-import { createdScore, type NewScoreParts } from "@studio/contracts";
+import { createdScore, eachPart, type PartChoice } from "@studio/contracts";
 import {
+  barSchema,
   MAX_PARTS,
   MAX_TITLE,
   NEW_SCORE,
   PART_PRESET_IDS,
   PART_PRESETS,
-  type PartKind,
   type PartPresetId,
   pitchName,
   type TimeSignature,
@@ -32,6 +32,10 @@ const emit = defineEmits<{ close: [] }>();
 const text = strings.newScore;
 const TUNINGS = [...TUNING_OPTIONS, "custom"] as const;
 const DENOMINATORS = [...timeSigSchema.shape.denominator.values];
+/** The ranges of the schema (docs/spec/schema.md, section 3), for the fields of numbers. */
+const range = (schema: { minValue: number | null; maxValue: number | null }) => ({ min: schema.minValue ?? undefined, max: schema.maxValue ?? undefined });
+const BEATS = range(timeSigSchema.shape.numerator);
+const TEMPO = range(barSchema.shape.tempo.unwrap());
 /** Every MIDI pitch a string of a custom tuning can be set to. */
 const PITCHES = Array.from({ length: 128 }, (_, pitch) => pitch);
 
@@ -92,13 +96,13 @@ function tuningOf(row: PartRow): number[] | undefined {
 }
 
 /** The parts the score is made with, a line of the dialog each. */
-const parts = computed<NewScoreParts[]>(() =>
+const parts = computed<PartChoice[]>(() =>
   rows.value.map((row) => {
     const tuning = tuningOf(row);
     return tuning === undefined ? { preset: row.preset, count: row.count } : { preset: row.preset, count: row.count, tuning };
   }),
 );
-const tooMany = computed(() => !withinPartLimits(parts.value.flatMap(({ preset, count = 1 }) => Array<PartKind>(Math.max(0, count)).fill(PART_PRESETS[preset].kind))));
+const tooMany = computed(() => !withinPartLimits(eachPart(parts.value).map(({ preset }) => PART_PRESETS[preset].kind)));
 
 async function create(): Promise<void> {
   error.value = "";
@@ -161,7 +165,7 @@ async function create(): Promise<void> {
         <Cluster gap="2" align="end">
           <label class="new-score__field">
             <span>{{ text.beats }}</span>
-            <input v-model.number="numerator" class="new-score__number" type="number" name="numerator" min="1" max="32" step="1" required />
+            <input v-model.number="numerator" class="new-score__number" type="number" name="numerator" :min="BEATS.min" :max="BEATS.max" step="1" required />
           </label>
           <label class="new-score__field">
             <span>{{ text.beatUnit }}</span>
@@ -171,7 +175,7 @@ async function create(): Promise<void> {
           </label>
           <label class="new-score__field">
             <span>{{ text.tempo }}</span>
-            <input v-model.number="tempo" class="new-score__number" type="number" name="tempo" min="20" max="400" step="1" required />
+            <input v-model.number="tempo" class="new-score__number" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="1" required />
           </label>
         </Cluster>
         <p v-if="error" class="new-score__error" role="alert">{{ error }}</p>
