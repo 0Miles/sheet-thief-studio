@@ -154,6 +154,14 @@ test.each(PLATFORMS)("on %s, a fretted part has one voice: Alt+2 does not move t
   expect(press("1", mods.alt)).toBe(true);
   expect(hints).toEqual(["oneVoice"]);
   expect(told).toEqual([]);
+  // Alt+2 does nothing there, the selection included; Alt+1, a move to where the cursor is, ends it.
+  press("ArrowRight", { shiftKey: true });
+  const selected = session.selection;
+  expect(selected).toMatchObject({ kind: "beats" });
+  press("2", mods.alt);
+  expect(session.selection).toEqual(selected);
+  press("1", mods.alt);
+  expect(session.selection).toBeNull();
 });
 
 test("on a Mac, Ctrl with the arrows is not a key (macOS takes it); on Windows and Linux, Option's Alt with the arrows is not either", () => {

@@ -219,9 +219,20 @@ export function isVoiceKey(key: string, staves: number): boolean {
   return voiceKeys(staves).includes(key);
 }
 
+/** The key of a voice: its staff, then the voice on that staff, both from 0 ("1:0"). */
+export function voiceKey(staff: number, voiceIndex: number): string {
+  return `${staff}:${voiceIndex}`;
+}
+
+/** The staff of a voice key and the index of the voice on that staff. */
+export function staffAndVoiceOf(key: string): [staff: number, voiceIndex: number] {
+  const [staff = 0, voiceIndex = 0] = key.split(":").map(Number);
+  return [staff, voiceIndex];
+}
+
 /** Every voice of a part with `staves` staves, in order: "0:0", "0:1", "1:0", "1:1". */
 export function voiceKeys(staves: number): string[] {
-  return Array.from({ length: staves }, (_, staff) => [`${staff}:0`, `${staff}:1`]).flat();
+  return Array.from({ length: staves }, (_, staff) => [voiceKey(staff, 0), voiceKey(staff, 1)]).flat();
 }
 
 // Parts -----------------------------------------------------------------------------------------

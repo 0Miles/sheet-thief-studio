@@ -207,7 +207,7 @@ test("4 then 5 is never 45: past the highest fret, the second digit is an entry 
 });
 
 test("another member's change between the two digits does not split the fret's undo step; a change of this member's own between them ends the wait", () => {
-  const { doc, press, beats, partId, barIds } = sessionOn();
+  const { doc, session, press, beats, partId, barIds } = sessionOn();
   const { other, send } = otherMember(doc);
   press("1");
   setFret(other, cursorAt(other, partId, barIds[1]!, 6), 9);
@@ -216,6 +216,13 @@ test("another member's change between the two digits does not split the fret's u
   press("z", 1000, { ctrlKey: true });
   expect(beats()).toEqual([]);
   expect(beats(1).map((beat) => beat.notes.s6)).toEqual([{ fret: 9 }]);
+
+  // A click between them ends the wait as well, even on the same beat and string.
+  press("1");
+  session.moveTo(session.cursor);
+  press("2", 100);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 2 }]);
+  press("z", 1000, { ctrlKey: true });
 
   press("1");
   setTitle(doc, "改名");

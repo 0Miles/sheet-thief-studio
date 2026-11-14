@@ -104,13 +104,13 @@ test("at the cursor, a triplet goes on a beat without a tuplet, and any tuplet c
   ]);
 });
 
-test("over a selection, a triplet goes on every beat without a tuplet unless all of them have one, then comes off all of them", () => {
+test("over a selection, every beat becomes a triplet unless all of them have a tuplet, then every tuplet comes off", () => {
   const { doc, beats, on, range } = guitar([{ value: 8 }, { value: 8, tuplet: { actual: 5, normal: 4 } }, { value: 8 }]);
   changeBeatsOnSelection(doc, range(0, 2), on(0), tripletToggle);
-  // A beat with a tuplet of its own keeps it.
+  // All of them, the beat with a tuplet of its own among them.
   expect(durations(beats())).toEqual([
     [8, 0, triplet],
-    [8, 0, { actual: 5, normal: 4 }],
+    [8, 0, triplet],
     [8, 0, triplet],
   ]);
   changeBeatsOnSelection(doc, range(0, 2), on(0), tripletToggle);

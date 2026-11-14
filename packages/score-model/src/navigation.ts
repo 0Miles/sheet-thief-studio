@@ -12,10 +12,12 @@ import {
   type PartKind,
   partKindOf,
   partsOf,
+  staffAndVoiceOf,
   staffCountOf,
   stringCountOf,
   timeSigSchema,
   voiceIn,
+  voiceKey,
   type YBeat,
   type YVoice,
 } from "./schema";
@@ -173,12 +175,6 @@ export function voicesOffered(kind: PartKind): 1 | 2 {
   return kind === "fretted" ? 1 : 2;
 }
 
-/** The staff of a voice ("staff:voice") and the voice on that staff. */
-function staffAndVoice(voice: string): [staff: number, number: number] {
-  const [staff = 0, number = 0] = voice.split(":").map(Number);
-  return [staff, number];
-}
-
 /** How many ticks a beat lasts; none when its length cannot be read, as reading leaves it out. */
 function lengthOf(beat: YBeat): number {
   const duration = durationOf(beat);
@@ -225,9 +221,9 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (par
   const cursor = settleCursor(doc, from);
   if (cursor === null) return from;
   const parts = partsOf(doc);
-  const [staff, number] = staffAndVoice(cursor.voice);
+  const [staff, voiceIndex] = staffAndVoiceOf(cursor.voice);
   const tick = tickAt(doc, cursor);
-  if (staff + step >= 0 && staff + step < staffCountOf(parts.get(cursor.partId)!)) return landAt(doc, { ...cursor, voice: `${staff + step}:${number}` }, tick);
+  if (staff + step >= 0 && staff + step < staffCountOf(parts.get(cursor.partId)!)) return landAt(doc, { ...cursor, voice: voiceKey(staff + step, voiceIndex) }, tick);
   // Parts whose kind cannot be read are not drawn: the cursor goes past them.
   const order = ordered(parts).filter((id) => partKindOf(parts.get(id)) !== undefined);
   const index = order.indexOf(cursor.partId);
@@ -235,23 +231,23 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (par
   if (partId === undefined) return cursor;
   const part = parts.get(partId)!;
   const kind = partKindOf(part)!;
-  const voice = `${step === 1 ? 0 : staffCountOf(part) - 1}:${Math.min(number, voicesOffered(kind) - 1)}`;
+  const voice = voiceKey(step === 1 ? 0 : staffCountOf(part) - 1, Math.min(voiceIndex, voicesOffered(kind) - 1));
   const line = keptOn(kind, stringCountOf(part), lineIn(partId) ?? startLine(kind));
   return landAt(doc, { ...cursor, partId, voice, line }, tick);
 }
 
 /**
- * The cursor in the first (`number` 0, Alt+1) or second voice (1, Alt+2) of its staff, in the
+ * The cursor in the first (`voiceIndex` 0, Alt+1) or second voice (1, Alt+2) of its staff, in the
  * same bar, on the beat that holds the tick it stood at, else where End goes. It stays where it is
  * in that voice already, and on a fretted part, which offers no second voice.
  */
-export function moveToVoice(doc: Y.Doc, from: Cursor, number: 0 | 1): Cursor {
+export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor {
   const cursor = settleCursor(doc, from);
   const kind = partKindOf(partsOf(doc).get(from.partId));
   if (cursor === null || kind === undefined) return from;
-  const [staff, current] = staffAndVoice(cursor.voice);
-  if (number === current || number >= voicesOffered(kind)) return cursor;
-  return landAt(doc, { ...cursor, voice: `${staff}:${number}` }, tickAt(doc, cursor));
+  const [staff, current] = staffAndVoiceOf(cursor.voice);
+  if (voiceIndex === current || voiceIndex >= voicesOffered(kind)) return cursor;
+  return landAt(doc, { ...cursor, voice: voiceKey(staff, voiceIndex) }, tickAt(doc, cursor));
 }
 
 /**

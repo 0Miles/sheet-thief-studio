@@ -629,7 +629,7 @@ export interface SeenBeat {
 }
 
 /** What a `BeatChange` writes on a beat: a note value, dots, a tuplet (null takes it away), or its notes taken away. */
-export interface BeatEdit {
+export interface BeatWrite {
   value?: NoteValue;
   dots?: 0 | 1 | 2;
   tuplet?: Tuplet | null;
@@ -643,8 +643,11 @@ export interface BeatEdit {
  */
 export interface BeatChange<D> {
   decide(seen: readonly SeenBeat[]): D;
-  /** What to write on a beat to make it `decided`; null to leave it as it is, which writes nothing. */
-  turn(beat: SeenBeat, decided: D): BeatEdit | null;
+  /**
+   * What to write on a beat to make it `decided`; null when there is nothing to write (unlike
+   * `NoteToggle.turn`, whose null removes a note: a beat is never removed here).
+   */
+  turn(beat: SeenBeat, decided: D): BeatWrite | null;
 }
 
 /** `+` (`step` 1) and `-` (-1): each beat one note value shorter or longer, keeping its dots; a beat at either end of the values stays. */
@@ -667,14 +670,14 @@ export const dotCycle: BeatChange<0 | 1 | 2> = {
 const TRIPLET: Tuplet = { actual: 3, normal: 2 };
 
 /**
- * `Shift+T`: a triplet on every beat without a tuplet, unless every beat seen has one; then every
- * tuplet comes off. A beat with a tuplet of its own keeps it while triplets go on.
+ * `Shift+T`: every tuplet comes off when every beat seen has one (on one beat: any tuplet);
+ * otherwise every beat becomes a triplet, a beat with another tuplet among them.
  */
 export const tripletToggle: BeatChange<boolean> = {
   decide: (seen) => seen.some((beat) => beat.duration.tuplet === undefined),
-  turn({ duration }, on) {
-    if ((duration.tuplet !== undefined) === on) return null;
-    return { tuplet: on ? { ...TRIPLET } : null };
+  turn({ duration: { tuplet } }, on) {
+    if (!on) return tuplet === undefined ? null : { tuplet: null };
+    return tuplet?.actual === TRIPLET.actual && tuplet.normal === TRIPLET.normal ? null : { tuplet: { ...TRIPLET } };
   },
 };
 
@@ -692,25 +695,25 @@ function seenBeat(reader: PartReader, beat: YBeat | undefined): SeenBeat | undef
 }
 
 /** Change beats as decided, in one transaction; none when nothing changes. */
-function changeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: BeatChange<D>): void {
+function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: BeatChange<D>): void {
   const seen = beats.flatMap((beat) => {
-    const view = seenBeat(reader, beat);
-    return view ? [{ beat, view }] : [];
+    const read = seenBeat(reader, beat);
+    return read ? [{ beat, read }] : [];
   });
   if (seen.length === 0) return;
-  const decided = change.decide(seen.map(({ view }) => view));
-  const edits = seen.flatMap(({ beat, view }) => {
-    const edit = change.turn(view, decided);
-    return edit === null ? [] : [{ beat, edit }];
+  const decided = change.decide(seen.map(({ read }) => read));
+  const writes = seen.flatMap(({ beat, read }) => {
+    const write = change.turn(read, decided);
+    return write === null ? [] : [{ beat, write }];
   });
-  if (edits.length === 0) return;
+  if (writes.length === 0) return;
   doc.transact(() => {
-    for (const { beat, edit } of edits) {
-      if (edit.value !== undefined) beat.set("value", edit.value);
-      if (edit.dots !== undefined) beat.set("dots", edit.dots);
-      if (edit.tuplet === null) beat.delete("tuplet");
-      else if (edit.tuplet !== undefined) beat.set("tuplet", edit.tuplet);
-      if (edit.clear) notesOf(beat)?.clear();
+    for (const { beat, write } of writes) {
+      if (write.value !== undefined) beat.set("value", write.value);
+      if (write.dots !== undefined) beat.set("dots", write.dots);
+      if (write.tuplet === null) beat.delete("tuplet");
+      else if (write.tuplet !== undefined) beat.set("tuplet", write.tuplet);
+      if (write.clear) notesOf(beat)?.clear();
     }
   }, LOCAL);
 }
@@ -719,7 +722,7 @@ function changeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: 
 export function changeBeatAt<D>(doc: Y.Doc, cursor: Cursor, change: BeatChange<D>): Cursor {
   const reader = readerOf(doc, cursor.partId);
   const beat = beatAt(doc, cursor);
-  if (reader !== undefined && beat !== undefined) changeBeats(doc, [beat], reader, change);
+  if (reader !== undefined && beat !== undefined) writeBeats(doc, [beat], reader, change);
   return cursor;
 }
 
@@ -730,7 +733,7 @@ export function changeBeatAt<D>(doc: Y.Doc, cursor: Cursor, change: BeatChange<D
  */
 export function changeBeatsOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: Cursor, change: BeatChange<D>): Cursor {
   const reader = readerOf(doc, selection.partId);
-  if (reader !== undefined) changeBeats(doc, selectedBeatsOf(doc, reader, selection).map(({ beat }) => beat), reader, change);
+  if (reader !== undefined) writeBeats(doc, selectedBeatsOf(doc, reader, selection).map(({ beat }) => beat), reader, change);
   return cursor;
 }
 

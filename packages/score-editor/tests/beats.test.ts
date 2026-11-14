@@ -26,6 +26,24 @@ test.each(PLATFORMS)("on %s, . cycles the dots of the cursor's beat, and each ch
   expect(beats("guitar", 0)[0]!.dots).toBe(0);
 });
 
+test.each(PLATFORMS)("on %s, . dots the cursor's beat on the second of two staves, on the drums, and in the last bar", (platform) => {
+  const { press, beats, goTo, mods } = band(platform);
+  goTo("keys", 0, "1:0");
+  press(".");
+  expect(beats("keys", 0, "1:0").map((beat) => beat.dots)).toEqual([1]);
+  goTo("drums", 2);
+  press(".");
+  goTo("keys", 2, "0:0", 1);
+  press(".");
+  press(".");
+  expect(beats("drums", 2).map((beat) => beat.dots)).toEqual([1]);
+  expect(beats("keys", 2).map((beat) => beat.dots)).toEqual([0, 2]);
+  // The upper staff of the first bar is as it was.
+  expect(beats("keys", 0).map((beat) => beat.dots)).toEqual([0, 0, 0, 0]);
+  press("z", mods.mod);
+  expect(beats("keys", 2).map((beat) => beat.dots)).toEqual([0, 1]);
+});
+
 test.each(PLATFORMS)("on %s, Shift+T puts a triplet on the cursor's beat and takes it off again, on one staff of two and on the drums in the last bar", (platform) => {
   const { press, beats, goTo, mods } = band(platform);
   goTo("keys", 0, "1:0");

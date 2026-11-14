@@ -275,16 +275,21 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       (at) => changeBeatAt(doc, at, beatChange),
     );
 
-  /** Alt+1 and Alt+2: the voice of the staff; a fretted part offers only its first, and Alt+2 there tells the member so. */
-  const toVoice = (number: 0 | 1): KeyCommand =>
-    move((at) => {
-      const kind = partKindOf(partsOf(doc).get(at.partId));
-      if (kind !== undefined && number >= voicesOffered(kind)) {
+  /**
+   * Alt+1 and Alt+2: the voice of the staff. A fretted part offers only its first: Alt+2 there
+   * does nothing, the selection stays, and the member is told so.
+   */
+  const toVoice = (voiceIndex: 0 | 1): KeyCommand => {
+    const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
+    if (kind === undefined || kind === null || voiceIndex < voicesOffered(kind)) return move((at) => moveToVoice(doc, at, voiceIndex));
+    return {
+      changes: false,
+      run: (at) => {
         for (const listener of hintListeners) listener("oneVoice");
-        return at;
-      }
-      return moveToVoice(doc, at, number);
-    });
+        return { cursor: at, selection };
+      },
+    };
+  };
 
   /** The line the cursor had last in a part. */
   const lineIn = (partId: string): number | undefined => lines.get(partId);
@@ -416,6 +421,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       return true;
     },
     moveTo(next) {
+      // A click is not the second digit of a fret.
+      lastDigit = null;
       putAt({ cursor: next, selection: null });
     },
     onRefused(listener) {
