@@ -300,8 +300,8 @@ export function setNote(doc: Y.Doc, cursor: Cursor, key: string, note: NoteJSON 
 
 /**
  * The techniques a note has or has not (docs/spec/commands.md, 5.4): a key turns each on and off.
- * Tie and legato are on or off too, but tie takes the fret of the note before (`toggleAt` with a
- * toggle of its own).
+ * Tie is on or off too but is not one of them: it also takes the fret of the note before, so it
+ * is `toggleAt` with a toggle of its own.
  */
 export const ON_OFF_TECHNIQUES = ["dead", "ghost", "accent", "staccato", "vibrato", "palmMute", "letRing", "tap"] as const;
 export type OnOffTechnique = (typeof ON_OFF_TECHNIQUES)[number];
