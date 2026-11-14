@@ -284,7 +284,7 @@ export const partSchema = z.discriminatedUnion("kind", [partSchemas.fretted, par
       beats.forEach((beat, index) => {
         if (!rules.beat.safeParse(beat).success) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
         for (const [key, note] of Object.entries(beat.notes)) {
-          if (isNoteKey(part.kind, part.tuning.length, key) && rules.note.safeParse(note).success) continue;
+          if (readNote(part.kind, part.tuning.length, key, note)) continue;
           context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
         }
       });

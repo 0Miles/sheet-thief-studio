@@ -5,24 +5,22 @@ import * as Y from "yjs";
 
 import {
   addPart,
-  barsOf,
   createScore,
   type Cursor,
   cursorAt,
   docToJson,
   insertBars,
-  LOCAL,
   ON_OFF_TECHNIQUES,
   onOffToggle,
   type OnOffTechnique,
-  partsOf,
   setFret,
   setNote,
   type Selection,
   toggleAt,
   toggleOnSelection,
+  voiceIn,
 } from "../src/index";
-import { appendBeat } from "./support";
+import { appendBeat, transactionsOf, undoOf } from "./support";
 
 const toggleNote = (doc: Y.Doc, cursor: Cursor, key: string, technique: OnOffTechnique) => toggleAt(doc, cursor, key, onOffToggle(technique));
 const toggleSelected = (doc: Y.Doc, selection: Selection, cursor: Cursor, technique: OnOffTechnique) => toggleOnSelection(doc, selection, cursor, onOffToggle(technique));
@@ -38,9 +36,8 @@ function guitar() {
   return { doc, barId: barId!, partId, cursor, notes };
 }
 
-function undoOf(doc: Y.Doc): Y.UndoManager {
-  return new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
-}
+/** The notes of the first beat of the cursor's voice as stored, fields reading leaves out among them. */
+const storedNotes = (doc: Y.Doc, cursor: Cursor) => voiceIn(doc, cursor)!.get(0).get("notes") as Y.Map<unknown>;
 
 test.each(ON_OFF_TECHNIQUES)("%s turns on and off on the note of the cursor's string, one undo step each, keeping its fret", (technique) => {
   const { doc, cursor, notes } = guitar();
@@ -60,18 +57,16 @@ test("a toggle keeps what else the note holds, fields this version does not know
   setNote(doc, cursor, "s3", { fret: 5, ghost: true, futureField: 1 } as never);
   toggleNote(doc, cursor, "s3", "accent");
   toggleNote(doc, cursor, "s3", "ghost");
-  const stored = (partsOf(doc).get(cursor.partId)!.get("content") as Y.Map<Y.Map<Y.Array<Y.Map<unknown>>>>).get(cursor.barId)!.get("0:0")!.get(0).get("notes") as Y.Map<unknown>;
-  expect(stored.get("s3")).toEqual({ fret: 5, accent: true, futureField: 1 });
+  expect(storedNotes(doc, cursor).get("s3")).toEqual({ fret: 5, accent: true, futureField: 1 });
   expect(notes()).toEqual([{ s3: { fret: 5, accent: true } }]);
 });
 
 test("on a string with no note, dead makes a dead note without a fret, and again takes it away; the other techniques do nothing", () => {
   const { doc, cursor, notes } = guitar();
   const empty = { ...cursor, line: 1 };
-  const counted = { transactions: 0 };
-  doc.on("afterTransaction", () => (counted.transactions += 1));
+  const transactions = transactionsOf(doc);
   for (const technique of ON_OFF_TECHNIQUES.filter((each) => each !== "dead")) toggleNote(doc, empty, "s1", technique);
-  expect(counted.transactions).toBe(0);
+  expect(transactions.count).toBe(0);
   expect(notes()).toEqual([{ s3: { fret: 5 } }]);
   toggleNote(doc, empty, "s1", "dead");
   expect(notes()).toEqual([{ s3: { fret: 5 }, s1: { dead: true } }]);
@@ -156,13 +151,12 @@ test("over a selection, dead makes no notes on empty strings, and off takes away
 
 test("a selection of rests, or one whose beats are gone, changes nothing", () => {
   const { doc, cursor, range, ids, notes } = selected();
-  const counted = { transactions: 0 };
-  doc.on("afterTransaction", () => (counted.transactions += 1));
+  const transactions = transactionsOf(doc);
   toggleSelected(doc, { ...range, anchorBeatId: "gone" }, cursor, "accent");
   const rest = appendBeat(doc, { ...cursor, beatId: ids[2]! });
-  counted.transactions = 0;
+  transactions.count = 0;
   toggleSelected(doc, { ...range, anchorBeatId: rest.beatId!, focusBeatId: rest.beatId! }, cursor, "accent");
-  expect(counted.transactions).toBe(0);
+  expect(transactions.count).toBe(0);
   expect(notes().flatMap((beat) => Object.values(beat)).some((note) => note.accent)).toBe(false);
 });
 
@@ -172,8 +166,7 @@ test("over a selection, notes reading leaves out neither count nor change: off i
   // A fret past the last one, and a drum piece on a guitar: neither can be read, so neither is seen.
   setNote(doc, cursor, "s4", { fret: 99 });
   setNote(doc, cursor, "p38", {});
-  const beat = (partsOf(doc).get(cursor.partId)!.get("content") as Y.Map<Y.Map<Y.Array<Y.Map<unknown>>>>).get(cursor.barId)!.get("0:0")!.get(0);
-  const stored = beat.get("notes") as Y.Map<unknown>;
+  const stored = storedNotes(doc, cursor);
   toggleSelected(doc, range, cursor, "ghost");
   expect(notes().slice(0, 2)).toEqual([{ s3: { fret: 5 } }, { s1: { fret: 0 }, s2: { fret: 1 } }]);
   expect([stored.get("s4"), stored.get("p38")]).toEqual([{ fret: 99 }, {}]);

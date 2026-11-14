@@ -1,7 +1,7 @@
 // The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
-import type { OnOffTechnique, PartKind } from "@studio/score-model";
+import { ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
@@ -138,9 +138,10 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     return { effect: "fret", value: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
   // Section 3: Shift and a letter turns a technique on and off, on a Mac as well.
-  ...Object.entries(TECHNIQUE_KEYS).map(
-    ([technique, code]): SessionBinding => ({ effect: technique as OnOffTechnique, context: "fretted", keys: [`Shift+${code}`], keymap: both(`Shift+${code}`) }),
-  ),
+  ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
+    const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
+    return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
+  }),
 ];
 
 /**

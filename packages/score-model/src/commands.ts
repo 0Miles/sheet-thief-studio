@@ -384,7 +384,8 @@ export function toggleOnSelection(doc: Y.Doc, selection: Selection, cursor: Curs
   if (notes.length === 0) return cursor;
   const on = !notes.every(({ read }) => toggle.has(read));
   doc.transact(() => {
-    for (const { map, key, stored } of notes) {
+    // Only the notes that are not so already are written: the change and its undo step hold just those.
+    for (const { map, key, stored } of notes.filter(({ read }) => toggle.has(read) !== on)) {
       const next = toggle.turn(stored, on);
       if (next === null) map.delete(key);
       else map.set(key, next);
