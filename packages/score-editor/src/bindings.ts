@@ -34,6 +34,7 @@ export type SessionEffect =
   | "undo"
   | "redo"
   | "fret"
+  | "tie"
   | OnOffTechnique;
 
 /**
@@ -163,7 +164,10 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     const keys = [`Digit${digit}`, `Numpad${digit}`];
     return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
-  // Section 3: Shift and a letter turns a technique on and off, on a Mac as well.
+  // Section 3: Shift and a letter turns a technique on and off, on a Mac as well. Tie also takes
+  // the fret of the note before; on staves it waits, as the other techniques do, for their keys
+  // to name the notes drawn on a line (keymap.md, section 3).
+  { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };

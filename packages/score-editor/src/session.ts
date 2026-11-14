@@ -28,7 +28,7 @@ import {
   moveToBarStart,
   moveToVoice,
   noteKeyAt,
-  type OnOffTechnique,
+  type NoteToggle,
   partKindOf,
   partsOf,
   type Selection,
@@ -37,6 +37,7 @@ import {
   settleCursor,
   settleSelection,
   techniqueToggle,
+  tieToggle,
   toggleAt,
   toggleOnSelection,
   tripletToggle,
@@ -292,11 +293,10 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
 
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
-   * else on the note of the cursor's line (`noteKeyAt`), where dead may make a note, and a beat
-   * for it in the append slot.
+   * else on the note of the cursor's line (`noteKeyAt`), where dead and tie may make a note, and
+   * a beat for it in the append slot.
    */
-  function toggleTechnique(technique: OnOffTechnique): KeyCommand {
-    const toggle = techniqueToggle(technique);
+  function toggleTechnique<D>(toggle: NoteToggle<D>): KeyCommand {
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
       (at) => {
@@ -370,9 +370,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         });
       case "fret":
         return change((at) => typeDigit(binding.fret, at, previous));
+      case "tie":
+        return toggleTechnique(tieToggle);
       default:
         // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
-        return toggleTechnique(effect);
+        return toggleTechnique(techniqueToggle(effect));
     }
   }
 

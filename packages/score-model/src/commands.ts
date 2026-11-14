@@ -370,6 +370,31 @@ export const deadToggle: NoteToggle<boolean> = {
   },
 };
 
+/**
+ * Tie (docs/spec/commands.md, 5.4): on, unless every note seen has it already; on an empty line
+ * it is on too, to make the note there. Adding it takes the fret of the note before on the same
+ * string, the command's own doing, not a repair; with no fret before, the note keeps its own and
+ * is a dangling tie (docs/spec/flags.md). On an empty line it makes the note before's fret there,
+ * or on a staff (a pitched part's key is its pitch) the note before's pitch as it is spelled; with
+ * no such note before, nothing. Off takes the tie away and keeps the fret.
+ */
+export const tieToggle: NoteToggle<boolean> = {
+  decide: (seen) => seen.length === 0 || !seen.every((note) => note.tie === true),
+  turn(stored, on, { key, before }) {
+    if (!on) {
+      if (stored?.tie !== true) return stored ?? null;
+      const note = { ...stored };
+      delete note.tie;
+      return note;
+    }
+    // A note tied already, to the fret before or with none to take, is left as it is.
+    if (before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
+    if (stored !== undefined) return stored.tie === true ? stored : { ...stored, tie: true };
+    if (before === undefined || !key.startsWith("n")) return null;
+    return before.spell === undefined ? { tie: true } : { spell: before.spell, tie: true };
+  },
+};
+
 /** The toggle of each technique a key turns on and off. */
 export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> {
   return technique === "dead" ? deadToggle : onOffToggle(technique);

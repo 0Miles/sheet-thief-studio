@@ -107,3 +107,43 @@ test.each(["percussion", "pitched"] as const)("on a %s part, the fretted techniq
   const { press } = sessionOn(kind);
   for (const [letter] of TECHNIQUES) expect(press(letter, 1000, shift)).toBe(false);
 });
+
+test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to the one before, taking its fret, and again unties it, one undo step each", () => {
+  for (const platform of ["other", "mac"] as const) {
+    const undo = platform === "mac" ? { metaKey: true } : { ctrlKey: true };
+    const { press, beats } = sessionOn("fretted", 2, platform);
+    press("5");
+    press("ArrowRight");
+    press("7");
+    expect(press("l", 1000, shift)).toBe(true);
+    expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 5, tie: true }]);
+    press("l", 1000, shift);
+    expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 5 }]);
+    press("z", 1000, undo);
+    press("z", 1000, undo);
+    expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }, { fret: 7 }]);
+  }
+});
+
+test("Shift+L on a string with no note makes the note before's fret there, tied; in the append slot on a new beat", () => {
+  const { press, beats, cursor } = sessionOn();
+  press("5");
+  press("ArrowRight");
+  press("l", 1000, shift);
+  expect(beats().map((beat) => beat.notes)).toEqual([{ s6: { fret: 5 } }, { s6: { fret: 5, tie: true } }]);
+  expect(cursor()).toMatchObject({ beatId: beats()[1]!.id, at: "on" });
+});
+
+test("with a selection, Shift+L ties every note of it, and the selection stays", () => {
+  const { press, beats, session } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  press("ArrowLeft");
+  press("ArrowRight", 1000, shift);
+  const selection = session.selection;
+  expect(selection).toMatchObject({ kind: "beats" });
+  press("l", 1000, shift);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 1, tie: true }, { fret: 1, tie: true }]);
+  expect(session.selection).toEqual(selection);
+});
