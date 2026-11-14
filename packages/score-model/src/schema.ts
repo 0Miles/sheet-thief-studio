@@ -294,20 +294,35 @@ export const partSchemas = {
   }),
 };
 
+/**
+ * Check beats against the kind of the part they belong to, one with `strings` strings: their own
+ * fields, and their notes (keys and fields). A phrase fragment's beats are checked the same way.
+ */
+export function checkBeats(
+  context: z.RefinementCtx,
+  kind: PartKind,
+  strings: number,
+  beats: readonly { notes: Record<string, unknown>; slap?: true; pop?: true }[],
+  path: (string | number)[],
+): void {
+  // The fields themselves passed the caller's schema: only whether they fit the kind is left.
+  const fieldsFit = onlyFieldsOf(BEAT_FIELD_KINDS, kind);
+  beats.forEach((beat, index) => {
+    if (!fieldsFit(beat) || (beat.slap && beat.pop)) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
+    for (const [key, note] of Object.entries(beat.notes)) {
+      if (readNote(kind, strings, key, note)) continue;
+      context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
+    }
+  });
+}
+
 /** A part, its content checked against its kind: voices of its staves, notes of its kind. */
 export const partSchema = z.discriminatedUnion("kind", [partSchemas.fretted, partSchemas.percussion, partSchemas.pitched]).superRefine((part, context) => {
-  const rules = kindSchemas[part.kind];
   for (const [barId, voices] of Object.entries(part.content)) {
     for (const [voice, beats] of Object.entries(voices)) {
       const path = ["content", barId, voice];
       if (!isVoiceKey(voice, part.staves.length)) context.addIssue({ code: "custom", message: "not a voice of this part", path });
-      beats.forEach((beat, index) => {
-        if (!rules.beat.safeParse(beat).success) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
-        for (const [key, note] of Object.entries(beat.notes)) {
-          if (readNote(part.kind, part.tuning.length, key, note)) continue;
-          context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
-        }
-      });
+      checkBeats(context, part.kind, part.tuning.length, beats, path);
     }
   }
 });
@@ -351,7 +366,7 @@ export const scoreSchema = metaSchema
 export type ScoreJSON = z.infer<typeof scoreSchema>;
 
 /** How many bytes a string takes in UTF-8. */
-function utf8Length(value: string): number {
+export function utf8Length(value: string): number {
   let bytes = 0;
   for (const character of value) {
     const code = character.codePointAt(0) as number;

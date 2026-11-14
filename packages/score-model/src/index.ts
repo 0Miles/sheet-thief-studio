@@ -6,6 +6,8 @@ export * from "./commands";
 export * from "./flags";
 export * from "./migrations";
 export * from "./navigation";
+export * from "./phrases";
+export * from "./presets";
 export * from "./read";
 export * from "./schema";
 export * from "./selection";
