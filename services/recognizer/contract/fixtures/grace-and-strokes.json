@@ -1,0 +1,91 @@
+{
+  "contract": "sheet-thief-studio/recognition",
+  "version": 1,
+  "strings": 6,
+  "tuning": {"midi": [64, 59, 55, 50, 45, 40], "source": "detected", "reason": null, "raw": null},
+  "capo": {"fret": 0, "source": "default"},
+  "timeSignature": {"numerator": 4, "denominator": 4},
+  "bars": [
+    {
+      "timeSignature": null,
+      "marker": null,
+      "tempo": null,
+      "repeatOpen": false,
+      "repeatTimes": 0,
+      "endings": [],
+      "sign": null,
+      "jump": null,
+      "rhythmEstimated": false,
+      "beats": [
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 6, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95},
+            {"string": 5, "fret": 2, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95},
+            {"string": 4, "fret": 2, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95},
+            {"string": 3, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95},
+            {"string": 2, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95},
+            {"string": 1, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 95}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 3, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "up", "velocity": 95},
+            {"string": 2, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "up", "velocity": 95},
+            {"string": 1, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "up", "velocity": 95}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 3, "fret": 7, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": 5, "graceHammer": true, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": 79}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 3, "fret": 5, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": 7, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": 79}
+          ]
+        }
+      ]
+    },
+    {
+      "timeSignature": null,
+      "marker": null,
+      "tempo": null,
+      "repeatOpen": false,
+      "repeatTimes": 0,
+      "endings": [],
+      "sign": null,
+      "jump": null,
+      "rhythmEstimated": false,
+      "beats": [
+        {
+          "units": 16,
+          "tuplet": false,
+          "notes": [
+            {"string": 5, "fret": 3, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 111},
+            {"string": 4, "fret": 2, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "down", "velocity": 111},
+            {"string": 3, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": "up", "velocity": 47},
+            {"string": 2, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": 47}
+          ]
+        },
+        {
+          "units": 16,
+          "tuplet": false,
+          "notes": [
+            {"string": 1, "fret": 3, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": 2, "graceHammer": true, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {"code": "other", "params": {}}
+  ]
+}

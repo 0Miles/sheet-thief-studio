@@ -1,0 +1,14 @@
+{
+  "contract": "sheet-thief-studio/recognition",
+  "version": 1,
+  "error": {
+    "code": "recognition_failed",
+    "params": {},
+    "pages": [
+      {"page": 1, "code": "no_staff"},
+      {"page": 2, "code": "no_notes"},
+      {"page": 3, "code": "invalid_image"},
+      {"page": 4, "code": "image_too_large"}
+    ]
+  }
+}

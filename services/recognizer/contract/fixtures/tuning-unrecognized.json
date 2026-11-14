@@ -1,0 +1,79 @@
+{
+  "contract": "sheet-thief-studio/recognition",
+  "version": 1,
+  "strings": 6,
+  "tuning": {"midi": [64, 59, 55, 50, 45, 40], "source": "default", "reason": "unrecognized", "raw": "Standard, down 1/2 step"},
+  "capo": {"fret": 0, "source": "default"},
+  "timeSignature": {"numerator": 4, "denominator": 4},
+  "bars": [
+    {
+      "timeSignature": null,
+      "marker": null,
+      "tempo": null,
+      "repeatOpen": false,
+      "repeatTimes": 0,
+      "endings": [],
+      "sign": null,
+      "jump": null,
+      "rhythmEstimated": false,
+      "beats": [
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 1, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 2, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 3, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        },
+        {
+          "units": 8,
+          "tuplet": false,
+          "notes": [
+            {"string": 2, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        }
+      ]
+    },
+    {
+      "timeSignature": null,
+      "marker": null,
+      "tempo": null,
+      "repeatOpen": false,
+      "repeatTimes": 0,
+      "endings": [],
+      "sign": null,
+      "jump": null,
+      "rhythmEstimated": true,
+      "beats": [
+        {
+          "units": 32,
+          "tuplet": false,
+          "notes": [
+            {"string": 5, "fret": 3, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null},
+            {"string": 4, "fret": 2, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null},
+            {"string": 3, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null},
+            {"string": 2, "fret": 1, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null},
+            {"string": 1, "fret": 0, "dead": false, "ghost": false, "tie": false, "vibrato": false, "hammer": false, "slide": false, "slideShift": false, "slideIn": null, "slideOut": null, "harmonic": null, "tapped": false, "graceFret": null, "graceHammer": false, "staccato": false, "bendSemitones": 0, "bendRelease": false, "bendPre": false, "letRing": false, "palmMute": false, "stroke": null, "velocity": null}
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {"code": "rhythm_estimated", "params": {"bars": [2]}},
+    {"code": "overlapping_notes", "params": {"page": 1, "count": 2}}
+  ]
+}
