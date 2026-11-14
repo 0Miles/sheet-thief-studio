@@ -228,6 +228,12 @@ test("over a selection, a cycling technique takes every note to the one state de
   expect(harmonics()).toEqual([null, null, null]);
 });
 
+/** As tie is at the cursor (#27): the fret of the note before, tied to it; where there is no note before, nothing changes. */
+const tie: NoteToggle<true> = {
+  decide: () => true,
+  turn: (stored, _, { before }) => (before?.fret === undefined ? (stored ?? null) : { ...stored, fret: before.fret, tie: true }),
+};
+
 test("a toggle is told the note with the same key on the beat before, in the bar before when the beat is the first of its bar", () => {
   const { doc, barId, partId, cursor, notes } = selected();
   const [, nextBar] = docToJson(doc).bars.map((bar) => bar.id);
@@ -254,7 +260,6 @@ test("a toggle is told the note with the same key on the beat before, in the bar
     ].sort(),
   );
   // At the cursor, in the append slot as on a beat: what a tie needs to take the fret of the note before.
-  const tie: NoteToggle<true> = { decide: () => true, turn: (stored, _, { before }) => (before?.fret === undefined ? (stored ?? null) : { ...stored, fret: before.fret, tie: true }) };
   const first = cursorAt(doc, partId, nextBar!, 3);
   toggleAt(doc, { ...first, line: 2 }, "s2", tie);
   expect(notes(nextBar)).toEqual([{ s3: { fret: 9 } }]);
@@ -263,4 +268,48 @@ test("a toggle is told the note with the same key on the beat before, in the bar
   const appended = toggleAt(doc, { ...first, at: "after" }, "s3", tie);
   expect(notes(nextBar)).toEqual([{ s3: { fret: 7, tie: true } }, { s3: { fret: 7, tie: true } }]);
   expect(appended).toMatchObject({ at: "on" });
+});
+
+/** A guitar whose first bar holds frets 5, 7 and 9 on string 3, and whose second bar starts with 11; the beats of the first bar. */
+function frets() {
+  const { doc, barId, partId, cursor, notes } = guitar();
+  let at = cursor;
+  for (const fret of [7, 9]) {
+    at = appendBeat(doc, at);
+    setNote(doc, at, "s3", { fret });
+  }
+  const [, nextBar] = docToJson(doc).bars.map((bar) => bar.id);
+  setNote(doc, cursorAt(doc, partId, nextBar!, 3), "s3", { fret: 11 });
+  const ids = docToJson(doc).parts[0]!.content[barId]!["0:0"]!.map((beat) => beat.id);
+  const string3 = (bar = barId) => notes(bar).map((beat) => beat.s3);
+  return { doc, barId, nextBar: nextBar!, partId, cursor, ids, string3 };
+}
+
+test("over a selection, each note is told the note before as it has just become: a tie over beats in a row takes the fret of the first", () => {
+  const { doc, barId, partId, cursor, ids, string3 } = frets();
+  toggleOnSelection(doc, { kind: "beats", partId, barId, voice: "0:0", anchorBeatId: ids[1]!, focusBeatId: ids[2]! }, cursor, tie);
+  expect(string3()).toEqual([{ fret: 5 }, { fret: 5, tie: true }, { fret: 5, tie: true }]);
+});
+
+test("over a bar range, what a note has just become is carried on to the first beat of the next bar", () => {
+  const { doc, barId, nextBar, partId, cursor, string3 } = frets();
+  toggleOnSelection(doc, { kind: "bars", partId, anchorBarId: barId, focusBarId: nextBar }, cursor, tie);
+  expect(string3()).toEqual([{ fret: 5 }, { fret: 5, tie: true }, { fret: 5, tie: true }]);
+  expect(string3(nextBar)).toEqual([{ fret: 5, tie: true }]);
+});
+
+test("over a selection, a beat reading leaves out is neither seen nor changed, and the note before skips it", () => {
+  const { doc, barId, partId, cursor, ids, string3 } = frets();
+  // A note value there is none of: the beat of fret 7 cannot be read, so the members do not see it.
+  const unreadable = voiceIn(doc, cursor)!.get(1);
+  doc.transact(() => unreadable.set("value", 3));
+  const range: Selection = { kind: "beats", partId, barId, voice: "0:0", anchorBeatId: ids[0]!, focusBeatId: ids[2]! };
+  toggleOnSelection(doc, range, cursor, tie);
+  expect(string3()).toEqual([{ fret: 5 }, { fret: 5, tie: true }]);
+  expect((unreadable.get("notes") as Y.Map<unknown>).get("s3")).toEqual({ fret: 7 });
+  // Off is off when every note seen has it: the unreadable beat's note does not count.
+  toggleSelected(doc, range, cursor, "ghost");
+  toggleSelected(doc, range, cursor, "ghost");
+  expect(string3()).toEqual([{ fret: 5 }, { fret: 5, tie: true }]);
+  expect((unreadable.get("notes") as Y.Map<unknown>).get("s3")).toEqual({ fret: 7 });
 });

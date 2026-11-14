@@ -26,7 +26,6 @@ import {
   readNote,
   SCHEMA_VERSION,
   type ScoreJSON,
-  stringCountOf,
   contentMapOf,
   type YBeat,
 } from "./schema";
@@ -134,18 +133,25 @@ function fieldsOf(beat: YBeat): Record<string, unknown> {
   return Object.fromEntries(fields);
 }
 
-function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {
+/** The fields of a beat but its notes as reading takes them: commands never put slap and pop on one beat; when co-editing does, slap stays and pop is dropped. */
+function beatFieldsOf(beat: YBeat): { fields: Record<string, unknown>; poppedOff: boolean } {
   const fields = fieldsOf(beat);
+  const poppedOff = fields.slap === true && fields.pop === true;
+  if (poppedOff) delete fields.pop;
+  return { fields, poppedOff };
+}
+
+/** Whether reading keeps a beat of a part of `kind` (docs/spec/schema.md, section 11): its own fields fit the kind and its notes are a map; the notes themselves are read one by one. */
+export function readsAsBeat(kind: PartKind, beat: unknown): beat is YBeat {
+  return beat instanceof Y.Map && beat.get("notes") instanceof Y.Map && kindSchemas[kind].beat.safeParse(beatFieldsOf(beat).fields).success;
+}
+
+function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {
+  const { fields, poppedOff } = beatFieldsOf(beat);
   const at: Place = typeof fields.id === "string" ? { ...place, beatId: fields.id } : place;
-  const invalid: InvalidContentFlag[] = [];
-  // Commands never put both on a beat; when co-editing does, slap stays.
-  if (fields.slap === true && fields.pop === true) {
-    delete fields.pop;
-    invalid.push(flag(at, "beat.pop"));
-  }
+  const invalid: InvalidContentFlag[] = poppedOff ? [flag(at, "beat.pop")] : [];
   const notes = beat.get("notes");
-  const rules = kindSchemas[kind];
-  const parsed = rules.beat.safeParse(fields);
+  const parsed = kindSchemas[kind].beat.safeParse(fields);
   if (!parsed.success || !(notes instanceof Y.Map)) return { beat: null, invalid: [flag(at, "beat")] };
   const read: Record<string, NoteJSON> = {};
   // Keys in sorted order: members who put notes on a beat at the same time can hold its map in different orders.
@@ -213,7 +219,7 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
   }
   const defaults = KIND_DEFAULTS[kind];
   const staves = readField(shape.staves, part.get("staves"), defaults.staves.map((staff) => ({ ...staff })), invalid, place, "part.staves");
-  const strings = stringCountOf(part);
+  const strings = tuning.success ? tuning.data.length : 0;
   const fit: Fit = { kind, strings, key: `${kind}:${strings}`, reuse };
   // Built from entries, so that a bar id __proto__ is a key like any other.
   const content: [string, Record<string, BeatJSON[]>][] = [];

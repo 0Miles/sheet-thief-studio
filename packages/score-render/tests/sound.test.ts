@@ -11,6 +11,11 @@ const settings = new alphaTab.Settings();
 // alphaTab's default, which the engine keeps: let ring holds a note on in this mode only.
 settings.notation.notationMode = alphaTab.NotationMode.GuitarPro;
 
+test("alphaTab's default notation mode is the one the sound tests play in", () => {
+  // The engine sets none: if alphaTab's default changes, let ring may sound otherwise in the app.
+  expect(new alphaTab.Settings().notation.notationMode).toBe(alphaTab.NotationMode.GuitarPro);
+});
+
 /** The notes alphaTab would play for a score: channel, key and tick of every note-on, in order. */
 function notesPlayed(doc: Y.Doc): { channel: number; key: number; tick: number }[] {
   const { score } = projectScore(docToJson(doc), settings);

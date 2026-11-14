@@ -37,6 +37,7 @@ import {
   type YVoice,
   voiceKeys,
 } from "./schema";
+import { readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
 /**
@@ -380,22 +381,42 @@ export function noteKeyAt(doc: Y.Doc, cursor: Cursor): string | null {
   return partKindOf(partsOf(doc).get(cursor.partId)) === "fretted" ? `s${cursor.line}` : null;
 }
 
-/** How the notes of a part are read (`readNote`): by its kind and its strings; none when its kind cannot be read. */
-function readerOf(doc: Y.Doc, partId: string): ((key: string, stored: unknown) => NoteJSON | undefined) | undefined {
+/** How the beats and notes of a part are read: by its kind and its strings. */
+interface PartReader {
+  kind: PartKind;
+  /** The note a value stored at `key` reads as (`readNote`); none for nothing stored. */
+  note(key: string, stored: unknown): NoteJSON | undefined;
+}
+
+/** How a part is read; none when its kind cannot be read. */
+function readerOf(doc: Y.Doc, partId: string): PartReader | undefined {
   const part = partsOf(doc).get(partId);
   const kind = partKindOf(part);
   if (part === undefined || kind === undefined) return undefined;
   const strings = stringCountOf(part);
-  return (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored));
+  return { kind, note: (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored)) };
 }
 
-/** The notes of the beat before `index` in a voice: the beat before it, or the last of the same voice in the bar before. */
-function notesBefore(doc: Y.Doc, partId: string, barId: string, voiceKey: string, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
-  if (index > 0) return notesOf(voice.get(index - 1));
+/** The notes of the last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
+function lastReadNotes(reader: PartReader, voice: YVoice, end: number): Y.Map<NoteJSON> | undefined {
+  for (let index = end - 1; index >= 0; index--) {
+    const beat = voice.get(index);
+    if (readsAsBeat(reader.kind, beat)) return notesOf(beat);
+  }
+  return undefined;
+}
+
+/**
+ * The notes of the beat before `index` in a voice, as the members see it: the last beat before it
+ * that reading keeps, else the last such beat of the same voice in the bar before.
+ */
+function notesBefore(doc: Y.Doc, reader: PartReader, at: { partId: string; barId: string; voice: string }, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
+  const own = lastReadNotes(reader, voice, index);
+  if (own !== undefined) return own;
   const bars = ordered(barsOf(doc));
-  const previous = bars[bars.indexOf(barId) - 1];
-  const before = previous === undefined ? undefined : voiceIn(doc, { partId, barId: previous, voice: voiceKey });
-  return before && before.length > 0 ? notesOf(before.get(before.length - 1)) : undefined;
+  const previous = bars[bars.indexOf(at.barId) - 1];
+  const before = previous === undefined ? undefined : voiceIn(doc, { ...at, barId: previous });
+  return before && lastReadNotes(reader, before, before.length);
 }
 
 /**
@@ -405,14 +426,14 @@ function notesBefore(doc: Y.Doc, partId: string, barId: string, voiceKey: string
  * is left alone (docs/spec/schema.md, section 11).
  */
 export function toggleAt<D>(doc: Y.Doc, cursor: Cursor, key: string, toggle: NoteToggle<D>): Cursor {
-  const read = readerOf(doc, cursor.partId);
+  const reader = readerOf(doc, cursor.partId);
   const place = placeFor(doc, cursor);
-  if (read === undefined || place === undefined) return cursor;
+  if (reader === undefined || place === undefined) return cursor;
   const stored = cursor.at === "on" ? notesOf(place.voice.get(place.index))?.get(key) : undefined;
-  const seen = read(key, stored);
+  const seen = reader.note(key, stored);
   if (stored !== undefined && seen === undefined) return cursor;
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
-  const before = read(key, notesBefore(doc, cursor.partId, cursor.barId, cursor.voice, place.voice, place.index)?.get(key));
+  const before = reader.note(key, notesBefore(doc, reader, cursor, place.voice, place.index)?.get(key));
   const decided = toggle.decide(seen === undefined ? [] : [seen]);
   return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { key, before }));
 }
@@ -441,33 +462,51 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
 
 /**
  * Change every note of a selection, in the part selected, with a technique (docs/spec/commands.md,
- * 5.4), one command: the toggle decides once from all of them, then turns each. Only the notes the
- * members see count: those reading leaves out are left alone (docs/spec/schema.md, section 11).
+ * 5.4), one command: the toggle decides once from all of them, then turns each, in the order of
+ * its voice, so that each is told the note before as it has just become. Only what the members
+ * see counts: beats and notes reading leaves out are left alone (docs/spec/schema.md, section 11).
  * Makes no notes where there are none; changes nothing when the selection holds no notes. The
  * cursor stays where it is.
  */
 export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: Cursor, toggle: NoteToggle<D>): Cursor {
-  const read = readerOf(doc, selection.partId);
-  if (read === undefined) return cursor;
-  const notes = runsOf(doc, selection).flatMap(({ barId, voiceKey, voice, first, last }) =>
+  const reader = readerOf(doc, selection.partId);
+  if (reader === undefined) return cursor;
+  const beats = runsOf(doc, selection).flatMap(({ barId, voiceKey, voice, first, last }) =>
     Array.from({ length: last - first + 1 }, (_, offset) => first + offset).flatMap((index) => {
-      const map = notesOf(voice.get(index));
-      const before = notesBefore(doc, selection.partId, barId, voiceKey, voice, index);
-      return [...(map?.entries() ?? [])].flatMap(([key, stored]) => {
-        const seen = read(key, stored);
-        return map && seen ? [{ map, stored, seen, place: { key, before: read(key, before?.get(key)) } }] : [];
+      const beat = voice.get(index);
+      if (!readsAsBeat(reader.kind, beat)) return [];
+      const map = notesOf(beat) as Y.Map<NoteJSON>;
+      const notes = [...map.entries()].flatMap(([key, stored]) => {
+        const seen = reader.note(key, stored);
+        return seen ? [{ key, stored, seen }] : [];
       });
+      return [{ at: { partId: selection.partId, barId, voice: voiceKey }, voice, index, map, notes }];
     }),
   );
-  if (notes.length === 0) return cursor;
-  const decided = toggle.decide(notes.map(({ seen }) => seen));
-  const changes = notes.map((note) => ({ ...note, next: toggle.turn(note.stored, decided, note.place) })).filter(({ stored, next }) => next !== stored);
+  const seen = beats.flatMap(({ notes }) => notes.map((note) => note.seen));
+  if (seen.length === 0) return cursor;
+  const decided = toggle.decide(seen);
+  // What each note of the selection has become, by the notes of its beat: runs come in score order, beats in voice order.
+  const turned = new Map<Y.Map<NoteJSON>, Map<string, NoteJSON | null>>();
+  const changes: { map: Y.Map<NoteJSON>; key: string; next: NoteJSON | null }[] = [];
+  for (const { at, voice, index, map, notes } of beats) {
+    const before = notesBefore(doc, reader, at, voice, index);
+    const earlier = before && turned.get(before);
+    const results = new Map<string, NoteJSON | null>();
+    turned.set(map, results);
+    for (const { key, stored } of notes) {
+      const previous = earlier?.has(key) ? (earlier.get(key) ?? undefined) : reader.note(key, before?.get(key));
+      const next = toggle.turn(stored, decided, { key, before: previous });
+      results.set(key, next);
+      if (next !== stored) changes.push({ map, key, next });
+    }
+  }
   // Only the notes that change are written: the change and its undo step hold just those.
   if (changes.length > 0) {
     doc.transact(() => {
-      for (const { map, place, next } of changes) {
-        if (next === null) map.delete(place.key);
-        else map.set(place.key, next);
+      for (const { map, key, next } of changes) {
+        if (next === null) map.delete(key);
+        else map.set(key, next);
       }
     }, LOCAL);
   }
