@@ -129,6 +129,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
 
+**補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
+
 **補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
 
 ## 4. 各聲部種類的輸入鍵
@@ -202,6 +204,8 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 - `Esc`：不存，關閉。
 - 64 字元以內。
 - 段落名稱（`section`）從小節屬性面板編輯，不在這裡。
+- **補充**（#30）：輸入框的鍵也在綁定表上，情境是 `textEntry`（`bindings.ts` 的 `saveEntry`：`Enter`、`NumpadEnter`；`cancelEntry`：`Escape`），由 `textEntryEffectOf(key, platform)` 判斷；這個情境裡譜面的鍵都不作用，其餘的鍵是輸入框自己的（打字、`Backspace`、方向鍵），不傳到譜面。比對照第 1.1 節：`isComposing` 為真、或 `keyCode` 是 229 的鍵都不算，所以用注音選字的 `Enter` 不會存入。
+- **補充**（#30）：輸入框開在游標下方（`ScoreView.vue` 的 `openText`），照 [`views.md`](views.md) 第 9 節避開保留區域；開啟時選取現有的文字，所以直接打字就是取代、按 `Backspace` 就是清空。焦點離開輸入框（例如點譜面）時當成 `Esc`：不存。關閉後焦點回到譜面。輸入框是 `apps/web/src/components/InlineTextEntry.vue`，歌詞模式（6.2）沿用它。
 
 ### 6.2 歌詞模式（只有 pitched 聲部）
 

@@ -191,6 +191,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 沒有 `fret` 而且沒有 `dead` 的 fretted 音符：讀不懂，略過並標記。投影時，沒有格號的 dead note 用格號 0：畫成那條弦上的 X，發出空弦的短音（#26，`projection.ts` 的 `projectNote`）。
 - `bend.semitones`：integer 1–4。新設定的 bend 預設 2 個半音（補充，見 [`keymap.md`](keymap.md)）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
+  - **補充**（#30）：`stroke` 另外設 `Beat.brushDuration` 為 60 tick（`projection.ts` 的 `STROKE_TICKS`，64 分音符，120 BPM 時約 30 ms）：alphaTab 在 `brushDuration` 是 0 時所有弦同時發聲。down 從最低的弦開始，up 從最高的弦開始（alphaTab 的 `_fillBrushInfo`）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
+  - **補充**（#30）：`dynamic` 只作用在寫著它的拍點，不往後延續；沒有 `dynamic` 的拍點用 alphaTab 的預設 `F`。理由：和 Guitar Pro 一樣每個音各自帶力度，alphaTab 只在力度改變的地方畫記號；往後延續的話，改一個拍點會改到後面小節的聲音，`replaceBars` 只重建有改動的小節就不夠。要讓一段都是 pp，選取那一段再按 `Shift+F`（[`commands.md`](commands.md) 5.4）。
 - 小節層級的投影對照：`keySig` → 每個聲部每個 `Bar` 的 `keySignature` 與 `keySignatureType`（`MasterBar` 上的同名欄位在 1.9 已 deprecated，`alphaTab.d.ts:11229-11250`）；`repeatStart` → `MasterBar.isRepeatStart`；`repeatEnd` → `repeatCount`；`voltas` → `alternateEndings` 的位元；`section` → `MasterBar.section`；`anacrusis` → `isAnacrusis`；`tempo` → 小節開頭的速度 automation。
 - 以上每一項 alphaTab 1.9 都有對應的欄位：`Beat` 的 `slap`、`pop`、`tap`、`brushType`、`dynamics`、`text`、`lyrics`（`alphaTab.d.ts:5018-5062,5203`），`Note` 的 `accentuated`（:13283）等，`MasterBar` 的 `isAnacrusis`（:11331）、`repeatCount`、`alternateEndings`、`section`。
 
