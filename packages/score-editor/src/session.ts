@@ -39,6 +39,8 @@ import {
   settleCursor,
   settleSelection,
   slapPopCycle,
+  slideInCycle,
+  slideOutCycle,
   strokeCycle,
   textAt,
   techniqueToggle,
@@ -418,6 +420,10 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return change((at) => typeDigit(binding.fret, at, previous));
       case "tie":
         return toggleNotes(tieToggle);
+      case "slideOut":
+        return toggleNotes(slideOutCycle);
+      case "slideIn":
+        return toggleNotes(slideInCycle);
       case "stroke":
         return changeBeats(strokeCycle);
       case "slapPop":

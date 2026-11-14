@@ -1,7 +1,23 @@
 // The projection (CONTEXT.md): a score as plain data becomes the model alphaTab draws and plays.
 // One way only: nothing built here is ever written back to the score.
 import * as alphaTab from "@coderline/alphatab";
-import { type BarJSON, barTicks, type BeatJSON, beatTicks, DYNAMICS, type NoteJSON, type NoteValue, type PartJSON, type ScoreJSON, WHOLE } from "@studio/score-model";
+import {
+  type BarJSON,
+  barTicks,
+  beatAfter,
+  type BeatJSON,
+  beatTicks,
+  DYNAMICS,
+  linksOn,
+  type NoteJSON,
+  type NoteValue,
+  type PartJSON,
+  type ScoreJSON,
+  type SlideIn,
+  type SlideOut,
+  slideGoesOn,
+  WHOLE,
+} from "@studio/score-model";
 
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
@@ -115,12 +131,27 @@ function accidentalModeOf(spell: string | undefined): alphaTab.model.NoteAcciden
   }
 }
 
+const SLIDE_OUT_TYPES: Record<SlideOut, alphaTab.model.SlideOutType> = {
+  legato: model.SlideOutType.Legato,
+  shift: model.SlideOutType.Shift,
+  outUp: model.SlideOutType.OutUp,
+  outDown: model.SlideOutType.OutDown,
+};
+
+const SLIDE_IN_TYPES: Record<SlideIn, alphaTab.model.SlideInType> = {
+  inBelow: model.SlideInType.IntoFromBelow,
+  inAbove: model.SlideInType.IntoFromAbove,
+};
+
 /**
  * A note of the score as an alphaTab note, or null when its key does not fit the part.
  * Keys: "s3" is string 3 (1 is the highest), "p38" a drum piece (the alphaTab percussion
- * articulation id, see drums.ts), "n61" a MIDI pitch.
+ * articulation id, see drums.ts), "n61" a MIDI pitch. A link (legato, a slide out legato or
+ * shift) is projected only when `after`, the beat after the note's, holds a note on its string,
+ * the note it goes on to: alphaTab would look on past rests and draw it to a later note, where
+ * the score has a dangling link (docs/spec/flags.md).
  */
-function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null {
+function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSON | undefined): AtNote | null {
   const number = Number(key.slice(1));
   if (!Number.isInteger(number)) return null;
   const note = new model.Note();
@@ -147,6 +178,11 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
   if (json.letRing) note.isLetRing = true;
   if (json.palmMute) note.isPalmMute = true;
   if (json.vibrato) note.vibrato = model.VibratoType.Slight;
+  const reaches = after?.notes[key] !== undefined;
+  if (json.legato && reaches) note.isHammerPullOrigin = true;
+  // A slide out up or down goes on to no note: it needs none after it.
+  if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
+  if (json.slideIn) note.slideInType = SLIDE_IN_TYPES[json.slideIn];
   return note;
 }
 
@@ -187,8 +223,11 @@ function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   return beat;
 }
 
-/** A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when it has one; drawn on it only when it has one. */
-function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat {
+/**
+ * A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when
+ * it has one; drawn on it only when it has one. `after` is the beat after it, where its links go.
+ */
+function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined, dynamic: AtDynamic): AtBeat {
   const beat = rest(json.value, dynamic);
   // A dynamic is drawn where it is written only: alphaTab would draw one where the dynamic in force
   // changes, and its own f on the first note of a voice that has none (`shouldCreateDynamicsGlyph`).
@@ -206,7 +245,7 @@ function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat
   if (json.pop) beat.pop = true;
   if (json.text) beat.text = json.text;
   for (const [key, noteJson] of Object.entries(json.notes)) {
-    const note = projectNote(part, key, noteJson);
+    const note = projectNote(part, key, noteJson, after);
     if (!note) continue;
     beat.addNote(note);
     // Tapping is the beat's in alphaTab: any note of the beat tapped taps it.
@@ -218,10 +257,11 @@ function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
  * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
- * the end of the same voice in `previous`, the bar before (none for the first). Returns the ids of
- * its beats by voice.
+ * the end of the same voice in `previous`, the bar before (none for the first). The links of its
+ * last beats go on to the first beats of `next`, the bar after (none for the last). Returns the ids
+ * of its beats by voice.
  */
-function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
+function projectBar(part: PartJSON, bar: BarJSON, next: BarJSON | undefined, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
   const entering = dynamicsLeaving(previous, voiceCount);
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
@@ -230,13 +270,15 @@ function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: num
   for (let voice = 0; voice < voiceCount; voice++) {
     const atVoice = new model.Voice();
     atBar.addVoice(atVoice);
-    const beats = content[`${staff}:${voice}`] ?? [];
+    const key = `${staff}:${voice}`;
+    const beats = content[key] ?? [];
+    const following = next && part.content[next.id]?.[key];
     beatIds.push(beats.map((beat) => beat.id));
     // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
     let dynamic = entering[voice];
-    for (const beat of beats) {
+    for (const [index, beat] of beats.entries()) {
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
-      atVoice.addBeat(projectBeat(part, beat, dynamic));
+      atVoice.addBeat(projectBeat(part, beat, beatAfter(beats, index, following), dynamic));
     }
     if (beats.length === 0) {
       // An empty first voice is a whole-bar rest; other voices stay invisible.
@@ -337,7 +379,7 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
       setUpStaff(staff, part);
       const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -369,12 +411,36 @@ function retie(next: AtBar | null, replaced: AtBar): void {
 }
 
 /**
+ * Whether a note of a bar of the model goes on, by a link, to a note of another bar: a link across
+ * a bar line. Only the last beat of a voice can: a link is projected only to the beat just after.
+ */
+function modelLinksOutOf(bar: AtBar | undefined): boolean {
+  const leaves = (target: AtNote | null) => target !== null && target.beat.voice.bar !== bar;
+  return bar?.voices.some((voice) => voice.beats.at(-1)?.notes.some((note) => leaves(note.hammerPullDestination) || leaves(note.slideTarget))) ?? false;
+}
+
+/** Whether a note of the bar at `index` of the score goes on, by a link, to the first beat of the bar after it. */
+function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
+  const bar = json.bars[index];
+  const next = json.bars[index + 1];
+  if (bar === undefined || next === undefined) return false;
+  return json.parts.some((part) =>
+    Object.entries(part.content[bar.id] ?? {}).some(([voice, beats]) => {
+      const after = beatAfter(beats, beats.length - 1, part.content[next.id]?.[voice]);
+      return Object.entries(beats.at(-1)?.notes ?? {}).some(([key, note]) => linksOn(note) && after?.notes[key] !== undefined);
+    }),
+  );
+}
+
+/**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
  * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
  * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
- * next written dynamic in each voice that changed. Returns the index of the first rebuilt bar, or
- * null when the change is not one this can do (a bar, a part or a voice count changed): the
- * caller then projects the whole score again.
+ * next written dynamic in each voice that changed. A bar line that a link crosses, before the
+ * change or after it, has the bars on both sides of it rebuilt: both notes of a link hold it, and
+ * alphaTab sets it up when it finishes the bar of the note it starts from. Returns the index of
+ * the first rebuilt bar, or null when the change is not one this can do (a bar, a part or a voice
+ * count changed): the caller then projects the whole score again.
  */
 export function replaceBars(projection: Projection, json: ScoreJSON, barIds: readonly string[], settings: alphaTab.Settings, timings?: ProjectionTimings): number | null {
   const started = performance.now();
@@ -382,8 +448,9 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   const indexes = barIds.map((id) => projection.barIndex.get(id));
   if (indexes.some((index) => index === undefined)) return null;
   const voiceCounts = json.parts.map(staffVoiceCounts);
+  const tracks = projection.score.tracks;
   const sameShape = json.parts.every((part, trackIndex) => {
-    const track = projection.score.tracks[trackIndex];
+    const track = tracks[trackIndex];
     const counts = voiceCounts[trackIndex] as number[];
     return (
       projection.partIds[trackIndex] === part.id &&
@@ -393,14 +460,37 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   });
   if (!sameShape) return null;
 
-  let finishing = 0;
+  /**
+   * Whether a link crosses the line after bar `index`: in the score, or in the model, read before
+   * that bar is replaced. Kept by index: each is asked first before its bar is replaced.
+   */
+  const crossings = new Map<number, boolean>();
+  const crossed = (index: number) => {
+    let crosses = crossings.get(index);
+    if (crosses === undefined) {
+      crosses = scoreLinksOutOf(json, index) || tracks.some((track) => track.staves.some((staff) => modelLinksOutOf(staff.bars[index])));
+      crossings.set(index, crosses);
+    }
+    return crosses;
+  };
   const rebuilt = new Set(indexes as number[]);
+  // The bars before the ones to rebuild that a link reaches them from, and the bars before those;
+  // the bars after are seen to below, as each is rebuilt.
+  for (const index of [...rebuilt]) {
+    for (let line = index - 1; line >= 0 && !rebuilt.has(line) && crossed(line); line--) rebuilt.add(line);
+  }
+
+  // Every bar is built and put in its place first, then each is finished, in order: finishing a
+  // bar sets up the links from its notes to the bar after, which must be the new one by then.
+  // Each bar replaced, with the bar it took the place of, to retie the bar after.
+  const replaced: { old: AtBar; atBar: AtBar }[] = [];
   const first = Math.min(...rebuilt);
   for (let barIndex = first; barIndex < json.bars.length; barIndex++) {
     if (!rebuilt.has(barIndex)) continue;
+    if (crossed(barIndex)) rebuilt.add(barIndex + 1);
     const bar = json.bars[barIndex] as BarJSON;
     json.parts.forEach((part, trackIndex) => {
-      const track = projection.score.tracks[trackIndex] as AtTrack;
+      const track = tracks[trackIndex] as AtTrack;
       track.staves.forEach((staff, staffIndex) => {
         const old = staff.bars[barIndex] as AtBar;
         // Drop the ids of the old beats before the new ones take their place.
@@ -408,7 +498,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
         const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
-        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;
@@ -418,24 +508,29 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         if (old.nextBar) old.nextBar.previousBar = atBar;
         staff.bars[barIndex] = atBar;
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
-        // The last beat of the bar before leads into this one.
-        atBar.previousBar?.voices.forEach((voice, voiceIndex) => {
-          const last = voice.beats.at(-1);
-          const first = atBar.voices[voiceIndex]?.beats[0];
-          if (last && first) {
-            last.nextBeat = first;
-            first.previousBeat = last;
-          }
-        });
-        const finishStarted = performance.now();
-        atBar.finish(settings, new Map());
-        finishing += performance.now() - finishStarted;
-        retie(atBar.nextBar, old);
+        replaced.push({ old, atBar });
         // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
         const before = dynamicsLeaving(old, voiceCount);
         if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
       });
     });
+  }
+
+  let finishing = 0;
+  for (const { old, atBar } of replaced) {
+    // The last beat of the bar before leads into this one.
+    atBar.previousBar?.voices.forEach((voice, voiceIndex) => {
+      const last = voice.beats.at(-1);
+      const first = atBar.voices[voiceIndex]?.beats[0];
+      if (last && first) {
+        last.nextBeat = first;
+        first.previousBeat = last;
+      }
+    });
+    const finishStarted = performance.now();
+    atBar.finish(settings, new Map());
+    finishing += performance.now() - finishStarted;
+    retie(atBar.nextBar, old);
   }
   if (timings) {
     timings.finish = finishing;

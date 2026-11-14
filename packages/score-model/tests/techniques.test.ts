@@ -19,6 +19,8 @@ import {
   type OnOffTechnique,
   setFret,
   setNote,
+  slideInCycle,
+  slideOutCycle,
   tieToggle,
   type Selection,
   toggleAt,
@@ -409,4 +411,71 @@ test("on a pitched part, a tie on an empty line makes the note before's pitch th
   toggleAt(doc, second, "n61", tieToggle);
   expect(docToJson(doc).parts[0]!.content[barId!]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ n61: { spell: "Db", staccato: true } }, { n61: { spell: "Db", tie: true } }]);
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId, voice: "0:0" }]);
+});
+
+// Links (#27; docs/spec/commands.md, 5.4): legato is on or off; a slide out and a slide in step
+// through their kinds and back to none.
+test("legato turns on and off on the note of the cursor's string, and makes no note on an empty one", () => {
+  const { doc, cursor, notes } = guitar();
+  toggleNote(doc, cursor, "s3", "legato");
+  expect(notes()).toEqual([{ s3: { fret: 5, legato: true } }]);
+  toggleNote(doc, cursor, "s3", "legato");
+  expect(notes()).toEqual([{ s3: { fret: 5 } }]);
+  const transactions = transactionsOf(doc);
+  toggleNote(doc, { ...cursor, line: 1 }, "s1", "legato");
+  expect(transactions.count).toBe(0);
+});
+
+test("a slide out steps through legato, shift, out up and out down, back to none, one undo step each, keeping what else the note holds", () => {
+  const { doc, cursor, notes } = guitar();
+  setNote(doc, cursor, "s3", { fret: 5, ghost: true });
+  const undo = undoOf(doc);
+  const slides = [1, 2, 3, 4, 5].map(() => {
+    toggleAt(doc, cursor, "s3", slideOutCycle);
+    return notes()[0]!.s3!.slideOut ?? null;
+  });
+  expect(slides).toEqual(["legato", "shift", "outUp", "outDown", null]);
+  expect(notes()).toEqual([{ s3: { fret: 5, ghost: true } }]);
+  undo.undo();
+  expect(notes()).toEqual([{ s3: { fret: 5, ghost: true, slideOut: "outDown" } }]);
+  // On an empty string it makes no note.
+  const transactions = transactionsOf(doc);
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", slideOutCycle);
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", slideInCycle);
+  expect(transactions.count).toBe(0);
+});
+
+test("a slide in steps through in from below and in from above, back to none", () => {
+  const { doc, cursor, notes } = guitar();
+  const slides = [1, 2, 3].map(() => {
+    toggleAt(doc, cursor, "s3", slideInCycle);
+    return notes()[0]!.s3!.slideIn ?? null;
+  });
+  expect(slides).toEqual(["inBelow", "inAbove", null]);
+  expect(notes()).toEqual([{ s3: { fret: 5 } }]);
+});
+
+test("over a selection, a slide takes every note to the kind after the first note's, as the beat markings do", () => {
+  const { doc, cursor, notes, range } = selected();
+  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, slideOut: "outUp" });
+  const slides = () => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note.slideOut ?? null));
+  toggleOnSelection(doc, range, cursor, slideOutCycle);
+  expect(slides()).toEqual(["legato", "legato", "legato"]);
+  toggleOnSelection(doc, range, cursor, slideOutCycle);
+  expect(slides()).toEqual(["shift", "shift", "shift"]);
+  for (let step = 0; step < 3; step++) toggleOnSelection(doc, range, cursor, slideOutCycle);
+  expect(slides()).toEqual([null, null, null]);
+  expect(notes()[2]).toEqual({ s3: { fret: 7 } });
+});
+
+test("at the cursor, on a beat reading leaves out, no technique key changes it, though its notes could be read", () => {
+  const { doc, cursor } = guitar();
+  const beat = voiceIn(doc, cursor)!.get(0);
+  doc.transact(() => beat.set("value", 3));
+  const transactions = transactionsOf(doc);
+  for (const technique of ON_OFF_TECHNIQUES) toggleNote(doc, cursor, "s3", technique);
+  toggleAt(doc, cursor, "s3", slideOutCycle);
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", tieToggle);
+  expect(transactions.count).toBe(0);
+  expect(storedNotes(doc, cursor).toJSON()).toEqual({ s3: { fret: 5 } });
 });

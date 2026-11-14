@@ -17,6 +17,7 @@ const TECHNIQUES = [
   ["p", "palmMute"],
   ["i", "letRing"],
   ["k", "tap"],
+  ["h", "legato"],
 ] as const;
 
 test.each(["other", "mac"] as const)("on %s, each Shift+letter turns its technique on the note of the cursor's string on, then off, one undo step each", (platform) => {
@@ -105,7 +106,7 @@ test("while read-only, a technique key changes nothing", () => {
 
 test.each(["percussion", "pitched"] as const)("on a %s part, the fretted technique keys are not the session's", (kind) => {
   const { press } = sessionOn(kind);
-  for (const [letter] of TECHNIQUES) expect(press(letter, 1000, shift)).toBe(false);
+  for (const [letter] of [...TECHNIQUES, ["s"], ["e"]]) expect(press(letter!, 1000, shift)).toBe(false);
 });
 
 test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to the one before, taking its fret, and again unties it, one undo step each", () => {
@@ -145,5 +146,39 @@ test("with a selection, Shift+L ties every note of it, and the selection stays",
   expect(selection).toMatchObject({ kind: "beats" });
   press("l", 1000, shift);
   expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 1, tie: true }, { fret: 1, tie: true }]);
+  expect(session.selection).toEqual(selection);
+});
+
+test("on Windows and on a Mac, Shift+S steps the note of the cursor's string through the slides out, and Shift+E through the slides in, one undo step each", () => {
+  for (const platform of ["other", "mac"] as const) {
+    const undo = platform === "mac" ? { metaKey: true } : { ctrlKey: true };
+    const { press, beats } = sessionOn("fretted", 2, platform);
+    press("5");
+    const outs = [1, 2, 3, 4, 5].map(() => {
+      expect(press("s", 1000, shift)).toBe(true);
+      return beats()[0]!.notes.s6!.slideOut ?? null;
+    });
+    expect(outs).toEqual(["legato", "shift", "outUp", "outDown", null]);
+    const ins = [1, 2, 3].map(() => {
+      expect(press("e", 1000, shift)).toBe(true);
+      return beats()[0]!.notes.s6!.slideIn ?? null;
+    });
+    expect(ins).toEqual(["inBelow", "inAbove", null]);
+    press("z", 1000, undo);
+    expect(beats()[0]!.notes).toEqual({ s6: { fret: 5, slideIn: "inAbove" } });
+  }
+});
+
+test("with a selection, Shift+S takes every note of it to one slide, and the selection stays", () => {
+  const { press, beats, session } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  press("s", 1000, shift);
+  press("ArrowLeft");
+  press("ArrowRight", 1000, shift);
+  const selection = session.selection;
+  press("s", 1000, shift);
+  expect(beats().map((beat) => beat.notes.s6!.slideOut)).toEqual(["legato", "legato"]);
   expect(session.selection).toEqual(selection);
 });

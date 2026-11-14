@@ -77,6 +77,42 @@ test("the Read view draws the flags too", async ({ browser }) => {
   expect(errors).toEqual([]);
 });
 
+test("a hammer-on with no note after it on its string is a dangling link, marked on its note, until the note after it is typed", async ({ browser }) => {
+  const id = seedScore({ title: "搥弦標記", owner: ADMIN.username });
+  const page = await loggedIn(browser, ADMIN);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+  const { bars, parts } = await scoreOf(page);
+  // Four quarters fill the first bar of 4/4; Shift+H on the last, Shift+S (a legato slide) on the third.
+  for (const fret of ["5", "7", "9"]) {
+    await page.keyboard.press(fret);
+    await page.keyboard.press("ArrowRight");
+  }
+  await page.keyboard.press("7");
+  await page.keyboard.press("Shift+H");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Shift+S");
+  const beats = (await scoreOf(page)).parts[0]!.content[bars[0]!.id]!["0:0"]!;
+  expect(beats.map((beat) => beat.notes.s1)).toEqual([{ fret: 5 }, { fret: 7 }, { fret: 9, slideOut: "legato" }, { fret: 7, legato: true }]);
+  // The slide goes on to the last beat; the hammer-on from the last beat has nothing after it, the next bar empty.
+  await expect(page.locator("[data-flag-count]")).toHaveAttribute("data-count", "1");
+  expect(await flagsOf(page)).toEqual([{ kind: "danglingLink", partId: parts[0]!.id, barId: bars[0]!.id, voice: "0:0", beatId: beats[3]!.id, noteKey: "s1" }]);
+  await expect(page.locator('[data-flag][data-kind="danglingLink"]')).toHaveCount(1);
+  await page.keyboard.press("Control+ArrowLeft");
+  await page.keyboard.press("F8");
+  expect(await cursorOf(page)).toMatchObject({ beatId: beats[3]!.id, line: 1 });
+  await expect(page.locator("[data-flag-stopped]")).toHaveText(text.kinds.danglingLink);
+
+  // A note on its string in the next bar: the hammer-on goes on to it, across the bar line.
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("5");
+  await expect(page.locator('[data-flag][data-kind="underfull"]')).toHaveCount(1);
+  expect((await flagsOf(page)).map((flag) => flag.kind)).toEqual(["underfull"]);
+  await expect(page.locator('[data-flag][data-kind="danglingLink"]')).toHaveCount(0);
+  await synced(page);
+  expect(errors).toEqual([]);
+});
+
 /** Every flag drawn is clear of every reserved area, with the page scrolled to its top. */
 async function clearOfReserved(page: Page, what: string): Promise<void> {
   const scroller = page.locator("[data-scroller]");

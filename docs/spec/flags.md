@@ -13,11 +13,13 @@ Flag 是團譜裡不合規則、但系統不會自動修改的地方：只提醒
 | `invalidContent` | 讀不懂的節點，見 [`schema.md`](schema.md) 第 11 節 | 全部 |
 
 - 空的聲線是整小節休止，不是 Flag（`flags.ts` 的 `flagsOf`）。
-- **補充**（#36）：`flags.ts` 的 `flagsOf(score, invalid)` 算出 `underfull`、`overfull`（第一小節帶 `anacrusis` 時不標 underfull）與 `danglingTie`，再把 `readScore` 的 `invalidContent` 併進來，依第 3 節的順序排好。`danglingLink` 的形狀已經在 `Flag` 裡，計算由 #27 加上。
+- **補充**（#36）：`flags.ts` 的 `flagsOf(score, invalid)` 算出 `underfull`、`overfull`（第一小節帶 `anacrusis` 時不標 underfull）與 `danglingTie`，再把 `readScore` 的 `invalidContent` 併進來，依第 3 節的順序排好。`danglingLink` 由 #27 加上（見下一條）。
 - **補充**（#36）：fretted 的 `danglingTie` 要求兩個音都有格號而且相同；前一個音是沒有格號的 dead note 時，tie 也是懸空的。
 - **「前一個音」**（補充）：同一聲部、同一條聲線裡，緊接在前的那個拍點（可以是上一個小節同一條聲線的最後一個拍點）上，同一個音符鍵的音。前一個拍點是休止或沒有那個鍵，就是不存在。
 - **「下一個音」**（補充）：同一聲部、同一條聲線裡，緊接在後的那個拍點（可以是下一個小節同一條聲線的第一個拍點）上，同一條弦的音。
 - 拍點之間的「緊接」只看同一條聲線；另一條聲線或另一個聲部的音不算。
+- **補充**（#27）：`danglingLink` 的寫法是 `flags.ts` 的 `linksOn(note)`（帶 `legato`，或 `slideOut` 是 `legato`、`shift`）與 `beatAfter(beats, index, next)`（「下一個音」所在的拍點）。下一個拍點是休止、那條弦沒有音、在下一個小節而那個小節的同一條聲線是空的，或沒有下一個拍點（譜尾），都是懸空的。`outUp`、`outDown` 與 `slideIn` 不連到別的音，不會懸空。同一個音同時有懸空的 tie 與 link 時是兩個 Flag，tie 在前。
+- **補充**（#27）：投影用同一個「下一個音」：只有連得到時才把 `isHammerPullOrigin`、`slideOutType` 的 `Legato`、`Shift` 交給 alphaTab（[`schema.md`](schema.md) 第 8 節的補充），所以懸空的連結不畫也不發聲，只由這個 Flag 標出來。
 - 時值的 tick 算法見 [`schema.md`](schema.md) 第 6 節。
 
 ## 2. 形狀
