@@ -131,6 +131,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
 
+**補充**（#27）：`Shift+H`（legato）是 `bindings.ts` 的 `TECHNIQUE_KEYS` 裡的一項；`Shift+S`（slideOut）、`Shift+E`（slideIn）是 `slideOut`、`slideIn` 綁定。三者都只綁在 fretted 聲部（這些欄位只有 fretted 有）；有選取時作用在整個範圍，循環型的走到同一個狀態（[`commands.md`](commands.md) 5.4 的補充）。
+
 **補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
 
 ## 4. 各聲部種類的輸入鍵

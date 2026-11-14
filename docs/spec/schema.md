@@ -189,6 +189,9 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 
 - 欄位出現在不適用的聲部種類，或值超出範圍：讀取時略過整個音符並標 `invalidContent`。
 - 沒有 `fret` 而且沒有 `dead` 的 fretted 音符：讀不懂，略過並標記。投影時，沒有格號的 dead note 用格號 0：畫成那條弦上的 X，發出空弦的短音（#26，`projection.ts` 的 `projectNote`）。
+- **補充**（#27）：`legato` 與 `slideOut` 的 `legato`、`shift` 是連結，連到「下一個音」：同一條聲線緊接在後的拍點上同一條弦的音，可以是下一個小節的第一個拍點（[`flags.md`](flags.md) 第 1 節，`flags.ts` 的 `beatAfter`）。投影只在那裡有音時設 `isHammerPullOrigin` 或 `slideOutType`；沒有時不設，那個音是 `danglingLink`。理由：alphaTab 自己找目的音時會跳過休止往後找最多 3 個小節（`Note.nextNoteOnSameLine`），畫出、發出團譜沒有的連結；完全找不到時它也會自己清掉這兩個欄位。`outUp`、`outDown`、`slideIn` 不連到別的音，一律照設。alphaTab 的目的音由它自己在 `finish` 時找，和「下一個音」是同一個音。
+  - **補充**（#27）：`replaceBars` 重建一個小節時，連結跨過的小節線（重建前的 alphaTab 模型裡，或新的 `ScoreJSON` 裡）兩邊的小節也一起重建，連續跨過的一路重建下去：連結由兩個音各自指向對方，而且是 alphaTab 在 finish 起點音那個小節時才建立的。所有要重建的小節先建好、放進模型，再依序 finish，讓每個連結都建立在新的音之間。測試：`packages/score-render/tests/projection.test.ts` 比對部分重建與整份重新投影的連結。
+  - 聲音（alphaTab 1.9 的 `MidiFileGenerator`）：搥弦、勾弦的目的音比較小聲；`legato` 滑音把起點音滑到目的音，目的音不再撥一次；`shift` 滑音也滑過去，但目的音照樣撥；`outUp`、`outDown`、`inBelow`、`inAbove` 在音的結尾或開頭彎一下音高。測試：`packages/score-render/tests/sound.test.ts`。
 - `bend.semitones`：integer 1–4。新設定的 bend 預設 2 個半音（補充，見 [`keymap.md`](keymap.md)）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
   - **補充**（#30）：`stroke` 另外設 `Beat.brushDuration` 為 60 tick（`projection.ts` 的 `STROKE_TICKS`，64 分音符，120 BPM 時約 30 ms），短的拍點最多是拍點長度的四分之一：alphaTab 在 `brushDuration` 是 0 時所有弦同時發聲。down 從最低的弦開始，up 從最高的弦開始（alphaTab 的 `_fillBrushInfo`）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。

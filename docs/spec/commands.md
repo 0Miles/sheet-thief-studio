@@ -188,6 +188,8 @@ interface Cursor {
     - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。
     - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
     - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`。
+  - **補充**（#27）：legato（`Shift+H`）是開關型的技巧，在 `ON_OFF_TECHNIQUES` 裡，只改已經有的音。`slideOut`（`Shift+S`）與 `slideIn`（`Shift+E`）是 `slideOutCycle`、`slideInCycle`（`NoteToggle`，順序是 `schema.ts` 的 `SLIDE_OUTS`、`SLIDE_INS`）：`decide` 是「看到的第一個音的值」的下一個，和拍點記號的 `markingCycle`、`.` 的附點同一個規則，所以選取上全部走到同一個狀態；`turn` 只改已經有的音，不建立音符，其他欄位保留，已經是那個值時不寫入。三者都不檢查有沒有「下一個音」：沒有時照樣寫入，之後被標成 `danglingLink`（[`flags.md`](flags.md)）。
+  - **補充**（#27，#26 留下的）：游標停在讀取時被略過的拍點上時，`toggleAt` 不動，即使那個拍點的音符本身讀得懂。拍點範圍的選取，聲線不是那個聲部有的（`isVoiceKey`）時，和小節範圍一樣不算也不改。
   - **補充**（#30）：拍點記號沿用 5.3 的 `BeatChange<D>`（`changeBeatAt`、`changeBeatsOnSelection`，選取時走 `runsOf` 與 `selectedBeatsOf`），不另開一條選取的路。`decide` 看到的拍點（`SeenBeat`）多了 `markings`（`BeatMarkings`，`CONTEXT.md` 的 Beat marking；不叫 flag，因為 Flag 不存在團譜裡）：讀取時讀出的 stroke、slap、pop、dynamic、text（`read.ts` 的 `readBeatFields`，同時有 slap 與 pop 時讀成只有 slap）；`turn` 回傳的 `BeatWrite` 多了 `set`：值是寫入，`null` 是移除。
     - 三個循環型的記號，選取時全部設成「範圍裡第一個拍點的值」的下一個，和 `.` 的附點一樣：`strokeCycle`（down → up → 沒有）、`slapPopCycle`（slap → pop → 沒有；切到 pop 時同一筆交易移除 slap，所以兩人同時寫成兩者都有的拍點，按一次就只剩 pop）、`dynamicCycle`（沒有 → pp → … → ff → 沒有）。
     - 休止拍點也照樣設上（拍點層級的切換作用在每一個拍點）；讀不懂的拍點不算、也不改；寫入時以儲存的原值為底，不認得的欄位保留。
