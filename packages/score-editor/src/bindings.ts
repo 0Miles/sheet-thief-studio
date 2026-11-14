@@ -1,47 +1,31 @@
-// The keymap as data (docs/spec/keymap.md): which keys run which action, in which context, and the
+// The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
 import type { PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
-/** What a key does; the session runs it (docs/spec/commands.md). */
-export type KeyAction =
-  | "nextBeat"
-  | "previousBeat"
-  | "lineDown"
-  | "lineUp"
-  | "insertBeat"
-  | "delete"
-  | "shorter"
-  | "longer"
-  | "undo"
-  | "redo"
-  | "copy"
-  | "cut"
-  | "paste"
-  | "fret";
+/** What a key the session handles does: a move, or a command (docs/spec/commands.md). */
+export type SessionEffect = "nextBeat" | "previousBeat" | "lineDown" | "lineUp" | "insertBeat" | "delete" | "shorter" | "longer" | "undo" | "redo" | "fret";
+
+/**
+ * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
+ * clipboard's work is done (keymap.md, 1.1; docs/spec/phrases.md).
+ */
+export type NativeEffect = "copy" | "cut" | "paste";
 
 /** Where a key works: on the score whatever the kind of the part, or on parts of one kind only. */
 export type KeyContext = "score" | PartKind;
 
-export interface KeyBinding {
-  action: KeyAction;
+interface BindingKeys {
   context: KeyContext;
-  /** The keys, on every platform unless `mac` says otherwise. */
+  /** The keys, on every platform unless `mac` says otherwise; the first is the one shown (`formatChord`). */
   keys: readonly Chord[];
   /**
-   * The keys on a Mac, where they are not those of `keys`: a Mac has no `Insert` key, and some
-   * keys of Windows are the browser's on a Mac (keymap.md, 1.3).
+   * The keys on a Mac, where they are not those of `keys`: a Mac has no `Insert` key, some keys
+   * of Windows are the browser's on a Mac (keymap.md, 1.3), and a Mac's delete key is Backspace.
    */
   mac?: readonly Chord[];
-  /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
-  repeat?: true;
-  /**
-   * The browser does the work: the key is not `preventDefault`-ed, so that the browser fires its
-   * `copy`, `cut` or `paste` event (keymap.md, 1.1).
-   */
-  native?: true;
   /**
    * The keys as keymap.md writes them for each platform, for the tests: modifiers by the name on
    * the keyboard (`Ctrl`, `Alt`, `Shift`, `Win`; on a Mac `Ctrl`, `Option`, `Shift`, `Cmd`) and
@@ -50,11 +34,26 @@ export interface KeyBinding {
   keymap: Record<KeyPlatform, readonly string[]>;
 }
 
+/** A key the session handles: the shell then calls `preventDefault`. */
+export interface SessionBinding extends BindingKeys {
+  effect: SessionEffect;
+  native?: undefined;
+  /** Held down, the key's auto-repeat runs it again: moves, `+` and `-` only (keymap.md, 1.1). */
+  repeat?: true;
+  /** The fret a digit writes. */
+  value?: number;
+}
+
+/** A key left to the browser: it is not `preventDefault`-ed, so that the browser fires its event. */
+export interface NativeBinding extends BindingKeys {
+  effect: NativeEffect;
+  native: true;
+}
+
+export type KeyBinding = SessionBinding | NativeBinding;
+
 const DIGITS = [..."0123456789"];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
-
-/** The digits of a fret, on the row of digits and on the numeric keypad. */
-const FRET_KEYS = DIGITS.flatMap((digit) => [`Digit${digit}`, `Numpad${digit}`]);
 
 /** The keys of the browser's tabs and windows, with Ctrl or Cmd, and Shift or not. */
 const TAB_KEYS = ["KeyT", "KeyW", "KeyN"].flatMap((code) => [code, `Shift+${code}`]);
@@ -67,25 +66,28 @@ const both = (...keys: string[]): Record<KeyPlatform, readonly string[]> => ({ o
 
 export const KEY_BINDINGS: readonly KeyBinding[] = [
   // Section 2: the keys of every kind of part.
-  { action: "nextBeat", context: "score", keys: ["ArrowRight"], repeat: true, keymap: both("ArrowRight") },
-  { action: "previousBeat", context: "score", keys: ["ArrowLeft"], repeat: true, keymap: both("ArrowLeft") },
-  { action: "lineDown", context: "score", keys: ["ArrowDown"], repeat: true, keymap: both("ArrowDown") },
-  { action: "lineUp", context: "score", keys: ["ArrowUp"], repeat: true, keymap: both("ArrowUp") },
-  { action: "insertBeat", context: "score", keys: ["Insert"], mac: ["Alt+Enter"], keymap: { other: ["Insert"], mac: ["Option+Enter"] } },
-  // The key marked delete on a Mac keyboard sends Backspace; Fn+delete sends Delete.
-  { action: "delete", context: "score", keys: ["Delete", "Backspace"], keymap: both("Delete", "Backspace") },
+  { effect: "nextBeat", context: "score", keys: ["ArrowRight"], repeat: true, keymap: both("ArrowRight") },
+  { effect: "previousBeat", context: "score", keys: ["ArrowLeft"], repeat: true, keymap: both("ArrowLeft") },
+  { effect: "lineDown", context: "score", keys: ["ArrowDown"], repeat: true, keymap: both("ArrowDown") },
+  { effect: "lineUp", context: "score", keys: ["ArrowUp"], repeat: true, keymap: both("ArrowUp") },
+  { effect: "insertBeat", context: "score", keys: ["Insert"], mac: ["Alt+Enter"], keymap: { other: ["Insert"], mac: ["Option+Enter"] } },
+  // The key marked delete on a Mac keyboard sends Backspace, and comes first there; Fn+delete sends Delete.
+  { effect: "delete", context: "score", keys: ["Delete", "Backspace"], mac: ["Backspace", "Delete"], keymap: both("Delete", "Backspace") },
   // `+` is Shift+= on most keyboards: with or without Shift.
-  { action: "shorter", context: "score", keys: ["Equal", "Shift+Equal", "NumpadAdd"], repeat: true, keymap: both("Equal", "Shift+Equal", "NumpadAdd") },
-  { action: "longer", context: "score", keys: ["Minus", "NumpadSubtract"], repeat: true, keymap: both("Minus", "NumpadSubtract") },
-  { action: "undo", context: "score", keys: ["Mod+KeyZ"], keymap: { other: ["Ctrl+KeyZ"], mac: ["Cmd+KeyZ"] } },
+  { effect: "shorter", context: "score", keys: ["Equal", "Shift+Equal", "NumpadAdd"], repeat: true, keymap: both("Equal", "Shift+Equal", "NumpadAdd") },
+  { effect: "longer", context: "score", keys: ["Minus", "NumpadSubtract"], repeat: true, keymap: both("Minus", "NumpadSubtract") },
+  { effect: "undo", context: "score", keys: ["Mod+KeyZ"], keymap: { other: ["Ctrl+KeyZ"], mac: ["Cmd+KeyZ"] } },
   // Not Cmd+Y on a Mac: it is the history of Safari and Chrome.
-  { action: "redo", context: "score", keys: ["Mod+Shift+KeyZ", "Mod+KeyY"], mac: ["Mod+Shift+KeyZ"], keymap: { other: ["Ctrl+Shift+KeyZ", "Ctrl+KeyY"], mac: ["Cmd+Shift+KeyZ"] } },
+  { effect: "redo", context: "score", keys: ["Mod+KeyY", "Mod+Shift+KeyZ"], mac: ["Mod+Shift+KeyZ"], keymap: { other: ["Ctrl+KeyY", "Ctrl+Shift+KeyZ"], mac: ["Cmd+Shift+KeyZ"] } },
   // Windows' older Shift+Delete and Shift+Insert fire the same events; a Mac has neither.
-  { action: "copy", context: "score", keys: ["Mod+KeyC"], native: true, keymap: { other: ["Ctrl+KeyC"], mac: ["Cmd+KeyC"] } },
-  { action: "cut", context: "score", keys: ["Mod+KeyX", "Shift+Delete"], mac: ["Mod+KeyX"], native: true, keymap: { other: ["Ctrl+KeyX", "Shift+Delete"], mac: ["Cmd+KeyX"] } },
-  { action: "paste", context: "score", keys: ["Mod+KeyV", "Shift+Insert"], mac: ["Mod+KeyV"], native: true, keymap: { other: ["Ctrl+KeyV", "Shift+Insert"], mac: ["Cmd+KeyV"] } },
-  // Section 4.1.
-  { action: "fret", context: "fretted", keys: FRET_KEYS, keymap: both(...FRET_KEYS) },
+  { effect: "copy", context: "score", keys: ["Mod+KeyC"], native: true, keymap: { other: ["Ctrl+KeyC"], mac: ["Cmd+KeyC"] } },
+  { effect: "cut", context: "score", keys: ["Mod+KeyX", "Shift+Delete"], mac: ["Mod+KeyX"], native: true, keymap: { other: ["Ctrl+KeyX", "Shift+Delete"], mac: ["Cmd+KeyX"] } },
+  { effect: "paste", context: "score", keys: ["Mod+KeyV", "Shift+Insert"], mac: ["Mod+KeyV"], native: true, keymap: { other: ["Ctrl+KeyV", "Shift+Insert"], mac: ["Cmd+KeyV"] } },
+  // Section 4.1: a digit on the row of digits or on the numeric keypad.
+  ...DIGITS.map((digit): SessionBinding => {
+    const keys = [`Digit${digit}`, `Numpad${digit}`];
+    return { effect: "fret", value: Number(digit), context: "fretted", keys, keymap: both(...keys) };
+  }),
 ];
 
 /**
@@ -166,8 +168,9 @@ export const FORBIDDEN_KEYS: Record<KeyPlatform, readonly string[]> = {
     ...["I", "J", "C", "U"].map((letter) => `Cmd+Option+Key${letter}`),
     "Ctrl+Cmd+KeyF",
     // Option with a letter types a character, or is a dead key: a Mac binds none (keymap.md, 1.2).
-    // F1-F12 without Fn are the Mac's own keys too, but the page cannot tell Fn: a Mac binds a
-    // function key only with a button of the same action next to it (keymap.md, sections 5 and 7).
+    // F1-F12 without Fn are the Mac's own keys too, but not here: a page cannot tell them from
+    // Fn with a function key, which sends the same code; what a function key does on a Mac has a
+    // toolbar button as well (keymap.md, 1.2).
     ...LETTERS.map((letter) => `Option+Key${letter}`),
   ],
 };

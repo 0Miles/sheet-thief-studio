@@ -2,28 +2,26 @@
 // how they are named.
 import { describe, expect, test } from "vitest";
 
+import { FORBIDDEN_KEYS, KEY_BINDINGS, type KeyBinding } from "../src/bindings";
 import {
   chordsOf,
   comboName,
   comboOf,
   detectKeyPlatform,
-  FORBIDDEN_KEYS,
   formatChord,
-  KEY_BINDINGS,
-  type KeyBinding,
   type KeyCombo,
   type KeyPlatform,
   matchKey,
   type ModifierFlag,
   resolveChord,
-} from "../src/index";
+} from "../src/keys";
 
 const PLATFORMS: KeyPlatform[] = ["other", "mac"];
 const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKey"];
 
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
-const nameOf = (binding: KeyBinding) => `${binding.action} (${binding.context})`;
+const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.native ? "" : (binding.value ?? "")} (${binding.context})`;
 /** Two contexts that can be in force at once: the score's keys work on every kind of part. */
 const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || a.context === "score" || b.context === "score";
 
@@ -61,6 +59,7 @@ test.each([
   ["Shift+KeyL", "Shift+L", "⇧L"],
   ["Numpad5", "Num 5", "Num 5"],
   ["Minus", "-", "-"],
+  ["Equal", "+", "+"],
   ["F8", "F8", "F8"],
 ])("%s is named %s on Windows and Linux, %s on a Mac", (chord, other, mac) => {
   expect(formatChord(chord, "other")).toBe(other);

@@ -22,7 +22,7 @@ import {
 } from "@studio/score-model";
 import * as Y from "yjs";
 
-import type { KeyAction } from "./bindings";
+import type { SessionBinding } from "./bindings";
 import { type Key, type KeyPlatform, matchKey } from "./keys";
 
 /** Two digits typed within this many milliseconds make one two-digit fret. */
@@ -180,9 +180,9 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return next;
   }
 
-  /** What each action runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
-  function commandOf(action: KeyAction, key: Key, previous: TypedDigit | null): KeyCommand | undefined {
-    switch (action) {
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
+  function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
+    switch (effect) {
       case "nextBeat":
         return move((at) => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
       case "previousBeat":
@@ -202,18 +202,12 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "undo":
       case "redo":
         return change((at) => {
-          if (action === "redo") undo.redo();
+          if (effect === "redo") undo.redo();
           else undo.undo();
           return settled(at);
         });
       case "fret":
-        // Digit5 or Numpad5.
-        return change((at) => typeDigit(Number(key.code.at(-1)), at, previous));
-      // Done in the copy, cut and paste events the browser fires (docs/spec/phrases.md).
-      case "copy":
-      case "cut":
-      case "paste":
-        return undefined;
+        return change((at) => typeDigit(value, at, previous));
     }
   }
 
@@ -239,8 +233,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       // A digit waits for a second one; any other key that runs something ends the wait.
       const previous = lastDigit;
       lastDigit = null;
-      const command = commandOf(binding.action, key, previous);
-      if (command === undefined) return false;
+      const command = commandOf(binding, previous);
       if (command.changes && readOnly) {
         if (!refused) {
           refused = true;

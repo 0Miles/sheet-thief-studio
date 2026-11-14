@@ -107,7 +107,8 @@ const KEY_NAMES: Record<string, string | Record<KeyPlatform, string>> = {
   Backspace: { other: "Backspace", mac: "⌫" },
   Delete: { other: "Delete", mac: "⌦" },
   Escape: "Esc",
-  Equal: "=",
+  // The key the keymap calls `+`: = and, with Shift, +.
+  Equal: "+",
   Minus: "-",
   Period: ".",
   Comma: ",",
