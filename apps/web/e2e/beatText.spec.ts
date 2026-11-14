@@ -60,7 +60,9 @@ test("on a beat, Enter opens a box for its text: Am7 and Enter put it there, Esc
   expect(errors).toEqual([]);
 });
 
-test("at the top of a score of more than 10 bars, the box of a beat's text never covers an area reserved for the engine's mark", async ({ browser }) => {
+// Below the cursor the box is clear of the mark's area by where it opens: that it moves out of a
+// reserved area it would open into is tested on `entryRect` (tests/overlay.test.ts).
+test("on a beat under the engine's mark, at the top of the page, the box of its text opens below its cursor and covers no reserved area", async ({ browser }) => {
   const id = seedScore({ title: "文字與標記", owner: ADMIN.username, bars: 12 });
   const page = await loggedIn(browser, ADMIN);
   const errors = pageErrors(page);

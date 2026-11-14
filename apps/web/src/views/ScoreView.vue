@@ -41,7 +41,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { clearOf, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
+import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -424,15 +424,10 @@ function goToNextFlag(): void {
   session.moveTo(stop.cursor);
 }
 
-/** The size of the box of a beat's text, and how far below the cursor it opens. */
-const TEXT_BOX = { width: 160, height: 28, gap: 4 };
-
 /** Enter on a beat: a box for its text opens below the cursor, out of the reserved areas (docs/spec/views.md, section 9). */
 function openText(request: TextRequest): void {
   const at = cursorRect.value;
-  if (at === null) return;
-  const below: Rect = { x: at.x, y: at.y + at.height + TEXT_BOX.gap, width: TEXT_BOX.width, height: TEXT_BOX.height };
-  textEntry.value = { request, rect: clearOf(below, reserved.value) };
+  if (at !== null) textEntry.value = { request, rect: entryRect(at, reserved.value) };
 }
 
 /** The box of a beat's text is closed, its text saved or not: the score has the keyboard again. */

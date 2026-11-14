@@ -29,6 +29,20 @@ export function clearOf(rect: Rect, reserved: readonly Rect[]): Rect {
   return clear;
 }
 
+/** The size of the box a beat's text is typed in, and how far below the cursor it opens (docs/spec/keymap.md, 6.1). */
+export const ENTRY_BOX = { width: 160, height: 28, gap: 4 };
+
+/**
+ * Where the box of a beat's text opens: just below the cursor, at its own size, and below every
+ * reserved area it would reach into. Moved, never cut as `clearOf` cuts: a box that is shorter
+ * than its text cannot be typed in.
+ */
+export function entryRect(cursor: Rect, reserved: readonly Rect[]): Rect {
+  let box: Rect = { x: cursor.x, y: cursor.y + cursor.height + ENTRY_BOX.gap, width: ENTRY_BOX.width, height: ENTRY_BOX.height };
+  for (const area of reserved) if (overlaps(box, area)) box = { ...box, y: area.y + area.height };
+  return box;
+}
+
 /** A flag as drawn (docs/spec/flags.md, section 4): a box on a bar, or a mark on a note. */
 export interface FlagMark {
   kind: Flag["kind"];
