@@ -10,7 +10,7 @@ import type * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, Selection } from "@studio/score-model";
 
 import { beatIdOf, type Projection } from "./projection";
-import type { Rect } from "./types";
+import type { NoteHead, Rect } from "./types";
 
 type BoundsLookup = alphaTab.rendering.BoundsLookup;
 type BarBounds = alphaTab.rendering.BarBounds;
@@ -69,6 +69,17 @@ function beatSpan(beat: BeatBounds, metrics: StaffMetrics): { left: number; righ
   return { left: beat.onNotesX - half, right: beat.onNotesX + half };
 }
 
+/** The drawn bar of the cursor's part, staff and bar, with the part's shape and the cursor's voice; null when it is not drawn. */
+function drawnBarOf(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor): { bar: BarBounds; barIndex: number; shape: PartShape; voice: number } | null {
+  const track = projection.partIndex.get(cursor.partId);
+  const barIndex = projection.barIndex.get(cursor.barId);
+  const shape = parts.get(cursor.partId);
+  if (track === undefined || barIndex === undefined || shape === undefined) return null;
+  const [staff = 0, voice = 0] = cursor.voice.split(":").map(Number);
+  const bar = barBoundsOf(lookup, barIndex, track, staff);
+  return bar === null ? null : { bar, barIndex, shape, voice };
+}
+
 /**
  * The rectangle of a cursor: centred on the notes of its beat and on its line. In the append
  * slot of an empty voice it is a thin caret at the left edge of the place of the beats. In an
@@ -78,13 +89,9 @@ function beatSpan(beat: BeatBounds, metrics: StaffMetrics): { left: number; righ
  * drawn.
  */
 export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor, metrics: StaffMetrics): Rect | null {
-  const track = projection.partIndex.get(cursor.partId);
-  const barIndex = projection.barIndex.get(cursor.barId);
-  const shape = parts.get(cursor.partId);
-  if (track === undefined || barIndex === undefined || shape === undefined) return null;
-  const [staff = 0, voice = 0] = cursor.voice.split(":").map(Number);
-  const bar = barBoundsOf(lookup, barIndex, track, staff);
-  if (bar === null) return null;
+  const place = drawnBarOf(lookup, projection, parts, cursor);
+  if (place === null) return null;
+  const { bar, barIndex, shape, voice } = place;
 
   const height = cursorHeight(shape, metrics);
   const y = bar.visualBounds.y + lineOffset(shape, cursor.line, metrics) - height / 2;
@@ -104,6 +111,27 @@ export function cursorRect(lookup: BoundsLookup, projection: Projection, parts: 
   const end = next === undefined ? bar.visualBounds.x + bar.visualBounds.w : beatSpan(next, metrics).left;
   const width = Math.min(CARET_WIDTH * metrics.staffSpace, Math.max(end - span.right, 0));
   return { x: (span.right + end - width) / 2, y, width, height };
+}
+
+/** The key of a note of the score as alphaTab has it: strings count from the highest there, from the lowest in alphaTab. */
+function noteKeyOf(note: alphaTab.model.Note, shape: PartShape): string {
+  if (shape.kind === "fretted") return `s${shape.strings - note.string + 1}`;
+  if (shape.kind === "percussion") return `p${note.percussionArticulation}`;
+  return `n${note.octave * 12 + note.tone}`;
+}
+
+/**
+ * The note heads of the beat the cursor is on, where alphaTab reports it drew them (fret numbers,
+ * in tablature). Diagnostic: the measurements compare them with `cursorRect`. None in an append
+ * slot, or when the beat is not drawn.
+ */
+export function noteHeads(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, cursor: Cursor): NoteHead[] {
+  if (cursor.at !== "on" || cursor.beatId === null) return [];
+  const place = drawnBarOf(lookup, projection, parts, cursor);
+  const address = projection.addresses.get(cursor.beatId);
+  if (place === null || address === undefined || address.bar !== place.barIndex) return [];
+  const beat = drawnBeat(place.bar, address.voice, address.beat);
+  return (beat?.notes ?? []).map(({ note, noteHeadBounds: box }) => ({ key: noteKeyOf(note, place.shape), rect: { x: box.x, y: box.y, width: box.w, height: box.h } }));
 }
 
 /** The box around boxes, reaching `margin` above and below them. */

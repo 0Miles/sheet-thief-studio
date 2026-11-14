@@ -6,8 +6,7 @@ import type { BeatJSON } from "@studio/score-model";
 
 import { overlaps } from "../src/overlay";
 import { ADMIN, EDITOR } from "./environment";
-import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
-import { beatsIn } from "./studio";
+import { beatsIn, cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
 
 const frets = (beats: BeatJSON[]) => beats.map((beat) => beat.notes.s1?.fret ?? null);
 

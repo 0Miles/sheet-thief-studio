@@ -1,9 +1,16 @@
-// Scores the spike page starts from. M0 only: real scores will be created by the server.
-import { addPart, createScore, type Cursor, cursorAt, insertBars, insertBeat, LOCAL, type NewPart, type NoteJSON, type NoteValue, setNote } from "@studio/score-model";
+// The scores the measurements open in the edit view: made here, in the test, and written into the
+// end-to-end database as a score of the admin's (`seedScore`). No page or API of the app makes
+// them: a 100 × 5 score has no place in any build (docs/spec/testing.md, section 2).
+import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, LOCAL, type NewPart, type NoteJSON, type NoteValue, setNote } from "@studio/score-model";
 import { DRUM_PIECES } from "@studio/score-render";
-import type * as Y from "yjs";
+import * as Y from "yjs";
+
+import { ADMIN } from "../environment";
+import { seedScore } from "../pages";
 
 const BASS_TUNING = [43, 38, 33, 28];
+const DEMO_TITLE = "Demo";
+const perfTitle = (bars: number) => `Perf ${bars} × ${BAND.length}`;
 
 /** The parts of the demo band, in the order they are added. */
 const BAND: NewPart[] = [
@@ -38,9 +45,9 @@ export interface DemoOptions {
  * A short band score. Bar 1 and 2 hold music in every part, bar 3 is half filled (it is
  * completed with rests on the page) and the rest is empty.
  */
-export function seedDemo(doc: Y.Doc, { bars, parts }: DemoOptions): void {
+function seedDemo(doc: Y.Doc, { bars, parts }: DemoOptions): void {
   doc.transact(() => {
-    createScore(doc, "Spike");
+    createScore(doc, DEMO_TITLE);
     const barIds = insertBars(doc, { after: null, count: bars });
     const [first, second, third] = barIds;
     BAND.slice(0, parts).forEach((part, index) => {
@@ -117,12 +124,12 @@ function sequence(seed: number): (below: number) => number {
 }
 
 /** The score the latency is measured on: every bar of every part of the band holds eight eighths. */
-export function seedPerf(doc: Y.Doc, bars = 100): void {
+function seedPerf(doc: Y.Doc, bars: number): void {
   const next = sequence(20261112);
   const scale = [60, 62, 63, 65, 67, 68, 70, 72];
   const flats: Record<number, string> = { 63: "Eb", 68: "Ab", 70: "Bb" };
   doc.transact(() => {
-    createScore(doc, `Perf ${bars} × ${BAND.length}`);
+    createScore(doc, perfTitle(bars));
     const barIds = insertBars(doc, { after: null, count: bars });
     const [lead, drums, keys, bass, rhythm] = BAND.map((part) => addPart(doc, part)) as [string, string, string, string, string];
     for (const barId of barIds) {
@@ -139,4 +146,28 @@ export function seedPerf(doc: Y.Doc, bars = 100): void {
       }));
     }
   }, LOCAL);
+}
+
+/** A score written into the end-to-end database: its id, and the ids of its parts in order. */
+export interface SeededScore {
+  id: string;
+  partIds: string[];
+}
+
+/** Write a score made here into the end-to-end database, owned by the admin. */
+function seeded(title: string, seed: (doc: Y.Doc) => void): SeededScore {
+  const doc = new Y.Doc();
+  seed(doc);
+  const id = seedScore({ title, owner: ADMIN.username, state: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64") });
+  return { id, partIds: docToJson(doc).parts.map((part) => part.id) };
+}
+
+/** A new demo score of the band. */
+export function demoScore(options: DemoOptions): SeededScore {
+  return seeded(DEMO_TITLE, (doc) => seedDemo(doc, options));
+}
+
+/** A new score the latency is measured on (100 bars × 5 parts unless told otherwise). */
+export function perfScore(bars = 100): SeededScore {
+  return seeded(perfTitle(bars), (doc) => seedPerf(doc, bars));
 }

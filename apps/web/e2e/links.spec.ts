@@ -7,8 +7,7 @@ import type { BeatJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { createScore, loggedIn, pageErrors } from "./pages";
-import { beatsIn } from "./studio";
+import { beatsIn, createScore, loggedIn, pageErrors } from "./pages";
 
 /** The beats of the first voice of the first bar of the first part, as the page holds them. */
 async function firstBeats(page: Page): Promise<BeatJSON[]> {

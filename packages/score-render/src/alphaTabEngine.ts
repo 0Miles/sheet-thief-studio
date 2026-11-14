@@ -2,10 +2,10 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
-import type { PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import type { NoteHead, PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -21,18 +21,6 @@ export interface EngineOptions {
   seekOnClick?: boolean;
   /** Lay out and draw in a web worker (the default) or on the page's own thread. */
   useWorkers?: boolean;
-  /**
-   * How `patchBars` brings the changed bars to alphaTab: "replace" rebuilds only those bars
-   * inside the model alphaTab already has; "project" builds the whole model again.
-   */
-  patch?: "replace" | "project";
-  /** Tell alphaTab which bar changed first, so that it keeps the systems before it. */
-  partialLayout?: boolean;
-  /**
-   * Draw only this many bars around the last changed one instead of the whole score. Spike
-   * only (the fallback of question S2): the bars outside the window are not on the page.
-   */
-  windowBars?: number;
   scale?: number;
 }
 
@@ -225,6 +213,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
     return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+  }
+
+  noteHeadsOf(cursor: Cursor): NoteHead[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return noteHeads(lookup, this.projection, this.parts, cursor).map((head) => ({ ...head, rect: this.fromSurface(head.rect) }));
   }
 
   boundsAtTick(tick: number): Rect | null {
@@ -444,18 +438,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const projectionTimings = { build: 0, finish: 0 };
     const previous = this.projection;
     let firstChanged: number | null = null;
-    if (previous && barIds && barIds.size > 0) {
-      if ((this.options.patch ?? "replace") === "replace") {
-        firstChanged = replaceBars(previous, score, [...barIds], settings, projectionTimings);
-      } else if (score.bars.length === previous.barIds.length && score.parts.length === previous.partIds.length) {
-        this.projection = projectScore(score, settings, projectionTimings);
-        firstChanged = Math.min(...[...barIds].map((id) => this.projection?.barIndex.get(id) ?? 0));
-      }
-    }
+    // Only the changed bars are rebuilt, inside the model alphaTab already has; alphaTab is told
+    // which bar changed first, so that it keeps the systems before it (docs/adr/0003).
+    if (previous && barIds && barIds.size > 0) firstChanged = replaceBars(previous, score, [...barIds], settings, projectionTimings);
     if (firstChanged === null) this.projection = projectScore(score, settings, projectionTimings);
     const projection = this.projection as Projection;
-    const sameWindow = this.moveWindow(firstChanged ?? 0, projection.barIds.length);
-    const partial = firstChanged !== null && sameWindow && !this.layoutChanged && (this.options.partialLayout ?? true);
+    const partial = firstChanged !== null && !this.layoutChanged;
     const hints = partial ? { firstChangedMasterBar: firstChanged as number, reuseViewport: true } : firstChanged !== null ? { reuseViewport: true } : undefined;
     this.running = {
       partial,
@@ -503,25 +491,6 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     if (display.scale === this.scale) return;
     display.scale = this.scale;
     this.api.updateSettings();
-  }
-
-  /**
-   * Keep the drawn window of bars around a changed bar. Returns false when the window moved:
-   * what was laid out before is then of no use.
-   */
-  private moveWindow(changed: number, barCount: number): boolean {
-    const size = this.options.windowBars;
-    if (size === undefined) return true;
-    const display = this.api.settings.display;
-    // Windows start every half window, so that typing along a line does not move it at every bar.
-    const half = Math.max(Math.floor(size / 2), 1);
-    const start = Math.min(Math.max(Math.floor(changed / half) * half - half / 2, 0), Math.max(barCount - size, 0));
-    const startBar = Math.floor(start) + 1;
-    if (display.startBar === startBar && display.barCount === size) return true;
-    display.startBar = startBar;
-    display.barCount = size;
-    this.api.updateSettings();
-    return false;
   }
 
   private metrics(): StaffMetrics {

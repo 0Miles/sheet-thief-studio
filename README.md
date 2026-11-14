@@ -72,4 +72,10 @@ pnpm lint && pnpm typecheck && pnpm test
 pnpm --filter @studio/web test:e2e
 ```
 
-技術驗證頁：`/spike/<團譜 id>`（共編：要先登入，而且是那份團譜的成員）與 `/local`（只在這一頁，不需要登入）。量測的重跑方式見 [`docs/spike-report.md`](docs/spike-report.md)。
+量測（不是 CI 的關卡，見 [`docs/spec/testing.md`](docs/spec/testing.md) 第 4 節）：和端對端測試一樣自己啟動 server 與網頁（網頁用 `VITE_MEASURE=1` 建置），在編輯視圖上量，數字與截圖寫到 `docs/measurements/`。前面加 `HEADED=1` 是開視窗跑，加 `MEASURE_RUNS=3` 是只確認套件能跑：
+
+```bash
+pnpm --filter @studio/web measure
+```
+
+M0 技術驗證的結果見 [`docs/spike-report.md`](docs/spike-report.md)。
