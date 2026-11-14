@@ -203,6 +203,17 @@ export function isNoteKey(kind: PartKind, strings: number, key: string): boolean
   return Number(match[1]) <= (kind === "fretted" ? strings : 127);
 }
 
+/**
+ * The note a value stored at `key` reads as, on a part of `kind` with `strings` strings; undefined
+ * when reading leaves it out (section 11): a key of another kind or string, or a note this kind
+ * of part cannot hold.
+ */
+export function readNote(kind: PartKind, strings: number, key: string, value: unknown): NoteJSON | undefined {
+  if (!isNoteKey(kind, strings, key) || value instanceof Y.AbstractType) return undefined;
+  const note = kindSchemas[kind].note.safeParse(value);
+  return note.success ? note.data : undefined;
+}
+
 /** Whether a key names a voice of a part with `staves` staves: "<staff>:<voice>", each voice 0 or 1. */
 export function isVoiceKey(key: string, staves: number): boolean {
   return voiceKeys(staves).includes(key);
@@ -273,7 +284,7 @@ export const partSchema = z.discriminatedUnion("kind", [partSchemas.fretted, par
       beats.forEach((beat, index) => {
         if (!rules.beat.safeParse(beat).success) context.addIssue({ code: "custom", message: "not a beat of this kind of part", path: [...path, index] });
         for (const [key, note] of Object.entries(beat.notes)) {
-          if (isNoteKey(part.kind, part.tuning.length, key) && rules.note.safeParse(note).success) continue;
+          if (readNote(part.kind, part.tuning.length, key, note)) continue;
           context.addIssue({ code: "custom", message: "not a note of this part", path: [...path, index, "notes", key] });
         }
       });
@@ -420,6 +431,13 @@ export function staffCountOf(part: YPart): number {
   if (kind === undefined) return 1;
   const staves = partSchemas[kind].shape.staves.safeParse(part.get("staves"));
   return staves.success ? staves.data.length : KIND_DEFAULTS[kind].staves.length;
+}
+
+/** How many strings a part has, as reading counts them: those of its tuning; none when its kind or its tuning cannot be read. */
+export function stringCountOf(part: YPart): number {
+  const kind = partKindOf(part);
+  const tuning = kind === undefined ? undefined : partSchemas[kind].shape.tuning.safeParse(part.get("tuning"));
+  return tuning?.success ? tuning.data.length : 0;
 }
 
 /**

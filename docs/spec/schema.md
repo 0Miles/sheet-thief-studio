@@ -188,7 +188,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 | `spell?` | 見 8.1 | pitched | `accidentalMode`（`projection.ts:100-117`） |
 
 - 欄位出現在不適用的聲部種類，或值超出範圍：讀取時略過整個音符並標 `invalidContent`。
-- 沒有 `fret` 而且沒有 `dead` 的 fretted 音符：讀不懂，略過並標記。現在的投影遇到沒有格號的音會丟掉（`projection.ts:127`），要改成 dead note 可以沒有格號。
+- 沒有 `fret` 而且沒有 `dead` 的 fretted 音符：讀不懂，略過並標記。投影時，沒有格號的 dead note 用格號 0：畫成那條弦上的 X，發出空弦的短音（#26，`projection.ts` 的 `projectNote`）。
 - `bend.semitones`：integer 1–4。新設定的 bend 預設 2 個半音（補充，見 [`keymap.md`](keymap.md)）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
 - 小節層級的投影對照：`keySig` → 每個聲部每個 `Bar` 的 `keySignature` 與 `keySignatureType`（`MasterBar` 上的同名欄位在 1.9 已 deprecated，`alphaTab.d.ts:11229-11250`）；`repeatStart` → `MasterBar.isRepeatStart`；`repeatEnd` → `repeatCount`；`voltas` → `alternateEndings` 的位元；`section` → `MasterBar.section`；`anacrusis` → `isAnacrusis`；`tempo` → 小節開頭的速度 automation。

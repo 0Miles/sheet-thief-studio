@@ -3,7 +3,6 @@ import * as Y from "yjs";
 
 import {
   addPart,
-  barsOf,
   contentOf,
   createScore,
   type Cursor,
@@ -16,7 +15,6 @@ import {
   insertBars,
   insertBeat,
   isRestAt,
-  LOCAL,
   partsOf,
   SCHEMA_VERSION,
   setDuration,
@@ -24,7 +22,7 @@ import {
   setNote,
   STANDARD_GUITAR,
 } from "../src/index";
-import { appendBeat } from "./support";
+import { appendBeat, transactionsOf, undoOf } from "./support";
 
 function score(bars = 2) {
   const doc = new Y.Doc();
@@ -61,17 +59,6 @@ test("bars inserted in the middle land between their neighbours, for every part"
 /** The beats of the first voice of a bar of the first part, as [id, value, dots, tuplet, notes]. */
 function beatsOf(doc: Y.Doc, barId: string, part = 0) {
   return docToJson(doc).parts[part]!.content[barId]!["0:0"]!.map((beat) => [beat.id, beat.value, beat.dots, beat.tuplet, beat.notes]);
-}
-
-/** Count the transactions of a document from now on. */
-function transactionsOf(doc: Y.Doc): { count: number } {
-  const counter = { count: 0 };
-  doc.on("afterTransaction", () => (counter.count += 1));
-  return counter;
-}
-
-function undoOf(doc: Y.Doc): Y.UndoManager {
-  return new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
 }
 
 const triplet = { actual: 3, normal: 2 };

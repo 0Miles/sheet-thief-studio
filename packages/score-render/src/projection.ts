@@ -124,10 +124,11 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
   if (!Number.isInteger(number)) return null;
   const note = new model.Note();
   if (key.startsWith("s") && part.kind === "fretted") {
-    if (number < 1 || number > part.tuning.length || json.fret === undefined) return null;
+    // A dead note may have no fret (docs/spec/schema.md, section 8): it is drawn as an X all the same.
+    if (number < 1 || number > part.tuning.length || (json.fret === undefined && !json.dead)) return null;
     // alphaTab counts strings from the lowest; the score from the highest.
     note.string = part.tuning.length - number + 1;
-    note.fret = json.fret;
+    note.fret = json.fret ?? 0;
   } else if (key.startsWith("p") && part.kind === "percussion") {
     note.percussionArticulation = number;
   } else if (key.startsWith("n") && part.kind === "pitched") {
@@ -138,7 +139,13 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
     return null;
   }
   if (json.tie) note.isTieDestination = true;
+  if (json.dead) note.isDead = true;
   if (json.ghost) note.isGhost = true;
+  if (json.staccato) note.isStaccato = true;
+  if (json.accent) note.accentuated = model.AccentuationType.Normal;
+  if (json.letRing) note.isLetRing = true;
+  if (json.palmMute) note.isPalmMute = true;
+  if (json.vibrato) note.vibrato = model.VibratoType.Slight;
   return note;
 }
 
@@ -157,7 +164,10 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
   }
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson);
-    if (note) beat.addNote(note);
+    if (!note) continue;
+    beat.addNote(note);
+    // Tapping is the beat's in alphaTab: any note of the beat tapped taps it.
+    if (noteJson.tap) beat.tap = true;
   }
   return beat;
 }

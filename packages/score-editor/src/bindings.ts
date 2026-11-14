@@ -1,7 +1,7 @@
 // The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
-import type { PartKind } from "@studio/score-model";
+import { ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
@@ -22,7 +22,8 @@ export type SessionEffect =
   | "longer"
   | "undo"
   | "redo"
-  | "fret";
+  | "fret"
+  | OnOffTechnique;
 
 /**
  * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
@@ -93,6 +94,18 @@ const ZOOM_KEYS = ["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract
 /** The same keys on both platforms. */
 const both = (...keys: string[]): Record<KeyPlatform, readonly string[]> => ({ other: keys, mac: keys });
 
+/** Section 3: the letter, with Shift, of each technique a key turns on and off on a note of a fretted part. */
+const TECHNIQUE_KEYS: Record<OnOffTechnique, string> = {
+  dead: "KeyX",
+  ghost: "KeyG",
+  accent: "KeyA",
+  staccato: "KeyC",
+  vibrato: "KeyV",
+  palmMute: "KeyP",
+  letRing: "KeyI",
+  tap: "KeyK",
+};
+
 export const KEY_BINDINGS: readonly KeyBinding[] = [
   // Section 2: the keys of every kind of part.
   { effect: "nextBeat", context: "score", keys: ["ArrowRight"], repeat: true, keymap: both("ArrowRight") },
@@ -123,6 +136,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
     return { effect: "fret", value: Number(digit), context: "fretted", keys, keymap: both(...keys) };
+  }),
+  // Section 3: Shift and a letter turns a technique on and off, on a Mac as well.
+  ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
+    const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
+    return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
   }),
 ];
 

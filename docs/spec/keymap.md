@@ -124,6 +124,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
 
+**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
+
 ## 4. 各聲部種類的輸入鍵
 
 這一節的鍵在 macOS 相同：不帶修飾鍵，或只帶 `Shift`，平台層不換。

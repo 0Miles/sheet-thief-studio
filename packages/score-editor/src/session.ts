@@ -16,6 +16,8 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
+  noteKeyAt,
+  type OnOffTechnique,
   partKindOf,
   partsOf,
   type Selection,
@@ -24,6 +26,9 @@ import {
   settleCursor,
   settleSelection,
   stepDuration,
+  techniqueToggle,
+  toggleAt,
+  toggleOnSelection,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -218,7 +223,29 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     run: (at) => ({ cursor: run(at), selection: settleSelection(doc, selected) }),
   });
 
-  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
+  /** A command that works on the selection when there is one (which then stays), else at the cursor. */
+  const selectionOrCursor = (onSelected: (selected: Selection, at: Cursor) => Cursor, atCursor: (at: Cursor) => Cursor): KeyCommand => {
+    const selected = selection;
+    return selected === null ? change(atCursor) : onSelection(selected, (at) => onSelected(selected, at));
+  };
+
+  /**
+   * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
+   * else on the note of the cursor's line (`noteKeyAt`), where dead may make a note, and a beat
+   * for it in the append slot.
+   */
+  function toggleTechnique(technique: OnOffTechnique): KeyCommand {
+    const toggle = techniqueToggle(technique);
+    return selectionOrCursor(
+      (selected, at) => toggleOnSelection(doc, selected, at, toggle),
+      (at) => {
+        const key = noteKeyAt(doc, at);
+        return key === null ? at : markAppended(at, (here) => toggleAt(doc, here, key, toggle));
+      },
+    );
+  }
+
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3 and 4.1). */
   function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
     switch (effect) {
       case "nextBeat":
@@ -242,11 +269,10 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "insertBeat":
         return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
       case "delete":
-        if (selection !== null) {
-          const selected = selection;
-          return onSelection(selected, (at) => deleteSelection(doc, selected, at));
-        }
-        return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
+        return selectionOrCursor(
+          (selected, at) => deleteSelection(doc, selected, at),
+          (at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)),
+        );
       case "shorter":
         return change((at) => stepDuration(doc, at, 1));
       case "longer":
@@ -260,6 +286,9 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         });
       case "fret":
         return change((at) => typeDigit(value, at, previous));
+      default:
+        // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
+        return toggleTechnique(effect);
     }
   }
 
