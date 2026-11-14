@@ -1,7 +1,7 @@
 // Overlays move out of the reserved areas (docs/spec/views.md, section 9).
 import type { Cursor, Flag, Selection } from "@studio/score-model";
 import type { NoteHead } from "@studio/score-render";
-import { describe, expect, test } from "vitest";
+import { expect, test } from "vitest";
 
 import { clearOf, flagMarksOf, overlaps } from "../src/overlay";
 
@@ -31,37 +31,46 @@ test("a rectangle inside an area moves below it, its size kept", () => {
 });
 
 // Flags on the page (docs/spec/flags.md, section 4): a box on a bar, a mark on a note, out of the reserved areas.
-describe("flag marks", () => {
-  const bar = { x: 220, y: 20, width: 60, height: 80 };
-  const head = { x: 240, y: 60, width: 8, height: 10 };
-  const asked: unknown[] = [];
+
+/** A renderer that draws bar "b" of every part, and the notes on strings 2 and 3 of beat "x"; it keeps the selections it is asked for. */
+function drawing() {
+  const asked: Selection[] = [];
   const renderer = {
     boundsOfSelection: (selection: Selection) => {
       asked.push(selection);
-      return selection.kind === "bars" && selection.anchorBarId === "b" ? [bar] : [];
+      return selection.kind === "bars" && selection.anchorBarId === "b" ? [{ x: 220, y: 20, width: 60, height: 80 }] : [];
     },
-    noteHeadsOf: (cursor: Cursor): NoteHead[] => (cursor.beatId === "x" ? [{ key: "s2", rect: { x: 200, y: 0, width: 8, height: 10 } }, { key: "s3", rect: head }] : []),
+    noteHeadsOf: (cursor: Cursor): NoteHead[] =>
+      cursor.beatId === "x"
+        ? [
+            { key: "s2", rect: { x: 200, y: 0, width: 8, height: 10 } },
+            { key: "s3", rect: { x: 240, y: 60, width: 8, height: 10 } },
+          ]
+        : [],
   };
+  return { renderer, asked };
+}
 
-  test("a bar's flag is a box on it, its stroke inside what is kept clear of the reserved areas", () => {
-    const flags: Flag[] = [{ kind: "underfull", partId: "g", barId: "b", voice: "0:0" }];
-    expect(flagMarksOf(renderer, flags, ["g"], [AREA])).toEqual([{ kind: "underfull", shape: "box", rect: { x: 221, y: 41, width: 58, height: 58 } }]);
-    expect(asked.at(-1)).toEqual({ kind: "bars", partId: "g", anchorBarId: "b", focusBarId: "b" });
-    // A part not shown is not drawn on.
-    expect(flagMarksOf(renderer, flags, ["h"], [AREA])).toEqual([]);
-  });
+test("a bar's flag is a box on it, its stroke inside what is kept clear of the reserved areas", () => {
+  const { renderer, asked } = drawing();
+  const flags: Flag[] = [{ kind: "underfull", partId: "g", barId: "b", voice: "0:0" }];
+  expect(flagMarksOf(renderer, flags, ["g"], [AREA])).toEqual([{ kind: "underfull", shape: "box", rect: { x: 221, y: 41, width: 58, height: 58 } }]);
+  expect(asked).toEqual([{ kind: "bars", partId: "g", anchorBarId: "b", focusBarId: "b" }]);
+  // A part not shown is not drawn on.
+  expect(flagMarksOf(renderer, flags, ["h"], [AREA])).toEqual([]);
+});
 
-  test("a note's flag is a mark around its head; invalid content in a bar is a box on that bar in every part shown, or in its own part", () => {
-    const flags: Flag[] = [
-      { kind: "danglingTie", partId: "g", barId: "b", voice: "0:0", beatId: "x", noteKey: "s3" },
-      { kind: "danglingTie", partId: "g", barId: "b", voice: "0:0", beatId: "gone", noteKey: "s3" },
-      { kind: "invalidContent", barId: "b", what: "bar.timeSig" },
-      { kind: "invalidContent", partId: "h", what: "part.name" },
-    ];
-    expect(flagMarksOf(renderer, flags, ["g", "h"], [])).toEqual([
-      { kind: "danglingTie", shape: "note", rect: { x: 238, y: 58, width: 12, height: 14 } },
-      { kind: "invalidContent", shape: "box", rect: { x: 221, y: 21, width: 58, height: 78 } },
-      { kind: "invalidContent", shape: "box", rect: { x: 221, y: 21, width: 58, height: 78 } },
-    ]);
-  });
+test("a note's flag is a mark around its head; invalid content in a bar is a box on that bar in every part shown, or in its own part", () => {
+  const { renderer } = drawing();
+  const flags: Flag[] = [
+    { kind: "danglingTie", partId: "g", barId: "b", voice: "0:0", beatId: "x", noteKey: "s3" },
+    { kind: "danglingTie", partId: "g", barId: "b", voice: "0:0", beatId: "gone", noteKey: "s3" },
+    { kind: "invalidContent", barId: "b", what: "bar.timeSig" },
+    { kind: "invalidContent", partId: "h", what: "part.name" },
+  ];
+  expect(flagMarksOf(renderer, flags, ["g", "h"], [])).toEqual([
+    { kind: "danglingTie", shape: "note", rect: { x: 238, y: 58, width: 12, height: 14 } },
+    { kind: "invalidContent", shape: "box", rect: { x: 221, y: 21, width: 58, height: 78 } },
+    { kind: "invalidContent", shape: "box", rect: { x: 221, y: 21, width: 58, height: 78 } },
+  ]);
 });

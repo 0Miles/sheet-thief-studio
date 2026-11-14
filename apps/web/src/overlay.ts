@@ -37,7 +37,7 @@ export interface FlagMark {
 }
 
 /** The width of a box's stroke: it is drawn inside the box, which is inset by half of it. */
-const FLAG_STROKE = 2;
+export const FLAG_STROKE = 2;
 /** How far a note's mark reaches around its head. */
 const NOTE_MARGIN = 2;
 
@@ -65,6 +65,7 @@ export function flagMarksOf(
     if (barId === undefined) return [];
     if (kind === "danglingTie" || kind === "danglingLink") {
       if (!partIds.includes(flag.partId)) return [];
+      // The heads of every note of the beat: the line the cursor is given does not matter.
       const head = renderer.noteHeadsOf({ partId: flag.partId, barId, voice: flag.voice, beatId: flag.beatId, at: "on", line: 1 }).find((each) => each.key === flag.noteKey);
       if (head === undefined) return [];
       const { x, y, width, height } = head.rect;

@@ -136,9 +136,9 @@ function placesIn(score: ScoreJSON) {
   };
 }
 
-/** Two flags of the same kind at the same place, and of the same what. */
-function sameFlag(a: Flag, b: Flag): boolean {
-  const keys = Object.keys(a) as (keyof Flag)[];
+/** The same fields with the same values: two flags of one kind at one place, two cursors at one place. */
+function sameFields<T extends object>(a: T, b: T): boolean {
+  const keys = Object.keys(a) as (keyof T)[];
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
 
@@ -172,15 +172,25 @@ export interface FlagStop {
   cursor: Cursor;
 }
 
+/** Where F8 stopped is still where the cursor is, and its flag is still there: not moved off, not fixed. */
+export function stillAt(stop: FlagStop | null, at: Cursor | null, flags: readonly Flag[]): stop is FlagStop {
+  return stop !== null && at !== null && sameFields(stop.cursor, at) && flags.some((flag) => sameFields(flag, stop.flag));
+}
+
+export interface NextFlagOptions {
+  /** Where F8 last stopped: while the cursor is still there, F8 goes on to the flag after that one, which may be on the same beat. */
+  stopped?: FlagStop | null;
+  /** The parts shown, the only ones F8 goes to; all of them when left out. */
+  partIds?: readonly string[];
+}
+
 /**
  * Where F8 goes (docs/spec/flags.md, section 4): the first flag after the cursor in the order of
  * `flags` (`flagsOf`), from the first again after the last; the first when there is no cursor.
- * `stoppedAt` is the flag F8 last stopped at, while the cursor is still there: F8 goes on to the
- * one after it, which may be on the same beat. Only flags the cursor can go to count: in a part
- * of `partIds` (all when left out), in a bar of the score. The cursor keeps its line in its own
- * part. Null when there is no such flag.
+ * Only flags the cursor can go to count: in a part shown, in a bar of the score. The cursor keeps
+ * its line in its own part. Null when there is no such flag.
  */
-export function nextFlag(score: ScoreJSON, flags: readonly Flag[], at: Cursor | null, stoppedAt?: Flag, partIds?: readonly string[]): FlagStop | null {
+export function nextFlag(score: ScoreJSON, flags: readonly Flag[], at: Cursor | null, { stopped = null, partIds }: NextFlagOptions = {}): FlagStop | null {
   const { rankOf, rankAt } = placesIn(score);
   const stops = flags.flatMap((flag) => {
     if (partIds !== undefined && (flag.partId === undefined || !partIds.includes(flag.partId))) return [];
@@ -188,8 +198,9 @@ export function nextFlag(score: ScoreJSON, flags: readonly Flag[], at: Cursor | 
     return cursor === null ? [] : [{ flag, cursor }];
   });
   if (stops.length === 0) return null;
-  const stopped = stoppedAt === undefined ? -1 : stops.findIndex(({ flag }) => sameFlag(flag, stoppedAt));
-  if (stopped >= 0) return stops[(stopped + 1) % stops.length]!;
+  const stoppedAt = stopped !== null && at !== null && sameFields(stopped.cursor, at) ? stopped.flag : undefined;
+  const index = stoppedAt === undefined ? -1 : stops.findIndex(({ flag }) => sameFields(flag, stoppedAt));
+  if (index >= 0) return stops[(index + 1) % stops.length]!;
   if (at === null) return stops[0]!;
   // The flag stopped at is gone (fixed meanwhile): on from where it was.
   const from = stoppedAt === undefined ? rankAt(at) : rankOf(stoppedAt);

@@ -11,8 +11,8 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
 import { type Role, scoreDetails } from "@studio/contracts";
-import { createEditorSession, decideView, type EditorSession, formatChord, pageEffectOf, type View } from "@studio/score-editor";
-import { type Cursor, cursorAt, docToJson, type Flag, flagsOf, type FlagStop, nextFlag, observeScore, readScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
+import { createEditorSession, decideView, type EditorSession, keyNameOf, pageEffectOf, type View } from "@studio/score-editor";
+import { type Cursor, cursorAt, docToJson, type Flag, flagsOf, type FlagStop, nextFlag, observeScore, readScore, type ScoreChange, type ScoreJSON, stillAt } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink } from "vue-router";
@@ -26,7 +26,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { clearOf, flagMarksOf, type FlagMark, sameRect } from "../overlay";
+import { clearOf, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -307,6 +307,8 @@ function draw(change: ScoreChange): void {
   score.value = json;
   // From the whole score: a tie can be dangling for a change in the bar before (docs/spec/flags.md, section 3).
   flags.value = flagsOf(json, invalid);
+  // The flag F8 stopped at was fixed: its words go.
+  if (!stillAt(flagStop.value, session?.cursor ?? null, flags.value)) flagStop.value = null;
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
     if (narrow.value) keepNarrowPart(json);
@@ -386,21 +388,14 @@ function onNarrowPart(event: Event): void {
   showChosenParts();
 }
 
-/** The same place, or both none. */
-function sameCursor(a: Cursor | null, b: Cursor | null): boolean {
-  return a === b || (a !== null && b !== null && (Object.keys(a) as (keyof Cursor)[]).every((key) => a[key] === b[key]));
-}
-
 /**
  * F8, or the toolbar's button: the cursor goes to the next flag of the parts shown (docs/spec/
  * flags.md, section 4), and the page with it, as after any key.
  */
 function goToNextFlag(): void {
   stopFollowing();
-  const at = session?.cursor ?? null;
   if (session === undefined || score.value === null) return;
-  const stoppedAt = flagStop.value && sameCursor(flagStop.value.cursor, at) ? flagStop.value.flag : undefined;
-  const stop = nextFlag(score.value, flags.value, at, stoppedAt, shown.value);
+  const stop = nextFlag(score.value, flags.value, session.cursor, { stopped: flagStop.value, partIds: shown.value });
   if (stop === null) return;
   flagStop.value = stop;
   session.moveTo(stop.cursor);
@@ -409,7 +404,7 @@ function goToNextFlag(): void {
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(({ cursor }) => {
-    if (flagStop.value && !sameCursor(flagStop.value.cursor, cursor)) flagStop.value = null;
+    if (!stillAt(flagStop.value, cursor, flags.value)) flagStop.value = null;
     placeCursor();
     resumable = false;
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
@@ -581,7 +576,7 @@ onBeforeUnmount(() => {
           v-if="view"
           :count="flags.length"
           :can-go="editing"
-          :shortcut="formatChord('F8', keyPlatform())"
+          :shortcut="keyNameOf('nextFlag', keyPlatform())"
           :stopped-at="flagStop?.flag ?? null"
           @next="onToolbar(goToNextFlag)"
         />
@@ -620,6 +615,7 @@ onBeforeUnmount(() => {
               data-flag
               :data-kind="mark.kind"
               :class="['score__flag', `score__flag--${mark.shape}`, { 'score__flag--invalid': mark.kind === 'invalidContent' }]"
+              :stroke-width="mark.shape === 'box' ? FLAG_STROKE : undefined"
               :x="mark.rect.x"
               :y="mark.rect.y"
               :width="mark.rect.width"
@@ -734,13 +730,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 /*
- * A box on a bar: its stroke drawn inside the rectangle (`flagMarksOf` insets it by half the
- * stroke), so that it reaches no further than the rectangle kept clear of the reserved areas.
+ * A box on a bar: its stroke (`FLAG_STROKE` wide) drawn inside the rectangle, which `flagMarksOf`
+ * insets by half of it, so that it reaches no further than the rectangle kept clear of the
+ * reserved areas.
  */
 .score__flag--box {
   fill: none;
   stroke: rgba(220, 38, 38, 0.7);
-  stroke-width: 2;
 }
 .score__flag--box.score__flag--invalid {
   stroke: rgba(124, 58, 237, 0.7);

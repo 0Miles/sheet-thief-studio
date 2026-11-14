@@ -98,18 +98,21 @@ test("scrolled to the top, no flag box and no flag mark covers a reserved area, 
   await expect(page.locator("[data-reserved]")).not.toHaveCount(0);
   const { bars } = await scoreOf(page);
 
-  // In every bar, the bar under the mark among them: one note, tied with nothing before it on its
-  // string (the strings take turns), on the top string every other bar. Each bar is underfull too.
+  // In every bar, the bar under the mark among them: a note on the top string, the nearest to the
+  // mark, tied with nothing before it there, then a note on the second string, so that the next
+  // bar's tie has no note before it either. Two quarters: each bar is underfull too.
   for (let bar = 0; bar < bars.length; bar++) {
     await page.keyboard.press("5");
     await page.keyboard.press("Shift+L");
-    if (bar === bars.length - 1) break;
-    await page.keyboard.press("Control+ArrowRight");
-    await page.keyboard.press(bar % 2 === 0 ? "ArrowDown" : "ArrowUp");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("7");
+    await page.keyboard.press("ArrowUp");
+    if (bar < bars.length - 1) await page.keyboard.press("Control+ArrowRight");
   }
   const flags = await flagsOf(page);
   expect(flags.filter((flag) => flag.kind === "underfull")).toHaveLength(bars.length);
-  expect(flags.filter((flag) => flag.kind === "danglingTie")).toHaveLength(bars.length);
+  expect(flags.filter((flag) => flag.kind === "danglingTie").map((flag) => "noteKey" in flag && flag.noteKey)).toEqual(bars.map(() => "s1"));
   await expect(page.locator("[data-flag-count]")).toHaveAttribute("data-count", String(2 * bars.length));
   await synced(page);
   await clearOfReserved(page, "the edit view");
