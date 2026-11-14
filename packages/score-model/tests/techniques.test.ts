@@ -5,6 +5,9 @@ import * as Y from "yjs";
 
 import {
   addPart,
+  BEND_TYPES,
+  bendCycle,
+  bendStep,
   createScore,
   type Cursor,
   cursorAt,
@@ -19,6 +22,7 @@ import {
   type OnOffTechnique,
   setFret,
   setNote,
+  SLIDE_OUTS,
   slideInCycle,
   slideOutCycle,
   tieToggle,
@@ -413,6 +417,18 @@ test("on a pitched part, a tie on an empty line makes the note before's pitch th
   expect(flagsOf(docToJson(doc))).toEqual([{ kind: "underfull", partId, barId, voice: "0:0" }]);
 });
 
+/**
+ * Undo every step of a technique stepped through, last first: the note goes back through each of
+ * `states` (what it held besides `base`, the first before any step) to the first.
+ */
+function undoEach(undo: Y.UndoManager, note: () => NoteJSON, states: Partial<NoteJSON>[], base: NoteJSON): void {
+  for (const state of [...states].reverse()) {
+    undo.undo();
+    expect(note()).toEqual({ ...base, ...state });
+  }
+  expect(undo.canUndo()).toBe(false);
+}
+
 // Links (#27; docs/spec/commands.md, 5.4): legato is on or off; a slide out and a slide in step
 // through their kinds and back to none.
 test("legato turns on and off on the note of the cursor's string, and makes no note on an empty one", () => {
@@ -436,8 +452,7 @@ test("a slide out steps through legato, shift, out up and out down, back to none
   });
   expect(slides).toEqual(["legato", "shift", "outUp", "outDown", null]);
   expect(notes()).toEqual([{ s3: { fret: 5, ghost: true } }]);
-  undo.undo();
-  expect(notes()).toEqual([{ s3: { fret: 5, ghost: true, slideOut: "outDown" } }]);
+  undoEach(undo, () => notes()[0]!.s3!, [{}, ...SLIDE_OUTS.map((slideOut) => ({ slideOut }))], { fret: 5, ghost: true });
   // On an empty string it makes no note.
   const transactions = transactionsOf(doc);
   toggleAt(doc, { ...cursor, line: 1 }, "s1", slideOutCycle);
@@ -445,14 +460,16 @@ test("a slide out steps through legato, shift, out up and out down, back to none
   expect(transactions.count).toBe(0);
 });
 
-test("a slide in steps through in from below and in from above, back to none", () => {
+test("a slide in steps through in from below and in from above, back to none, one undo step each", () => {
   const { doc, cursor, notes } = guitar();
+  const undo = undoOf(doc);
   const slides = [1, 2, 3].map(() => {
     toggleAt(doc, cursor, "s3", slideInCycle);
     return notes()[0]!.s3!.slideIn ?? null;
   });
   expect(slides).toEqual(["inBelow", "inAbove", null]);
   expect(notes()).toEqual([{ s3: { fret: 5 } }]);
+  undoEach(undo, () => notes()[0]!.s3!, [{}, { slideIn: "inBelow" }, { slideIn: "inAbove" }], { fret: 5 });
 });
 
 test("over a selection, a slide takes every note to the kind after the first note's, as the beat markings do", () => {
@@ -478,4 +495,72 @@ test("at the cursor, on a beat reading leaves out, no technique key changes it, 
   toggleAt(doc, { ...cursor, line: 1 }, "s1", tieToggle);
   expect(transactions.count).toBe(0);
   expect(storedNotes(doc, cursor).toJSON()).toEqual({ s3: { fret: 5 } });
+});
+
+// Bend (#28; docs/spec/commands.md, 5.4): Shift+B steps through the four preset shapes and back to
+// none, a new bend of two semitones; Shift+↑ and Shift+↓ take a semitone more or less, 1 to 4.
+test("a bend steps through bend, bend and release, pre-bend and pre-bend and release, back to none, one undo step each, a new one of 2 semitones", () => {
+  const { doc, cursor, notes } = guitar();
+  setNote(doc, cursor, "s3", { fret: 7, ghost: true });
+  const undo = undoOf(doc);
+  const bends = [1, 2, 3, 4, 5].map(() => {
+    toggleAt(doc, cursor, "s3", bendCycle);
+    return notes()[0]!.s3!.bend ?? null;
+  });
+  expect(bends).toEqual([
+    { type: "bend", semitones: 2 },
+    { type: "bendRelease", semitones: 2 },
+    { type: "preBend", semitones: 2 },
+    { type: "preBendRelease", semitones: 2 },
+    null,
+  ]);
+  expect(notes()).toEqual([{ s3: { fret: 7, ghost: true } }]);
+  undoEach(undo, () => notes()[0]!.s3!, [{}, ...BEND_TYPES.map((type) => ({ bend: { type, semitones: 2 } }))], { fret: 7, ghost: true });
+});
+
+test("a bend's semitones go up and down one at a time, from 1 to 4, kept when its shape changes, one undo step each", () => {
+  const { doc, cursor, notes } = guitar();
+  toggleAt(doc, cursor, "s3", bendCycle);
+  const undo = undoOf(doc);
+  const semitones = [1, 1, 1, -1, -1, -1, -1].map((step) => {
+    toggleAt(doc, cursor, "s3", bendStep(step as 1 | -1));
+    return notes()[0]!.s3!.bend!.semitones;
+  });
+  expect(semitones).toEqual([3, 4, 4, 3, 2, 1, 1]);
+  toggleAt(doc, cursor, "s3", bendCycle);
+  expect(notes()).toEqual([{ s3: { fret: 5, bend: { type: "bendRelease", semitones: 1 } } }]);
+  undo.undo();
+  // The steps that went past 1 or 4 wrote nothing: no undo step of their own.
+  for (const expected of [1, 2, 3, 4, 3, 2]) {
+    expect(notes()[0]!.s3!.bend).toEqual({ type: "bend", semitones: expected });
+    undo.undo();
+  }
+  expect(notes()[0]!.s3!.bend).toEqual({ type: "bend", semitones: 2 });
+});
+
+test("the semitones of a note with no bend, or of no note, stay as they are: nothing is written", () => {
+  const { doc, cursor } = guitar();
+  const transactions = transactionsOf(doc);
+  toggleAt(doc, cursor, "s3", bendStep(1));
+  toggleAt(doc, cursor, "s3", bendStep(-1));
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", bendStep(1));
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", bendCycle);
+  expect(transactions.count).toBe(0);
+});
+
+test("over a selection, a bend takes every note to the shape after the first note's, each keeping its semitones, and the semitones of each go a step", () => {
+  const { doc, cursor, notes, range } = selected();
+  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, bend: { type: "bend", semitones: 4 } });
+  /** The bend of each note of the two beats selected, by its string. */
+  const bends = <T>(of: (bend: NonNullable<NoteJSON["bend"]>) => T) => notes().slice(0, 2).map((beat) => Object.fromEntries(Object.entries(beat).map(([key, note]) => [key, note.bend && of(note.bend)])));
+  toggleOnSelection(doc, range, cursor, bendCycle);
+  expect(bends((bend) => bend)).toEqual([
+    { s3: { type: "bend", semitones: 2 } },
+    { s1: { type: "bend", semitones: 4 }, s2: { type: "bend", semitones: 2 } },
+  ]);
+  toggleOnSelection(doc, range, cursor, bendStep(1));
+  expect(bends((bend) => bend.semitones)).toEqual([{ s3: 3 }, { s1: 4, s2: 3 }]);
+  toggleOnSelection(doc, range, cursor, bendCycle);
+  expect(bends((bend) => bend.type)).toEqual([{ s3: "bendRelease" }, { s1: "bendRelease", s2: "bendRelease" }]);
+  expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });

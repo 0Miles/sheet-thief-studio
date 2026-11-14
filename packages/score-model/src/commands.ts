@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import * as Y from "yjs";
 
 import {
+  BEND_SEMITONES,
+  BEND_TYPES,
   barsOf,
   beatFieldFits,
   COMMON_TIME,
@@ -426,6 +428,38 @@ export const slideOutCycle: NoteToggle<NoteJSON["slideOut"]> = noteCycle("slideO
 
 /** Shift+E: a slide into the note, from below, from above, then none. */
 export const slideInCycle: NoteToggle<NoteJSON["slideIn"]> = noteCycle("slideIn", SLIDE_INS);
+
+/**
+ * Shift+B: a bend of the note, bend, bend and release, pre-bend, pre-bend and release, then none,
+ * stepped as the slides are (`noteCycle`). A new bend goes up 2 semitones; a bend that changes
+ * shape keeps its own.
+ */
+export const bendCycle: NoteToggle<NoteJSON["bend"]> = {
+  decide: (seen) => {
+    const type = nextOf(BEND_TYPES, seen[0]?.bend?.type);
+    return type && { type, semitones: BEND_SEMITONES.initial };
+  },
+  turn(stored, bend) {
+    if (stored === undefined || stored.bend?.type === bend?.type) return stored ?? null;
+    return withField(stored, "bend", bend && { type: bend.type, semitones: stored.bend?.semitones ?? bend.semitones });
+  },
+};
+
+/**
+ * Shift+↑ and Shift+↓ on a fretted part: each note's bend a semitone more or less, held to 1 to 4
+ * (docs/spec/commands.md, 5.4); a note with no bend is left as it is.
+ */
+export function bendStep(step: 1 | -1): NoteToggle<void> {
+  return {
+    decide: () => undefined,
+    turn(stored) {
+      if (stored?.bend === undefined) return stored ?? null;
+      const { bend } = stored;
+      const semitones = Math.min(BEND_SEMITONES.max, Math.max(BEND_SEMITONES.min, bend.semitones + step));
+      return semitones === bend.semitones ? stored : withField(stored, "bend", { ...bend, semitones });
+    },
+  };
+}
 
 /** The toggle of each technique a key turns on and off. */
 export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> {
