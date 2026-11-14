@@ -39,7 +39,7 @@ export function startContent(doc: Y.Doc, { title, parts, timeSig, tempo, bars }:
   const names = partNames(each.map(({ preset }) => preset));
   each.forEach(({ preset, tuning }, index) => {
     const { kind, tuning: standard, staves, program } = PART_PRESETS[preset];
-    addPart(doc, { name: names[index] as string, kind, tuning: [...(tuning ?? standard)], staves: staves.map((staff) => ({ ...staff })), program });
+    addPart(doc, { name: names[index] as string, kind, tuning: [...(tuning ?? standard)], staves: [...staves], program });
   });
   const [first] = insertBars(doc, { after: null, count: bars, timeSig });
   // Written even when it is 120, which an unwritten tempo reads as: the first bar says what was chosen.

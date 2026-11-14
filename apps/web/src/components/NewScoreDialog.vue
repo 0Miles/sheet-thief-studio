@@ -3,7 +3,7 @@
 // each as many times as wanted, fretted ones with a tuning), its time signature and its tempo.
 // The server makes the content from what is chosen here; once made, the score opens.
 import { AppButton, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
-import { createdScore, eachPart, type PartChoice } from "@studio/contracts";
+import { choicesWithinPartLimits, createdScore, type PartChoice } from "@studio/contracts";
 import {
   barSchema,
   MAX_PARTS,
@@ -18,7 +18,6 @@ import {
   TUNING_OPTIONS,
   type TuningOption,
   tuningFor,
-  withinPartLimits,
 } from "@studio/score-model";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -36,8 +35,8 @@ const DENOMINATORS = [...timeSigSchema.shape.denominator.values];
 const range = (schema: { minValue: number | null; maxValue: number | null }) => ({ min: schema.minValue ?? undefined, max: schema.maxValue ?? undefined });
 const BEATS = range(timeSigSchema.shape.numerator);
 const TEMPO = range(barSchema.shape.tempo.unwrap());
-/** Every MIDI pitch a string of a custom tuning can be set to. */
-const PITCHES = Array.from({ length: 128 }, (_, pitch) => pitch);
+/** Every MIDI pitch a string of a custom tuning can be set to, with its name. */
+const PITCHES = Array.from({ length: 128 }, (_, pitch) => ({ pitch, name: pitchName(pitch) }));
 
 /** One line of the parts: a preset, how many parts of it, and for fretted ones their tuning. */
 interface PartRow {
@@ -52,7 +51,7 @@ interface PartRow {
 const router = useRouter();
 let rowKeys = 0;
 
-function newRow(preset: PartPresetId = "guitar6"): PartRow {
+function newRow(preset: PartPresetId = NEW_SCORE.part): PartRow {
   return { key: rowKeys++, preset, count: 1, tuning: "standard", custom: [...PART_PRESETS[preset].tuning] };
 }
 
@@ -96,13 +95,8 @@ function tuningOf(row: PartRow): number[] | undefined {
 }
 
 /** The parts the score is made with, a line of the dialog each. */
-const parts = computed<PartChoice[]>(() =>
-  rows.value.map((row) => {
-    const tuning = tuningOf(row);
-    return tuning === undefined ? { preset: row.preset, count: row.count } : { preset: row.preset, count: row.count, tuning };
-  }),
-);
-const tooMany = computed(() => !withinPartLimits(eachPart(parts.value).map(({ preset }) => PART_PRESETS[preset].kind)));
+const parts = computed<PartChoice[]>(() => rows.value.map((row) => ({ preset: row.preset, count: row.count, tuning: tuningOf(row) })));
+const tooMany = computed(() => !choicesWithinPartLimits(parts.value));
 
 async function create(): Promise<void> {
   error.value = "";
@@ -151,7 +145,7 @@ async function create(): Promise<void> {
                 <label v-for="(_, index) in row.custom" :key="index" class="new-score__field">
                   <span>{{ text.string(index + 1) }}</span>
                   <select v-model.number="row.custom[index]" :name="`string-${index + 1}`">
-                    <option v-for="pitch in PITCHES" :key="pitch" :value="pitch">{{ pitchName(pitch) }}</option>
+                    <option v-for="{ pitch, name } in PITCHES" :key="pitch" :value="pitch">{{ name }}</option>
                   </select>
                 </label>
               </Cluster>

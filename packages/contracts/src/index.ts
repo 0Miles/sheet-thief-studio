@@ -11,6 +11,7 @@ import {
   PART_PRESETS,
   partKindSchema,
   type PartPresetId,
+  partSchemas,
   timeSigSchema,
   withinPartLimits,
 } from "@studio/score-model";
@@ -89,7 +90,7 @@ export const partPresetId = z.enum(PART_PRESET_IDS);
  * a tuning of its number of strings (the preset's when left out).
  */
 export const partChoice = z
-  .object({ preset: partPresetId, count: z.int().min(1).max(MAX_PARTS).default(1), tuning: z.array(z.int().min(0).max(127)).optional() })
+  .object({ preset: partPresetId, count: z.int().min(1).max(MAX_PARTS).default(1), tuning: partSchemas.fretted.shape.tuning.optional() })
   .refine(({ preset, tuning }) => tuning === undefined || (PART_PRESETS[preset].kind === "fretted" && tuning.length === PART_PRESETS[preset].tuning.length), {
     message: "a tuning of the preset's number of strings, for fretted parts only",
     path: ["tuning"],
@@ -98,7 +99,12 @@ export type PartChoice = z.input<typeof partChoice>;
 
 /** Every part these choices make, in order: each choice as many times as its count (once when left out). */
 export function eachPart(choices: readonly PartChoice[]): { preset: PartPresetId; tuning?: number[] }[] {
-  return choices.flatMap(({ preset, count = 1, tuning }) => Array.from({ length: Math.max(0, count) }, () => (tuning === undefined ? { preset } : { preset, tuning })));
+  return choices.flatMap(({ preset, count = 1, tuning }) => Array.from({ length: count }, () => ({ preset, tuning })));
+}
+
+/** Whether a score may have the parts these choices make (docs/spec/commands.md, 7.1). */
+export function choicesWithinPartLimits(choices: readonly PartChoice[]): boolean {
+  return withinPartLimits(eachPart(choices).map(({ preset }) => PART_PRESETS[preset].kind));
 }
 
 /**
@@ -112,11 +118,8 @@ export const createScoreRequest = z.object({
     .array(partChoice)
     .min(1)
     .max(MAX_PARTS)
-    .refine(
-      (parts) => withinPartLimits(eachPart(parts).map(({ preset }) => PART_PRESETS[preset].kind)),
-      `at most ${MAX_PARTS} parts, ${MAX_NON_PERCUSSION_PARTS} of them other than drums`,
-    )
-    .default(() => [{ preset: "guitar6" as const, count: 1 }]),
+    .refine(choicesWithinPartLimits, `at most ${MAX_PARTS} parts, ${MAX_NON_PERCUSSION_PARTS} of them other than drums`)
+    .default(() => [{ preset: NEW_SCORE.part, count: 1 }]),
   timeSig: timeSigSchema.default(() => ({ ...NEW_SCORE.timeSig })),
   tempo: barSchema.shape.tempo.unwrap().default(NEW_SCORE.tempo),
   bars: z.int().min(1).max(MAX_BARS).default(NEW_SCORE.bars),

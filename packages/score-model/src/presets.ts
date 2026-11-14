@@ -19,11 +19,16 @@ export const PART_PRESETS = {
 
 export type PartPresetId = keyof typeof PART_PRESETS;
 
-/** What the dialog of a new score starts with, and what a new score has where the request is silent. */
-export const NEW_SCORE: { readonly timeSig: TimeSignature; readonly tempo: number; readonly bars: number } = { timeSig: COMMON_TIME, tempo: 120, bars: 8 };
-
 /** The presets in the order of the table. */
 export const PART_PRESET_IDS = Object.keys(PART_PRESETS) as [PartPresetId, ...PartPresetId[]];
+
+/** What the dialog of a new score starts with, and what a new score has where the request is silent: one part of `part`. */
+export const NEW_SCORE: { readonly part: PartPresetId; readonly timeSig: TimeSignature; readonly tempo: number; readonly bars: number } = {
+  part: "guitar6",
+  timeSig: COMMON_TIME,
+  tempo: 120,
+  bars: 8,
+};
 
 /** The name a new part of each preset is numbered under: seven-string guitars share the guitars', five-string basses the basses'. */
 export const PRESET_BASE_NAMES: Record<PartPresetId, string> = {
