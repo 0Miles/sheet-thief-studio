@@ -4,7 +4,7 @@
 // server, by a member who is logged in (a collab ticket for every connection); without one it
 // lives in this page only (measurements and screenshots).
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { createEditorSession, type EditorSession } from "@studio/score-editor";
+import { chordsOf, createEditorSession, type EditorSession, formatChord, KEY_BINDINGS } from "@studio/score-editor";
 import {
   type Cursor,
   cursorAt,
@@ -24,6 +24,7 @@ import { useRoute } from "vue-router";
 import * as Y from "yjs";
 
 import { collabUrl, newCollabTicket } from "../api";
+import { keyPlatform } from "../device";
 import { seedDemo, seedPerf } from "../spike/demoScores";
 import type { KeySample, RenderSample, StudioHook } from "../spike/hook";
 import { strings } from "../strings";
@@ -36,6 +37,24 @@ const query = (name: string): string | undefined => {
 };
 const documentName = typeof route.params.name === "string" ? route.params.name : null;
 const hasPlayer = query("player") !== "0";
+
+/** The name of a key on this platform: the first key of its binding (of the fret `value`, for a digit). */
+function keyName(effect: (typeof KEY_BINDINGS)[number]["effect"], value?: number): string {
+  const binding = KEY_BINDINGS.find((row) => row.effect === effect && (row.native || row.value === value))!;
+  return formatChord(chordsOf(binding, keyPlatform())[0]!, keyPlatform());
+}
+const keysHint = (
+  [
+    [(["previousBeat", "nextBeat", "lineUp", "lineDown"] as const).map((effect) => keyName(effect)).join(""), text.keys.move],
+    [`${keyName("fret", 0)}–${keyName("fret", 9)}`, text.keys.fret],
+    [keyName("insertBeat"), text.keys.insertBeat],
+    [`${keyName("shorter")} / ${keyName("longer")}`, text.keys.duration],
+    [keyName("delete"), text.keys.delete],
+    [`${keyName("undo")} / ${keyName("redo")}`, `${text.keys.undo} / ${text.keys.redo}`],
+  ] as const
+)
+  .map(([keys, does]) => `${keys} ${does}`)
+  .join("　");
 
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
@@ -271,7 +290,7 @@ function start(): void {
     if (query("seed") === "perf") seedPerf(doc, Number(query("bars") ?? 100));
     else seedDemo(doc, { bars: Number(query("bars") ?? 12), parts: Number(query("parts") ?? 3) });
   }
-  session = createEditorSession(doc); // after the seed, so that undo cannot take the seed back
+  session = createEditorSession(doc, { platform: keyPlatform() }); // after the seed, so that undo cannot take the seed back
   session.onPresence(updateRect);
   const json = docToJson(doc);
   score.value = json;
@@ -349,7 +368,7 @@ onBeforeUnmount(() => {
         {{ playerState === "loading" ? text.playerLoading : playerState === "playing" ? text.pause : text.play }}
       </button>
       <span v-if="flagCount > 0" class="flags">{{ text.flags(flagCount) }}</span>
-      <span class="keys">{{ text.keys }}</span>
+      <span class="keys">{{ keysHint }}</span>
     </header>
     <div ref="scroller" class="scroller" tabindex="0" :aria-label="text.scoreLabel" @keydown="onKey" @pointerdown="onPointer">
       <div class="page">

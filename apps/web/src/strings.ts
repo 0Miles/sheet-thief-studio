@@ -59,7 +59,8 @@ export const strings = {
     play: "播放",
     pause: "暫停",
     playerLoading: "音色載入中…",
-    keys: "方向鍵移動　數字輸入格號　Insert 新增拍點　+ / − 改時值　Delete 清除　Ctrl+Z / Ctrl+Y 復原 / 重做",
+    // What the keys do; their names come from the keymap, for this platform (docs/spec/keymap.md, 1.3).
+    keys: { move: "移動", fret: "輸入格號", insertBeat: "新增拍點", duration: "改時值", delete: "清除", undo: "復原", redo: "重做" },
     flags: (count: number) => `${count} 個標記`,
     scoreLabel: "譜面",
   },

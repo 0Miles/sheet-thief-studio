@@ -15,7 +15,6 @@ const CHANGING_KEYS: Press[] = [
   ["+"],
   ["-"],
   ["z", { ctrlKey: true }],
-  ["z", { metaKey: true }],
   ["y", { ctrlKey: true }],
   ["z", { ctrlKey: true, shiftKey: true }],
 ];
@@ -33,7 +32,7 @@ function readOnlyScore(kind: PartKind = "fretted") {
   press("Insert");
   if (kind === "fretted") press("7");
   writer.destroy();
-  const session = createEditorSession(doc, { cursor: cursorAt(doc, partId, barIds[0]!, 6), readOnly: true });
+  const session = createEditorSession(doc, { platform: "other", cursor: cursorAt(doc, partId, barIds[0]!, 6), readOnly: true });
   return { doc, session, beats, barIds };
 }
 

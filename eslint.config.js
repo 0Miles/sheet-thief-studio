@@ -20,4 +20,18 @@ export default defineConfigWithVueTs(
       "no-restricted-imports": ["error", { paths: [{ name: "@coderline/alphatab", message: "alphaTab is imported only inside packages/score-render (docs/adr/0003)." }] }],
     },
   },
+  // The platform is told in one place, detectKeyPlatform (docs/spec/keymap.md, 1.3).
+  {
+    files: ["apps/web/src/**/*.{ts,vue}", "packages/**/*.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        ...["platform", "userAgentData", "userAgent"].map((property) => ({
+          object: "navigator",
+          property,
+          message: "The platform is told only by detectKeyPlatform, called once in apps/web/src/device.ts (docs/spec/keymap.md, 1.3).",
+        })),
+      ],
+    },
+  },
 );

@@ -13,7 +13,6 @@ import {
   moveByBeat,
   moveByLine,
   moveFromAppendedBeat,
-  type PartKind,
   partKindOf,
   partsOf,
   type Selection,
@@ -23,25 +22,14 @@ import {
 } from "@studio/score-model";
 import * as Y from "yjs";
 
+import type { SessionBinding } from "./bindings";
+import { type Key, type KeyPlatform, matchKey } from "./keys";
+
 /** Two digits typed within this many milliseconds make one two-digit fret. */
 export const TWO_DIGIT_WINDOW = 600;
 
 /** The highest fret that can be typed. */
 const MAX_FRET = 36;
-
-/** The part of a keyboard event the session reads: a `KeyboardEvent` is one. */
-export interface Key {
-  /**
-   * `KeyboardEvent.code`: where the key is on the keyboard, whatever the layout or the input
-   * method. Shortcuts with a modifier, and `[` and `]`, are matched on it (docs/spec/keymap.md, 1.1).
-   */
-  code: string;
-  /** `KeyboardEvent.key`: what the key types. */
-  key: string;
-  ctrlKey?: boolean;
-  metaKey?: boolean;
-  shiftKey?: boolean;
-}
 
 /**
  * What this member shows the others (docs/spec/views.md, section 8). The shell writes it to the
@@ -54,6 +42,8 @@ export interface LocalPresence {
 }
 
 export interface EditorSessionOptions {
+  /** Whose keys the member types with: the shell tells it once, with `detectKeyPlatform`. */
+  platform: KeyPlatform;
   /** Where the cursor starts. */
   cursor?: Cursor | null;
   /**
@@ -77,7 +67,8 @@ export interface EditorSession {
   onPresence(listener: (presence: LocalPresence) => void): () => void;
   /**
    * Handle a key at the cursor. True when it is one of the session's keys: the shell then calls
-   * `preventDefault`. Any other key is left alone.
+   * `preventDefault`. Any other key, and copy, cut and paste, whose work is done in the events
+   * the browser fires for them, are left alone.
    */
   press(key: Key): boolean;
   /** Put the cursor somewhere else (a click on the page). Never changes the score. */
@@ -113,7 +104,7 @@ interface TypedDigit {
   cursor: Cursor;
 }
 
-export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly = false, now = () => Date.now() }: EditorSessionOptions = {}): EditorSession {
+export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null, readOnly = false, now = () => Date.now() }: EditorSessionOptions): EditorSession {
   // Only what this member did is undone (docs/adr/0001); one command, one step.
   const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
   let cursor = start;
@@ -189,59 +180,35 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     return next;
   }
 
-  /** Undo and redo. */
-  function shortcut(key: Key): KeyCommand | undefined {
-    if (key.code !== "KeyZ" && key.code !== "KeyY") return undefined;
-    const redo = key.code === "KeyY" || key.shiftKey === true;
-    return change((at) => {
-      if (redo) undo.redo();
-      else undo.undo();
-      return settled(at);
-    });
-  }
-
-  /** The keys that enter notes, which depend on the kind of the part (docs/spec/keymap.md, section 4). */
-  const noteKeys: Record<PartKind, (key: Key, previous: TypedDigit | null) => KeyCommand | undefined> = {
-    fretted(key, previous) {
-      if (/^[0-9]$/.test(key.key)) return change((at) => typeDigit(Number(key.key), at, previous));
-      return undefined;
-    },
-    // Drums and staves get theirs with their milestones (docs/ROADMAP.md, M2 and M3).
-    percussion: () => undefined,
-    pitched: () => undefined,
-  };
-
-  /** The keys of every kind of part. */
-  function commonKey(key: Key): KeyCommand | undefined {
-    switch (key.key) {
-      case "ArrowRight":
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2 and 4.1). */
+  function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
+    switch (effect) {
+      case "nextBeat":
         return move((at) => (appended !== null && at.beatId === appended ? moveFromAppendedBeat(doc, at) : moveByBeat(doc, at, 1)));
-      case "ArrowLeft":
+      case "previousBeat":
         return move((at) => moveByBeat(doc, at, -1));
-      case "ArrowDown":
+      case "lineDown":
         return move((at) => moveByLine(doc, at, 1));
-      case "ArrowUp":
+      case "lineUp":
         return move((at) => moveByLine(doc, at, -1));
-      case "Insert":
+      case "insertBeat":
         return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
-      // The key marked delete on a Mac keyboard sends Backspace (docs/spec/keymap.md, section 2).
-      case "Delete":
-      case "Backspace":
+      case "delete":
         return change((at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)));
-      case "+":
+      case "shorter":
         return change((at) => stepDuration(doc, at, 1));
-      case "-":
+      case "longer":
         return change((at) => stepDuration(doc, at, -1));
-      default:
-        return undefined;
+      case "undo":
+      case "redo":
+        return change((at) => {
+          if (effect === "redo") undo.redo();
+          else undo.undo();
+          return settled(at);
+        });
+      case "fret":
+        return change((at) => typeDigit(value, at, previous));
     }
-  }
-
-  function commandFor(key: Key, at: Cursor, previous: TypedDigit | null): KeyCommand | undefined {
-    if (key.ctrlKey === true || key.metaKey === true) return shortcut(key);
-    // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
-    const kind = partKindOf(partsOf(doc).get(at.partId));
-    return (kind === undefined ? undefined : noteKeys[kind](key, previous)) ?? commonKey(key);
   }
 
   return {
@@ -258,11 +225,15 @@ export function createEditorSession(doc: Y.Doc, { cursor: start = null, readOnly
     },
     press(key) {
       if (cursor === null) return false;
-      // A digit waits for a second one; any other key ends the wait.
+      // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
+      const binding = matchKey(key, platform, partKindOf(partsOf(doc).get(cursor.partId)));
+      if (binding === undefined || binding.native) return false;
+      // Held down, only moves, + and - run again; the repeats of the others are still not the browser's.
+      if (key.repeat === true && !binding.repeat) return true;
+      // A digit waits for a second one; any other key that runs something ends the wait.
       const previous = lastDigit;
       lastDigit = null;
-      const command = commandFor(key, cursor, previous);
-      if (command === undefined) return false;
+      const command = commandOf(binding, previous);
       if (command.changes && readOnly) {
         if (!refused) {
           refused = true;
