@@ -2,7 +2,7 @@
 // how they are named.
 import { describe, expect, test } from "vitest";
 
-import { FORBIDDEN_KEYS, KEY_BINDINGS, type KeyBinding } from "../src/bindings";
+import { FORBIDDEN_KEYS, KEY_BINDINGS, type KeyBinding, type SessionBinding } from "../src/bindings";
 import {
   chordsOf,
   comboName,
@@ -10,6 +10,7 @@ import {
   detectKeyPlatform,
   formatChord,
   type KeyCombo,
+  keyNameOf,
   type KeyPlatform,
   matchKey,
   type ModifierFlag,
@@ -21,7 +22,7 @@ const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKe
 
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
-const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.native ? "" : (binding.value ?? "")} (${binding.context})`;
+const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""} (${binding.context})`;
 /** Two contexts that can be in force at once: the score's keys work on every kind of part. */
 const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || a.context === "score" || b.context === "score";
 
@@ -60,10 +61,45 @@ test.each([
   ["Numpad5", "Num 5", "Num 5"],
   ["Minus", "-", "-"],
   ["Equal", "+", "+"],
+  // + is Shift and the key of =: it is named once, not Shift++ or ⇧+.
+  ["Shift+Equal", "+", "+"],
+  ["Period", ".", "."],
+  ["Home", "Home", "Home"],
   ["F8", "F8", "F8"],
 ])("%s is named %s on Windows and Linux, %s on a Mac", (chord, other, mac) => {
   expect(formatChord(chord, "other")).toBe(other);
   expect(formatChord(chord, "mac")).toBe(mac);
+});
+
+test.each([
+  ["undo", undefined, "Ctrl+Z", "⌘Z"],
+  ["redo", undefined, "Ctrl+Y", "⇧⌘Z"],
+  ["nextBar", undefined, "Ctrl+→", "⌥→"],
+  ["previousStaff", undefined, "Ctrl+↑", "⌥↑"],
+  ["secondVoice", undefined, "Alt+2", "⌥2"],
+  ["insertBeat", undefined, "Insert", "⌥↩"],
+  ["delete", undefined, "Delete", "⌫"],
+  ["shorter", undefined, "+", "+"],
+  ["triplet", undefined, "Shift+T", "⇧T"],
+  ["fret", 7, "7", "7"],
+  ["copy", undefined, "Ctrl+C", "⌘C"],
+  ["playPause", undefined, "Space", "Space"],
+] as const)("the key of %s %s is shown as %s on Windows and Linux, %s on a Mac", (effect, fret, other, mac) => {
+  expect(keyNameOf(effect, "other", fret)).toBe(other);
+  expect(keyNameOf(effect, "mac", fret)).toBe(mac);
+});
+
+test("a key that is not in the keymap has no name: a digit without its fret, or a fret no digit writes", () => {
+  expect(() => keyNameOf("fret", "other")).toThrow(/fret/);
+  expect(() => keyNameOf("fret", "other", 12)).toThrow(/fret12/);
+});
+
+test("each digit names the fret it writes, and a binding of the fret effect cannot be written without one", () => {
+  const digits = KEY_BINDINGS.filter((binding) => binding.effect === "fret");
+  expect(digits.map((binding) => [binding.fret, binding.keys])).toEqual([..."0123456789"].map((digit) => [Number(digit), [`Digit${digit}`, `Numpad${digit}`]]));
+  // @ts-expect-error: a fret key without its fret would write fret 0.
+  const missing: SessionBinding = { effect: "fret", context: "fretted", keys: ["Digit1"], keymap: { other: ["Digit1"], mac: ["Digit1"] } };
+  expect(missing.fret).toBeUndefined();
 });
 
 test("a chord with a modifier the layer does not know is a mistake in the table", () => {
@@ -85,6 +121,11 @@ describe.each(PLATFORMS)("on %s", (platform) => {
       const taken = forbidden.find((entry) => (entry.code === "*" ? MODIFIER_FLAGS.every((flag) => !entry[flag] || combo[flag]) : comboName(entry, platform) === name));
       expect(taken && `${name} is kept by the platform (${comboName(taken, platform)})`).toBeUndefined();
     }
+  });
+
+  test("every key is named without a doubled + or a + of its own after a modifier", () => {
+    const names = KEY_BINDINGS.flatMap((binding) => chordsOf(binding, platform).map((chord) => formatChord(chord, platform)));
+    expect(names.filter((name) => /\+\+|[⌃⌥⇧⌘]\+/.test(name))).toEqual([]);
   });
 
   test("no two bindings that can be in force at once are on the same key", () => {

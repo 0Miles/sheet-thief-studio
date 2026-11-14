@@ -135,10 +135,23 @@ function keyName(code: string, platform: KeyPlatform): string {
  */
 export function formatChord(chord: Chord, platform: KeyPlatform): string {
   const combo = resolveChord(chord, platform);
-  const held = KEYBOARD_NAMES[platform].filter(([, flag]) => combo[flag]);
+  // `+` is Shift and the key of =, and is named `+` with or without it: not `Shift++`.
+  const held = KEYBOARD_NAMES[platform].filter(([, flag]) => combo[flag] && !(flag === "shiftKey" && combo.code === "Equal"));
   const key = keyName(combo.code, platform);
   return platform === "mac" ? held.map(([, , symbol]) => symbol).join("") + key : [...held.map(([name]) => name), key].join("+");
 }
+/**
+ * How the key of an effect is shown on this platform (`formatChord`), in a toolbar's hint or a
+ * help text: the first key of its binding, `Ctrl+Z` or `⌘Z` for undo. A digit's binding is told
+ * by the fret it writes. Throws for an effect no binding has: a mistake in the table.
+ */
+export function keyNameOf(effect: KeyBinding["effect"], platform: KeyPlatform, fret?: number): string {
+  const binding = KEY_BINDINGS.find((each) => each.effect === effect && each.fret === fret);
+  const chord = binding && chordsOf(binding, platform)[0];
+  if (chord === undefined) throw new Error(`no key ${effect}${fret ?? ""} in the keymap`);
+  return formatChord(chord, platform);
+}
+
 /**
  * The keys written with the modifiers on the platform's keyboard, as the keymap's tables are:
  * `"Ctrl+Shift+KeyZ"`, `"Cmd+Enter"`, `"Option+ArrowLeft"`.

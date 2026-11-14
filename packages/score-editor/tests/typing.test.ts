@@ -1,9 +1,9 @@
 // Keyboard entry on a fretted part, moved here with the spike's typing (docs/spec/testing.md).
-import { cursorAt } from "@studio/score-model";
+import { cursorAt, docToJson, setFret, setTitle } from "@studio/score-model";
 import { expect, test } from "vitest";
 
 import { TWO_DIGIT_WINDOW } from "../src/index";
-import { sessionOn } from "./support";
+import { otherMember, sessionOn } from "./support";
 
 test("a digit in an empty bar makes a quarter beat with that fret on the cursor's string", () => {
   const { press, beats, cursor } = sessionOn();
@@ -173,4 +173,55 @@ test("a key that is not a typing key is left alone", () => {
   expect(press("c", 1000, { ctrlKey: true })).toBe(false);
   expect(cursor()).toBe(before);
   expect(beats()).toEqual([]);
+});
+
+test("with the clock at 599 ms, 1 then 2 is fret 12 in one undo step; at 601 ms they are two entries, each its own step", () => {
+  const quick = sessionOn();
+  quick.press("1");
+  quick.press("2", TWO_DIGIT_WINDOW - 1);
+  expect(quick.beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 12 }]);
+  quick.press("z", 1000, { ctrlKey: true });
+  expect(quick.beats()).toEqual([]);
+
+  const slow = sessionOn();
+  slow.press("1");
+  slow.press("2", TWO_DIGIT_WINDOW + 1);
+  expect(slow.beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 2 }]);
+  slow.press("z", 1000, { ctrlKey: true });
+  expect(slow.beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 1 }]);
+  slow.press("z", 1000, { ctrlKey: true });
+  expect(slow.beats()).toEqual([]);
+});
+
+test("4 then 5 is never 45: past the highest fret, the second digit is an entry of its own, and its own undo step", () => {
+  const { press, beats } = sessionOn();
+  press("4");
+  press("5", 100);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 5 }]);
+  press("z", 1000, { ctrlKey: true });
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 4 }]);
+  // 3 then 6 is the highest fret there is.
+  press("3");
+  press("6", 100);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 36 }]);
+});
+
+test("another member's change between the two digits does not split the fret's undo step; a change of this member's own between them ends the wait", () => {
+  const { doc, press, beats, partId, barIds } = sessionOn();
+  const { other, send } = otherMember(doc);
+  press("1");
+  setFret(other, cursorAt(other, partId, barIds[1]!, 6), 9);
+  send();
+  press("2", 100);
+  press("z", 1000, { ctrlKey: true });
+  expect(beats()).toEqual([]);
+  expect(beats(1).map((beat) => beat.notes.s6)).toEqual([{ fret: 9 }]);
+
+  press("1");
+  setTitle(doc, "改名");
+  press("2", 100);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 2 }]);
+  press("z", 1000, { ctrlKey: true });
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 1 }]);
+  expect(docToJson(doc).title).toBe("改名");
 });

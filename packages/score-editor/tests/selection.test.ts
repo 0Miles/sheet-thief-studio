@@ -82,7 +82,6 @@ test.each([
   ["↓", "ArrowDown", {}],
   ["Esc", "Escape", {}],
   ["a digit", "7", {}],
-  ["+", "+", {}],
   ["Insert", "Insert", {}],
   ["undo", "z", { ctrlKey: true }],
 ])("%s ends the selection", (_, key, modifiers) => {

@@ -3,19 +3,30 @@
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
   barsOf,
+  type BeatChange,
   beatPositionOf,
+  changeBeatAt,
+  changeBeatsOnSelection,
+  clearNotes,
   type Cursor,
   deleteBeat,
   deleteNote,
   deleteSelection,
+  dotCycle,
+  durationStep,
   extendSelection,
   insertBeat,
   isRestAt,
   LOCAL,
+  metaOf,
   moveByBar,
   moveByBeat,
   moveByLine,
+  moveByStaff,
   moveFromAppendedBeat,
+  moveToBarEnd,
+  moveToBarStart,
+  moveToVoice,
   noteKeyAt,
   type OnOffTechnique,
   partKindOf,
@@ -25,10 +36,11 @@ import {
   setFret,
   settleCursor,
   settleSelection,
-  stepDuration,
   techniqueToggle,
   toggleAt,
   toggleOnSelection,
+  tripletToggle,
+  voicesOffered,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -49,6 +61,12 @@ export interface LocalPresence {
   cursor: Cursor | null;
   selection: Selection | null;
 }
+
+/**
+ * What the shell tells the member about a key that did nothing: on a fretted part, Alt+2, as
+ * such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3).
+ */
+export type SessionHint = "oneVoice";
 
 export interface EditorSessionOptions {
   /** Whose keys the member types with: the shell tells it once, with `detectKeyPlatform`. */
@@ -92,6 +110,8 @@ export interface EditorSession {
    * read-only (the shell says 「檢視者無法修改」), and never again.
    */
   onRefused(listener: () => void): () => void;
+  /** Called each time a key does nothing the member is to be told about. */
+  onHint(listener: (hint: SessionHint) => void): () => void;
   destroy(): void;
 }
 
@@ -124,8 +144,12 @@ interface TypedDigit {
 }
 
 export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null, readOnly = false, now = () => Date.now() }: EditorSessionOptions): EditorSession {
-  // Only what this member did is undone (docs/adr/0001); one command, one step.
-  const undo = new Y.UndoManager([barsOf(doc), partsOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
+  // Only what this member did is undone (docs/adr/0001), the title among it. The session, not the
+  // clock, tells where an undo step ends: each change of this member's starts one, but the second
+  // digit of a fret, which joins the step of the first (`separate`).
+  const undo = new Y.UndoManager([barsOf(doc), partsOf(doc), metaOf(doc)], { trackedOrigins: new Set([LOCAL]), captureTimeout: Infinity });
+  /** While the second digit of a fret is written. */
+  let joining = false;
   let cursor = start;
   let selection: Selection | null = null;
   let lastDigit: TypedDigit | null = null;
@@ -141,7 +165,10 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   let position = start && beatPositionOf(doc, start);
   /** While a key's command runs: the cursor moves once, where the command puts it. */
   let running = false;
+  /** The line the cursor had last in each part it was in (docs/spec/commands.md, section 2). */
+  const lines = new Map<string, number>(start ? [[start.partId, start.line]] : []);
   const refusedListeners = new Set<() => void>();
+  const hintListeners = new Set<(hint: SessionHint) => void>();
   let refused = false;
   const presenceListeners = new Set<(presence: LocalPresence) => void>();
 
@@ -157,6 +184,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (next?.at !== "on" || next.beatId !== appended) appended = null;
       cursor = next;
       position = next && beatPositionOf(doc, next);
+      if (next) lines.set(next.partId, next.line);
     }
     selection = selected;
     const told = presence();
@@ -172,6 +200,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     putAt({ cursor: settled(cursor), selection: selection && settleSelection(doc, selection) });
   };
   doc.on("afterTransaction", settle);
+
+  /**
+   * Before each change of this member's: a new undo step, unless it is the second digit of a fret.
+   * A change made elsewhere than by a key (a panel's) also ends the wait for a second digit.
+   */
+  const separate = (transaction: Y.Transaction): void => {
+    if (transaction.origin !== LOCAL || joining) return;
+    undo.stopCapturing();
+    if (!running) lastDigit = null;
+  };
+  doc.on("beforeTransaction", separate);
 
   /**
    * Run a command that may make a beat in the append slot (a note typed there, or Insert): when
@@ -192,11 +231,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       previous.digit * 10 + digit <= MAX_FRET;
     if (second && previous) {
       // The second digit completes the fret: it joins the undo step of the first.
-      undo.captureTimeout = TWO_DIGIT_WINDOW * 2;
+      joining = true;
       try {
         return setFret(doc, at, previous.digit * 10 + digit);
       } finally {
-        undo.captureTimeout = 0;
+        joining = false;
       }
     }
     // In the append slot the digit also makes the beat it goes on, and the cursor moves onto it.
@@ -229,6 +268,27 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return selected === null ? change(atCursor) : onSelection(selected, (at) => onSelected(selected, at));
   };
 
+  /** A key that changes whole beats (docs/spec/commands.md, 5.3 and 5.6): every beat of the selection, which stays, else the cursor's beat. */
+  const changeBeats = <D>(beatChange: BeatChange<D>): KeyCommand =>
+    selectionOrCursor(
+      (selected, at) => changeBeatsOnSelection(doc, selected, at, beatChange),
+      (at) => changeBeatAt(doc, at, beatChange),
+    );
+
+  /** Alt+1 and Alt+2: the voice of the staff; a fretted part offers only its first, and Alt+2 there tells the member so. */
+  const toVoice = (number: 0 | 1): KeyCommand =>
+    move((at) => {
+      const kind = partKindOf(partsOf(doc).get(at.partId));
+      if (kind !== undefined && number >= voicesOffered(kind)) {
+        for (const listener of hintListeners) listener("oneVoice");
+        return at;
+      }
+      return moveToVoice(doc, at, number);
+    });
+
+  /** The line the cursor had last in a part. */
+  const lineIn = (partId: string): number | undefined => lines.get(partId);
+
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
    * else on the note of the cursor's line (`noteKeyAt`), where dead may make a note, and a beat
@@ -246,7 +306,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   }
 
   /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3 and 4.1). */
-  function commandOf({ effect, value = 0 }: SessionBinding, previous: TypedDigit | null): KeyCommand {
+  function commandOf(binding: SessionBinding, previous: TypedDigit | null): KeyCommand {
+    const { effect } = binding;
     switch (effect) {
       case "nextBeat":
         return move(nextBeat);
@@ -266,6 +327,22 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return move((at) => moveByLine(doc, at, 1));
       case "lineUp":
         return move((at) => moveByLine(doc, at, -1));
+      case "barStart":
+        return move((at) => moveToBarStart(doc, at));
+      case "barEnd":
+        return move((at) => moveToBarEnd(doc, at));
+      case "nextBar":
+        return move((at) => moveByBar(doc, at, 1));
+      case "previousBar":
+        return move((at) => moveByBar(doc, at, -1));
+      case "nextStaff":
+        return move((at) => moveByStaff(doc, at, 1, lineIn));
+      case "previousStaff":
+        return move((at) => moveByStaff(doc, at, -1, lineIn));
+      case "firstVoice":
+        return toVoice(0);
+      case "secondVoice":
+        return toVoice(1);
       case "insertBeat":
         return change((at) => markAppended(at, (here) => insertBeat(doc, here)));
       case "delete":
@@ -274,9 +351,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
           (at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)),
         );
       case "shorter":
-        return change((at) => stepDuration(doc, at, 1));
+        return changeBeats(durationStep(1));
       case "longer":
-        return change((at) => stepDuration(doc, at, -1));
+        return changeBeats(durationStep(-1));
+      case "dots":
+        return changeBeats(dotCycle);
+      case "triplet":
+        return changeBeats(tripletToggle);
+      case "clear":
+        return changeBeats(clearNotes);
       case "undo":
       case "redo":
         return change((at) => {
@@ -285,7 +368,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
           return settled(at);
         });
       case "fret":
-        return change((at) => typeDigit(value, at, previous));
+        return change((at) => typeDigit(binding.fret, at, previous));
       default:
         // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
         return toggleTechnique(effect);
@@ -339,9 +422,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       refusedListeners.add(listener);
       return () => refusedListeners.delete(listener);
     },
+    onHint(listener) {
+      hintListeners.add(listener);
+      return () => hintListeners.delete(listener);
+    },
     destroy() {
       doc.off("afterTransaction", settle);
+      doc.off("beforeTransaction", separate);
       refusedListeners.clear();
+      hintListeners.clear();
       presenceListeners.clear();
       undo.destroy();
     },
