@@ -8,6 +8,8 @@ import { DRUM_PIECES } from "../src/drums";
 import { projectScore } from "../src/projection";
 
 const settings = new alphaTab.Settings();
+// alphaTab's default, which the engine keeps: let ring holds a note on in this mode only.
+settings.notation.notationMode = alphaTab.NotationMode.GuitarPro;
 
 /** The notes alphaTab would play for a score: channel, key and tick of every note-on, in order. */
 function notesPlayed(doc: Y.Doc): { channel: number; key: number; tick: number }[] {
