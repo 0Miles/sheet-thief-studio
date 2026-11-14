@@ -22,7 +22,8 @@ const fret = z.int().min(0).max(recognizerLimits.fret.max);
 /** Pages and bars are counted from 1. */
 const page = z.int().min(1);
 const barNumber = z.int().min(1);
-const count = z.int().min(1);
+/** A count of something there is at least one of. */
+const positive = z.int().min(1);
 
 /** Each value at most once. */
 function distinct<T>(values: T[]): boolean {
@@ -50,8 +51,14 @@ export const recognizerCapo = z.union([
 ]);
 export type RecognizerCapo = z.infer<typeof recognizerCapo>;
 
+/** The song's (its first bar's): in the predecessor's music_settings range, else 4/4. */
+export const recognizerSongTimeSignature = z.strictObject({
+  numerator: z.int().min(1).max(16),
+  denominator: z.literal([2, 4, 8, 16]),
+});
+
+/** One printed later in the song: the range the predecessor reads on the staff. */
 export const recognizerTimeSignature = z.strictObject({
-  /** The first bar's is at most 16 over 2, 4, 8 or 16; a later one may be wider. */
   numerator: z.int().min(1).max(32),
   denominator: z.literal([1, 2, 4, 8, 16, 32]),
 });
@@ -116,7 +123,7 @@ export const recognizerBar = z.strictObject({
   repeatOpen: z.boolean(),
   /** A repeat ends with this bar, played this many times in all; 0 when none ends here. */
   repeatTimes: z.union([z.literal(0), z.int().min(2).max(32)]),
-  /** The passes of a repeat this bar is played on (a volta), smallest first. */
+  /** The passes of a repeat this bar is played on (a volta). */
   endings: z.array(z.int().min(1).max(9)).refine(distinct, "each pass once"),
   sign: z.enum(["segno", "coda", "fine"]).nullable(),
   /** Where to go after this bar. */
@@ -130,9 +137,9 @@ export type RecognizerBar = z.infer<typeof recognizerBar>;
 /** A warning, or something recognition left out: a code and its parameters, never text. */
 export const recognizerWarning = z.discriminatedUnion("code", [
   z.strictObject({ code: z.literal("rhythm_estimated"), params: z.strictObject({ bars: z.array(barNumber).min(1).refine(distinct, "each bar once") }) }),
-  z.strictObject({ code: z.literal("overlapping_notes"), params: z.strictObject({ page, count }) }),
-  z.strictObject({ code: z.literal("staves_ignored"), params: z.strictObject({ count }) }),
-  z.strictObject({ code: z.literal("bar_too_dense"), params: z.strictObject({ page, notes: count }) }),
+  z.strictObject({ code: z.literal("overlapping_notes"), params: z.strictObject({ page, count: positive }) }),
+  z.strictObject({ code: z.literal("staves_ignored"), params: z.strictObject({ count: positive }) }),
+  z.strictObject({ code: z.literal("bar_too_dense"), params: z.strictObject({ page, notes: positive }) }),
   z.strictObject({ code: z.literal("fixed_durations"), params: noParams }),
   /** A warning with no code yet: its text goes only to the log. */
   z.strictObject({ code: z.literal("other"), params: noParams }),
@@ -146,8 +153,7 @@ export const recognizerResult = z
     strings: z.int().min(recognizerLimits.strings.min).max(recognizerLimits.strings.max),
     tuning: recognizerTuning,
     capo: recognizerCapo,
-    /** The first bar's. */
-    timeSignature: recognizerTimeSignature,
+    timeSignature: recognizerSongTimeSignature,
     bars: z.array(recognizerBar).min(1),
     warnings: z.array(recognizerWarning),
   })

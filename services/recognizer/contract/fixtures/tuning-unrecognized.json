@@ -15,7 +15,7 @@
       "endings": [],
       "sign": null,
       "jump": null,
-      "rhythmEstimated": true,
+      "rhythmEstimated": false,
       "beats": [
         {
           "units": 8,
@@ -73,7 +73,7 @@
     }
   ],
   "warnings": [
-    {"code": "rhythm_estimated", "params": {"bars": [1, 2]}},
+    {"code": "rhythm_estimated", "params": {"bars": [2]}},
     {"code": "overlapping_notes", "params": {"page": 1, "count": 2}}
   ]
 }

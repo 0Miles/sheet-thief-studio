@@ -79,6 +79,8 @@
 
 欄位以前身 `app/model.py` 的 `Score`、`ScoreMeasure`、`ScoreBeat`、`ScoreNote` 為準，改成 camelCase。只輸出已經解析完的欄位（`parenthesized`、`tieArc`、`link` 這類「還沒解析」的欄位在出口之前就要解析掉，做法照舊管線在 `_build_track` 之內做的事）。
 
+**補充**（#59）：出口只拿 `_build_track` 的結果，不跑 `convert_many` 在它之後做的事，包括 `_align_by_numbers`（照印出的小節號碼補休止小節）：只標記、不改寫。所以不輸出 `ScoreMeasure.number`，也不輸出 `Score` 的 `name`、`instrument`、`muted`（樂句不帶這些）。
+
 ```json
 {
   "contract": "sheet-thief-studio/recognition",
@@ -108,7 +110,7 @@
       ]
     }
   ],
-  "warnings": [{ "code": "rhythm_estimated", "params": { "bars": [3, 4] } }]
+  "warnings": []
 }
 ```
 
@@ -117,16 +119,19 @@
 - `capo.source`：`"detected"` 或 `"default"`。
 - 每個小節的 `timeSignature` 是 `null` 時沿用前一個。
 - `units` 是寫出來的長度，以 32 分音符為單位，一定能表示成一個音符加 0–2 個附點：1、2、3、4、6、7、8、12、14、16、24、28、32、48（第 7.2 節的表）；`tuplet` 為真表示三連音。
-- **補充**（#59）跨欄位的規則，JSON Schema 與 zod 都檢查：
+- **補充**（#59）JSON Schema 與 zod 都檢查的規則（`packages/contracts/tests/recognizer.test.ts` 裡每一條都有改壞的版本）：
   - `tuning.midi` 的個數等於 `strings`；音符的 `string` 不超過 `strings`；同一個拍點上每條弦最多一個音符。
   - `fret` 只有 `dead` 時是 `null`；`graceHammer` 只有 `graceFret` 不是 `null` 時才可能為真。
   - `tuning`：`source: "detected"` 時 `reason`、`raw` 都是 `null`；`source: "default"` 時 `reason` 是 `"not_found"`（`raw` 是 `null`）或 `"unrecognized"`（`raw` 是讀不懂的原文）。辨識服務不接受指定調弦，所以沒有前身的 `"manual"` 與 `"string_count_mismatch"`。
   - `capo`：`source: "default"` 時 `fret` 一定是 0。
-  - 小節的 `sign`、`jump` 用小寫的 code（`segno`、`coda`、`fine`；`da_capo`、`da_capo_al_coda`、`da_capo_al_fine`、`da_segno`、`da_segno_al_coda`、`da_segno_al_fine`、`to_coda`），不用前身 Guitar Pro 的名稱（前身的 `"Da Coda"` 就是 To Coda）。
-  - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出。
+  - 拍號：整首的 `timeSignature` 在前身 `music_settings` 的範圍內（分子 1–16，分母 2、4、8、16；前身讀到範圍外的值時用 4/4）；小節的 `timeSignature` 可以到前身讀譜面拍號的範圍（分子 1–32，分母 1、2、4、8、16、32），和 `schema.md` 的拍號範圍相同。
+  - 小節的 `sign`、`jump` 只收小寫的 code（`segno`、`coda`、`fine`；`da_capo`、`da_capo_al_coda`、`da_capo_al_fine`、`da_segno`、`da_segno_al_coda`、`da_segno_al_fine`、`to_coda`）。
+  - `endings`、`rhythm_estimated` 的 `bars` 裡同一個數字最多出現一次（不檢查順序）。
   - 所有物件都不接受多出來的欄位；多了欄位就是另一個版本。
-  - 拍號：整首的（第一小節的）`timeSignature` 在前身 `music_settings` 的範圍內，曲中的可以到前身讀譜面拍號的範圍（分子 1–32，分母 1、2、4、8、16、32），和 `schema.md` 的拍號範圍相同。
-  - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `d` 也吃得到 `0.`）不輸出。
+- **補充**（#59）其他約定（不是驗證規則）：
+  - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出（只標記、不改寫）。
+  - `sign`、`jump` 不用前身 Guitar Pro 的名稱；前身的 `"Da Coda"` 就是 `to_coda`。
+  - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `\d` 也吃得到 `0.`）不輸出。
 - `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。
 
 **補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
@@ -164,7 +169,7 @@
 | `unavailable` | 整件 | 補充：子行程無法啟動（前身 `ConversionUnavailable`） |
 | `busy` | 整件 | 已經有一件在跑（HTTP 503） |
 
-- **補充**（#59）：`params` 在版本 1 一律是 `{}`；`pages` 依頁序列出，只有 `recognition_failed` 會有，其他 code 是空陣列。`busy` 的 503 回應也是這個形狀。
+- **補充**（#59）：`params` 在版本 1 一律是 `{}`；`pages` 只有 `recognition_failed` 會有，其他 code 是空陣列。`busy` 的 503 回應也是這個形狀。
 
 Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的「執行中」辨識標成失敗（第 7 節）。介面依 code 顯示 `strings.ts` 裡的繁中文字與建議。
 
@@ -246,7 +251,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 | `strings`、`tuning.midi` | `tuning`（第 1 弦在前）；讀不懂時是該弦數的標準調弦：4 弦 `[43, 38, 33, 28]`、5 弦 `[43, 38, 33, 28, 23]`、6 弦 `[64, 59, 55, 50, 45, 40]`、7 弦 `[64, 59, 55, 50, 45, 40, 35]`（補充：4、5 弦當成貝斯） |
 | 小節的 `timeSignature`（`null` 時沿用前一個；第一個用整首的） | `bars[].timeSig` |
 | `beats` | `voices["0:0"]` |
-| `units` | `value` 與 `dots`：1 → 32、2 → 16、3 → 16 加 1 個附點、4 → 8、6 → 8 加 1、7 → 8 加 2、8 → 4、12 → 4 加 1、14 → 4 加 2、16 → 2、24 → 2 加 1、28 → 2 加 2、32 → 1、48 → 1 加 1（補充：其他值讓轉換失敗，code `recognition_failed`） |
+| `units` | `value` 與 `dots`：1 → 32、2 → 16、3 → 16 加 1 個附點、4 → 8、6 → 8 加 1、7 → 8 加 2、8 → 4、12 → 4 加 1、14 → 4 加 2、16 → 2、24 → 2 加 1、28 → 2 加 2、32 → 1、48 → 1 加 1（補充：契約只接受這些值） |
 | `tuplet: true` | `tuplet: { actual: 3, normal: 2 }` |
 | `string`、`fret` | 音符鍵 `s<string>`、`fret`；`dead` 時不寫 `fret` |
 | `dead`、`ghost`、`tie`、`vibrato`、`staccato`、`letRing`、`palmMute` | 同名欄位（`true` 才寫） |

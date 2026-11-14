@@ -30,8 +30,8 @@
         "tuning": { "$ref": "#/$defs/tuning" },
         "capo": { "$ref": "#/$defs/capo" },
         "timeSignature": {
-          "description": "第一小節的拍號：偵測到的，否則 4/4。",
-          "$ref": "#/$defs/timeSignature"
+          "description": "整首（第一小節）的拍號：偵測到的，否則 4/4。",
+          "$ref": "#/$defs/songTimeSignature"
         },
         "bars": {
           "description": "依頁序排好的小節，至少一個。",
@@ -150,13 +150,24 @@
         }
       ]
     },
-    "timeSignature": {
+    "songTimeSignature": {
+      "description": "整首的拍號，在前身 music_settings 的範圍內（範圍外的讀數，前身改用 4/4）。",
       "type": "object",
       "additionalProperties": false,
       "required": ["numerator", "denominator"],
       "properties": {
-        "numerator": { "description": "每小節幾拍，1–32（前身 extract/bar_signs.py 讀曲中拍號的範圍；第一小節的拍號另外受 music_settings 的 1–16 限制）。", "type": "integer", "minimum": 1, "maximum": 32 },
-        "denominator": { "description": "以幾分音符為一拍：1、2、4、8、16 或 32（第一小節的只會是 2、4、8 或 16）。", "enum": [1, 2, 4, 8, 16, 32] }
+        "numerator": { "description": "每小節幾拍，1–16。", "type": "integer", "minimum": 1, "maximum": 16 },
+        "denominator": { "description": "以幾分音符為一拍：2、4、8 或 16。", "enum": [2, 4, 8, 16] }
+      }
+    },
+    "timeSignature": {
+      "description": "曲中印的拍號，在前身讀譜面拍號的範圍內（extract/bar_signs.py、raster_tab.py）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "description": "每小節幾拍，1–32。", "type": "integer", "minimum": 1, "maximum": 32 },
+        "denominator": { "description": "以幾分音符為一拍：1、2、4、8、16 或 32。", "enum": [1, 2, 4, 8, 16, 32] }
       }
     },
     "bar": {
@@ -178,7 +189,7 @@
           "anyOf": [{ "const": 0 }, { "minimum": 2, "maximum": 32 }]
         },
         "endings": {
-          "description": "跳房子（\"1.\"、\"2.\"）：這個小節只在反覆的這幾次演奏，由小到大；不在跳房子裡時是空陣列。",
+          "description": "跳房子（\"1.\"、\"2.\"）：這個小節只在反覆的這幾次演奏，每次最多出現一次；不在跳房子裡時是空陣列。",
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "integer", "minimum": 1, "maximum": 9 }
@@ -289,7 +300,7 @@
               "additionalProperties": false,
               "required": ["bars"],
               "properties": {
-                "bars": { "description": "估出時值的小節，從 1 數起，由小到大。", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } }
+                "bars": { "description": "估出時值的小節，從 1 數起，每個最多出現一次。", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } }
               }
             }
           }
@@ -392,7 +403,7 @@
             },
             "params": { "description": "這個版本的每個 code 都沒有參數。", "type": "object", "additionalProperties": false },
             "pages": {
-              "description": "頁層級的原因，依頁序；只有 recognition_failed 會有。",
+              "description": "頁層級的原因；只有 recognition_failed 會有。",
               "type": "array",
               "items": { "$ref": "#/$defs/pageError" }
             }

@@ -45,6 +45,15 @@ test("the fixtures hold the cases the contract names: six, four and seven string
   expect(new Set(failures.flatMap((failure) => failure.error.pages.map((page) => page.code)))).toEqual(new Set(["no_staff", "no_notes", "invalid_image", "image_too_large"]));
 });
 
+// As the predecessor warns (converter.py, _flag_estimated_rhythm): only when another bar of the
+// part read its printed rhythm, and naming every bar estimated from the spacing.
+test.each([...fixtures].filter(([, fixture]) => recognizerResult.safeParse(fixture).success))("the fixture %s warns of estimated rhythm as the recognizer would", (_, fixture) => {
+  const result = fixture as RecognizerResult;
+  const estimated = result.bars.flatMap((bar, index) => (bar.rhythmEstimated ? [index + 1] : []));
+  const warned = result.warnings.flatMap((warning) => (warning.code === "rhythm_estimated" ? [warning.params.bars] : []));
+  expect(warned).toEqual(estimated.length > 0 && estimated.length < result.bars.length ? [estimated] : []);
+});
+
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** A copy of a fixture, broken by `change`. */
@@ -72,7 +81,15 @@ test.each<[string, string, (json: Json) => void]>([
   ["a default capo on a fret", "six-strings", (json) => (json.capo.fret = 2)],
   ["a capo past fret 24", "capo", (json) => (json.capo.fret = 25)],
   ["a time signature over 3", "six-strings", (json) => (json.timeSignature.denominator = 3)],
+  ["a song in 17/4", "six-strings", (json) => (json.timeSignature.numerator = 17)],
+  ["a song in 4/32", "six-strings", (json) => (json.timeSignature.denominator = 32)],
   ["a bar in 33/8", "four-strings", (json) => (json.bars[1].timeSignature = { numerator: 33, denominator: 8 })],
+  ["a tempo past 400", "six-strings", (json) => (json.bars[0].tempo = 401)],
+  ["a tempo in fractions of a beat", "six-strings", (json) => (json.bars[0].tempo = 96.5)],
+  ["a repeat played 33 times", "six-strings", (json) => (json.bars[1].repeatTimes = 33)],
+  ["a volta numbered 10", "seven-strings", (json) => (json.bars[1].endings = [10])],
+  ["a volta pass twice", "seven-strings", (json) => (json.bars[1].endings = [1, 1])],
+  ["an empty section name", "six-strings", (json) => (json.bars[0].marker = "")],
   ["no bars", "six-strings", (json) => (json.bars = [])],
   ["a bar with no beats", "six-strings", (json) => (json.bars[0].beats = [])],
   ["a length no note value has", "six-strings", (json) => (json.bars[0].beats[0].units = 5)],

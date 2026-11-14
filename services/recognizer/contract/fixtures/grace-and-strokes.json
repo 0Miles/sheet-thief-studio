@@ -86,6 +86,6 @@
     }
   ],
   "warnings": [
-    {"code": "bar_too_dense", "params": {"page": 2, "notes": 40}}
+    {"code": "other", "params": {}}
   ]
 }
