@@ -7,7 +7,7 @@ import { DRUM_PIECES } from "../src/drums";
 import { beatIdOf, beatOf, type Projection, projectScore, replaceBars, restsFilling } from "../src/projection";
 
 const settings = new alphaTab.Settings();
-const { Duration, NoteAccidentalMode } = alphaTab.model;
+const { AccentuationType, Duration, NoteAccidentalMode, VibratoType } = alphaTab.model;
 
 function write(doc: Y.Doc, partId: string, barId: string, beats: [NoteValue, Record<string, NoteJSON>][]): Cursor {
   let cursor = cursorAt(doc, partId, barId);
@@ -164,4 +164,46 @@ test("a change of bars or parts is not a replacement: the whole score is project
   expect(replaceBars(projectScore(docToJson(other.doc), settings), docToJson(other.doc), ["gone"], settings)).toBeNull();
   addPart(other.doc, { name: "Bass", kind: "fretted" });
   expect(replaceBars(projectScore(docToJson(band().doc), settings), docToJson(other.doc), [other.barIds[0]!], settings)).toBeNull();
+});
+
+test("each flag of a fretted note becomes its alphaTab field, and a dead note without a fret is in the projection", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Techniques");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  write(doc, guitar, barId!, [
+    [8, { s1: { fret: 3, dead: true }, s2: { dead: true } }],
+    [8, { s1: { fret: 3, ghost: true } }],
+    [8, { s1: { fret: 3, staccato: true } }],
+    [8, { s1: { fret: 3, accent: true } }],
+    [8, { s1: { fret: 3, letRing: true } }],
+    [8, { s1: { fret: 3, palmMute: true } }],
+    [8, { s1: { fret: 3, vibrato: true } }],
+    [8, { s1: { fret: 3, tap: true }, s2: { fret: 3 } }],
+  ]);
+  const beats = projectScore(docToJson(doc), settings).score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats;
+  const fields = (note: alphaTab.model.Note) => ({
+    isDead: note.isDead,
+    isGhost: note.isGhost,
+    isStaccato: note.isStaccato,
+    accentuated: note.accentuated,
+    isLetRing: note.isLetRing,
+    isPalmMute: note.isPalmMute,
+    vibrato: note.vibrato,
+  });
+  const plain = fields(beats[7]!.notes.find((note) => note.string === 5)!);
+  expect(plain).toEqual({ isDead: false, isGhost: false, isStaccato: false, accentuated: AccentuationType.None, isLetRing: false, isPalmMute: false, vibrato: VibratoType.None });
+  const onString1 = (beat: number) => fields(beats[beat]!.notes.find((note) => note.string === 6)!);
+  expect(onString1(0)).toEqual({ ...plain, isDead: true });
+  expect(onString1(1)).toEqual({ ...plain, isGhost: true });
+  expect(onString1(2)).toEqual({ ...plain, isStaccato: true });
+  expect(onString1(3)).toEqual({ ...plain, accentuated: AccentuationType.Normal });
+  expect(onString1(4)).toEqual({ ...plain, isLetRing: true });
+  expect(onString1(5)).toEqual({ ...plain, isPalmMute: true });
+  expect(onString1(6)).toEqual({ ...plain, vibrato: VibratoType.Slight });
+  // The dead note on string 2 has no fret: it is drawn as an X on that string.
+  const fretless = beats[0]!.notes.find((note) => note.string === 5)!;
+  expect([fretless.isDead, fretless.fret]).toEqual([true, 0]);
+  // Tap is the beat's: any note of it tapped taps the beat.
+  expect(beats.map((beat) => beat.tap)).toEqual([false, false, false, false, false, false, false, true]);
 });
