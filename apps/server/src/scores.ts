@@ -2,13 +2,13 @@
 // creating one, listing mine, opening one, and the collab ticket to edit it.
 import { collabTicket, createdScore, createScoreRequest, type Role, scoreDetails, scoreList } from "@studio/contracts";
 import { addPart, COMMON_TIME, createScore, insertBars, SCHEMA_VERSION } from "@studio/score-model";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Account, Score, ScoreMember } from "./db/models";
-import { invalidRequest, isUuid } from "./http";
+import { invalidRequest, isUuid, notFound } from "./http";
 
 /** The score with this id, unless it does not exist or is deleted. */
 export async function liveScore(id: string): Promise<Score | null> {
@@ -57,11 +57,6 @@ async function makeScore(collab: Collab, ownerId: string, title: string): Promis
     throw error;
   }
   return score.id;
-}
-
-/** Not a member, no such score and a deleted score all look the same (docs/spec/security.md, 8). */
-export function notFound(reply: FastifyReply) {
-  return reply.code(404).send({ code: "not_found" });
 }
 
 export function registerScores(app: FastifyInstance, { collab, tickets }: { collab: Collab; tickets: CollabTickets }): void {

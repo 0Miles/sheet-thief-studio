@@ -18,8 +18,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { literal, Op, type WhereOptions } from "sequelize";
 
 import { Phrase } from "./db/models";
-import { invalidRequest, isUuid } from "./http";
-import { notFound } from "./scores";
+import { invalidRequest, isUuid, notFound } from "./http";
 
 /** A body that carries a fragment: the fragment's 1 MB and room for the rest (docs/spec/security.md, section 5). */
 const FRAGMENT_BODY_LIMIT = MAX_FRAGMENT_BYTES + 64 * 1024;
@@ -57,7 +56,7 @@ function copyName(name: string): string {
 }
 
 /** Escape what LIKE reads as wildcards, so that a search finds the text as typed. */
-function likeText(text: string): string {
+function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, "\\$&");
 }
 
@@ -87,7 +86,7 @@ export function registerPhrases(app: FastifyInstance): void {
     const { kind, q = "" } = query.data;
     const where: WhereOptions<Phrase> = { ownerId: request.account!.id };
     if (kind !== undefined) where.kind = kind;
-    if (q.trim() !== "") where.name = { [Op.iLike]: `%${likeText(q.trim())}%` };
+    if (q.trim() !== "") where.name = { [Op.iLike]: `%${escapeLike(q.trim())}%` };
     const phrases = await Phrase.findAll({
       where,
       // Not the content: the list never shows it, and it is the largest column.

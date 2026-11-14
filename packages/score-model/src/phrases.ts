@@ -4,8 +4,7 @@
 // bars of a score share (tempo, key, repeats, sections) nor the capo.
 import { z } from "zod";
 
-import type { Selection } from "./commands";
-import { newId } from "./commands";
+import { newId, type Selection } from "./commands";
 import {
   beatSchema,
   type BeatJSON,
@@ -36,10 +35,16 @@ export function jsonBytes(value: unknown): number {
 const fragmentBeatSchema = beatSchema.omit({ id: true }).extend({ id: z.never().optional() });
 export type BeatWithoutId = Omit<BeatJSON, "id">;
 
-/** A bar of a fragment: its time signature and its voices ("staff:voice" to beats), nothing else. */
-const fragmentBarSchema = z.strictObject({
+/** Fields a fragment must not have: set at all, the fragment is refused (fields it does not know are left out, as reading does). */
+function none<const Fields extends readonly string[]>(fields: Fields): { [Field in Fields[number]]: z.ZodOptional<z.ZodNever> } {
+  return Object.fromEntries(fields.map((field) => [field, z.never().optional()])) as { [Field in Fields[number]]: z.ZodOptional<z.ZodNever> };
+}
+
+/** A bar of a fragment: its time signature and its voices ("staff:voice" to beats); none of what the bars of a score share. */
+const fragmentBarSchema = z.object({
   timeSig: timeSigSchema,
   voices: z.record(z.string(), z.array(fragmentBeatSchema)),
+  ...none(["id", "tempo", "keySig", "repeatStart", "repeatEnd", "voltas", "section", "anacrusis"]),
 });
 
 const bars = z.array(fragmentBarSchema).min(1);
@@ -56,12 +61,16 @@ function stringsOf(fragment: object): number {
   return "tuning" in fragment && Array.isArray(fragment.tuning) ? fragment.tuning.length : 0;
 }
 
+/** What no fragment has: an id, a capo, the fields of a part's other kinds, and the other fragment's beats or bars. */
+const notOfBars = none(["id", "capo", "beats"]);
+const notOfBeats = none(["id", "capo", "bars", "staves"]);
+
 /** Bars of one part: its kind, the tuning of a fretted part and the staves of a pitched one. */
 export const barsFragmentSchema = z
   .discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("fretted"), tuning, bars }),
-    z.strictObject({ kind: z.literal("percussion"), bars }),
-    z.strictObject({ kind: z.literal("pitched"), staves, bars }),
+    z.object({ ...notOfBars, ...none(["staves"]), kind: z.literal("fretted"), tuning, bars }),
+    z.object({ ...notOfBars, ...none(["tuning", "staves"]), kind: z.literal("percussion"), bars }),
+    z.object({ ...notOfBars, ...none(["tuning"]), kind: z.literal("pitched"), staves, bars }),
   ])
   .superRefine((fragment, context) => {
     const staffCount = fragment.kind === "pitched" ? fragment.staves.length : 1;
@@ -76,12 +85,12 @@ export const barsFragmentSchema = z
   .refine(withinSize, `more than ${MAX_FRAGMENT_BYTES} bytes of JSON`);
 export type BarsFragment = z.infer<typeof barsFragmentSchema>;
 
-/** Beats in a row of one voice: its kind, and the tuning of a fretted part. */
+/** Beats in a row of one voice: its kind, and the tuning of a fretted part (what pasting checks the strings against). */
 export const beatsFragmentSchema = z
   .discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("fretted"), tuning, beats }),
-    z.strictObject({ kind: z.literal("percussion"), beats }),
-    z.strictObject({ kind: z.literal("pitched"), beats }),
+    z.object({ ...notOfBeats, kind: z.literal("fretted"), tuning, beats }),
+    z.object({ ...notOfBeats, ...none(["tuning"]), kind: z.literal("percussion"), beats }),
+    z.object({ ...notOfBeats, ...none(["tuning"]), kind: z.literal("pitched"), beats }),
   ])
   .superRefine((fragment, context) => checkBeats(context, fragment.kind, stringsOf(fragment), fragment.beats, ["beats"]))
   .refine(withinSize, `more than ${MAX_FRAGMENT_BYTES} bytes of JSON`);

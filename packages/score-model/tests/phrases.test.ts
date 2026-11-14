@@ -26,7 +26,7 @@ import { score } from "./arbitraries";
 const GUITAR = [64, 59, 55, 50, 45, 40];
 
 /** A legal fragment of each kind; every case below breaks one rule of one of them. */
-const riff: BarsFragment = {
+const tab: BarsFragment = {
   kind: "fretted",
   tuning: GUITAR,
   bars: [
@@ -35,60 +35,65 @@ const riff: BarsFragment = {
   ],
 };
 const groove: BarsFragment = { kind: "percussion", bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [{ value: 8, dots: 0, notes: { p36: {} } }], "0:1": [] } }] };
-const chords: BarsFragment = {
+const keys: BarsFragment = {
   kind: "pitched",
   staves: [{ clef: "treble" }, { clef: "bass" }],
   bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [{ value: 2, dots: 1, notes: { n60: { spell: "C" } }, lyric: "la" }], "1:0": [] } }],
 };
 
 test("a fragment of bars of each kind passes, and so does a fragment of beats", () => {
-  for (const fragment of [riff, groove, chords]) expect(barsFragmentSchema.safeParse(fragment).error?.issues ?? []).toEqual([]);
+  for (const fragment of [tab, groove, keys]) expect(barsFragmentSchema.safeParse(fragment).error?.issues ?? []).toEqual([]);
   const beats = { kind: "fretted", tuning: GUITAR, beats: [{ value: 8, dots: 0, notes: { s1: { fret: 0 } } }] };
   expect(beatsFragmentSchema.safeParse(beats).success).toBe(true);
   expect(beatsFragmentSchema.safeParse({ kind: "percussion", beats: [{ value: 8, dots: 0, notes: {} }] }).success).toBe(true);
   // The clipboard holds either, told apart by `bars` or `beats`.
   expect(fragmentSchema.parse(beats)).toEqual(beats);
-  expect(fragmentSchema.parse(riff)).toEqual(riff);
+  expect(fragmentSchema.parse(tab)).toEqual(tab);
+});
+
+test("a field a fragment does not know is left out, as reading leaves it out: a later version may add one", () => {
+  const later = { ...tab, played: "loud", bars: [{ ...tab.bars[0]!, mood: "calm" }] };
+  expect(barsFragmentSchema.parse(later)).toEqual({ ...tab, bars: [tab.bars[0]] });
 });
 
 test("a fragment holds no id, no tempo nor anything else a bar of the score has, and no capo", () => {
-  const firstBar = riff.bars[0]!;
+  const firstBar = tab.bars[0]!;
   const firstBeat = firstBar.voices["0:0"]![0]!;
   const broken: [string, unknown][] = [
-    ["an id of the fragment", { ...riff, id: "p1" }],
-    ["an id of a bar", { ...riff, bars: [{ ...firstBar, id: "b1" }] }],
-    ["an id of a beat", { ...riff, bars: [{ ...firstBar, voices: { "0:0": [{ ...firstBeat, id: "x1" }] } }] }],
-    ["a tempo", { ...riff, bars: [{ ...firstBar, tempo: 120 }] }],
-    ["a key signature", { ...riff, bars: [{ ...firstBar, keySig: { fifths: 0, mode: "major" } }] }],
-    ["a repeat", { ...riff, bars: [{ ...firstBar, repeatStart: true }] }],
-    ["a section", { ...riff, bars: [{ ...firstBar, section: "Verse" }] }],
-    ["a capo", { ...riff, capo: 2 }],
+    ["an id of the fragment", { ...tab, id: "p1" }],
+    ["an id of a bar", { ...tab, bars: [{ ...firstBar, id: "b1" }] }],
+    ["an id of a beat", { ...tab, bars: [{ ...firstBar, voices: { "0:0": [{ ...firstBeat, id: "x1" }] } }] }],
+    ["a tempo", { ...tab, bars: [{ ...firstBar, tempo: 120 }] }],
+    ["a key signature", { ...tab, bars: [{ ...firstBar, keySig: { fifths: 0, mode: "major" } }] }],
+    ["a repeat", { ...tab, bars: [{ ...firstBar, repeatStart: true }] }],
+    ["a section", { ...tab, bars: [{ ...firstBar, section: "Verse" }] }],
+    ["a capo", { ...tab, capo: 2 }],
     ["an id of a beat in a fragment of beats", { kind: "fretted", tuning: GUITAR, beats: [{ ...firstBeat, id: "x1" }] }],
   ];
   for (const [what, fragment] of broken) expect(fragmentSchema.safeParse(fragment).success, what).toBe(false);
 });
 
 test("each kind carries what it needs and nothing of another kind", () => {
-  const withoutStaves = { kind: chords.kind, bars: chords.bars };
-  const withoutTuning = { kind: riff.kind, bars: riff.bars };
+  const withoutStaves = { kind: keys.kind, bars: keys.bars };
+  const withoutTuning = { kind: tab.kind, bars: tab.bars };
   const broken: [string, unknown][] = [
     ["pitched without staves", withoutStaves],
-    ["pitched with three staves", { ...chords, staves: [{ clef: "treble" }, { clef: "bass" }, { clef: "bass" }] }],
-    ["pitched with a tab staff", { ...chords, staves: [{ clef: "tab" }] }],
+    ["pitched with three staves", { ...keys, staves: [{ clef: "treble" }, { clef: "bass" }, { clef: "bass" }] }],
+    ["pitched with a tab staff", { ...keys, staves: [{ clef: "tab" }] }],
     ["fretted without a tuning", withoutTuning],
-    ["fretted with three strings", { ...riff, tuning: [64, 59, 55] }],
-    ["fretted with staves", { ...riff, staves: [{ clef: "tab" }] }],
+    ["fretted with three strings", { ...tab, tuning: [64, 59, 55] }],
+    ["fretted with staves", { ...tab, staves: [{ clef: "tab" }] }],
     ["percussion with a tuning", { ...groove, tuning: GUITAR }],
     ["percussion with staves", { ...groove, staves: [{ clef: "neutral" }] }],
     ["a fragment of beats of drums with a tuning", { kind: "percussion", tuning: GUITAR, beats: [{ value: 8, dots: 0, notes: {} }] }],
-    ["no bars", { ...riff, bars: [] }],
+    ["no bars", { ...tab, bars: [] }],
     ["no beats", { kind: "percussion", beats: [] }],
-    ["a voice of a staff the fragment does not have", { ...riff, bars: [{ ...riff.bars[0]!, voices: { "1:0": [] } }] }],
-    ["a note on a string the tuning does not have", { ...riff, bars: [{ ...riff.bars[0]!, voices: { "0:0": [{ value: 4, dots: 0, notes: { s7: { fret: 1 } } }] } }] }],
+    ["a voice of a staff the fragment does not have", { ...tab, bars: [{ ...tab.bars[0]!, voices: { "1:0": [] } }] }],
+    ["a note on a string the tuning does not have", { ...tab, bars: [{ ...tab.bars[0]!, voices: { "0:0": [{ value: 4, dots: 0, notes: { s7: { fret: 1 } } }] } }] }],
     ["a note of another kind", { ...groove, bars: [{ ...groove.bars[0]!, voices: { "0:0": [{ value: 4, dots: 0, notes: { s1: { fret: 1 } } }] } }] }],
     ["a beat field of another kind", { ...groove, bars: [{ ...groove.bars[0]!, voices: { "0:0": [{ value: 4, dots: 0, notes: {}, stroke: "up" }] } }] }],
     ["a fragment of beats with a note of another kind", { kind: "pitched", beats: [{ value: 4, dots: 0, notes: { p36: {} } }] }],
-    ["both bars and beats", { ...riff, beats: [{ value: 4, dots: 0, notes: {} }] }],
+    ["both bars and beats", { ...tab, beats: [{ value: 4, dots: 0, notes: {} }] }],
   ];
   for (const [what, fragment] of broken) expect(fragmentSchema.safeParse(fragment).success, what).toBe(false);
 });
@@ -143,7 +148,7 @@ test("bars taken out of a score and made a score of their own keep their music, 
 });
 
 test("a range of bars that is not in the score gives no fragment, and only a score of one part and a bar is a phrase", () => {
-  const json = fragmentToScore(riff);
+  const json = fragmentToScore(tab);
   const [first, second] = json.bars;
   expect(fragmentOfBars(json, { partId: "elsewhere", anchorBarId: first!.id, focusBarId: second!.id })).toBeUndefined();
   expect(fragmentOfBars(json, { partId: json.parts[0]!.id, anchorBarId: first!.id, focusBarId: "gone" })).toBeUndefined();
@@ -159,9 +164,9 @@ test("a blank phrase is one empty bar of 4/4 for a part like the one given", () 
     bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [] } }],
   });
   expect(blankFragment({ kind: "percussion", tuning: [], staves: [{ clef: "neutral" }] })).toEqual({ kind: "percussion", bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [] } }] });
-  const keys = blankFragment({ kind: "pitched", tuning: [], staves: [{ clef: "treble" }, { clef: "bass" }] });
-  expect(keys).toEqual({ kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }], bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [], "1:0": [] } }] });
-  expect(barsFragmentSchema.safeParse(keys).success).toBe(true);
+  const blank = blankFragment({ kind: "pitched", tuning: [], staves: [{ clef: "treble" }, { clef: "bass" }] });
+  expect(blank).toEqual({ kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }], bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": [], "1:0": [] } }] });
+  expect(barsFragmentSchema.safeParse(blank).success).toBe(true);
 });
 
 test("a fragment of more than 1 MB of JSON is refused", () => {

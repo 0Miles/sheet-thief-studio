@@ -4,7 +4,7 @@
 // and deleting are for devices that can be typed on only (`canType`); a phone or a tablet lists,
 // filters and searches.
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { createdPhrase, duplicatedPhrase, type PartKind, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
+import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
 import { blankFragment, PART_PRESETS, type PartPresetId } from "@studio/score-model";
 import { onMounted, ref, watch } from "vue";
 
@@ -15,7 +15,7 @@ import { errorText, strings } from "../strings";
 
 const text = strings.phrases;
 const editable = canType();
-const KINDS: PartKind[] = ["fretted", "percussion", "pitched"];
+const KINDS = partKindSchema.options;
 const PRESETS = Object.keys(PART_PRESETS) as PartPresetId[];
 /** How long the search waits after the last key before asking. */
 const SEARCH_DELAY_MS = 200;
@@ -65,14 +65,15 @@ function detailsOf(phrase: PhraseSummary): string {
 }
 
 // Every dialog of the page: which one is open, on which phrase, and what it is sending.
-const dialog = ref<"create" | "rename" | "delete" | null>(null);
+type Dialog = "create" | "rename" | "delete";
+const dialog = ref<Dialog | null>(null);
 const target = ref<PhraseSummary | null>(null);
 const name = ref("");
 const preset = ref<PartPresetId>("guitar6");
 const error = ref("");
 const sending = ref(false);
 
-function open(which: "create" | "rename" | "delete", phrase: PhraseSummary | null = null): void {
+function open(which: Dialog, phrase: PhraseSummary | null = null): void {
   dialog.value = which;
   target.value = phrase;
   name.value = which === "create" ? strings.newPhrase.defaultName : (phrase?.name ?? "");
@@ -84,7 +85,7 @@ function close(): void {
   if (!sending.value) dialog.value = null;
 }
 
-/** Do what a dialog or a button asks, then show the list as it now is; a refusal is said in the open dialog, if any. */
+/** Do what a dialog or a button asks, then show the list as it now is; a refusal is said in the open dialog, or above the list. */
 async function send(action: () => Promise<unknown>): Promise<void> {
   error.value = "";
   sending.value = true;
@@ -139,6 +140,8 @@ function remove(): Promise<void> {
       </label>
       <AppTextField v-model="search" class="phrases__search" :label="text.search" name="q" type="search" :maxlength="100" />
     </Cluster>
+    <!-- A refusal of a button that opens no dialog (copying). -->
+    <p v-if="error && dialog === null" class="phrases__error" role="alert">{{ error }}</p>
     <p v-if="loadError" class="phrases__error" role="alert">{{ loadError }}</p>
     <p v-else-if="phrases === null" class="phrases__muted">{{ strings.loading }}</p>
     <p v-else-if="phrases.length === 0" class="phrases__muted">{{ kind === "" && search.trim() === "" ? text.empty : text.noMatch }}</p>

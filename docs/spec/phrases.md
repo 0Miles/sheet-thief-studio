@@ -22,7 +22,8 @@ interface BarsFragment {
 
 - 不帶 tempo、反覆、段落、capo、調號。
 - **補充**：`bars` 至少 1 個；聲線鍵的範圍規則同 [`schema.md`](schema.md) 第 5 節；percussion 不帶 `tuning` 也不帶 `staves`。
-- **補充**（#53）：片段本身與它的小節只認得上面列出的欄位，帶了其他欄位（`id`、`tempo`、`keySig`、反覆、`section`、`capo`……）就驗證失敗，不是略過；拍點帶 `id` 也驗證失敗。拍點與音符的其他欄位照 [`schema.md`](schema.md) 第 9 節的規則：不認得的忽略。zod schema 是 `score-model` 的 `barsFragmentSchema`、`beatsFragmentSchema`、`fragmentSchema`（`src/phrases.ts`），1 MB 的上限也在裡面檢查。
+- **補充**（#53）：片段帶了不該有的欄位就驗證失敗，不是略過：片段的 `id`、`capo`、別的種類才有的 `tuning` 或 `staves`、另一種片段的 `bars` 或 `beats`；小節的 `id`、`tempo`、`keySig`、`repeatStart`、`repeatEnd`、`voltas`、`section`、`anacrusis`；拍點的 `id`。其他不認得的欄位照 [`schema.md`](schema.md) 第 9 節的規則忽略（解析後不保留），讓加法的改動不必把 `@1` 升成 `@2`。
+- **補充**（#53）：拍點段的 fretted 也必帶 `tuning`，貼上時拿它比對弦數。zod schema 是 `score-model` 的 `barsFragmentSchema`、`beatsFragmentSchema`、`fragmentSchema`（`src/phrases.ts`），1 MB 的上限也在裡面檢查。
 - **補充**（#53）：`score-model` 的純函式：`fragmentOfBars`（從 `ScoreJSON` 的一個聲部取出一段小節範圍）、`fragmentToScore`（片段轉成只有一個聲部的 `ScoreJSON`，所有 id 重新產生，形狀和 `docToJson` 的輸出相同；聲部名稱是空字串、`program` 是該種類的預設）、`scoreToFragment`（反過來，取出整份）、`blankFragment`（空白樂句）。
 
 ### 1.2 拍點段（只在剪貼簿）
