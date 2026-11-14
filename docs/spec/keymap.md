@@ -104,7 +104,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 | 鍵 | `code` | 動作 | 適用的聲部 |
 |---|---|---|---|
-| `Shift+L` | `KeyL` | tie | fretted、pitched |
+| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#36：目前只綁 fretted，見本節最後的補充） |
 | `Shift+H` | `KeyH` | legato（搥弦、勾弦） | fretted |
 | `Shift+S` | `KeyS` | slideOut：legato → shift → outUp → outDown → 沒有 | fretted |
 | `Shift+E`（補充） | `KeyE` | slideIn：inBelow → inAbove → 沒有 | fretted |

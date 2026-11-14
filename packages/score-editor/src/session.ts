@@ -296,7 +296,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    * else on the note of the cursor's line (`noteKeyAt`), where dead and tie may make a note, and
    * a beat for it in the append slot.
    */
-  function toggleTechnique<D>(toggle: NoteToggle<D>): KeyCommand {
+  function toggleNotes<D>(toggle: NoteToggle<D>): KeyCommand {
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
       (at) => {
@@ -371,10 +371,10 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "fret":
         return change((at) => typeDigit(binding.fret, at, previous));
       case "tie":
-        return toggleTechnique(tieToggle);
+        return toggleNotes(tieToggle);
       default:
         // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
-        return toggleTechnique(techniqueToggle(effect));
+        return toggleNotes(techniqueToggle(effect));
     }
   }
 

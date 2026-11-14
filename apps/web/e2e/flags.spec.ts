@@ -11,6 +11,8 @@ import { cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, s
 
 const text = strings.score.flags;
 
+/** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
+const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
 /** A tablet's width, or a narrow desktop window: the wide Read view, which cannot be typed on. */
 const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
 
@@ -90,7 +92,7 @@ async function clearOfReserved(page: Page, what: string): Promise<void> {
   }
 }
 
-test("scrolled to the top, no flag box and no flag mark covers a reserved area, in the edit view and the Read view", async ({ browser }) => {
+test("scrolled to the top, no flag box and no flag mark covers a reserved area, in the edit view, the Read view and the narrow Read view", async ({ browser }) => {
   const id = seedScore({ title: "標記與保留區域", owner: ADMIN.username, bars: 12 });
   const page = await loggedIn(browser, ADMIN);
   const errors = pageErrors(page);
@@ -124,6 +126,16 @@ test("scrolled to the top, no flag box and no flag mark covers a reserved area, 
   await expect(reader.locator("main")).toHaveAttribute("data-view", "read");
   await expect(reader.locator("[data-reserved]")).not.toHaveCount(0);
   await clearOfReserved(reader, "the Read view");
+
+  // A phone shows one part at a time: the score's only one, more than 10 bars, so the mark is drawn.
+  const phone = await loggedIn(browser, ADMIN, PHONE);
+  const phoneErrors = pageErrors(phone);
+  await phone.goto(`/scores/${id}`);
+  await drawn(phone);
+  await expect(phone.locator('main[data-layout="narrow"]')).toBeVisible();
+  await expect(phone.locator("[data-reserved]")).not.toHaveCount(0);
+  await clearOfReserved(phone, "the narrow Read view");
   expect(errors).toEqual([]);
   expect(readerErrors).toEqual([]);
+  expect(phoneErrors).toEqual([]);
 });

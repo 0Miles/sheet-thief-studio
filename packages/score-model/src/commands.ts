@@ -313,10 +313,12 @@ export const ON_OFF_TECHNIQUES = ["dead", "ghost", "accent", "staccato", "vibrat
 export type OnOffTechnique = (typeof ON_OFF_TECHNIQUES)[number];
 
 /**
- * Where a note a toggle turns stands: its key, and the note with the same key on the beat before
- * in its voice (the last beat of the bar before, for the first beat of a bar), when one can be read.
+ * Where a note a toggle turns stands: the kind of its part, its key, and the note with the same
+ * key on the beat before in its voice (the last beat of the bar before, for the first beat of a
+ * bar), when one can be read.
  */
 export interface NotePlace {
+  kind: PartKind;
   key: string;
   before: NoteJSON | undefined;
 }
@@ -383,11 +385,11 @@ const plainTie = plainToggle("tie");
 export const tieToggle: NoteToggle<boolean> = {
   decide: (seen) => seen.length === 0 || plainTie.decide(seen),
   turn(stored, on, place) {
-    const { key, before } = place;
+    const { kind, before } = place;
     // A note tied already, to the fret before or with none to take, is left as it is.
     if (on && before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
     if (!on || stored !== undefined) return plainTie.turn(stored, on, place);
-    if (before === undefined || !key.startsWith("n")) return null;
+    if (before === undefined || kind !== "pitched") return null;
     return before.spell === undefined ? { tie: true } : { spell: before.spell, tie: true };
   },
 };
@@ -460,7 +462,7 @@ export function toggleAt<D>(doc: Y.Doc, cursor: Cursor, key: string, toggle: Not
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
   const before = reader.note(key, notesBefore(doc, reader, cursor, place.voice, place.index)?.get(key));
   const decided = toggle.decide(seen === undefined ? [] : [seen]);
-  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { key, before }));
+  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { kind: reader.kind, key, before }));
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -546,7 +548,7 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
     turned.set(map, results);
     for (const { key, stored } of notes) {
       const previous = earlier?.has(key) ? (earlier.get(key) ?? undefined) : reader.note(key, before?.get(key));
-      const next = toggle.turn(stored, decided, { key, before: previous });
+      const next = toggle.turn(stored, decided, { kind: reader.kind, key, before: previous });
       results.set(key, next);
       if (next !== stored) changes.push({ map, key, next });
     }

@@ -199,11 +199,10 @@ export function nextFlag(score: ScoreJSON, flags: readonly Flag[], at: Cursor | 
     return cursor === null ? [] : [{ flag, cursor }];
   });
   if (stops.length === 0) return null;
-  const stoppedAt = stopped !== null && at !== null && sameFields(stopped.cursor, at) ? stopped.flag : undefined;
-  const index = stoppedAt === undefined ? -1 : stops.findIndex(({ flag }) => sameFields(flag, stoppedAt));
+  const index = stillAt(stopped, at, flags) ? stops.findIndex(({ flag }) => sameFields(flag, stopped.flag)) : -1;
   if (index >= 0) return stops[(index + 1) % stops.length]!;
   if (at === null) return stops[0]!;
-  // The flag stopped at is gone (fixed meanwhile): on from where it was.
-  const from = stoppedAt === undefined ? rankAt(at) : rankOf(stoppedAt);
+  // Not stopped, or the flag stopped at was fixed meanwhile: on from the cursor.
+  const from = rankAt(at);
   return stops.find(({ flag }) => compareRanks(rankOf(flag), from) > 0) ?? stops[0]!;
 }

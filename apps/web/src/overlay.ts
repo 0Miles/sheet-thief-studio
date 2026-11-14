@@ -36,16 +36,21 @@ export interface FlagMark {
   rect: Rect;
 }
 
-/** The width of a box's stroke: it is drawn inside the box, which is inset by half of it. */
+/** The width of a box's stroke: it is drawn inside the box, which is shrunk by half of it. */
 export const FLAG_STROKE = 2;
 /** How far a note's mark reaches around its head. */
 const NOTE_MARGIN = 2;
 
-/** The rectangle made smaller by `by` on every side (larger when `by` is negative); null when nothing is left of it. */
-function inset(rect: Rect, by: number): Rect | null {
+/** The rectangle made smaller by `by` on every side; null when nothing is left of it. */
+function shrink(rect: Rect, by: number): Rect | null {
   const width = rect.width - 2 * by;
   const height = rect.height - 2 * by;
   return width > 0 && height > 0 ? { x: rect.x + by, y: rect.y + by, width, height } : null;
+}
+
+/** The rectangle made larger by `by` on every side. */
+function grow(rect: Rect, by: number): Rect {
+  return { x: rect.x - by, y: rect.y - by, width: rect.width + 2 * by, height: rect.height + 2 * by };
 }
 
 /**
@@ -68,12 +73,12 @@ export function flagMarksOf(
       // The heads of every note of the beat: the line the cursor is given does not matter.
       const head = renderer.noteHeadsOf({ partId: flag.partId, barId, voice: flag.voice, beatId: flag.beatId, at: "on", line: 1 }).find((each) => each.key === flag.noteKey);
       if (head === undefined) return [];
-      return [{ kind, shape: "note", rect: clearOf(inset(head.rect, -NOTE_MARGIN)!, reserved) }];
+      return [{ kind, shape: "note", rect: clearOf(grow(head.rect, NOTE_MARGIN), reserved) }];
     }
     const parts = flag.partId === undefined ? partIds : partIds.filter((id) => id === flag.partId);
     return parts.flatMap((id) =>
       renderer.boundsOfSelection({ kind: "bars", partId: id, anchorBarId: barId, focusBarId: barId }).flatMap((box) => {
-        const rect = inset(clearOf(box, reserved), FLAG_STROKE / 2);
+        const rect = shrink(clearOf(box, reserved), FLAG_STROKE / 2);
         return rect === null ? [] : [{ kind, shape: "box" as const, rect }];
       }),
     );

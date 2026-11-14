@@ -737,7 +737,7 @@ onBeforeUnmount(() => {
 }
 /*
  * A box on a bar: its stroke (`FLAG_STROKE` wide) drawn inside the rectangle, which `flagMarksOf`
- * insets by half of it, so that it reaches no further than the rectangle kept clear of the
+ * shrinks by half of it, so that it reaches no further than the rectangle kept clear of the
  * reserved areas.
  */
 .score__flag--box {
