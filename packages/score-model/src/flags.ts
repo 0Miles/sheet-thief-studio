@@ -95,6 +95,14 @@ export function beatAfter(beats: readonly BeatJSON[], index: number, next: reado
   return index + 1 < beats.length ? beats[index + 1] : next?.[0];
 }
 
+/**
+ * Whether a link from the note at `key` reaches a note: `after`, the beat after the note's
+ * (`beatAfter`), holds one on its string. A link that does not dangles (docs/spec/flags.md).
+ */
+export function linkReaches(key: string, after: BeatJSON | undefined): boolean {
+  return after?.notes[key] !== undefined;
+}
+
 /** Where a flag stands in the score, to put the flags in order: what it has no part, bar, voice or beat for comes first. */
 type Rank = [part: number, bar: number, voice: string, beat: number];
 
@@ -129,7 +137,7 @@ export function flagsOf(score: ScoreJSON, invalid: readonly InvalidContentFlag[]
           for (const [noteKey, note] of Object.entries(beat.notes)) {
             const at = { partId: part.id, barId: bar.id, voice, beatId: beat.id, noteKey };
             if (note.tie && !continues(part.kind, note, before?.notes[noteKey])) flags.push({ kind: "danglingTie", ...at });
-            if (part.kind === "fretted" && linksOn(note) && beatAfter(beats, beatIndex, following)?.notes[noteKey] === undefined) flags.push({ kind: "danglingLink", ...at });
+            if (part.kind === "fretted" && linksOn(note) && !linkReaches(noteKey, beatAfter(beats, beatIndex, following))) flags.push({ kind: "danglingLink", ...at });
           }
           before = beat;
         }

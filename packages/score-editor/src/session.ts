@@ -3,6 +3,8 @@
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
   barsOf,
+  bendCycle,
+  bendStep,
   type BeatChange,
   beatPositionOf,
   changeBeatAt,
@@ -424,6 +426,12 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return toggleNotes(slideOutCycle);
       case "slideIn":
         return toggleNotes(slideInCycle);
+      case "bend":
+        return toggleNotes(bendCycle);
+      case "bendUp":
+        return toggleNotes(bendStep(1));
+      case "bendDown":
+        return toggleNotes(bendStep(-1));
       case "stroke":
         return changeBeats(strokeCycle);
       case "slapPop":

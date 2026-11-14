@@ -1,5 +1,6 @@
 // What the tests of the editor share: a score to type on, and keys as a keyboard sends them.
 import { addPart, createScore, cursorAt, docToJson, insertBars, type PartKind } from "@studio/score-model";
+import { expect } from "vitest";
 import * as Y from "yjs";
 
 import { createEditorSession, type Key, type KeyPlatform } from "../src/index";
@@ -40,4 +41,16 @@ export function sessionOn(kind: PartKind = "fretted", bars = 2, platform: KeyPla
   };
   const beats = (bar = 0) => docToJson(doc).parts[0]!.content[barIds[bar]!]!["0:0"]!;
   return { doc, session, press, beats, cursor: () => session.cursor!, barIds, partId };
+}
+
+/**
+ * Press undo on `platform` once for each of `states`, the session's `press` pressing it: what
+ * `read` reads goes back to each in turn, one undo step each.
+ */
+export function undoEach(press: ReturnType<typeof sessionOn>["press"], platform: KeyPlatform, read: () => unknown, states: unknown[]): void {
+  const undo = platform === "mac" ? { metaKey: true } : { ctrlKey: true };
+  for (const state of states) {
+    press("z", 1000, undo);
+    expect(read()).toEqual(state);
+  }
 }

@@ -418,3 +418,36 @@ test("replacing a bar a link goes into, or out of, across a bar line, rebuilds t
   // The last bar, which no link reaches, was never rebuilt.
   expect(bars()[3]).toBe(last);
 });
+
+test("each preset bend becomes its alphaTab bend type and the bend points of its shape, in quarter tones, up the semitones set", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Bends");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  write(doc, guitar, barId!, [
+    [4, { s3: { fret: 7, bend: { type: "bend", semitones: 2 } } }],
+    [4, { s3: { fret: 7, bend: { type: "bendRelease", semitones: 1 } } }],
+    [4, { s3: { fret: 7, bend: { type: "preBend", semitones: 4 } } }],
+    [4, { s3: { fret: 7, bend: { type: "preBendRelease", semitones: 3 } } }],
+  ]);
+  const projection = projectScore(docToJson(doc), settings);
+  const notes = projection.score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats.map((beat) => beat.getNoteOnString(4)!);
+  const { BendType } = alphaTab.model;
+  expect(notes.map((note) => [note.bendType, note.bendPoints!.map((point) => [point.offset, point.value])])).toEqual([
+    // Up in the first quarter of the note, then held.
+    [BendType.Bend, [[0, 0], [15, 4]]],
+    // Up in the first quarter, held, and down again in the last.
+    [BendType.BendRelease, [[0, 0], [15, 2], [45, 2], [60, 0]]],
+    // Bent before it is struck, and held.
+    [BendType.Prebend, [[0, 8], [60, 8]]],
+    // Bent before it is struck, and let down in the first quarter.
+    [BendType.PrebendRelease, [[0, 6], [15, 0]]],
+  ]);
+  expect(notes.map((note) => note.maxBendPoint!.value)).toEqual([4, 2, 8, 6]);
+});
+
+test("a note with no bend has none in alphaTab", () => {
+  const { doc } = band();
+  const note = projectScore(docToJson(doc), settings).score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!.notes[0]!;
+  expect([note.bendType, note.hasBend, note.bendPoints]).toEqual([alphaTab.model.BendType.None, false, null]);
+});

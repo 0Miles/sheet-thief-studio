@@ -37,6 +37,9 @@ export type SessionEffect =
   | "tie"
   | "slideOut"
   | "slideIn"
+  | "bend"
+  | "bendUp"
+  | "bendDown"
   | OnOffTechnique
   | "stroke"
   | "slapPop"
@@ -206,6 +209,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // A slide out steps through its kinds, a slide in through its own, each back to none.
   { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
   { effect: "slideIn", context: "fretted", keys: ["Shift+KeyE"], keymap: both("Shift+KeyE") },
+  // A bend steps through its preset shapes back to none; Shift with ↑ and ↓ takes it a semitone
+  // up and down. On a staff, Shift+↑ and Shift+↓ will be the octave (keymap.md, section 3).
+  { effect: "bend", context: "fretted", keys: ["Shift+KeyB"], keymap: both("Shift+KeyB") },
+  { effect: "bendUp", context: "fretted", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
+  { effect: "bendDown", context: "fretted", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };

@@ -42,6 +42,13 @@ export type SlideOut = (typeof SLIDE_OUTS)[number];
 export const SLIDE_INS = ["inBelow", "inAbove"] as const;
 export type SlideIn = (typeof SLIDE_INS)[number];
 
+/** The preset shapes of a bend, in the order Shift+B steps through them (docs/spec/commands.md, 5.4). */
+export const BEND_TYPES = ["bend", "bendRelease", "preBend", "preBendRelease"] as const;
+export type BendType = (typeof BEND_TYPES)[number];
+
+/** How far a bend goes, in semitones: 1 to 4, a new one 2 (docs/spec/schema.md, section 8). */
+export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
+
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
@@ -133,7 +140,8 @@ export const noteSchema = z.object({
   /** A slide out of the note: legato and shift go on to the next note on the string, marked on the note they start from. */
   slideOut: z.enum(SLIDE_OUTS).optional(),
   slideIn: z.enum(SLIDE_INS).optional(),
-  bend: z.object({ type: z.enum(["bend", "bendRelease", "preBend", "preBendRelease"]), semitones: z.int().min(1).max(4) }).optional(),
+  /** A bend of the note, one of the preset shapes, up so many semitones. */
+  bend: z.object({ type: z.enum(BEND_TYPES), semitones: z.int().min(BEND_SEMITONES.min).max(BEND_SEMITONES.max) }).optional(),
   vibrato: z.literal(true).optional(),
   palmMute: z.literal(true).optional(),
   letRing: z.literal(true).optional(),
