@@ -58,6 +58,7 @@ async function create(): Promise<void> {
     <Cluster gap="3">
       <h1>{{ text.title }}</h1>
       <Spacer />
+      <RouterLink :to="{ name: 'phrases' }" class="home__link">{{ text.phrases }}</RouterLink>
       <AppButton variant="primary" @click="startCreating">{{ text.newScore }}</AppButton>
     </Cluster>
     <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
@@ -119,6 +120,9 @@ async function create(): Promise<void> {
 }
 .home__muted {
   color: var(--text-muted);
+}
+.home__link {
+  color: var(--accent-text);
 }
 .home__error {
   color: var(--danger);
