@@ -1,6 +1,6 @@
 // What the rest of the app knows about drawing and playing a score. Nothing here names the
 // engine behind it (docs/adr/0003): everything is addressed by the ids of the score.
-import type { Cursor, ScoreJSON } from "@studio/score-model";
+import type { Cursor, ScoreJSON, Selection } from "@studio/score-model";
 
 /** A rectangle in CSS pixels, relative to the top-left corner of the element the score is drawn in. */
 export interface Rect {
@@ -42,6 +42,11 @@ export interface ScoreRenderer {
   setScale(scale: number): void;
   /** Where the cursor is on the page, or null when its place is not drawn (yet). */
   boundsOf(cursor: Cursor): Rect | null;
+  /**
+   * Where a selection is on the page: one rectangle for a beat range, one for each system a bar
+   * range is on. None when its place is not drawn (yet).
+   */
+  boundsOfSelection(selection: Selection): Rect[];
   /**
    * Where playback is on the page at a tick (`ScorePlayer.position`): the beat played then, as
    * tall as its system, so that the page can keep it on screen. At the start of a bar it is

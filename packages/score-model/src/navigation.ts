@@ -4,11 +4,10 @@ import * as Y from "yjs";
 
 import type { Cursor } from "./commands";
 import { barTicks, beatTicks, fillOf } from "./flags";
-import { barsOf, COMMON_TIME, contentOf, durationOf, ordered, type PartKind, partsOf, timeSigSchema, type YVoice } from "./schema";
+import { barsOf, COMMON_TIME, durationOf, ordered, type PartKind, partsOf, timeSigSchema, voiceIn, type YVoice } from "./schema";
 
 function voiceOf(doc: Y.Doc, cursor: Cursor, barId = cursor.barId): YVoice | undefined {
-  const part = partsOf(doc).get(cursor.partId);
-  return part && contentOf(part).get(barId)?.get(cursor.voice);
+  return voiceIn(doc, { ...cursor, barId });
 }
 
 function beatIds(voice: YVoice | undefined): string[] {
@@ -29,16 +28,25 @@ function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
 
 /**
  * Where the cursor enters the bar after (`step` 1) or before (-1) its own: the first beat of its
- * voice there, or the last; the append slot of an empty voice. The cursor itself at either end
- * of the score.
+ * voice there going forward, the last going back, unless `entry` says which; the append slot of
+ * an empty voice. The cursor itself at either end of the score.
  */
-function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+function toNextBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1, entry: "first" | "last" = step === 1 ? "first" : "last"): Cursor {
   const order = ordered(barsOf(doc));
   const barId = order[order.indexOf(cursor.barId) + step];
   if (barId === undefined) return cursor;
   const ids = beatIds(voiceOf(doc, cursor, barId));
-  const beatId = step === 1 ? ids[0] : ids.at(-1);
+  const beatId = entry === "first" ? ids[0] : ids.at(-1);
   return beatId === undefined ? { ...cursor, barId, beatId: null, at: "after" } : { ...cursor, barId, beatId, at: "on" };
+}
+
+/**
+ * The cursor at the first place of the bar after its own (`step` 1, Nav+→) or before it (-1):
+ * the first beat of its voice there, or the append slot of an empty voice. At either end of the
+ * score it stays.
+ */
+export function moveByBar(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return toNextBar(doc, cursor, step, "first");
 }
 
 /** → from the last beat of a voice: into its append slot when the bar is not full, else on to the next bar. */

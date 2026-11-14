@@ -106,6 +106,8 @@ const score = shallowRef<ScoreJSON | null>(null);
 const parts = computed(() => score.value?.parts ?? []);
 /** Where the cursor is drawn, out of the reserved areas; null when its place is not drawn. */
 const cursorRect = shallowRef<Rect | null>(null);
+/** Where the selection is drawn, out of the reserved areas: a box for each system it is on. */
+const selectionRects = shallowRef<Rect[]>([]);
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 const playerState = ref<PlayerState>("loading");
@@ -142,12 +144,14 @@ const hideFromTests = exposeForTests({
   flags: () => (score.value ? flagsOf(score.value) : []),
 });
 
-/** Draw the cursor again, where it is now: when it moved, or after a drawing. */
+/** Draw the cursor and the selection again, where they are now: when they moved, or after a drawing. */
 function placeCursor(): void {
   if (engine === undefined || !editing.value) return;
   const at = session?.cursor ?? null;
   const rect = at && engine.renderer.boundsOf(at);
   cursorRect.value = rect && clearOf(rect, reserved.value);
+  const selection = session?.selection ?? null;
+  selectionRects.value = selection === null ? [] : engine.renderer.boundsOfSelection(selection).map((box) => clearOf(box, reserved.value));
 }
 
 /** Draw the overlay again after a drawing: the reserved areas change only then. */
@@ -542,6 +546,16 @@ onBeforeUnmount(() => {
             <!-- Invisible: they only tell the e2e tests where no overlay may go. -->
             <rect v-for="(area, index) in reserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
             <rect v-if="playheadRect" data-playhead class="score__playhead" :x="playheadRect.x" :y="playheadRect.y" :width="playheadRect.width" :height="playheadRect.height" />
+            <rect
+              v-for="(box, index) in selectionRects"
+              :key="`selection-${index}`"
+              data-selection
+              class="score__selection"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+            />
             <rect v-if="cursorRect" data-cursor class="score__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
         </div>
@@ -642,6 +656,10 @@ onBeforeUnmount(() => {
 /* Filled only, as the cursor is. */
 .score__playhead {
   fill: rgba(37, 99, 235, 0.12);
+}
+/* Filled only, as the cursor is. */
+.score__selection {
+  fill: rgba(37, 99, 235, 0.18);
 }
 /* Filled only: a stroke would reach past the rectangle, into a reserved area. */
 .score__cursor {

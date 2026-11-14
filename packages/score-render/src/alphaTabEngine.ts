@@ -1,8 +1,8 @@
 // The renderer and the player on alphaTab 1.9: one alphaTab instance draws the score and plays it.
 import * as alphaTab from "@coderline/alphatab";
-import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "./geometry";
+import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
 import type { PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
@@ -219,6 +219,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     if (lookup === null || this.projection === null) return null;
     const rect = cursorRect(lookup, this.projection, this.parts, cursor, this.metrics());
     return rect && this.fromSurface(rect);
+  }
+
+  boundsOfSelection(selection: Selection): Rect[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
   }
 
   boundsAtTick(tick: number): Rect | null {

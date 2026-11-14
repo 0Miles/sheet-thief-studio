@@ -13,6 +13,14 @@ export function keyOf(key: string, modifiers: Modifiers = {}): Key {
   return { code, ...(key === "+" ? { shiftKey: true } : {}), ...modifiers };
 }
 
+/** Another member's copy of the score, and a way to hand their changes to ours. */
+export function otherMember(doc: Y.Doc) {
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  const send = () => Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, Y.encodeStateVector(doc)));
+  return { other, send };
+}
+
 /**
  * A score of empty bars (two unless told) and one part, an editor session on it with the cursor
  * in the append slot of the first bar and the keys of Windows and Linux unless told, and a clock

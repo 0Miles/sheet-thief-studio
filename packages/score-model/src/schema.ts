@@ -365,6 +365,12 @@ export function contentOf(part: YPart): Y.Map<YBarContent> {
   return part.get("content") as Y.Map<YBarContent>;
 }
 
+/** A voice of a part in a bar; undefined when the part, the bar's content or the voice is not there. */
+export function voiceIn(doc: Y.Doc, { partId, barId, voice }: { partId: string; barId: string; voice: string }): YVoice | undefined {
+  const part = partsOf(doc).get(partId);
+  return part && contentOf(part).get(barId)?.get(voice);
+}
+
 /** The content of a part only when it is a map (contentOf trusts the document): undefined when the part or its content is not one. */
 export function contentMapOf(part: unknown): Y.Map<unknown> | undefined {
   const content: unknown = part instanceof Y.Map ? part.get("content") : undefined;
