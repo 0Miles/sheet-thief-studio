@@ -688,8 +688,8 @@ export const clearNotes: BeatChange<void> = {
 };
 
 /** How a `BeatChange` sees a beat; none when reading leaves it out. */
-function seenBeat(reader: PartReader, beat: YBeat | undefined): SeenBeat | undefined {
-  if (beat === undefined || !readsAsBeat(reader.kind, beat)) return undefined;
+function seenBeat(reader: PartReader, beat: YBeat): SeenBeat | undefined {
+  if (!readsAsBeat(reader.kind, beat)) return undefined;
   const duration = durationOf(beat);
   return duration && { duration, rest: isRest(beat) };
 }

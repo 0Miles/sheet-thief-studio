@@ -140,6 +140,7 @@ export function formatChord(chord: Chord, platform: KeyPlatform): string {
   const key = keyName(combo.code, platform);
   return platform === "mac" ? held.map(([, , symbol]) => symbol).join("") + key : [...held.map(([name]) => name), key].join("+");
 }
+
 /**
  * How the key of an effect is shown on this platform (`formatChord`), in a toolbar's hint or a
  * help text: the first key of its binding, `Ctrl+Z` or `⌘Z` for undo. A digit's binding is told

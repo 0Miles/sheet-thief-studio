@@ -281,7 +281,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    */
   const toVoice = (voiceIndex: 0 | 1): KeyCommand => {
     const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
-    if (kind === undefined || kind === null || voiceIndex < voicesOffered(kind)) return move((at) => moveToVoice(doc, at, voiceIndex));
+    if (!kind || voiceIndex < voicesOffered(kind)) return move((at) => moveToVoice(doc, at, voiceIndex));
     return {
       changes: false,
       run: (at) => {

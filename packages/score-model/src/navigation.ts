@@ -30,23 +30,31 @@ function beatIds(voice: YVoice | undefined): string[] {
   return voice ? voice.map((beat) => beat.get("id") as string) : [];
 }
 
+/** How many ticks a beat lasts; none when its length cannot be read, as reading leaves it out. */
+function lengthOf(beat: YBeat): number {
+  const duration = durationOf(beat);
+  return duration === undefined ? 0 : beatTicks(duration);
+}
+
 /** Whether the beats of the cursor's voice add up to less than its bar: then its append slot can be reached by →. */
 function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
   const timeSig = timeSigSchema.safeParse(barsOf(doc).get(cursor.barId)?.get("timeSig"));
   let held = 0;
-  // A beat whose length cannot be read is left out, as reading leaves it out.
   voiceOf(doc, cursor)?.forEach((beat) => {
-    const duration = durationOf(beat);
-    if (duration !== undefined) held += beatTicks(duration);
+    held += lengthOf(beat);
   });
   return fillOf(held, barTicks(timeSig.success ? timeSig.data : COMMON_TIME)) === "underfull";
 }
 
+/** The id `step` places after (1) or before (-1) `id` in `order`; none past either end, or when `id` is not there. */
+function beside(order: readonly string[], id: string, step: 1 | -1): string | undefined {
+  const index = order.indexOf(id);
+  return index < 0 ? undefined : order[index + step];
+}
+
 /** The bar `step` bars after (1) or before (-1) `barId`; none past either end of the score. */
 function barBeside(doc: Y.Doc, barId: string, step: 1 | -1): string | undefined {
-  const order = ordered(barsOf(doc));
-  const index = order.indexOf(barId);
-  return index < 0 ? undefined : order[index + step];
+  return beside(ordered(barsOf(doc)), barId, step);
 }
 
 /**
@@ -164,21 +172,14 @@ export function startLine(kind: PartKind): number {
 /** The cursor one line lower on the page (`step` 1) or higher (-1), kept on the staff. */
 export function moveByLine(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   const part = partsOf(doc).get(cursor.partId);
-  const kind = partKindOf(part);
   if (part === undefined) return cursor;
   // A part whose kind cannot be read is not drawn; the cursor is kept as if on a staff.
-  return { ...cursor, line: keptOn(kind ?? "pitched", stringCountOf(part), cursor.line + step) };
+  return { ...cursor, line: keptOn(partKindOf(part) ?? "pitched", stringCountOf(part), cursor.line + step) };
 }
 
 /** How many voices each staff of a part of this kind offers: a fretted part only its first (docs/spec/commands.md, section 3). */
 export function voicesOffered(kind: PartKind): 1 | 2 {
   return kind === "fretted" ? 1 : 2;
-}
-
-/** How many ticks a beat lasts; none when its length cannot be read, as reading leaves it out. */
-function lengthOf(beat: YBeat): number {
-  const duration = durationOf(beat);
-  return duration === undefined ? 0 : beatTicks(duration);
 }
 
 /** The tick of its bar the cursor stands at: where its beat starts, or in the append slot where its anchor ends. */
@@ -225,9 +226,11 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (par
   const tick = tickAt(doc, cursor);
   if (staff + step >= 0 && staff + step < staffCountOf(parts.get(cursor.partId)!)) return landAt(doc, { ...cursor, voice: voiceKey(staff + step, voiceIndex) }, tick);
   // Parts whose kind cannot be read are not drawn: the cursor goes past them.
-  const order = ordered(parts).filter((id) => partKindOf(parts.get(id)) !== undefined);
-  const index = order.indexOf(cursor.partId);
-  const partId = index < 0 ? undefined : order[index + step];
+  const partId = beside(
+    ordered(parts).filter((id) => partKindOf(parts.get(id)) !== undefined),
+    cursor.partId,
+    step,
+  );
   if (partId === undefined) return cursor;
   const part = parts.get(partId)!;
   const kind = partKindOf(part)!;
@@ -243,8 +246,8 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (par
  */
 export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor {
   const cursor = settleCursor(doc, from);
-  const kind = partKindOf(partsOf(doc).get(from.partId));
-  if (cursor === null || kind === undefined) return from;
+  const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
+  if (!kind) return from;
   const [staff, current] = staffAndVoiceOf(cursor.voice);
   if (voiceIndex === current || voiceIndex >= voicesOffered(kind)) return cursor;
   return landAt(doc, { ...cursor, voice: voiceKey(staff, voiceIndex) }, tickAt(doc, cursor));
