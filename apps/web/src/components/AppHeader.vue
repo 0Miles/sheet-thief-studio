@@ -26,8 +26,11 @@ async function logout(): Promise<void> {
     <Cluster gap="3" :wrap="false">
       <RouterLink class="app-header__name" to="/">{{ strings.app.name }}</RouterLink>
       <Spacer />
-      <span class="app-header__account">{{ session.me?.displayName }}</span>
-      <AppButton variant="ghost" size="sm" :loading="leaving" @click="logout">{{ strings.header.logout }}</AppButton>
+      <!-- Nobody to log out on a page open without logging in (a guest's). -->
+      <template v-if="session.me">
+        <span class="app-header__account">{{ session.me.displayName }}</span>
+        <AppButton variant="ghost" size="sm" :loading="leaving" @click="logout">{{ strings.header.logout }}</AppButton>
+      </template>
     </Cluster>
   </header>
 </template>
