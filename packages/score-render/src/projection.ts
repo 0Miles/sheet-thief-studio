@@ -6,6 +6,7 @@ import {
   barTicks,
   beatAfter,
   type BeatJSON,
+  type BendType,
   beatTicks,
   DYNAMICS,
   linkReaches,
@@ -145,6 +146,31 @@ const SLIDE_IN_TYPES: Record<SlideIn, alphaTab.model.SlideInType> = {
 };
 
 /**
+ * Each preset bend (docs/spec/schema.md, section 8): its alphaTab type and the shape of its bend
+ * points, offsets on alphaTab's 0 to 60 across the note, and how far up each point is as a share
+ * of the bend (1 the semitones set). Drawn, alphaTab reads only the first two points (and the
+ * last of a bend and release, which has four), so each has as many as that.
+ */
+const BENDS: Record<BendType, { type: alphaTab.model.BendType; shape: [offset: number, share: 0 | 1][] }> = {
+  // Up in the first quarter of the note, then held.
+  bend: { type: model.BendType.Bend, shape: [[0, 0], [15, 1]] },
+  // Up in the first quarter, held, and down again in the last.
+  bendRelease: { type: model.BendType.BendRelease, shape: [[0, 0], [15, 1], [45, 1], [60, 0]] },
+  // Bent before it is struck, and held.
+  preBend: { type: model.BendType.Prebend, shape: [[0, 1], [60, 1]] },
+  // Bent before it is struck, and let down in the first quarter.
+  preBendRelease: { type: model.BendType.PrebendRelease, shape: [[0, 1], [15, 0]] },
+};
+
+/** Set a bend on an alphaTab note: its type, and its points up `semitones`, in alphaTab's quarter tones. */
+function projectBend(note: AtNote, { type, semitones }: NonNullable<NoteJSON["bend"]>): void {
+  const bend = BENDS[type];
+  for (const [offset, share] of bend.shape) note.addBendPoint(new model.BendPoint(offset, share * semitones * 2));
+  // Set after the points: a note given points with no type yet takes them as a custom bend.
+  note.bendType = bend.type;
+}
+
+/**
  * A note of the score as an alphaTab note, or null when its key does not fit the part.
  * Keys: "s3" is string 3 (1 is the highest), "p38" a drum piece (the alphaTab percussion
  * articulation id, see drums.ts), "n61" a MIDI pitch. A link (legato, a slide out legato or
@@ -184,6 +210,7 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   // A slide out up or down goes on to no note: it needs none after it.
   if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
   if (json.slideIn) note.slideInType = SLIDE_IN_TYPES[json.slideIn];
+  if (json.bend) projectBend(note, json.bend);
   return note;
 }
 

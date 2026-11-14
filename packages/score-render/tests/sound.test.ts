@@ -297,3 +297,52 @@ test("a dangling link sounds as the note would plain: alphaTab is not told of it
     expect(eventsOf(doc)).toEqual(plain);
   }
 });
+
+/**
+ * How a bent note's pitch goes, in semitones: the value of each pitch bend alphaTab sends the note
+ * (fret 5 on string 3, MIDI 60, a quarter followed by another note), read against the pitch bend
+ * range it sets its channel to (RPN 0, the data entry controller). alphaTab sends a note its own
+ * pitch bend, MIDI 2.0's, of 32 bits: 2^31 is no bend, and 2^31 above it the whole range.
+ */
+function bendOf(bend: NoteJSON["bend"]): number[] {
+  const doc = new Y.Doc();
+  createScore(doc, "Bend");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 4 });
+  setNote(doc, first, "s3", bend ? { fret: 5, bend } : { fret: 5 });
+  setNote(doc, insertBeat(doc, { ...first, at: "after" }, { value: 4 }), "s1", { fret: 0 });
+  const { score } = projectScore(docToJson(doc), settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  const on = file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.noteKey === 60)!;
+  const range = file.events.find(
+    (event): event is alphaTab.midi.ControlChangeEvent => event instanceof alphaTab.midi.ControlChangeEvent && event.channel === on.channel && event.controller === alphaTab.midi.ControllerType.DataEntryCoarse,
+  )!.value;
+  return file.events.filter((event): event is alphaTab.midi.NoteBendEvent => event instanceof alphaTab.midi.NoteBendEvent && event.noteKey === 60).map((event) => (event.value - 2 ** 31) / (2 ** 31 / range));
+}
+
+test.each([1, 2, 3, 4])("a bend of %i semitones sends pitch bends whose highest is that many semitones up, for every shape", (semitones) => {
+  for (const type of ["bend", "bendRelease", "preBend", "preBendRelease"] as const) {
+    const pitch = bendOf({ type, semitones });
+    expect(Math.max(...pitch)).toBeCloseTo(semitones);
+    expect(Math.min(...pitch)).toBeGreaterThanOrEqual(0);
+  }
+});
+
+test("each shape of bend goes its own way: up and held, up and down, struck bent and held, struck bent and let down", () => {
+  const ends = (type: NonNullable<NoteJSON["bend"]>["type"]) => {
+    const pitch = bendOf({ type, semitones: 2 });
+    return [pitch[0], pitch.at(-1)].map((value) => Math.round(value! * 100) / 100);
+  };
+  expect(ends("bend")).toEqual([0, 2]);
+  expect(ends("bendRelease")).toEqual([0, 0]);
+  expect(ends("preBend")).toEqual([2, 2]);
+  expect(ends("preBendRelease")).toEqual([2, 0]);
+  // Up and down: a bend and release reaches 2 on the way.
+  expect(Math.max(...bendOf({ type: "bendRelease", semitones: 2 }))).toBeCloseTo(2);
+});
+
+test("a note with no bend is sent only the pitch bend that sets it to none", () => {
+  expect(bendOf(undefined)).toEqual([0]);
+});
