@@ -6,6 +6,7 @@ import * as Y from "yjs";
 
 import {
   barsOf,
+  beatFieldFits,
   COMMON_TIME,
   contentOf,
   type BeatDuration,
@@ -28,6 +29,8 @@ import {
   type Staff,
   staffCountOf,
   startLine,
+  DYNAMICS,
+  MAX_BEAT_TEXT,
   MAX_TITLE,
   stringCountOf,
   contentMapOf,
@@ -40,7 +43,7 @@ import {
   type YVoice,
   voiceKeys,
 } from "./schema";
-import { readsAsBeat } from "./read";
+import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
 /**
@@ -656,24 +659,35 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omi
   return cursor;
 }
 
-/** A beat as a `BeatChange` sees it: how long it lasts, and whether it is a rest. */
+/**
+ * The markings of a beat a key sets, its duration and notes apart (docs/spec/commands.md, 5.4 and
+ * 5.5): stored in the score, unlike a flag (CONTEXT.md).
+ */
+export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text">;
+
+/** A beat as a `BeatChange` sees it: how long it lasts, whether it is a rest, and its markings as read. */
 export interface SeenBeat {
   duration: BeatDuration;
   rest: boolean;
+  markings: BeatMarkings;
 }
 
-/** What a `BeatChange` writes on a beat: a note value, dots, a tuplet (null takes it away), or its notes taken away. */
+/**
+ * What a `BeatChange` writes on a beat: a note value, dots, a tuplet (null takes it away), its
+ * notes taken away, or markings (`set`: a value puts one there, null takes it away).
+ */
 export interface BeatWrite {
   value?: NoteValue;
   dots?: 0 | 1 | 2;
   tuplet?: Tuplet | null;
   clear?: true;
+  set?: { [F in keyof BeatMarkings]?: NonNullable<BeatMarkings[F]> | null };
 }
 
 /**
- * A change a key makes to whole beats (docs/spec/commands.md, 5.3 and 5.6), on the cursor's beat
- * or on every beat of a selection. As with `NoteToggle`, what the beats are to become is decided
- * once, from every beat seen, then each beat is changed to it.
+ * A change a key makes to whole beats (docs/spec/commands.md, 5.3, 5.4 and 5.6), on the cursor's
+ * beat or on every beat of a selection. As with `NoteToggle`, what the beats are to become is
+ * decided once, from every beat seen, then each beat is changed to it.
  */
 export interface BeatChange<D> {
   decide(seen: readonly SeenBeat[]): D;
@@ -723,12 +737,18 @@ export const clearNotes: BeatChange<void> = {
 
 /** How a `BeatChange` sees a beat; none when reading leaves it out. */
 function seenBeat(reader: PartReader, beat: YBeat): SeenBeat | undefined {
-  if (!readsAsBeat(reader.kind, beat)) return undefined;
-  const duration = durationOf(beat);
-  return duration && { duration, rest: isRest(beat) };
+  const fields = readBeatFields(reader.kind, beat);
+  if (fields === undefined) return undefined;
+  const { value, dots, tuplet } = fields;
+  return { duration: { value, dots, tuplet }, rest: isRest(beat), markings: fields };
 }
 
-/** Change beats as decided, in one transaction; none when nothing changes. */
+/** Whether a beat of a part of `kind` may hold what a write sets: stroke, slap and pop are a fretted part's only. */
+function fits(write: BeatWrite, kind: PartKind): boolean {
+  return Object.keys(write.set ?? {}).every((field) => beatFieldFits(field, kind));
+}
+
+/** Change beats as decided, in one transaction; none when nothing changes, or when it sets a field the kind of the part has not. */
 function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: BeatChange<D>): void {
   const seen = beats.flatMap((beat) => {
     const read = seenBeat(reader, beat);
@@ -740,7 +760,7 @@ function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: B
     const write = change.turn(read, decided);
     return write === null ? [] : [{ beat, write }];
   });
-  if (writes.length === 0) return;
+  if (writes.length === 0 || !writes.every(({ write }) => fits(write, reader.kind))) return;
   doc.transact(() => {
     for (const { beat, write } of writes) {
       if (write.value !== undefined) beat.set("value", write.value);
@@ -748,6 +768,10 @@ function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: B
       if (write.tuplet === null) beat.delete("tuplet");
       else if (write.tuplet !== undefined) beat.set("tuplet", write.tuplet);
       if (write.clear) notesOf(beat)?.clear();
+      for (const [field, value] of Object.entries(write.set ?? {})) {
+        if (value === null) beat.delete(field);
+        else beat.set(field, value);
+      }
     }
   }, LOCAL);
 }
@@ -769,6 +793,66 @@ export function changeBeatsOnSelection<D>(doc: Y.Doc, selection: Selection, curs
   const reader = readerOf(doc, selection.partId);
   if (reader !== undefined) writeBeats(doc, selectedBeatsOf(doc, reader, selection).map(({ beat }) => beat), reader, change);
   return cursor;
+}
+
+/** The value after `current` in `values`, the first after none, and none after the last. */
+function nextOf<T>(values: readonly T[], current: T | undefined): T | undefined {
+  return current === undefined ? values[0] : values[values.indexOf(current) + 1];
+}
+
+/**
+ * A beat marking that steps through `values` and back to none: every beat to the value after the
+ * one of the first beat seen, as `.` does with dots.
+ */
+function markingCycle<F extends "stroke" | "dynamic">(field: F, values: readonly NonNullable<BeatMarkings[F]>[]): BeatChange<NonNullable<BeatMarkings[F]> | null> {
+  return {
+    decide: (seen) => nextOf(values, seen[0]?.markings[field] ?? undefined) ?? null,
+    turn: ({ markings }, next) => ((markings[field] ?? null) === next ? null : { set: { [field]: next } }),
+  };
+}
+
+/** Shift+U: the beat strummed down, then up, then not at all. Fretted parts only. */
+export const strokeCycle: BeatChange<"down" | "up" | null> = markingCycle("stroke", ["down", "up"]);
+
+/** Shift+F: the beat's dynamic, pp to ff, then none. */
+export const dynamicCycle: BeatChange<NonNullable<BeatMarkings["dynamic"]> | null> = markingCycle("dynamic", DYNAMICS);
+
+/** Shift+J: the beat slapped, then popped, then neither; never both (docs/spec/schema.md, section 6). Fretted parts only. */
+export const slapPopCycle: BeatChange<"slap" | "pop" | null> = {
+  decide: (seen) => nextOf(["slap", "pop"] as const, (seen[0] && slapPopOf(seen[0].markings)) ?? undefined) ?? null,
+  turn: ({ markings }, next) => (slapPopOf(markings) === next ? null : { set: { slap: next === "slap" || null, pop: next === "pop" || null } }),
+};
+
+/** Whether a beat, as read, is slapped or popped (reading keeps slap only when it has both). */
+function slapPopOf({ slap, pop }: BeatMarkings): "slap" | "pop" | null {
+  return slap ? "slap" : pop ? "pop" : null;
+}
+
+/** The text over a beat (docs/spec/commands.md, 5.5): this text, or none for an empty one. */
+function beatText(text: string): BeatChange<void> {
+  return {
+    decide: () => undefined,
+    turn: ({ markings }) => ((markings.text ?? "") === text ? null : { set: { text: text === "" ? null : text } }),
+  };
+}
+
+/**
+ * Put a text over the beat of the cursor (a chord name, say: never read nor transposed), one
+ * command; an empty text takes it away. False, and nothing set, for a text longer than
+ * `MAX_BEAT_TEXT` (docs/spec/schema.md, section 13). Nothing in the append slot.
+ */
+export function setText(doc: Y.Doc, cursor: Cursor, text: string): boolean {
+  if (text.length > MAX_BEAT_TEXT) return false;
+  changeBeatAt(doc, cursor, beatText(text));
+  return true;
+}
+
+/** The text over the beat of the cursor, empty for none; null in the append slot, or on a beat reading leaves out. */
+export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
+  const reader = readerOf(doc, cursor.partId);
+  const beat = beatAt(doc, cursor);
+  const read = reader && beat && seenBeat(reader, beat);
+  return read ? (read.markings.text ?? "") : null;
 }
 
 /** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */

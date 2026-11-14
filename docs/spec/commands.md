@@ -102,7 +102,7 @@ interface Cursor {
   - `Shift+Ctrl+←/→` 的游標照 `Ctrl+←/→` 移到上一個／下一個小節的第一個位置（`navigation.ts` 的 `moveByBar`）；在譜的兩端不動，範圍保留。拍點範圍用它延伸時，從拍點範圍的小節起。
   - 升級成小節範圍之後就一直是小節範圍：`Shift+←/→` 照樣移動游標，終點是游標的小節；回到起點的小節時是那一個小節的範圍。
   - 結束選取的動作：不帶 `Shift` 的移動（含 `↑`、`↓`、`Home`、`End`、`Ctrl+←/→`、`Ctrl+↑/↓`、`Alt+1/2`；fretted 聲部的 `Alt+2` 什麼都不做，選取也不變）、`Esc`、點譜面、復原與重做，以及其他不作用在選取上的 Command（輸入音符、`Insert`）。被唯讀拒絕的 Command 沒有執行，選取不變。
-  - 選取作用的 Command 目前有 `Delete`（5.6）、#26 的開關型技巧：dead、ghost、accent、staccato、vibrato、palmMute、letRing、tap（5.4），以及 #20 的時值（`+`、`-`、`.`、`Shift+T`，5.3）與 `Shift+R`（5.6）；選取在它們之後保留。其餘技巧作用在選取範圍的規則還沒做，在那之前它們只作用在游標拍點，並結束選取。
+  - 選取作用的 Command 目前有 `Delete`（5.6）、#26 的開關型技巧：dead、ghost、accent、staccato、vibrato、palmMute、letRing、tap（5.4），#20 的時值（`+`、`-`、`.`、`Shift+T`，5.3）與 `Shift+R`（5.6），以及 #30 的拍點記號：stroke、slap／pop、dynamic（5.4）；選取在它們之後保留。`text`（5.5）只作用在游標拍點，存入後選取結束。其餘技巧作用在選取範圍的規則還沒做，在那之前它們只作用在游標拍點，並結束選取。
   - `Delete` 之後，選取的拍點或小節還在時選取保留（所以拍點範圍再按一次 `Delete` 就刪除那些休止）；拍點被刪除時選取結束，游標落在接替它們位置的拍點上，沒有時落在附加位置（同 5.2 的 `deleteBeat`）。小節範圍清空後，游標所在的聲線變空，游標落在空聲線的附加位置。
   - 起點或終點的拍點、小節或聲部不在了（別人刪除、自己復原），選取結束（`settleSelection`）。
   - 唯讀編輯視圖也可以選取（[`views.md`](views.md) 第 4 節）；`Delete` 被拒絕。
@@ -155,7 +155,7 @@ interface Cursor {
   - `Shift+T`（`tripletToggle`）：所有拍點都已經有連音（任何一種）時，全部移除；否則全部設成三連音，原本是別種連音的拍點也一樣。
   - `Shift+R`（`clearNotes`）：見 5.6。
 
-### 5.4 技巧與拍點旗標
+### 5.4 技巧與拍點記號
 
 鍵見 [`keymap.md`](keymap.md)。每一次切換是一個 Command。
 
@@ -187,11 +187,17 @@ interface Cursor {
     - 開關型的技巧（`ON_OFF_TECHNIQUES`）由 `techniqueToggle` 給出：`onOffToggle` 的 `decide` 是「不是全部都有」，只改已經有的音；dead 是 `deadToggle`（上面兩條補充）。
     - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。
     - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
-    - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`：#30 加一個給拍點、同樣「一次決定、逐一套用」的同類函式，沿用同一個選取走訪（`commands.ts` 的 `runsOf`）。
+    - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`。
+  - **補充**（#30）：拍點記號沿用 5.3 的 `BeatChange<D>`（`changeBeatAt`、`changeBeatsOnSelection`，選取時走 `runsOf` 與 `selectedBeatsOf`），不另開一條選取的路。`decide` 看到的拍點（`SeenBeat`）多了 `markings`（`BeatMarkings`，`CONTEXT.md` 的 Beat marking；不叫 flag，因為 Flag 不存在團譜裡）：讀取時讀出的 stroke、slap、pop、dynamic、text（`read.ts` 的 `readBeatFields`，同時有 slap 與 pop 時讀成只有 slap）；`turn` 回傳的 `BeatWrite` 多了 `set`：值是寫入，`null` 是移除。
+    - 三個循環型的記號，選取時全部設成「範圍裡第一個拍點的值」的下一個，和 `.` 的附點一樣：`strokeCycle`（down → up → 沒有）、`slapPopCycle`（slap → pop → 沒有；切到 pop 時同一筆交易移除 slap，所以兩人同時寫成兩者都有的拍點，按一次就只剩 pop）、`dynamicCycle`（沒有 → pp → … → ff → 沒有）。
+    - 休止拍點也照樣設上（拍點層級的切換作用在每一個拍點）；讀不懂的拍點不算、也不改；寫入時以儲存的原值為底，不認得的欄位保留。
+    - 寫入不適用於該聲部種類的欄位（stroke、slap、pop 在鼓與五線譜）時整個不動，不寫入：寫了，讀取時整個拍點會被略過（`schema.ts` 的 `beatFieldFits`）。鍵本身也只綁在 fretted（[`keymap.md`](keymap.md) 第 3 節的補充）。
 
 ### 5.5 文字與歌詞
 
 - `setText`：在游標拍點開內嵌輸入框，`Enter` 存入；空字串表示移除。一次存入是一個 Command。
+  - **補充**（#30）：`commands.ts` 的 `setText(doc, cursor, text)`，以 `beatText` 這個 `BeatChange` 套用在游標拍點；超過 64 字元（`MAX_BEAT_TEXT`）時回傳 false、不寫入；和原本相同時不寫入。附加位置沒有拍點，不動。不修剪空白，照原樣存。
+  - **補充**（#30）：開框與存入分在兩邊。`EditorSession` 處理 `Enter`：游標在讀得懂的拍點上時，以 `onEditText` 送出 `{ cursor, text }`（`textAt`：現有的文字，沒有時是空字串）；附加位置不送。唯讀時 `Enter` 和其他會改動文件的鍵一樣被拒絕。殼開框，`Enter` 時呼叫 `EditorSession.setText(cursor, text)`：存在開框時的 `cursor` 那個拍點上（拍點已被刪除就不動），選取結束。開框本身不改動文件，選取不變；`Esc` 或焦點離開輸入框時不存，選取也不變。
 - `setLyric`（只有 pitched）：歌詞模式，見 [`keymap.md`](keymap.md)。每存一個音節是一個 Command。空字串表示延長；音節結尾的 `-` 表示字還沒結束。
 - 段落名稱（`section`）從小節屬性面板編輯，是結構操作（第 6 節）。
 

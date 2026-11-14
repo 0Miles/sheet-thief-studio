@@ -1,5 +1,22 @@
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type NoteJSON, type NoteValue, setNote, stepDuration } from "@studio/score-model";
+import {
+  addPart,
+  changeBeatAt,
+  createScore,
+  type Cursor,
+  cursorAt,
+  docToJson,
+  dynamicCycle,
+  insertBars,
+  insertBeat,
+  type NoteJSON,
+  type NoteValue,
+  setNote,
+  setText,
+  slapPopCycle,
+  stepDuration,
+  strokeCycle,
+} from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -7,7 +24,7 @@ import { DRUM_PIECES } from "../src/drums";
 import { beatIdOf, beatOf, type Projection, projectScore, replaceBars, restsFilling } from "../src/projection";
 
 const settings = new alphaTab.Settings();
-const { AccentuationType, Duration, NoteAccidentalMode, VibratoType } = alphaTab.model;
+const { AccentuationType, BrushType, Duration, DynamicValue, NoteAccidentalMode, VibratoType } = alphaTab.model;
 
 function write(doc: Y.Doc, partId: string, barId: string, beats: [NoteValue, Record<string, NoteJSON>][]): Cursor {
   let cursor = cursorAt(doc, partId, barId);
@@ -206,4 +223,89 @@ test("each on/off technique of a fretted note becomes its alphaTab field, and a 
   expect([fretless.isDead, fretless.fret]).toEqual([true, 0]);
   // Tap is the beat's: any note of it tapped taps the beat.
   expect(beats.map((beat) => beat.tap)).toEqual([false, false, false, false, false, false, false, true]);
+});
+
+test("the markings of a beat become its alphaTab fields: stroke the brush, slap, pop, dynamic and text; a beat without them has alphaTab's own", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Beat markings");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched" });
+  const chord = { s1: { fret: 0 }, s2: { fret: 1 }, s3: { fret: 0 } };
+  write(doc, guitar, barId!, [
+    [8, chord],
+    [8, chord],
+    [8, chord],
+    [8, chord],
+    [8, chord],
+    [8, chord],
+  ]);
+  const on = (index: number) => {
+    const beatId = docToJson(doc).parts[0]!.content[barId!]!["0:0"]![index]!.id;
+    return { ...cursorAt(doc, guitar, barId!), beatId };
+  };
+  changeBeatAt(doc, on(1), strokeCycle);
+  changeBeatAt(doc, on(2), strokeCycle);
+  changeBeatAt(doc, on(2), strokeCycle);
+  changeBeatAt(doc, on(3), slapPopCycle);
+  changeBeatAt(doc, on(4), slapPopCycle);
+  changeBeatAt(doc, on(4), slapPopCycle);
+  for (let step = 0; step < 4; step++) changeBeatAt(doc, on(5), dynamicCycle);
+  setText(doc, on(5), "Am7");
+  const pitched = write(doc, keys, barId!, [[2, { n60: {} }]]);
+  changeBeatAt(doc, pitched, dynamicCycle);
+  setText(doc, pitched, "C");
+
+  const { score } = projectScore(docToJson(doc), settings);
+  const beats = score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats;
+  const fields = (beat: alphaTab.model.Beat) => ({ brushType: beat.brushType, slap: beat.slap, pop: beat.pop, dynamics: beat.dynamics, text: beat.text });
+  const plain = fields(beats[0]!);
+  expect(plain).toEqual({ brushType: BrushType.None, slap: false, pop: false, dynamics: DynamicValue.F, text: null });
+  expect(fields(beats[1]!)).toEqual({ ...plain, brushType: BrushType.BrushDown });
+  expect(fields(beats[2]!)).toEqual({ ...plain, brushType: BrushType.BrushUp });
+  expect(fields(beats[3]!)).toEqual({ ...plain, slap: true });
+  expect(fields(beats[4]!)).toEqual({ ...plain, pop: true });
+  expect(fields(beats[5]!)).toEqual({ ...plain, dynamics: DynamicValue.MF, text: "Am7" });
+  // A strummed beat takes time to strum: without it alphaTab would sound every string at once.
+  expect(beats[1]!.brushDuration).toBeGreaterThan(0);
+  expect(beats[0]!.brushDuration).toBe(0);
+  // The notes are as loud as their beat.
+  expect(beats[5]!.notes.map((note) => note.dynamics)).toEqual([DynamicValue.MF, DynamicValue.MF, DynamicValue.MF]);
+  const staff = score.tracks[1]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!;
+  expect([staff.dynamics, staff.text]).toEqual([DynamicValue.PP, "C"]);
+});
+
+test("replacing a bar whose dynamic changed rebuilds the bars after it up to the next written dynamic in that voice", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dynamics");
+  const barIds = insertBars(doc, { after: null, count: 4 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = barIds.map((barId) => write(doc, guitar, barId, [[2, { s1: { fret: 0 } }]]));
+  // The third bar has a dynamic of its own: the fourth goes on from it whatever the first says.
+  for (let step = 0; step < 6; step++) changeBeatAt(doc, first[2]!, dynamicCycle);
+  const projection = projectScore(docToJson(doc), settings);
+  const bars = () => projection.score.tracks[0]!.staves[0]!.bars;
+  const fourth = bars()[3];
+  const dynamics = () => bars().map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics));
+  expect(dynamics()).toEqual([
+    [DynamicValue.F, DynamicValue.F],
+    [DynamicValue.F, DynamicValue.F],
+    [DynamicValue.FF, DynamicValue.FF],
+    [DynamicValue.FF, DynamicValue.FF],
+  ]);
+
+  changeBeatAt(doc, first[0]!, dynamicCycle);
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  // The second bar, unchanged in the score, is played and drawn at the pp of the first; the rests filling a bar too.
+  expect(dynamics()).toEqual([
+    [DynamicValue.PP, DynamicValue.PP],
+    [DynamicValue.PP, DynamicValue.PP],
+    [DynamicValue.FF, DynamicValue.FF],
+    [DynamicValue.FF, DynamicValue.FF],
+  ]);
+  expect(bars()[1]!.voices[0]!.beats[0]!.notes[0]!.dynamics).toBe(DynamicValue.PP);
+  expect(bars()[3]).toBe(fourth);
+  const whole = projectScore(json, settings);
+  expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
 });

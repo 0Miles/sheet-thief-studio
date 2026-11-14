@@ -11,8 +11,22 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
 import { type Role, scoreDetails } from "@studio/contracts";
-import { createEditorSession, decideView, type EditorSession, keyNameOf, pageEffectOf, type View } from "@studio/score-editor";
-import { type Cursor, cursorAt, docToJson, type Flag, flagsOf, type FlagStop, nextFlag, observeScore, readScore, type ScoreChange, type ScoreJSON, stillAt } from "@studio/score-model";
+import { createEditorSession, decideView, type EditorSession, keyNameOf, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
+import {
+  type Cursor,
+  cursorAt,
+  docToJson,
+  type Flag,
+  flagsOf,
+  type FlagStop,
+  MAX_BEAT_TEXT,
+  nextFlag,
+  observeScore,
+  readScore,
+  type ScoreChange,
+  type ScoreJSON,
+  stillAt,
+} from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink } from "vue-router";
@@ -22,11 +36,12 @@ import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../ap
 import AppHeader from "../components/AppHeader.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import FlagControls from "../components/FlagControls.vue";
+import InlineTextEntry from "../components/InlineTextEntry.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { clearOf, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
+import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -120,6 +135,8 @@ const flagStop = shallowRef<FlagStop | null>(null);
 const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
+/** The box the text of a beat is typed in, while Enter has it open: what it asked for and where it is. */
+const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
 const playerState = ref<PlayerState>("loading");
 /**
  * Not playing and not paused: never started, stopped, or played to the end. Never in the Read
@@ -407,6 +424,20 @@ function goToNextFlag(): void {
   session.moveTo(stop.cursor);
 }
 
+/** Enter on a beat: a box for its text opens below the cursor, out of the reserved areas (docs/spec/views.md, section 9). */
+function openText(request: TextRequest): void {
+  const at = cursorRect.value;
+  if (at !== null) textEntry.value = { request, rect: entryRect(at, reserved.value) };
+}
+
+/** The box of a beat's text is closed, its text saved or not: the score has the keyboard again. */
+function closeText(text: string | null): void {
+  const entry = textEntry.value;
+  textEntry.value = null;
+  if (entry !== null && text !== null) session?.setText(entry.request.cursor, text);
+  scroller.value?.focus({ preventScroll: true });
+}
+
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
   session.onPresence(() => {
@@ -422,6 +453,7 @@ function startEditing(json: ScoreJSON): void {
   session.onHint((hint) => {
     notice.value = text.hints[hint];
   });
+  session.onEditText(openText);
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
   placeCursor();
   // The score has the keyboard from the start.
@@ -640,6 +672,14 @@ onBeforeUnmount(() => {
             />
             <rect v-if="cursorRect" data-cursor class="score__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
+          <InlineTextEntry
+            v-if="textEntry"
+            :rect="textEntry.rect"
+            :initial="textEntry.request.text"
+            :max-length="MAX_BEAT_TEXT"
+            :label="text.beatText"
+            @close="closeText"
+          />
         </div>
       </div>
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->

@@ -23,8 +23,8 @@ const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKe
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
 const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""} (${binding.context})`;
-/** Two contexts that can be in force at once: the score's keys work on every kind of part. */
-const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || a.context === "score" || b.context === "score";
+/** Two contexts that can be in force at once: the score's keys work on every kind of part, and none of them in a text box. */
+const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || ((a.context === "score" || b.context === "score") && a.context !== "textEntry" && b.context !== "textEntry");
 
 test.each([
   [{ userAgentData: { platform: "macOS" } }],
@@ -81,6 +81,9 @@ test.each([
   ["delete", undefined, "Delete", "⌫"],
   ["shorter", undefined, "+", "+"],
   ["triplet", undefined, "Shift+T", "⇧T"],
+  ["dynamic", undefined, "Shift+F", "⇧F"],
+  ["text", undefined, "Enter", "↩"],
+  ["cancelEntry", undefined, "Esc", "Esc"],
   ["fret", 7, "7", "7"],
   ["copy", undefined, "Ctrl+C", "⌘C"],
   ["playPause", undefined, "Space", "Space"],

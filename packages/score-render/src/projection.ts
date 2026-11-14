@@ -1,7 +1,7 @@
 // The projection (CONTEXT.md): a score as plain data becomes the model alphaTab draws and plays.
 // One way only: nothing built here is ever written back to the score.
 import * as alphaTab from "@coderline/alphatab";
-import { type BarJSON, barTicks, type BeatJSON, beatTicks, type NoteJSON, type NoteValue, type PartJSON, type ScoreJSON, WHOLE } from "@studio/score-model";
+import { type BarJSON, barTicks, type BeatJSON, beatTicks, DYNAMICS, type NoteJSON, type NoteValue, type PartJSON, type ScoreJSON, WHOLE } from "@studio/score-model";
 
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
@@ -9,6 +9,7 @@ type AtStaff = alphaTab.model.Staff;
 type AtBar = alphaTab.model.Bar;
 type AtBeat = alphaTab.model.Beat;
 type AtNote = alphaTab.model.Note;
+type AtDynamic = alphaTab.model.DynamicValue;
 
 const { model } = alphaTab;
 
@@ -149,19 +150,61 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
   return note;
 }
 
-function rest(value: NoteValue): AtBeat {
+/**
+ * How long a strummed beat takes to strum, in ticks (960 a quarter), from its first string to its
+ * last: a 64th note, some 30 ms at 120 beats a minute, and no more than a quarter of a short beat.
+ * Without it alphaTab sounds every string at once. How it sounds is for the owner to judge by ear
+ * (docs/spec/testing.md, section 6).
+ */
+export const STROKE_TICKS = 60;
+
+const BRUSH_TYPES = { down: model.BrushType.BrushDown, up: model.BrushType.BrushUp } as const;
+
+const DYNAMIC_VALUES: Record<(typeof DYNAMICS)[number], AtDynamic> = {
+  pp: model.DynamicValue.PP,
+  p: model.DynamicValue.P,
+  mp: model.DynamicValue.MP,
+  mf: model.DynamicValue.MF,
+  f: model.DynamicValue.F,
+  ff: model.DynamicValue.FF,
+};
+
+/** The dynamic of a voice before any is written: alphaTab's own, f. */
+const START_DYNAMIC = model.DynamicValue.F;
+
+/**
+ * The dynamic each voice of a projected bar leaves in force, for the bar after it (none: the
+ * start of the score).
+ */
+function dynamicsLeaving(bar: AtBar | null | undefined, voiceCount: number): AtDynamic[] {
+  return Array.from({ length: voiceCount }, (_, voice) => bar?.voices[voice]?.beats.at(-1)?.dynamics ?? START_DYNAMIC);
+}
+
+function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   const beat = new model.Beat();
   beat.duration = value as alphaTab.model.Duration;
+  beat.dynamics = dynamic;
   return beat;
 }
 
-function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
-  const beat = rest(json.value);
+/** A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when it has one; drawn on it only when it has one. */
+function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat {
+  const beat = rest(json.value, dynamic);
+  // A dynamic is drawn where it is written only: alphaTab would draw one where the dynamic in force
+  // changes, and its own f on the first note of a voice that has none (`shouldCreateDynamicsGlyph`).
+  beat.showDynamics = json.dynamic !== undefined;
   beat.dots = json.dots;
   if (json.tuplet) {
     beat.tupletNumerator = json.tuplet.actual;
     beat.tupletDenominator = json.tuplet.normal;
   }
+  if (json.stroke) {
+    beat.brushType = BRUSH_TYPES[json.stroke];
+    beat.brushDuration = Math.min(STROKE_TICKS, beatTicks(json) / 4);
+  }
+  if (json.slap) beat.slap = true;
+  if (json.pop) beat.pop = true;
+  if (json.text) beat.text = json.text;
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson);
     if (!note) continue;
@@ -172,8 +215,14 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
   return beat;
 }
 
-/** One bar of one staff of a part, with every voice the staff has. Returns the ids of its beats by voice. */
-function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number): { bar: AtBar; beatIds: string[][] } {
+/**
+ * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
+ * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
+ * the end of the same voice in `previous`, the bar before (none for the first). Returns the ids of
+ * its beats by voice.
+ */
+function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
+  const entering = dynamicsLeaving(previous, voiceCount);
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
   const beatIds: string[][] = [];
@@ -183,17 +232,22 @@ function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: num
     atBar.addVoice(atVoice);
     const beats = content[`${staff}:${voice}`] ?? [];
     beatIds.push(beats.map((beat) => beat.id));
-    for (const beat of beats) atVoice.addBeat(projectBeat(part, beat));
+    // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
+    let dynamic = entering[voice];
+    for (const beat of beats) {
+      if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
+      atVoice.addBeat(projectBeat(part, beat, dynamic));
+    }
     if (beats.length === 0) {
       // An empty first voice is a whole-bar rest; other voices stay invisible.
-      const filler = rest(1);
+      const filler = rest(1, dynamic);
       filler.isEmpty = voice > 0;
       atVoice.addBeat(filler);
       continue;
     }
     // A voice that does not fill its bar is completed with rests, here only (it stays flagged).
     const held = beats.reduce((sum, beat) => sum + beatTicks(beat), 0);
-    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value));
+    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
   }
   return { bar: atBar, beatIds };
 }
@@ -281,8 +335,9 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
     score.addTrack(track);
     track.staves.forEach((staff, staffIndex) => {
       setUpStaff(staff, part);
+      const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, staffIndex, voiceCounts[staffIndex] as number);
+        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -315,7 +370,9 @@ function retie(next: AtBar | null, replaced: AtBar): void {
 
 /**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
- * the alphaTab model as it is (same objects). Returns the index of the first rebuilt bar, or
+ * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
+ * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
+ * next written dynamic in each voice that changed. Returns the index of the first rebuilt bar, or
  * null when the change is not one this can do (a bar, a part or a voice count changed): the
  * caller then projects the whole score again.
  */
@@ -337,7 +394,10 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   if (!sameShape) return null;
 
   let finishing = 0;
-  for (const barIndex of indexes as number[]) {
+  const rebuilt = new Set(indexes as number[]);
+  const first = Math.min(...rebuilt);
+  for (let barIndex = first; barIndex < json.bars.length; barIndex++) {
+    if (!rebuilt.has(barIndex)) continue;
     const bar = json.bars[barIndex] as BarJSON;
     json.parts.forEach((part, trackIndex) => {
       const track = projection.score.tracks[trackIndex] as AtTrack;
@@ -347,7 +407,8 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         old.voices.forEach((_, voice) => {
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
-        const built = projectBar(part, bar, staffIndex, (voiceCounts[trackIndex] as number[])[staffIndex] as number);
+        const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
+        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;
@@ -370,6 +431,9 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         atBar.finish(settings, new Map());
         finishing += performance.now() - finishStarted;
         retie(atBar.nextBar, old);
+        // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
+        const before = dynamicsLeaving(old, voiceCount);
+        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
       });
     });
   }
@@ -377,5 +441,5 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
     timings.finish = finishing;
     timings.build = performance.now() - started - finishing;
   }
-  return Math.min(...(indexes as number[]));
+  return first;
 }
