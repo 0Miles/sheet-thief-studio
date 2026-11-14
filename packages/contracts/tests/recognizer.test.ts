@@ -14,7 +14,8 @@ const read = (path: string): unknown => JSON.parse(readFileSync(fileURLToPath(ne
 
 // Strict, so that a misspelt keyword fails; the conditions on the number of strings name no types,
 // which only Ajv's strictTypes asks for.
-const jsonSchema = new Ajv2020({ strict: true, strictTypes: false, allErrors: true }).compile(read("recognition.schema.json") as object);
+const schema = read("recognition.schema.json") as Json;
+const jsonSchema = new Ajv2020({ strict: true, strictTypes: false, allErrors: true }).compile(schema);
 
 /** The fixtures by name (the file name without `.json`). */
 const fixtures = new Map(
@@ -23,8 +24,7 @@ const fixtures = new Map(
     .map((file) => [file.slice(0, -".json".length), read(`fixtures/${file}`)]),
 );
 
-test.each([...fixtures.keys()])("the fixture %s passes the JSON Schema and zod", (name) => {
-  const fixture = fixtures.get(name);
+test.each([...fixtures])("the fixture %s passes the JSON Schema and zod", (_, fixture) => {
   expect(jsonSchema(fixture), JSON.stringify(jsonSchema.errors)).toBe(true);
   expect(recognizerResponse.safeParse(fixture).error).toBeUndefined();
 });
@@ -102,7 +102,6 @@ test.each<[string, string, (json: Json) => void]>([
 });
 
 test("the JSON Schema carries its version, and a sentence for every field", () => {
-  const schema = read("recognition.schema.json") as Json;
   expect(schema.$id).toBe(`urn:sheet-thief-studio:recognition:${RECOGNIZER_CONTRACT_VERSION}`);
   expect(schema.$defs.version.const).toBe(RECOGNIZER_CONTRACT_VERSION);
   expect(schema.$defs.contract.const).toBe(RECOGNIZER_CONTRACT);
@@ -112,10 +111,10 @@ test("the JSON Schema carries its version, and a sentence for every field", () =
   (function visit(node: unknown, path: string) {
     if (Array.isArray(node)) return node.forEach((item, index) => visit(item, `${path}/${index}`));
     if (typeof node !== "object" || node === null) return;
-    const properties = (node as Json).properties as Json | undefined;
-    // The conditions on the number of strings only narrow fields described where they are defined.
-    const narrowing = /\/(if|then|else|contains)\b|\/\$defs\/\w+Strings\b/.test(path);
-    for (const [name, field] of Object.entries(properties ?? {})) if (!narrowing && !described(field as Json)) silent.push(`${path}/properties/${name}`);
+    // Every object of the contract is closed (additionalProperties: false), so a closed schema is
+    // where fields are defined; the conditions (if/then, contains, the string-count narrowings) are not.
+    const { additionalProperties, properties } = node as Json;
+    if (additionalProperties === false) for (const [name, field] of Object.entries(properties ?? {})) if (!described(field as Json)) silent.push(`${path}/properties/${name}`);
     for (const [key, value] of Object.entries(node)) visit(value, `${path}/${key}`);
   })(schema, "#");
   expect(silent).toEqual([]);
