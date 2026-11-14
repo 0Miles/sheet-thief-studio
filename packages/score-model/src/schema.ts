@@ -34,6 +34,12 @@ export const MAX_TITLE = 100;
 /** The dynamics a beat can be marked with, softest first. */
 export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
 
+/** How a note slides out of itself, in the order Shift+S steps through them (docs/spec/commands.md, 5.4). */
+export const SLIDE_OUTS = ["legato", "shift", "outUp", "outDown"] as const;
+
+/** How a note slides into itself, in the order Shift+E steps through them. */
+export const SLIDE_INS = ["inBelow", "inAbove"] as const;
+
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
@@ -122,8 +128,9 @@ export const noteSchema = z.object({
   staccato: z.literal(true).optional(),
   /** Hammer-on or pull-off to the next note on the string, marked on the note it starts from. */
   legato: z.literal(true).optional(),
-  slideOut: z.enum(["legato", "shift", "outUp", "outDown"]).optional(),
-  slideIn: z.enum(["inBelow", "inAbove"]).optional(),
+  /** A slide out of the note: legato and shift go on to the next note on the string, marked on the note they start from. */
+  slideOut: z.enum(SLIDE_OUTS).optional(),
+  slideIn: z.enum(SLIDE_INS).optional(),
   bend: z.object({ type: z.enum(["bend", "bendRelease", "preBend", "preBendRelease"]), semitones: z.int().min(1).max(4) }).optional(),
   vibrato: z.literal(true).optional(),
   palmMute: z.literal(true).optional(),
@@ -442,7 +449,14 @@ export function contentOf(part: YPart): Y.Map<YBarContent> {
 }
 
 /** A voice of a part in a bar; undefined when the part, the bar's content or the voice is not there. */
-export function voiceIn(doc: Y.Doc, { partId, barId, voice }: { partId: string; barId: string; voice: string }): YVoice | undefined {
+/** Which voice: of a part, in a bar, "staff:voice". */
+export interface VoiceAddress {
+  partId: string;
+  barId: string;
+  voice: string;
+}
+
+export function voiceIn(doc: Y.Doc, { partId, barId, voice }: VoiceAddress): YVoice | undefined {
   const part = partsOf(doc).get(partId);
   return part && contentOf(part).get(barId)?.get(voice);
 }

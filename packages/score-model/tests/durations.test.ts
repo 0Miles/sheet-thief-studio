@@ -186,6 +186,10 @@ test("over a bar range, only the voices reading reads change, in their order: no
   toggleOnSelection(doc, bars, on(0), techniqueToggle("accent"));
   changeBeatsOnSelection(doc, bars, on(0), clearNotes);
   deleteSelection(doc, bars, on(0));
+  // Nor is a beat range in such a voice.
+  const strays: Selection = { kind: "beats", partId, barId: barIds[0]!, voice: "5:0", anchorBeatId: "stray", focusBeatId: "stray" };
+  toggleOnSelection(doc, strays, on(0), techniqueToggle("accent"));
+  changeBeatsOnSelection(doc, strays, on(0), clearNotes);
   expect(stray.toJSON()).toEqual({ id: "stray", value: 4, dots: 0, notes: { s1: { fret: 9 } } });
   expect(voices.get("5:0")!.length).toBe(1);
   expect((voices as Y.Map<unknown>).get("1:1")).toBe("not beats");

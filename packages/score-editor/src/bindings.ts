@@ -35,6 +35,8 @@ export type SessionEffect =
   | "redo"
   | "fret"
   | "tie"
+  | "slideOut"
+  | "slideIn"
   | OnOffTechnique
   | "stroke"
   | "slapPop"
@@ -143,6 +145,7 @@ const TECHNIQUE_KEYS: Record<OnOffTechnique, string> = {
   palmMute: "KeyP",
   letRing: "KeyI",
   tap: "KeyK",
+  legato: "KeyH",
 };
 
 export const KEY_BINDINGS: readonly KeyBinding[] = [
@@ -200,6 +203,9 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // the fret of the note before; on staves it waits, as the other techniques do, for their keys
   // to name the notes drawn on a line (keymap.md, section 3).
   { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
+  // A slide out steps through its kinds, a slide in through its own, each back to none.
+  { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
+  { effect: "slideIn", context: "fretted", keys: ["Shift+KeyE"], keymap: both("Shift+KeyE") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
