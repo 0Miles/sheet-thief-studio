@@ -356,12 +356,17 @@ function plainToggle(technique: OnOffTechnique | "tie"): NoteToggle<boolean> {
     decide: (seen) => !seen.every((note) => note[technique] === true),
     turn(stored, on) {
       if (stored === undefined || (stored[technique] === true) === on) return stored ?? null;
-      if (on) return { ...stored, [technique]: true };
-      const note = { ...stored };
-      delete note[technique];
-      return note;
+      return withField(stored, technique, on ? true : undefined);
     },
   };
+}
+
+/** The note as stored with `field` set to `value`, or without it for undefined; every other field kept. */
+function withField<F extends keyof NoteJSON>(stored: NoteJSON, field: F, value: NoteJSON[F]): NoteJSON {
+  const note = { ...stored };
+  if (value === undefined) delete note[field];
+  else note[field] = value;
+  return note;
 }
 
 const plainDead = plainToggle("dead");
@@ -411,9 +416,7 @@ function noteCycle<F extends "slideOut" | "slideIn">(field: F, kinds: readonly N
     decide: (seen) => nextOf(kinds, seen[0]?.[field]),
     turn(stored, kind) {
       if (stored === undefined || stored[field] === kind) return stored ?? null;
-      const note = { ...stored };
-      delete note[field];
-      return kind === undefined ? note : { ...note, [field]: kind };
+      return withField(stored, field, kind);
     },
   };
 }
@@ -508,8 +511,8 @@ interface SelectedRun {
 
 /**
  * What a selection holds in the part selected: its beats in its voice, or every voice of the part
- * in the bars of a bar range. Only the voices reading reads (docs/spec/schema.md, section 11): not
- * a voice of a staff the part does not have, and not one stored as something else than beats.
+ * in the bars of a bar range. Only the voices reading reads, in their order (docs/spec/schema.md,
+ * section 11): not a voice of a staff the part does not have, and not one stored as something else than beats.
  */
 function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
   const part = partsOf(doc).get(selection.partId);
@@ -518,7 +521,6 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
     const found = isVoiceKey(selection.voice, staffCountOf(part)) ? selectedBeats(doc, selection) : undefined;
     return found ? [{ barId: selection.barId, voiceKey: selection.voice, ...found }] : [];
   }
-  // In their order.
   const keys = voiceKeys(staffCountOf(part));
   return selectedBars(doc, selection).flatMap((barId) => {
     const voices: unknown = contentMapOf(part)?.get(barId);
@@ -536,7 +538,7 @@ interface SelectedBeat {
   voice: YVoice;
   index: number;
   beat: YBeat;
-  notes: Y.Map<NoteJSON>;
+  map: Y.Map<NoteJSON>;
 }
 
 /**
@@ -548,8 +550,8 @@ function selectedBeatsOf(doc: Y.Doc, reader: PartReader, selection: Selection): 
     Array.from({ length: last - first + 1 }, (_, offset) => first + offset).flatMap((index) => {
       const beat = voice.get(index);
       // A beat reading keeps has its notes in a map.
-      const notes = readsAsBeat(reader.kind, beat) ? notesOf(beat) : undefined;
-      return notes ? [{ address: { partId: selection.partId, barId, voice: voiceKey }, voice, index, beat, notes }] : [];
+      const map = readsAsBeat(reader.kind, beat) ? notesOf(beat) : undefined;
+      return map ? [{ address: { partId: selection.partId, barId, voice: voiceKey }, voice, index, beat, map }] : [];
     }),
   );
 }
@@ -565,7 +567,7 @@ function selectedBeatsOf(doc: Y.Doc, reader: PartReader, selection: Selection): 
 export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: Cursor, toggle: NoteToggle<D>): Cursor {
   const reader = readerOf(doc, selection.partId);
   if (reader === undefined) return cursor;
-  const beats = selectedBeatsOf(doc, reader, selection).map(({ address, voice, index, notes: map }) => {
+  const beats = selectedBeatsOf(doc, reader, selection).map(({ address, voice, index, map }) => {
     const notes = [...map.entries()].flatMap(([key, stored]) => {
       const seen = reader.note(key, stored);
       return seen ? [{ key, stored, seen }] : [];

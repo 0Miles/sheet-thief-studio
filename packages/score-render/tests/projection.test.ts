@@ -311,7 +311,7 @@ test("replacing a bar whose dynamic changed rebuilds the bars after it up to the
   expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
 });
 
-/** A guitar of `count` bars of 4/4, each bar's beats given as frets on string 3 (null: a rest), with these fields on its notes. */
+/** A guitar of bars of 4/4, one for each entry of `bars`, each bar's beats given as frets on string 3 (null: a rest), with these fields on its notes. */
 function linked(bars: [number | null, Partial<NoteJSON>?][][]) {
   const doc = new Y.Doc();
   createScore(doc, "Links");

@@ -410,13 +410,13 @@ function retie(next: AtBar | null, replaced: AtBar): void {
   }
 }
 
-/** Whether a note of a bar of the model goes on, by a link, to a note of another bar: a link across a bar line. */
+/**
+ * Whether a note of a bar of the model goes on, by a link, to a note of another bar: a link across
+ * a bar line. Only the last beat of a voice can: a link is projected only to the beat just after.
+ */
 function modelLinksOutOf(bar: AtBar | undefined): boolean {
-  return (
-    bar?.voices.some((voice) =>
-      voice.beats.some((beat) => beat.notes.some((note) => [note.hammerPullDestination, note.slideTarget].some((target) => target !== null && target.beat.voice.bar !== bar))),
-    ) ?? false
-  );
+  const leaves = (target: AtNote | null) => target !== null && target.beat.voice.bar !== bar;
+  return bar?.voices.some((voice) => voice.beats.at(-1)?.notes.some((note) => leaves(note.hammerPullDestination) || leaves(note.slideTarget))) ?? false;
 }
 
 /** Whether a note of the bar at `index` of the score goes on, by a link, to the first beat of the bar after it. */
@@ -426,17 +426,10 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
   if (bar === undefined || next === undefined) return false;
   return json.parts.some((part) =>
     Object.entries(part.content[bar.id] ?? {}).some(([voice, beats]) => {
-      const last = beats.at(-1);
-      const after = part.content[next.id]?.[voice]?.[0];
-      return last !== undefined && after !== undefined && Object.entries(last.notes).some(([key, note]) => linksOn(note) && after.notes[key] !== undefined);
+      const after = beatAfter(beats, beats.length - 1, part.content[next.id]?.[voice]);
+      return Object.entries(beats.at(-1)?.notes ?? {}).some(([key, note]) => linksOn(note) && after?.notes[key] !== undefined);
     }),
   );
-}
-
-/** A bar of a staff replaced: the bar it took the place of, to retie the bar after. */
-interface Replaced {
-  old: AtBar;
-  bar: AtBar;
 }
 
 /**
@@ -467,18 +460,30 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   });
   if (!sameShape) return null;
 
-  /** Whether a link crosses the line after bar `index`: in the score, or in the model, read before that bar is replaced. */
-  const crossed = (index: number) => index + 1 < json.bars.length && (scoreLinksOutOf(json, index) || tracks.some((track) => track.staves.some((staff) => modelLinksOutOf(staff.bars[index]))));
+  /**
+   * Whether a link crosses the line after bar `index`: in the score, or in the model, read before
+   * that bar is replaced. Kept by index: each is asked first before its bar is replaced.
+   */
+  const crossings = new Map<number, boolean>();
+  const crossed = (index: number) => {
+    let crosses = crossings.get(index);
+    if (crosses === undefined) {
+      crosses = scoreLinksOutOf(json, index) || tracks.some((track) => track.staves.some((staff) => modelLinksOutOf(staff.bars[index])));
+      crossings.set(index, crosses);
+    }
+    return crosses;
+  };
   const rebuilt = new Set(indexes as number[]);
   // The bars before the ones to rebuild that a link reaches them from, and the bars before those;
   // the bars after are seen to below, as each is rebuilt.
-  for (const index of [...rebuilt].sort((a, b) => b - a)) {
+  for (const index of [...rebuilt]) {
     for (let line = index - 1; line >= 0 && !rebuilt.has(line) && crossed(line); line--) rebuilt.add(line);
   }
 
   // Every bar is built and put in its place first, then each is finished, in order: finishing a
   // bar sets up the links from its notes to the bar after, which must be the new one by then.
-  const replaced: Replaced[] = [];
+  // Each bar replaced, with the bar it took the place of, to retie the bar after.
+  const replaced: { old: AtBar; atBar: AtBar }[] = [];
   const first = Math.min(...rebuilt);
   for (let barIndex = first; barIndex < json.bars.length; barIndex++) {
     if (!rebuilt.has(barIndex)) continue;
@@ -503,7 +508,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         if (old.nextBar) old.nextBar.previousBar = atBar;
         staff.bars[barIndex] = atBar;
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
-        replaced.push({ old, bar: atBar });
+        replaced.push({ old, atBar });
         // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
         const before = dynamicsLeaving(old, voiceCount);
         if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
@@ -512,7 +517,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   }
 
   let finishing = 0;
-  for (const { old, bar: atBar } of replaced) {
+  for (const { old, atBar } of replaced) {
     // The last beat of the bar before leads into this one.
     atBar.previousBar?.voices.forEach((voice, voiceIndex) => {
       const last = voice.beats.at(-1);

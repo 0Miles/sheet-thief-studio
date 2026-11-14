@@ -458,7 +458,6 @@ export interface VoiceAddress {
 }
 
 /** A voice of a part in a bar; undefined when the part, the bar's content or the voice is not there. */
-
 export function voiceIn(doc: Y.Doc, { partId, barId, voice }: VoiceAddress): YVoice | undefined {
   const part = partsOf(doc).get(partId);
   return part && contentOf(part).get(barId)?.get(voice);
