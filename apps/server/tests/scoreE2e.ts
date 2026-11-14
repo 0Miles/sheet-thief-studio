@@ -36,7 +36,7 @@ const doc = new Y.Doc();
 if (fixture.state !== undefined) {
   Y.applyUpdate(doc, Buffer.from(fixture.state, "base64"));
 } else {
-  startContent(doc, createScoreRequest.parse({ title: fixture.title }), fixture.bars);
+  startContent(doc, createScoreRequest.parse({ title: fixture.title, bars: fixture.bars }));
   for (const part of fixture.parts ?? []) addPart(doc, part);
 }
 const id = await sequelize.transaction(async (transaction) => {

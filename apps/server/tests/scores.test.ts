@@ -108,7 +108,8 @@ async function storedContent(response: { statusCode: number; json: () => { id: s
 test("a score starts with the parts, time signature and tempo chosen in the dialog, its parts numbered by preset", async () => {
   const response = await create({
     title: "新歌",
-    parts: [{ preset: "guitar6" }, { preset: "guitar7", tuning: [64, 59, 55, 50, 45, 40, 33] }, { preset: "drums" }, { preset: "keys" }],
+    // Two guitars in Drop tuning, drums and keys.
+    parts: [{ preset: "guitar6", count: 2, tuning: [64, 59, 55, 50, 45, 38] }, { preset: "drums" }, { preset: "keys", count: 1 }],
     timeSig: { numerator: 6, denominator: 8 },
     tempo: 96,
   });
@@ -116,8 +117,8 @@ test("a score starts with the parts, time signature and tempo chosen in the dial
 
   expect(score.title).toBe("新歌");
   expect(score.parts.map(({ name, kind, tuning, capo, staves, program }) => ({ name, kind, tuning, capo, staves, program }))).toEqual([
-    { name: "吉他 1", kind: "fretted", tuning: [64, 59, 55, 50, 45, 40], capo: 0, staves: [{ clef: "tab" }], program: 25 },
-    { name: "吉他 2", kind: "fretted", tuning: [64, 59, 55, 50, 45, 40, 33], capo: 0, staves: [{ clef: "tab" }], program: 25 },
+    { name: "吉他 1", kind: "fretted", tuning: [64, 59, 55, 50, 45, 38], capo: 0, staves: [{ clef: "tab" }], program: 25 },
+    { name: "吉他 2", kind: "fretted", tuning: [64, 59, 55, 50, 45, 38], capo: 0, staves: [{ clef: "tab" }], program: 25 },
     { name: "鼓 1", kind: "percussion", tuning: [], capo: 0, staves: [{ clef: "neutral" }], program: 0 },
     { name: "鍵盤 1", kind: "pitched", tuning: [], capo: 0, staves: [{ clef: "treble" }, { clef: "bass" }], program: 0 },
   ]);
@@ -137,19 +138,25 @@ test("a score asked for by its title only starts with the defaults: one six-stri
 });
 
 test("a score has 1 to 16 parts, at most 15 of them other than drums; a part a tuning of its own number of strings", async () => {
-  const guitars = (count: number) => Array(count).fill({ preset: "guitar6" });
   // The most a score can have: fifteen parts besides drums, and drums.
-  await storedContent(await create({ title: "滿了", parts: [...guitars(15), { preset: "drums" }] }));
+  await storedContent(await create({ title: "滿了", parts: [{ preset: "guitar6", count: 14 }, { preset: "vocals" }, { preset: "drums" }] }));
   await sequelize.query("TRUNCATE scores CASCADE");
 
   for (const parts of [
     [],
-    [...guitars(15), { preset: "drums" }, { preset: "drums" }],
-    guitars(16),
+    // Seventeen parts.
+    [{ preset: "guitar6", count: 15 }, { preset: "drums", count: 2 }],
+    Array(17).fill({ preset: "drums" }),
+    // Sixteen parts other than drums.
+    [{ preset: "guitar6", count: 16 }],
+    [{ preset: "guitar6", count: 15 }, { preset: "keys" }],
+    [{ preset: "guitar6", count: 0 }],
+    [{ preset: "guitar6", count: 1.5 }],
     [{ preset: "guitar6", tuning: [43, 38, 33, 28] }],
     [{ preset: "bass4", tuning: [43, 38, 33, 128] }],
     [{ preset: "bass4", tuning: [43, 38, 33, 27.5] }],
     [{ preset: "drums", tuning: [40] }],
+    [{ preset: "keys", tuning: [] }],
     [{ preset: "banjo" }],
   ]) {
     const response = await create({ title: "測試團譜", parts });
@@ -158,7 +165,7 @@ test("a score has 1 to 16 parts, at most 15 of them other than drums; a part a t
   expect(await Score.count()).toBe(0);
 });
 
-test("a score needs a title of 1 to 100 characters, a time signature and a tempo in the ranges of the schema, and a request from our origin", async () => {
+test("a score needs a title of 1 to 100 characters, a time signature, a tempo and a number of bars in the ranges of the schema, and a request from our origin", async () => {
   for (const payload of [
     {},
     { title: "" },
@@ -169,12 +176,15 @@ test("a score needs a title of 1 to 100 characters, a time signature and a tempo
     { title: "測試團譜", timeSig: { numerator: 4, denominator: 3 } },
     { title: "測試團譜", tempo: 19 },
     { title: "測試團譜", tempo: 401 },
+    { title: "測試團譜", bars: 0 },
+    { title: "測試團譜", bars: 1001 },
   ]) {
     const response = await create(payload);
     expect([response.statusCode, response.json().code]).toEqual([400, "invalid_request"]);
   }
   expect((await create({ title: "測試團譜" }, "https://elsewhere.example")).statusCode).toBe(403);
   expect(await Score.count()).toBe(0);
-  // The longest title there may be.
-  expect((await storedContent(await create({ title: "x".repeat(100) }))).title).toBe("x".repeat(100));
+  // The longest title there may be, and more bars than the dialog's eight.
+  const longest = await storedContent(await create({ title: "x".repeat(100), bars: 12 }));
+  expect([longest.title, longest.bars.length]).toEqual(["x".repeat(100), 12]);
 });

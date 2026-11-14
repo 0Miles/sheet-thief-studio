@@ -5,7 +5,7 @@
 // filters and searches.
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
 import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseLimits, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
-import { blankFragment, PART_PRESETS, type PartPresetId } from "@studio/score-model";
+import { blankFragment, PART_PRESET_IDS, PART_PRESETS, type PartPresetId } from "@studio/score-model";
 import { onMounted, ref, watch } from "vue";
 
 import { ApiError, del, get, patchFor, postFor } from "../api";
@@ -16,7 +16,6 @@ import { errorText, strings } from "../strings";
 const text = strings.phrases;
 const editable = canType();
 const KINDS = partKindSchema.options;
-const PRESETS = Object.keys(PART_PRESETS) as PartPresetId[];
 /** How long the search waits after the last key before asking. */
 const SEARCH_DELAY_MS = 200;
 
@@ -173,7 +172,7 @@ function remove(): Promise<void> {
             <label class="phrases__preset">
               <span>{{ strings.newPhrase.preset }}</span>
               <select v-model="preset" name="preset">
-                <option v-for="item in PRESETS" :key="item" :value="item">{{ strings.presets[item] }}</option>
+                <option v-for="item in PART_PRESET_IDS" :key="item" :value="item">{{ strings.presets[item] }}</option>
               </select>
             </label>
             <p v-if="error" class="phrases__error" role="alert">{{ error }}</p>
