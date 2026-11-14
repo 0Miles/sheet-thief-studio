@@ -29,6 +29,8 @@
 
 重跑：`pnpm --filter @studio/web measure`（headless），前面加 `HEADED=1` 是開視窗跑。數字寫到 [`spike/data/`](spike/data/)，截圖寫到 [`spike/`](spike/)。
 
+> #37 之後：spike 頁（`/spike/:name`、`/local`）與 `window.__studio` 已移除，量測套件改對編輯視圖量，結果寫到 `docs/measurements/`（[`spec/testing.md`](spec/testing.md) 第 4 節）。這份報告記錄的是 M0 當時的做法與網址，數字留在 `spike/` 不再更新。
+
 ## 這次做了什麼
 
 - `packages/score-render`：`ScoreRenderer`、`ScorePlayer` 兩個介面，和 alphaTab 1.9 的實作。投影把 `ScoreJSON` 手工建成 alphaTab 的模型；也可以只把改到的小節在既有模型裡換掉。
@@ -267,7 +269,7 @@ alphaTab 1.9 的行為：`loadMidiForScore()` 會讓播放器**停下來並回�
 
 **請你聽一次（約 30 秒）**
 
-1. 開兩個終端機：`pnpm --filter @studio/server dev` 和 `pnpm --filter @studio/web dev`，用 Chrome 開 <http://localhost:5183/local?seed=perf>。
+1. 開兩個終端機：`pnpm --filter @studio/server dev` 和 `pnpm --filter @studio/web dev`，用 Chrome 登入，開一份有內容的團譜。（M0 當時開的是 `/local?seed=perf`，#37 已移除；現在的試聽步驟見 #41。）
 2. 等按鈕變成「播放」後按下去，聽 3 秒。
 3. 不要用滑鼠點譜面（alphaTab 會把播放位置跳到點的地方）。用鍵盤：按幾次 `→`，再按一個數字，例如 `9`。
 4. 按完之後大約半秒內注意聽：有沒有爆音、有沒有停一下、音樂是不是從同一個地方繼續。

@@ -44,7 +44,7 @@ interface BeatsFragment {
 - 貼上時用 zod 驗證；沒有前綴、前綴的版本不認得、驗證失敗、或種類不合的內容，忽略並提示「剪貼簿裡沒有可以貼上的內容」（補充：種類不合時提示「只能貼進同一種聲部」）。
 - 複製：拍點範圍產生拍點段，小節範圍產生小節段；沒有選取時不動。
 - 剪下等於「複製加上一個清空的 Command」。Viewer 只能複製，不能剪下或貼上。
-- **焦點元素要先用測試確認**：現在譜面的焦點元素是 `SpikeView.vue:355` 的 `.scroller`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
+- **焦點元素要先用測試確認**：現在譜面的焦點元素是 `ScoreView.vue` 的 `[data-scroller]`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
 
 ## 3. 建立樂句的三種途徑
 

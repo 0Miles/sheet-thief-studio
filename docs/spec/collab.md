@@ -82,7 +82,7 @@
 
 - 已開啟的分頁可以繼續編輯，重連時由 Yjs 合併；畫面顯示「離線」橫幅。
 - 不做 IndexedDB 離線保存。
-- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`SpikeView.vue:74`）。
+- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`ScoreView.vue` 的 `updateSync` 已經讀 `provider.unsyncedChanges`）。
 - 重連時：
   - 取 ticket 失敗（401 或 404），或拿到的 `role` 比原本低：客戶端丟掉本機的 `Y.Doc`，重新以唯讀載入並提示；本機未同步的修改放棄。只切換介面不夠，因為本機文件已經和伺服器分歧了。
   - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」並導向 `/`；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。

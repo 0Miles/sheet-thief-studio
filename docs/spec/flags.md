@@ -40,7 +40,7 @@ type Flag =
 ## 3. 計算
 
 - Flag 只在客戶端計算，不存進文件。
-- 每次修改都對整份 `ScoreJSON` 重算。理由：`danglingTie`、`danglingLink` 會跨小節，只算變動的小節會漏；而客戶端每次修改本來就會產生整份 `ScoreJSON`（`SpikeView.vue:172`）。
+- 每次修改都對整份 `ScoreJSON` 重算。理由：`danglingTie`、`danglingLink` 會跨小節，只算變動的小節會漏；而客戶端每次修改本來就會產生整份 `ScoreJSON`（`ScoreView.vue` 的 `draw`）。
 - 只有在 S2 重跑時證明它是瓶頸，才改成增量計算（[`testing.md`](testing.md)）。
 - `invalidContent` 由讀取時產生：`readScore` 回傳 `ScoreJSON` 與 `invalidContent` 的清單（`docToJson` 是同一個讀取、只回傳 `ScoreJSON`），和其他 Flag 合併成同一份清單。`what` 的值見 [`schema.md`](schema.md) 第 11 節。
 - 順序（補充）：依聲部順序、小節順序、聲線、拍點順序排列；`F8` 依這個順序走。
