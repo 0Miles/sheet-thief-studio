@@ -187,9 +187,12 @@ function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   return beat;
 }
 
-/** A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when it has one. */
+/** A beat of the score, at `dynamic`: the one in force in its voice where it starts, its own when it has one; drawn on it only when it has one. */
 function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat {
   const beat = rest(json.value, dynamic);
+  // A dynamic is drawn where it is written only: alphaTab would draw one where the dynamic in force
+  // changes, and its own f on the first note of a voice that has none (`shouldCreateDynamicsGlyph`).
+  beat.showDynamics = json.dynamic !== undefined;
   beat.dots = json.dots;
   if (json.tuplet) {
     beat.tupletNumerator = json.tuplet.actual;
@@ -214,10 +217,12 @@ function projectBeat(part: PartJSON, json: BeatJSON, dynamic: AtDynamic): AtBeat
 
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
- * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic `entering`
- * gives it, the one in force at the end of the bar before. Returns the ids of its beats by voice.
+ * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
+ * the end of the same voice in `previous`, the bar before (none for the first). Returns the ids of
+ * its beats by voice.
  */
-function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number, entering: readonly AtDynamic[]): { bar: AtBar; beatIds: string[][] } {
+function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
+  const entering = dynamicsLeaving(previous, voiceCount);
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
   const beatIds: string[][] = [];
@@ -228,7 +233,7 @@ function projectBar(part: PartJSON, bar: BarJSON, staff: number, voiceCount: num
     const beats = content[`${staff}:${voice}`] ?? [];
     beatIds.push(beats.map((beat) => beat.id));
     // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
-    let dynamic = entering[voice] ?? START_DYNAMIC;
+    let dynamic = entering[voice];
     for (const beat of beats) {
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
       atVoice.addBeat(projectBeat(part, beat, dynamic));
@@ -332,7 +337,7 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
       setUpStaff(staff, part);
       const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, staffIndex, voiceCount, dynamicsLeaving(staff.bars[barIndex - 1], voiceCount));
+        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -403,7 +408,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
         const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
-        const built = projectBar(part, bar, staffIndex, voiceCount, dynamicsLeaving(staff.bars[barIndex - 1], voiceCount));
+        const built = projectBar(part, bar, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;

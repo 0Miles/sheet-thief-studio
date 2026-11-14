@@ -197,7 +197,7 @@ interface Cursor {
 
 - `setText`：在游標拍點開內嵌輸入框，`Enter` 存入；空字串表示移除。一次存入是一個 Command。
   - **補充**（#30）：`commands.ts` 的 `setText(doc, cursor, text)`，以 `beatText` 這個 `BeatChange` 套用在游標拍點；超過 64 字元（`MAX_BEAT_TEXT`）時回傳 false、不寫入；和原本相同時不寫入。附加位置沒有拍點，不動。不修剪空白，照原樣存。
-  - **補充**（#30）：開框與存入分在兩邊。`EditorSession` 處理 `Enter`：游標在讀得懂的拍點上時，以 `onEditText` 送出 `{ cursor, text }`（`textAt`：現有的文字，沒有時是空字串）；附加位置不送。唯讀時 `Enter` 和其他會改動文件的鍵一樣被拒絕。殼開框，`Enter` 時呼叫 `EditorSession.setText(cursor, text)`：存在開框時的 `cursor` 那個拍點上（拍點已被刪除就不動），選取結束。開框本身不改動文件，選取不變；`Esc` 或焦點離開輸入框時不存，選取也不變（[`keymap.md`](keymap.md) 6.1 的補充）。
+  - **補充**（#30）：開框與存入分在兩邊。`EditorSession` 處理 `Enter`：游標在讀得懂的拍點上時，以 `onEditText` 送出 `{ cursor, text }`（`textAt`：現有的文字，沒有時是空字串）；附加位置不送。唯讀時 `Enter` 和其他會改動文件的鍵一樣被拒絕。殼開框，`Enter` 時呼叫 `EditorSession.setText(cursor, text)`：存在開框時的 `cursor` 那個拍點上（拍點已被刪除就不動），選取結束。開框本身不改動文件，選取不變；`Esc` 或焦點離開輸入框時不存，選取也不變。
 - `setLyric`（只有 pitched）：歌詞模式，見 [`keymap.md`](keymap.md)。每存一個音節是一個 Command。空字串表示延長；音節結尾的 `-` 表示字還沒結束。
 - 段落名稱（`section`）從小節屬性面板編輯，是結構操作（第 6 節）。
 

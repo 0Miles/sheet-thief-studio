@@ -29,7 +29,7 @@ export function clearOf(rect: Rect, reserved: readonly Rect[]): Rect {
   return clear;
 }
 
-/** The size of the box a beat's text is typed in, and how far below the cursor it opens (docs/spec/keymap.md, 6.1). */
+/** The size of the box a beat's text is typed in, and how far below the cursor it opens: an overlay as docs/spec/views.md, section 9, has them. */
 export const ENTRY_BOX = { width: 160, height: 28, gap: 4 };
 
 /**
