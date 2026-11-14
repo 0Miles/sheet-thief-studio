@@ -169,7 +169,7 @@ async function create(): Promise<void> {
           </label>
           <label class="new-score__field">
             <span>{{ text.tempo }}</span>
-            <input v-model.number="tempo" class="new-score__number" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="1" required />
+            <input v-model.number="tempo" class="new-score__number" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="any" required />
           </label>
         </Cluster>
         <p v-if="error" class="new-score__error" role="alert">{{ error }}</p>

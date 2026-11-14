@@ -4,7 +4,7 @@ import { docToJson, type ScoreJSON } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
@@ -36,6 +36,10 @@ beforeEach(async () => {
   await sequelize.query("TRUNCATE scores CASCADE");
   anna = await sessionOf(app, "anna", PASSWORD);
   ben = await sessionOf(app, "ben", PASSWORD);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 afterAll(async () => {
@@ -141,6 +145,7 @@ test("a score has 1 to 16 parts, at most 15 of them other than drums; a part a t
   // The most a score can have: fifteen parts besides drums, and drums.
   await storedContent(await create({ title: "滿了", parts: [{ preset: "guitar6", count: 14 }, { preset: "vocals" }, { preset: "drums" }] }));
   await sequelize.query("TRUNCATE scores CASCADE");
+  const made = vi.spyOn(Score, "create");
 
   for (const parts of [
     [],
@@ -152,6 +157,10 @@ test("a score has 1 to 16 parts, at most 15 of them other than drums; a part a t
     [{ preset: "guitar6", count: 15 }, { preset: "keys" }],
     [{ preset: "guitar6", count: 0 }],
     [{ preset: "guitar6", count: 1.5 }],
+    // Counts far past the limit are refused as they are, without making that many parts first.
+    [{ preset: "guitar6", count: 1e10 }],
+    [{ preset: "guitar6", count: 1e7 }],
+    [{ preset: "drums", count: -1e7 }, { preset: "guitar6", count: 1e7 }],
     [{ preset: "guitar6", tuning: [43, 38, 33, 28] }],
     [{ preset: "bass4", tuning: [43, 38, 33, 128] }],
     [{ preset: "bass4", tuning: [43, 38, 33, 27.5] }],
@@ -162,10 +171,12 @@ test("a score has 1 to 16 parts, at most 15 of them other than drums; a part a t
     const response = await create({ title: "測試團譜", parts });
     expect([response.statusCode, response.json().code]).toEqual([400, "invalid_request"]);
   }
-  expect(await Score.count()).toBe(0);
+  // Refused before the database is asked for anything.
+  expect(made).not.toHaveBeenCalled();
 });
 
 test("a score needs a title of 1 to 100 characters, a time signature, a tempo and a number of bars in the ranges of the schema, and a request from our origin", async () => {
+  const made = vi.spyOn(Score, "create");
   for (const payload of [
     {},
     { title: "" },
@@ -183,7 +194,10 @@ test("a score needs a title of 1 to 100 characters, a time signature, a tempo an
     expect([response.statusCode, response.json().code]).toEqual([400, "invalid_request"]);
   }
   expect((await create({ title: "測試團譜" }, "https://elsewhere.example")).statusCode).toBe(403);
-  expect(await Score.count()).toBe(0);
+  // Refused before the database is asked for anything.
+  expect(made).not.toHaveBeenCalled();
+  // Any tempo of the range, not only whole ones.
+  expect((await storedContent(await create({ title: "測試團譜", tempo: 92.5 }))).bars[0]?.tempo).toBe(92.5);
   // The longest title there may be, and more bars than the dialog's eight.
   const longest = await storedContent(await create({ title: "x".repeat(100), bars: 12 }));
   expect([longest.title, longest.bars.length]).toEqual(["x".repeat(100), 12]);

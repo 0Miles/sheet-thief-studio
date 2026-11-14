@@ -97,10 +97,15 @@ test("the parts, time signature and tempo chosen in the dialog are the score tha
 });
 
 test("the dialog refuses more parts than a score can have", async ({ page }) => {
+  const errors = pageErrors(page);
   await logInFromStart(page, ADMIN);
   await page.getByRole("button", { name: strings.home.newScore }).click();
   await page.getByLabel(strings.newScore.scoreTitle).fill("太多聲部");
   await page.getByLabel(strings.newScore.count).fill("16");
+  await expect(page.getByRole("alert")).toHaveText(strings.newScore.tooManyParts);
+  await expect(page.getByRole("button", { name: strings.newScore.create })).toBeDisabled();
+  // A count far past the limit is refused as it is: the page does not make that many parts first.
+  await page.getByLabel(strings.newScore.count).fill("10000000000");
   await expect(page.getByRole("alert")).toHaveText(strings.newScore.tooManyParts);
   await expect(page.getByRole("button", { name: strings.newScore.create })).toBeDisabled();
   // Fifteen guitars and drums are the most there may be.
@@ -109,4 +114,5 @@ test("the dialog refuses more parts than a score can have", async ({ page }) => 
   await page.locator("[data-part-row]").nth(1).getByLabel(strings.newScore.preset).selectOption({ label: strings.presets.drums });
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("button", { name: strings.newScore.create })).toBeEnabled();
+  expect(errors).toEqual([]);
 });

@@ -68,12 +68,15 @@ export function partNames(presets: readonly PartPresetId[], taken: Iterable<stri
 export const TUNING_OPTIONS = ["standard", "drop", "halfDown", "wholeDown"] as const;
 export type TuningOption = (typeof TUNING_OPTIONS)[number];
 
-/** The preset whose tuning is the standard one of each number of strings a fretted part can have. */
-const STANDARD_OF_STRINGS: Record<number, PartPresetId> = { 4: "bass4", 5: "bass5", 6: "guitar6", 7: "guitar7" };
+/**
+ * The preset whose tuning is the standard one of each number of strings a fretted part can have:
+ * every fretted preset has a number of strings of its own (4 and 5 the basses, 6 and 7 the guitars).
+ */
+const STANDARD_OF_STRINGS = new Map(PART_PRESET_IDS.filter((id) => PART_PRESETS[id].kind === "fretted").map((id) => [PART_PRESETS[id].tuning.length, id]));
 
 /** The tuning of this option for a fretted part of this many strings (4 to 7), from the first string. */
 export function tuningFor(option: TuningOption, strings: number): number[] {
-  const preset = STANDARD_OF_STRINGS[strings];
+  const preset = STANDARD_OF_STRINGS.get(strings);
   if (preset === undefined) throw new RangeError(`no fretted part has ${strings} strings`);
   const standard = [...PART_PRESETS[preset].tuning];
   switch (option) {

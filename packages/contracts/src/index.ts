@@ -102,8 +102,15 @@ export function eachPart(choices: readonly PartChoice[]): { preset: PartPresetId
   return choices.flatMap(({ preset, count = 1, tuning }) => Array.from({ length: count }, () => ({ preset, tuning })));
 }
 
-/** Whether a score may have the parts these choices make (docs/spec/commands.md, 7.1). */
+/**
+ * Whether a score may have the parts these choices make (docs/spec/commands.md, 7.1). The counts
+ * are added up first, so that no count past the limit makes its parts: zod runs this even when a
+ * count already failed its own range, and the dialog runs it on whatever is typed.
+ */
 export function choicesWithinPartLimits(choices: readonly PartChoice[]): boolean {
+  const total = choices.reduce((sum, { count = 1 }) => sum + Math.max(0, count), 0);
+  // Not `>`: a count that is no number (NaN) fails here too.
+  if (!(total <= MAX_PARTS)) return false;
   return withinPartLimits(eachPart(choices).map(({ preset }) => PART_PRESETS[preset].kind));
 }
 
