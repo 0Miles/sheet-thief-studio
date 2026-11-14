@@ -1,6 +1,7 @@
 // What the overlays drawn over the score share: none of them may cover an area the renderer
 // reserves (docs/spec/views.md, section 9). An overlay in the way moves, the reserved area stays.
-import type { Rect } from "@studio/score-render";
+import type { Flag } from "@studio/score-model";
+import type { Rect, ScoreRenderer } from "@studio/score-render";
 
 /** The two rectangles share some area; touching edges do not count. */
 export function overlaps(a: Rect, b: Rect): boolean {
@@ -26,4 +27,56 @@ export function clearOf(rect: Rect, reserved: readonly Rect[]): Rect {
     clear = bottom > below ? { ...clear, y: below, height: bottom - below } : { ...clear, y: below };
   }
   return clear;
+}
+
+/** A flag as drawn (docs/spec/flags.md, section 4): a box on a bar, or a mark on a note. */
+export interface FlagMark {
+  kind: Flag["kind"];
+  shape: "box" | "note";
+  rect: Rect;
+}
+
+/** The width of a box's stroke: it is drawn inside the box, which is inset by half of it. */
+const FLAG_STROKE = 2;
+/** How far a note's mark reaches around its head. */
+const NOTE_MARGIN = 2;
+
+/** The rectangle made smaller by `by` on every side; null when nothing is left of it. */
+function inset(rect: Rect, by: number): Rect | null {
+  const width = rect.width - 2 * by;
+  const height = rect.height - 2 * by;
+  return width > 0 && height > 0 ? { x: rect.x + by, y: rect.y + by, width, height } : null;
+}
+
+/**
+ * Where the flags of the parts shown are drawn, each out of the reserved areas: a note's flag
+ * (a dangling tie or link) is a mark around its head; one of a bar (underfull, overfull, invalid
+ * content in a bar) a box on the bar of its part, or of every part shown when it is the bar's
+ * own. Invalid content that has no bar is only counted, in the toolbar.
+ */
+export function flagMarksOf(
+  renderer: Pick<ScoreRenderer, "boundsOfSelection" | "noteHeadsOf">,
+  flags: readonly Flag[],
+  partIds: readonly string[],
+  reserved: readonly Rect[],
+): FlagMark[] {
+  return flags.flatMap((flag): FlagMark[] => {
+    const { kind, partId, barId } = flag;
+    if (barId === undefined) return [];
+    if (kind === "danglingTie" || kind === "danglingLink") {
+      if (!partIds.includes(flag.partId)) return [];
+      const head = renderer.noteHeadsOf({ partId: flag.partId, barId, voice: flag.voice, beatId: flag.beatId, at: "on", line: 1 }).find((each) => each.key === flag.noteKey);
+      if (head === undefined) return [];
+      const { x, y, width, height } = head.rect;
+      const around = { x: x - NOTE_MARGIN, y: y - NOTE_MARGIN, width: width + 2 * NOTE_MARGIN, height: height + 2 * NOTE_MARGIN };
+      return [{ kind, shape: "note", rect: clearOf(around, reserved) }];
+    }
+    const parts = partId === undefined ? partIds : partIds.filter((id) => id === partId);
+    return parts.flatMap((id) =>
+      renderer.boundsOfSelection({ kind: "bars", partId: id, anchorBarId: barId, focusBarId: barId }).flatMap((box) => {
+        const rect = inset(clearOf(box, reserved), FLAG_STROKE / 2);
+        return rect === null ? [] : [{ kind, shape: "box" as const, rect }];
+      }),
+    );
+  });
 }

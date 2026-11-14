@@ -11,8 +11,8 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
 import { type Role, scoreDetails } from "@studio/contracts";
-import { createEditorSession, decideView, type EditorSession, pageEffectOf, type View } from "@studio/score-editor";
-import { type Cursor, cursorAt, docToJson, flagsOf, observeScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
+import { createEditorSession, decideView, type EditorSession, formatChord, pageEffectOf, type View } from "@studio/score-editor";
+import { type Cursor, cursorAt, docToJson, type Flag, flagsOf, type FlagStop, nextFlag, observeScore, readScore, type ScoreChange, type ScoreJSON } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink } from "vue-router";
@@ -21,11 +21,12 @@ import * as Y from "yjs";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import DisplayControls from "../components/DisplayControls.vue";
+import FlagControls from "../components/FlagControls.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { clearOf, sameRect } from "../overlay";
+import { clearOf, flagMarksOf, type FlagMark, sameRect } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -109,6 +110,12 @@ const parts = computed(() => score.value?.parts ?? []);
 const cursorRect = shallowRef<Rect | null>(null);
 /** Where the selection is drawn, out of the reserved areas: a box for each system it is on. */
 const selectionRects = shallowRef<Rect[]>([]);
+/** What is wrong in the score, recomputed from the whole score at every change, never stored (docs/spec/flags.md, section 3). */
+const flags = shallowRef<Flag[]>([]);
+/** Where the flags of the parts shown are drawn, out of the reserved areas: a box on a bar, a mark on a note. */
+const flagMarks = shallowRef<FlagMark[]>([]);
+/** Where F8 or the toolbar's button last took the cursor, while it is still there. */
+const flagStop = shallowRef<FlagStop | null>(null);
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 const playerState = ref<PlayerState>("loading");
@@ -142,7 +149,7 @@ let stopObserving: (() => void) | undefined;
 const hideFromTests = exposeForTests({
   scoreJson: () => (provider?.isSynced ? docToJson(doc) : null),
   cursor: () => session?.cursor ?? null,
-  flags: () => (score.value ? flagsOf(score.value) : []),
+  flags: () => flags.value,
 });
 const measurement = measureEditView({
   doc,
@@ -162,10 +169,11 @@ function placeCursor(): void {
   selectionRects.value = selection === null ? [] : engine.renderer.boundsOfSelection(selection).map((box) => clearOf(box, reserved.value));
 }
 
-/** Draw the overlay again after a drawing: the reserved areas change only then. */
+/** Draw the overlay again after a drawing: the reserved areas, and where the flags are, change only then. */
 function updateOverlay(): void {
   if (engine === undefined) return;
   reserved.value = engine.renderer.reservedRects();
+  flagMarks.value = flagMarksOf(engine.renderer, flags.value, shown.value, reserved.value);
   placeCursor();
   showPlayback(engine.player.position.tick);
 }
@@ -294,9 +302,11 @@ function reveal(): void {
 function draw(change: ScoreChange): void {
   if (engine === undefined) return;
   const startedAt = performance.now();
-  const json = docToJson(doc);
+  const { score: json, invalid } = readScore(doc);
   measurement.drawing(startedAt);
   score.value = json;
+  // From the whole score: a tie can be dangling for a change in the bar before (docs/spec/flags.md, section 3).
+  flags.value = flagsOf(json, invalid);
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
     if (narrow.value) keepNarrowPart(json);
@@ -376,9 +386,30 @@ function onNarrowPart(event: Event): void {
   showChosenParts();
 }
 
+/** The same place, or both none. */
+function sameCursor(a: Cursor | null, b: Cursor | null): boolean {
+  return a === b || (a !== null && b !== null && (Object.keys(a) as (keyof Cursor)[]).every((key) => a[key] === b[key]));
+}
+
+/**
+ * F8, or the toolbar's button: the cursor goes to the next flag of the parts shown (docs/spec/
+ * flags.md, section 4), and the page with it, as after any key.
+ */
+function goToNextFlag(): void {
+  stopFollowing();
+  const at = session?.cursor ?? null;
+  if (session === undefined || score.value === null) return;
+  const stoppedAt = flagStop.value && sameCursor(flagStop.value.cursor, at) ? flagStop.value.flag : undefined;
+  const stop = nextFlag(score.value, flags.value, at, stoppedAt, shown.value);
+  if (stop === null) return;
+  flagStop.value = stop;
+  session.moveTo(stop.cursor);
+}
+
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
-  session.onPresence(() => {
+  session.onPresence(({ cursor }) => {
+    if (flagStop.value && !sameCursor(flagStop.value.cursor, cursor)) flagStop.value = null;
     placeCursor();
     resumable = false;
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
@@ -406,9 +437,15 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  if (pageEffectOf(event, keyPlatform()) === "playPause") {
+  const pageEffect = pageEffectOf(event, keyPlatform());
+  if (pageEffect === "playPause") {
     event.preventDefault();
     if (!event.repeat) togglePlay();
+    return;
+  }
+  if (pageEffect === "nextFlag") {
+    event.preventDefault();
+    goToNextFlag();
     return;
   }
   stopFollowing();
@@ -540,6 +577,14 @@ onBeforeUnmount(() => {
           <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
         </template>
+        <FlagControls
+          v-if="view"
+          :count="flags.length"
+          :can-go="editing"
+          :shortcut="formatChord('F8', keyPlatform())"
+          :stopped-at="flagStop?.flag ?? null"
+          @next="onToolbar(goToNextFlag)"
+        />
         <label v-if="narrow && parts.length > 0" class="score__part">
           {{ text.display.part }}
           <select data-part-switcher :value="narrowPart ?? undefined" @change="onNarrowPart">
@@ -569,6 +614,17 @@ onBeforeUnmount(() => {
           <svg v-if="view" class="score__overlay" aria-hidden="true">
             <!-- Invisible: they only tell the e2e tests where no overlay may go. -->
             <rect v-for="(area, index) in reserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
+            <rect
+              v-for="(mark, index) in flagMarks"
+              :key="`flag-${index}`"
+              data-flag
+              :data-kind="mark.kind"
+              :class="['score__flag', `score__flag--${mark.shape}`, { 'score__flag--invalid': mark.kind === 'invalidContent' }]"
+              :x="mark.rect.x"
+              :y="mark.rect.y"
+              :width="mark.rect.width"
+              :height="mark.rect.height"
+            />
             <rect v-if="playheadRect" data-playhead class="score__playhead" :x="playheadRect.x" :y="playheadRect.y" :width="playheadRect.width" :height="playheadRect.height" />
             <rect
               v-for="(box, index) in selectionRects"
@@ -676,6 +732,23 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+/*
+ * A box on a bar: its stroke drawn inside the rectangle (`flagMarksOf` insets it by half the
+ * stroke), so that it reaches no further than the rectangle kept clear of the reserved areas.
+ */
+.score__flag--box {
+  fill: none;
+  stroke: rgba(220, 38, 38, 0.7);
+  stroke-width: 2;
+}
+.score__flag--box.score__flag--invalid {
+  stroke: rgba(124, 58, 237, 0.7);
+  stroke-dasharray: 4 3;
+}
+/* A mark on a note: filled only, as the cursor is. */
+.score__flag--note {
+  fill: rgba(220, 38, 38, 0.3);
 }
 /* Filled only, as the cursor is. */
 .score__playhead {
