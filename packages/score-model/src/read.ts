@@ -141,9 +141,23 @@ function beatFieldsOf(beat: YBeat): { fields: Record<string, unknown>; poppedOff
   return { fields, poppedOff };
 }
 
+/** The fields of a beat but its notes, as reading reads them. */
+export type BeatFields = Omit<BeatJSON, "notes">;
+
+/**
+ * The fields of a beat of a part of `kind` but its notes, as reading reads them (pop dropped when
+ * slap is there too); undefined when reading leaves the beat out (docs/spec/schema.md, section
+ * 11): its own fields do not fit the kind, or its notes are not a map.
+ */
+export function readBeatFields(kind: PartKind, beat: unknown): BeatFields | undefined {
+  if (!(beat instanceof Y.Map) || !(beat.get("notes") instanceof Y.Map)) return undefined;
+  const parsed = kindSchemas[kind].beat.safeParse(beatFieldsOf(beat).fields);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /** Whether reading keeps a beat of a part of `kind` (docs/spec/schema.md, section 11): its own fields fit the kind and its notes are a map; the notes themselves are read one by one. */
 export function readsAsBeat(kind: PartKind, beat: unknown): beat is YBeat {
-  return beat instanceof Y.Map && beat.get("notes") instanceof Y.Map && kindSchemas[kind].beat.safeParse(beatFieldsOf(beat).fields).success;
+  return readBeatFields(kind, beat) !== undefined;
 }
 
 function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Checked, "checkedFor"> {

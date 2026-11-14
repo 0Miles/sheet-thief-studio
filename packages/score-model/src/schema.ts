@@ -26,6 +26,9 @@ export const MAX_BARS = 1000;
 /** The longest title of a score (docs/spec/commands.md, 7.3). */
 export const MAX_TITLE = 100;
 
+/** The longest text over a beat (docs/spec/schema.md, section 13). */
+export const MAX_BEAT_TEXT = 64;
+
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
@@ -138,7 +141,7 @@ const beatFieldsSchema = z.object({
   pop: z.literal(true).optional(),
   dynamic: z.enum(["pp", "p", "mp", "mf", "f", "ff"]).optional(),
   /** Free text over the beat, such as a chord name: never read nor transposed. */
-  text: text(1, 64).optional(),
+  text: text(1, MAX_BEAT_TEXT).optional(),
   /** One syllable; empty continues the syllable before it (melisma). */
   lyric: text(0, 32).optional(),
 });
@@ -172,6 +175,11 @@ const NOTE_FIELD_KINDS: FieldKinds = {
 };
 
 const BEAT_FIELD_KINDS: FieldKinds = { stroke: ["fretted"], slap: ["fretted"], pop: ["fretted"], lyric: ["pitched"] };
+
+/** Whether a beat of a part of `kind` may hold `field` (docs/spec/schema.md, section 6). */
+export function beatFieldFits(field: string, kind: PartKind): boolean {
+  return BEAT_FIELD_KINDS[field]?.includes(kind) ?? true;
+}
 
 function onlyFieldsOf(kinds: FieldKinds, kind: PartKind) {
   return (value: object) => Object.entries(value).every(([field, item]) => item === undefined || (kinds[field]?.includes(kind) ?? true));
