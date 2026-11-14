@@ -202,3 +202,12 @@ export function socketClosed(provider: HocuspocusProvider): Promise<number> {
     socket.on("close", listener);
   });
 }
+
+/** Whether the server has closed this connection's socket since the call. */
+export function closes(score: OpenScore): () => boolean {
+  let closed = false;
+  void socketClosed(score.provider).then(() => {
+    closed = true;
+  });
+  return () => closed;
+}

@@ -2,7 +2,7 @@
 // closing only the connections an event concerns (docs/spec/collab.md; docs/adr/0005).
 import { randomUUID } from "node:crypto";
 
-import { Forbidden } from "@hocuspocus/common";
+import { Forbidden, Unauthorized } from "@hocuspocus/common";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { Role } from "@studio/contracts";
 import { docToJson, metaOf } from "@studio/score-model";
@@ -16,7 +16,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
 import { Score, ScoreMember } from "../src/db/models";
-import { COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
+import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -110,7 +110,7 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   // Tickets as the API never gives them: for a score that does not exist.
   const accountId = (await whoAmI(app, session)).json().accountId as string;
   for (const nowhere of [randomUUID(), "not-a-score"]) {
-    await refusal(nowhere, await new CollabTickets(redis).issue({ scoreId: nowhere, accountId, sessionId: session, role: "owner" }));
+    await refusal(nowhere, await new CollabTickets(redis).issue({ kind: "member", scoreId: nowhere, accountId, sessionId: session, role: "owner" }));
   }
   const beforeDeletion = await ticketFor(app, deleted, session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted } });
@@ -128,15 +128,6 @@ async function addBen(scoreId: string, role: Role): Promise<void> {
   await ScoreMember.create({ scoreId, accountId: ben, role });
 }
 
-
-/** Whether the server has closed this connection's socket since the call. */
-function closes(score: OpenScore): () => boolean {
-  let closed = false;
-  void socketClosed(score.provider).then(() => {
-    closed = true;
-  });
-  return () => closed;
-}
 
 test("what a Viewer's connection sends does not change the score on the server", async () => {
   const { app, url } = await startApp();
@@ -243,17 +234,31 @@ test("a session that ends while the document is being loaded leaves no connectio
   expect(closed).toBe(4401);
 });
 
-test("a connection whose session cannot be checked once its document is loaded is closed", async () => {
+test("a connection whose rights cannot be checked is refused, and leaves nothing to close", async () => {
   const { app, url } = await startApp();
   const session = await sessionOf(app, "anna", PASSWORD);
   const id = await createScore(app, session);
+  // onAuthenticate's check of the session fails (Redis down).
+  const checks = vi.spyOn(app.sessions, "isActive").mockRejectedValueOnce(new Error("Redis is not answering"));
   const ticket = await ticketFor(app, id, session);
-  // onAuthenticate's check passes; the one after the document is loaded fails (Redis down).
-  const checks = vi.spyOn(app.sessions, "isActive").mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("Redis is not answering"));
 
-  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
-  opened.push({ provider, doc: provider.document });
+  await expect(openScore(url, id, async () => ticket)).rejects.toThrow(/refused/);
 
-  expect(await socketClosed(provider)).toBe(4401);
-  expect(checks).toHaveBeenCalledTimes(2);
+  expect(checks).toHaveBeenCalledOnce();
+  // Neither in the register nor among the connections still loading.
+  expect(app.collab.closeConnections({}, Forbidden)).toBe(0);
+});
+
+test("logging out closes the session's connections even when Redis fails once the session is gone", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  const id = await createScore(app, session);
+  const score = await open(app, url, id, session);
+  const closed = socketClosed(score.provider);
+  // The session is deleted; taking it off the account's list fails.
+  vi.spyOn(redis, "srem").mockRejectedValueOnce(new Error("Redis is not answering"));
+
+  await expect(app.sessions.end({ sessionId: session })).rejects.toThrow("Redis is not answering");
+
+  expect(await closed).toBe(Unauthorized.code);
 });

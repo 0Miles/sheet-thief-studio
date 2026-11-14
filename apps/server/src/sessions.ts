@@ -15,9 +15,8 @@ export interface Session {
 
 /**
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account
- * (`sessionId` null) — and with them every connection the account has in the register, those of
- * a session that was kept included. A connection whose document is still loading is not in the
- * register yet: it checks its own session once loaded, so one of a kept session stays open.
+ * (`sessionId` null) — and with them every connection the account has, those of a session that
+ * was kept included (they reconnect with a new ticket), and those whose document is still loading.
  */
 export interface SessionsEnded {
   accountId: string;
@@ -82,8 +81,12 @@ export class Sessions {
       const stored = await this.redis.getdel(sessionKey(which.sessionId));
       if (stored === null) return;
       const { accountId } = JSON.parse(stored) as Omit<Session, "id">;
-      await this.redis.srem(accountKey(accountId), which.sessionId);
-      await this.#notify({ accountId, sessionId: which.sessionId });
+      // The session is gone from here on: its connections close even when the bookkeeping fails.
+      try {
+        await this.redis.srem(accountKey(accountId), which.sessionId);
+      } finally {
+        await this.#notify({ accountId, sessionId: which.sessionId });
+      }
       return;
     }
     const { accountId, except } = which;
@@ -92,8 +95,12 @@ export class Sessions {
     for (const id of ending) removal.del(sessionKey(id));
     if (except === undefined) removal.del(accountKey(accountId));
     else if (ending.length > 0) removal.srem(accountKey(accountId), ...ending);
-    await removal.exec();
-    await this.#notify({ accountId, sessionId: null });
+    // Whether or not Redis took all of it, the connections close: better closed than left open.
+    try {
+      await removal.exec();
+    } finally {
+      await this.#notify({ accountId, sessionId: null });
+    }
   }
 
   /** Be told whenever sessions end; returns the function that stops it. */

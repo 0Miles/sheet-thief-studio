@@ -7,13 +7,22 @@ import { isToken, newToken } from "./tokens";
 
 export const TICKET_TTL_SECONDS = 60;
 
-/** Who the ticket lets in, to which score, and with the role they had when it was given. */
-export interface Ticket {
-  scoreId: string;
+/** A member: their account, the session the ticket was given to, and their role. */
+export interface Member {
+  kind: "member";
   accountId: string;
   sessionId: string;
   role: Role;
 }
+
+/** A guest: the read-only link it came with, and nothing else. */
+export interface Guest {
+  kind: "guest";
+  linkToken: string;
+}
+
+/** Who the ticket lets in, to which score: a member, with the role they had when it was given, or a guest. */
+export type Ticket = { scoreId: string } & (Member | Guest);
 
 const ticketKey = (ticket: string) => `collab-ticket:${ticket}`;
 

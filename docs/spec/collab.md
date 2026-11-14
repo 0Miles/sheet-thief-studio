@@ -63,7 +63,8 @@
 
 - Viewer 與訪客的連線是 `readOnly`：Hocuspocus 會丟棄它們送來的 Update 與 SyncStep2（`hocuspocus-server.esm.js:268-290`）。但 Awareness 不受 readOnly 影響，所以要靠下面的掛鉤擋。
 - `beforeHandleAwareness`：用連線的 context 覆寫每個狀態的 `accountId`、`displayName`、`color`，並移除訪客連線的狀態。依據：修改後的狀態會被重新編碼再套用（`hocuspocus-server.esm.js:196-215`）。
-- **訪客看不到在場**：Hocuspocus 把 awareness 廣播給同一份文件的每一條連線，沒有過濾的掛鉤（`Document.broadcastAwarenessUpdate`，:675-677），連線建立時還會送一次目前的狀態（`sendCurrentAwareness`，:434-438）。**補充**：所以在 `collab.ts` 的 crossws 介接層，包住訪客連線的 socket：送出的訊息若是 Awareness 類型（訊息開頭的文件名稱之後，`varUint` 類型是 1），直接丟掉。訪客的客戶端也不設定本機的 awareness 狀態。
+- **訪客看不到在場**：Hocuspocus 把 awareness 廣播給同一份文件的每一條連線，沒有過濾的掛鉤（`Document.broadcastAwarenessUpdate`，:675-677），連線建立時還會送一次目前的狀態（`sendCurrentAwareness`，:434-438）。**補充**：所以在 `collab.ts` 的 crossws 介接層，包住訪客連線的 socket：送出的訊息若是 Awareness 類型（訊息開頭的文件名稱之後，`varUint` 類型是 1），直接丟掉。訪客的客戶端也不設定本機的 awareness 狀態（provider 的 `awareness: null`）。
+- **補充**（#14）：訪客因此收不到任何 awareness；文件沒有人修改時，訪客的 socket 會完全沒有訊息進來，而 provider 30 秒沒收到訊息就重連（`messageReconnectTimeout`），每次都要取一張新 ticket。所以訪客的 provider 設 `forceSyncInterval: 15000`，每 15 秒送一次 SyncStep1，伺服器的回覆讓連線保持活著。
 - 顏色的雜湊與調色盤見 [`views.md`](views.md) 第 8 節。
 - `displayName` 改了之後，下一次該成員送出 awareness 時就會帶上新名稱（補充：伺服器在每條連線的 context 裡保存顯示名稱，改名時一併更新）。
 
@@ -73,9 +74,9 @@
 - 以下情況，伺服器主動關閉相關的連線：成員被移除或降級、擁有權轉移、成員離開、登出、改密碼、重設密碼、帳號停用、唯讀連結被撤銷或重新產生、團譜被刪除。各自關哪些連線見 [`accounts.md`](accounts.md) 第 9 節。
 - 只關相關的連線時，不能用 `closeConnections(documentName)`，因為它會關掉整份文件的所有連線（`index.d.ts:207`）。用個別連線的 `close()`（`index.d.ts:1005`）。
 - **補充**：關閉時用 `@hocuspocus/common` 的 `Forbidden`（權限變動、連結撤銷、團譜刪除）或 `Unauthorized`（session 結束）。
-- **補充**（#6）：關閉一條連線時，先用 `Connection.close()` 讓它離開文件（之後它送來的東西不再套用），再關閉它的 WebSocket。只送 Hocuspocus 的 CLOSE 訊息的話，provider 不會重連，那份文件就停在那裡；關掉 socket，provider 才會重連，並取一張新的 ticket。函式是 `app.collab.closeConnections({ scoreId?, accountId?, sessionId? }, event)`，只關所有欄位都相符的連線。
+- **補充**（#6）：關閉一條連線時，先用 `Connection.close()` 讓它離開文件（之後它送來的東西不再套用），再關閉它的 WebSocket。只送 Hocuspocus 的 CLOSE 訊息的話，provider 不會重連，那份文件就停在那裡；關掉 socket，provider 才會重連，並取一張新的 ticket。函式是 `app.collab.closeConnections({ scoreId?, accountId?, sessionId?, linkToken? }, event)`，只關所有欄位都相符的連線。
 - **補充**（#6）：`onAuthenticate` 也確認 ticket 的 session 還沒結束，以免 ticket 發出後到連上之間結束的 session 留下連線。
-- **補充**（#6）：連線要到 `connected` 掛鉤才進對照表，而文件在那之前就從 Postgres 載入；這段時間結束的 session 關不到它。所以 `connected` 登記之後再確認一次 session，已結束就以 `Unauthorized` 關閉；確認失敗（例如 Redis 沒回應）也關閉，不讓連線開著。成員被移除或降級、連結撤銷、團譜刪除在這段時間發生時的同類處理，由 #13 做成一般的機制。
+- **補充**（#6、#14）：連線要到 `connected` 掛鉤才進對照表，而文件在那之前就從 Postgres 載入。這段時間發生的事件用「載入中」的標記處理，不需要 I/O：`onAuthenticate` 一取出 ticket、在查資料庫之前，就把這條連線（帳號、session、連結 token、團譜 id）放進載入中的集合，查核失敗時移除；`closeConnections` 除了關閉對照表裡符合的連線，也在載入中符合的連線上記下關閉的事件，並立刻關閉它的 socket，讓它收不到文件；萬一 Hocuspocus 還是走到 `connected`，看到記號就以那個事件關閉。所以 session 結束、成員被移除或降級、連結撤銷、團譜刪除，不論發生在查核之後或載入期間，都關得到這條連線（#6 原本在 `connected` 再查一次 session 的做法因此拿掉）。載入失敗、沒有走到 `connected` 的連線，在它的 socket 關閉時移出集合。
 
 ## 7. 客戶端：斷線、離線、重連
 
@@ -86,7 +87,7 @@
   - 取 ticket 失敗（401 或 404），或拿到的 `role` 比原本低：客戶端丟掉本機的 `Y.Doc`，重新以唯讀載入並提示；本機未同步的修改放棄。只切換介面不夠，因為本機文件已經和伺服器分歧了。
   - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」並導向 `/`；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
   - 角色變高（例如 Viewer 被改成 Editor）：**補充**：重新載入頁面，以新的角色開啟。
-- 訪客的連結被撤銷：取 ticket 回 404，顯示 404 頁。
+- 訪客的連結被撤銷或重新產生：伺服器關閉連線，重連時取 ticket 回 404。**補充**（#14）：頁面停止重連，狀態顯示「已斷線」，並提示「這個唯讀連結已經失效。」；已經畫出的譜留在畫面上（內容本來就在訪客的瀏覽器裡）。重新整理之後，取 ticket 回 404，顯示 404 頁。
 
 ## 8. 版本
 

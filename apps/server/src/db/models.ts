@@ -49,6 +49,8 @@ export class Score extends Model<InferAttributes<Score>, InferCreationAttributes
   declare updatedAt: CreationOptional<Date>;
   /** Set when the score is deleted; a deleted score is not found by anyone (docs/spec/security.md, 8). */
   declare deletedAt: CreationOptional<Date | null>;
+  /** The token of its read-only link, in plain text so that the Owner can copy it again; null when it has none. */
+  declare linkToken: CreationOptional<string | null>;
 }
 
 export class ScoreMember extends Model<InferAttributes<ScoreMember>, InferCreationAttributes<ScoreMember>> {
@@ -94,6 +96,7 @@ export function initModels(sequelize: Sequelize): void {
       createdAt: DataTypes.DATE,
       updatedAt: DataTypes.DATE,
       deletedAt: { type: DataTypes.DATE, allowNull: true },
+      linkToken: { type: DataTypes.STRING(43), allowNull: true, unique: true },
     },
     { sequelize, tableName: "scores", underscored: true },
   );

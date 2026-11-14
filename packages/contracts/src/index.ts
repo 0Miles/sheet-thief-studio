@@ -91,6 +91,15 @@ export type ScoreDetails = z.infer<typeof scoreDetails>;
 export const collabTicket = z.object({ ticket: z.string(), role });
 export type CollabTicket = z.infer<typeof collabTicket>;
 
+// Read-only links (docs/spec/routes.md, 3.5; docs/spec/accounts.md, section 7).
+/** The score's read-only link, for its Owner (`GET`, `POST /api/scores/:id/link`): null when it has none. */
+export const scoreLink = z.object({ token: z.string().nullable() });
+export type ScoreLink = z.infer<typeof scoreLink>;
+
+/** What a guest gets for a read-only link (`POST /api/s/:token`): the score to open, its title, and a collab ticket for it. */
+export const guestTicket = z.object({ scoreId: z.string(), title: z.string(), ticket: z.string() });
+export type GuestTicket = z.infer<typeof guestTicket>;
+
 /** The codes of error answers (docs/spec/routes.md, section 4): a new code goes in both places. */
 export const errorCode = z.enum([
   "unauthenticated",
