@@ -36,3 +36,8 @@ export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
   const issues = error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code }));
   return reply.code(400).send({ code: "invalid_request", params: { issues } });
 }
+
+/** Ids of scores and phrases are UUIDs: anything else names none, without asking Postgres. */
+export function isUuid(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}

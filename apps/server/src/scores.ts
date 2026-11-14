@@ -8,20 +8,17 @@ import * as Y from "yjs";
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Account, Score, ScoreMember } from "./db/models";
-import { invalidRequest } from "./http";
-
-/** Score ids are UUIDs; anything else is no score, without asking Postgres. */
-const SCORE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { invalidRequest, isUuid } from "./http";
 
 /** The score with this id, unless it does not exist or is deleted. */
 export async function liveScore(id: string): Promise<Score | null> {
-  if (!SCORE_ID.test(id)) return null;
+  if (!isUuid(id)) return null;
   return Score.findOne({ where: { id, deletedAt: null } });
 }
 
 /** The account's role in the score, with the score; null when either is missing, the score is deleted or the account is no member. */
 export async function membership(scoreId: string, accountId: string): Promise<{ score: Score; role: Role } | null> {
-  if (!SCORE_ID.test(scoreId)) return null;
+  if (!isUuid(scoreId)) return null;
   const member = await ScoreMember.findOne({
     where: { scoreId, accountId },
     // Not the Yjs state: no caller needs it, and it is the largest column of the table.

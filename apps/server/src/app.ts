@@ -9,6 +9,7 @@ import { CollabTickets } from "./collabTickets";
 import type { Config } from "./config";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
 import { registerLinks, withoutLinkTokens } from "./links";
+import { registerPhrases } from "./phrases";
 import { RateLimiter } from "./rateLimit";
 import { registerScores } from "./scores";
 import { Sessions } from "./sessions";
@@ -37,6 +38,7 @@ export function buildApp({ config, redis, logger = true }: Dependencies): Fastif
   const collab = attachCollab(app, { tickets, sessions });
   registerScores(app, { collab, tickets });
   registerLinks(app, { collab, tickets, limiter });
+  registerPhrases(app);
   return app;
 }
 

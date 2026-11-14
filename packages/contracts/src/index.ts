@@ -1,16 +1,25 @@
 // Shapes of what the API sends and receives, shared by the server and the web app.
+import { barsFragmentSchema, partKindSchema } from "@studio/score-model";
 import { z } from "zod";
 
 // The score is defined once, in score-model (docs/adr/0002, addendum): only re-exported here.
 export {
   type BarJSON,
+  type BarsFragment,
+  barsFragmentSchema,
   barSchema,
   type BeatJSON,
+  type BeatsFragment,
+  beatsFragmentSchema,
   beatSchema,
+  type Fragment,
+  fragmentSchema,
   importedScoreSchema,
   type NoteJSON,
   noteSchema,
   type PartJSON,
+  type PartKind,
+  partKindSchema,
   partSchema,
   type ScoreJSON,
   scoreSchema,
@@ -99,6 +108,59 @@ export type ScoreLink = z.infer<typeof scoreLink>;
 /** What a guest gets for a read-only link (`POST /api/s/:token`): the score to open, its title, and a collab ticket for it. */
 export const guestTicket = z.object({ scoreId: z.string(), title: z.string(), ticket: z.string() });
 export type GuestTicket = z.infer<typeof guestTicket>;
+
+// Phrases (docs/spec/routes.md, 3.7; docs/spec/phrases.md, section 4).
+/** Trimmed, 1 to 100 characters. */
+export const phraseName = z.string().trim().min(1).max(100);
+
+/** A new phrase (`POST /api/phrases`): a blank one, or bars saved from a score. */
+export const createPhraseRequest = z.object({ name: phraseName, fragment: barsFragmentSchema });
+export type CreatePhraseRequest = z.infer<typeof createPhraseRequest>;
+
+/** Every write of a phrase counts one more revision; one made from an older revision is refused (409 `revision_conflict`). */
+export const phraseRevision = z.object({ revision: z.int().min(1) });
+export type PhraseRevision = z.infer<typeof phraseRevision>;
+
+export const createdPhrase = z.object({ id: z.string(), revision: z.int().min(1) });
+export type CreatedPhrase = z.infer<typeof createdPhrase>;
+
+/** The whole content of a phrase, written over what it held (`PUT /api/phrases/:id`). */
+export const savePhraseRequest = z.object({ fragment: barsFragmentSchema, baseRevision: z.int().min(1) });
+export type SavePhraseRequest = z.infer<typeof savePhraseRequest>;
+
+/** A new name (`PATCH /api/phrases/:id`). */
+export const renamePhraseRequest = z.object({ name: phraseName, baseRevision: z.int().min(1) });
+export type RenamePhraseRequest = z.infer<typeof renamePhraseRequest>;
+
+/** One of my phrases, as `/phrases` lists them (`GET /api/phrases`), most recently updated first. */
+export const phraseSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: partKindSchema,
+  /** Fretted phrases only. */
+  stringCount: z.int().nullable(),
+  /** Pitched phrases only. */
+  staffCount: z.int().nullable(),
+  barCount: z.int(),
+  updatedAt: z.string(),
+  revision: z.int(),
+});
+export type PhraseSummary = z.infer<typeof phraseSummary>;
+
+export const phraseList = z.object({ phrases: z.array(phraseSummary) });
+export type PhraseList = z.infer<typeof phraseList>;
+
+/** What `GET /api/phrases` filters by: a kind, and a part of the name (either case). */
+export const phraseQuery = z.object({ kind: partKindSchema.optional(), q: z.string().max(100).optional() });
+export type PhraseQuery = z.infer<typeof phraseQuery>;
+
+/** One phrase, with its content (`GET /api/phrases/:id`). */
+export const phraseDetails = z.object({ id: z.string(), name: z.string(), fragment: barsFragmentSchema, revision: z.int(), updatedAt: z.string() });
+export type PhraseDetails = z.infer<typeof phraseDetails>;
+
+/** A copy of a phrase (`POST /api/phrases/:id/duplicate`). */
+export const duplicatedPhrase = z.object({ id: z.string() });
+export type DuplicatedPhrase = z.infer<typeof duplicatedPhrase>;
 
 /** The codes of error answers (docs/spec/routes.md, section 4): a new code goes in both places. */
 export const errorCode = z.enum([

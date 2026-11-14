@@ -1,7 +1,7 @@
 // The tables as Sequelize models (docs/spec/accounts.md, section 1.2; docs/spec/collab.md, 1.1). Columns are snake_case
 // in Postgres and camelCase here. The tables themselves come from the migrations, never from
 // `sync()`.
-import type { Role } from "@studio/contracts";
+import type { BarsFragment, PartKind, Role } from "@studio/contracts";
 import {
   type CreationOptional,
   DataTypes,
@@ -60,6 +60,23 @@ export class ScoreMember extends Model<InferAttributes<ScoreMember>, InferCreati
   declare addedAt: CreationOptional<Date>;
 }
 
+/** A phrase of an account's library (docs/spec/phrases.md, 4.1): a fragment of bars, and what the lists show of it. */
+export class Phrase extends Model<InferAttributes<Phrase>, InferCreationAttributes<Phrase>> {
+  declare id: CreationOptional<string>;
+  declare ownerId: ForeignKey<Account["id"]>;
+  declare name: string;
+  declare kind: PartKind;
+  /** Fretted phrases only. */
+  declare stringCount: number | null;
+  /** Pitched phrases only. */
+  declare staffCount: number | null;
+  declare barCount: number;
+  declare content: BarsFragment;
+  declare revision: number;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
 /** Bind the models to a connection. The classes are shared, so a process uses one connection. */
 export function initModels(sequelize: Sequelize): void {
   Account.init(
@@ -112,4 +129,20 @@ export function initModels(sequelize: Sequelize): void {
   Score.hasMany(ScoreMember, { foreignKey: { name: "scoreId", allowNull: false }, as: "members" });
   ScoreMember.belongsTo(Score, { foreignKey: { name: "scoreId", allowNull: false }, as: "score" });
   ScoreMember.belongsTo(Account, { foreignKey: { name: "accountId", allowNull: false }, as: "account" });
+  Phrase.init(
+    {
+      id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+      ownerId: { type: DataTypes.UUID, allowNull: false },
+      name: { type: DataTypes.STRING(100), allowNull: false },
+      kind: { type: DataTypes.STRING(16), allowNull: false },
+      stringCount: { type: DataTypes.INTEGER, allowNull: true },
+      staffCount: { type: DataTypes.INTEGER, allowNull: true },
+      barCount: { type: DataTypes.INTEGER, allowNull: false },
+      content: { type: DataTypes.JSONB, allowNull: false },
+      revision: { type: DataTypes.INTEGER, allowNull: false },
+      createdAt: DataTypes.DATE,
+      updatedAt: DataTypes.DATE,
+    },
+    { sequelize, tableName: "phrases", underscored: true },
+  );
 }
