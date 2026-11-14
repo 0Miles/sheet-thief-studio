@@ -7,6 +7,7 @@ import {
   cursorAt,
   docToJson,
   dynamicCycle,
+  flagsOf,
   insertBars,
   insertBeat,
   type NoteJSON,
@@ -308,4 +309,112 @@ test("replacing a bar whose dynamic changed rebuilds the bars after it up to the
   expect(bars()[3]).toBe(fourth);
   const whole = projectScore(json, settings);
   expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
+});
+
+/** A guitar of `count` bars of 4/4, each bar's beats given as frets on string 3 (null: a rest), with these fields on its notes. */
+function linked(bars: [number | null, Partial<NoteJSON>?][][]) {
+  const doc = new Y.Doc();
+  createScore(doc, "Links");
+  const barIds = insertBars(doc, { after: null, count: bars.length });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  bars.forEach((beats, bar) => write(doc, guitar, barIds[bar]!, beats.map(([fret, fields]): [NoteValue, Record<string, NoteJSON>] => [4, fret === null ? {} : { s3: { fret, ...fields } }])));
+  /** The note on string 3 (alphaTab's 4) of a beat, null on a rest. */
+  const noteOf = (projection: Projection, bar: number, beat: number) => projection.score.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[beat]!.getNoteOnString(4);
+  return { doc, barIds, guitar, noteOf };
+}
+
+test("legato and the slides become their alphaTab fields, and a link goes on to the note after it on its string, in its bar or the next", () => {
+  const { doc, noteOf } = linked([
+    [
+      [5, { legato: true }],
+      [7, { slideOut: "legato" }],
+      [9, { slideOut: "shift" }],
+      [11, { legato: true }],
+    ],
+    [
+      [12, { slideOut: "outUp", slideIn: "inBelow" }],
+      [12, { slideOut: "outDown", slideIn: "inAbove" }],
+      [12],
+      [12],
+    ],
+  ]);
+  const projection = projectScore(docToJson(doc), settings);
+  const { SlideInType, SlideOutType } = alphaTab.model;
+  const at = (bar: number, beat: number) => noteOf(projection, bar, beat)!;
+  expect([at(0, 0).isHammerPullOrigin, at(0, 0).hammerPullDestination]).toEqual([true, at(0, 1)]);
+  expect(at(0, 1).hammerPullOrigin).toBe(at(0, 0));
+  expect([at(0, 1).slideOutType, at(0, 1).slideTarget]).toEqual([SlideOutType.Legato, at(0, 2)]);
+  expect([at(0, 2).slideOutType, at(0, 2).slideTarget]).toEqual([SlideOutType.Shift, at(0, 3)]);
+  // Across the bar line: the last beat of the first bar goes on to the first of the second.
+  expect([at(0, 3).isHammerPullOrigin, at(0, 3).hammerPullDestination]).toEqual([true, at(1, 0)]);
+  expect([at(1, 0).slideOutType, at(1, 0).slideInType]).toEqual([SlideOutType.OutUp, SlideInType.IntoFromBelow]);
+  expect([at(1, 1).slideOutType, at(1, 1).slideInType]).toEqual([SlideOutType.OutDown, SlideInType.IntoFromAbove]);
+  expect([at(1, 2).isHammerPullOrigin, at(1, 2).slideOutType, at(1, 2).slideInType]).toEqual([false, SlideOutType.None, SlideInType.None]);
+});
+
+test("a dangling link goes on to nothing, though alphaTab would look on past a rest: the flag says it", () => {
+  const { doc, noteOf } = linked([
+    [
+      [5, { legato: true }],
+      [null],
+      [7, { slideOut: "shift" }],
+      [null],
+    ],
+    [[9], [9], [9], [9]],
+  ]);
+  const json = docToJson(doc);
+  const projection = projectScore(json, settings);
+  expect([noteOf(projection, 0, 0)!.isHammerPullOrigin, noteOf(projection, 0, 0)!.hammerPullDestination]).toEqual([false, null]);
+  expect([noteOf(projection, 0, 2)!.slideOutType, noteOf(projection, 0, 2)!.slideTarget]).toEqual([alphaTab.model.SlideOutType.None, null]);
+  expect(noteOf(projection, 1, 0)!.hammerPullOrigin).toBeNull();
+  expect(flagsOf(json).map((flag) => flag.kind)).toEqual(["danglingLink", "danglingLink"]);
+});
+
+/** How the links of a projection run: each note's bar, beat, fret and where its link goes, for comparing. */
+function linksIn(projection: Projection) {
+  return projection.score.tracks[0]!.staves[0]!.bars.flatMap((bar) =>
+    bar.voices[0]!.beats.flatMap((beat) =>
+      beat.notes.map((note) => {
+        const where = (other: alphaTab.model.Note | null) => other && [other.beat.voice.bar.index, other.beat.index, other.fret];
+        return [bar.index, beat.index, note.fret, note.isHammerPullOrigin, note.slideOutType, where(note.hammerPullDestination), where(note.hammerPullOrigin), where(note.slideTarget), where(note.slideOrigin)];
+      }),
+    ),
+  );
+}
+
+test("replacing a bar a link goes into, or out of, across a bar line, rebuilds the bar on the other side too: the same links as projecting the whole score", () => {
+  const { doc, barIds, guitar, noteOf } = linked([
+    [[1], [2], [3], [4, { legato: true }]],
+    [[5, { slideOut: "legato" }], [6], [7], [8, { slideOut: "shift" }]],
+    [[9], [10], [11], [12]],
+    [[13], [14], [15], [16]],
+  ]);
+  const projection = projectScore(docToJson(doc), settings);
+  const bars = () => projection.score.tracks[0]!.staves[0]!.bars;
+  const last = bars()[3];
+  const check = (changed: number, first: number) => {
+    const json = docToJson(doc);
+    expect(replaceBars(projection, json, [barIds[changed]!], settings)).toBe(first);
+    expect(linksIn(projection)).toEqual(linksIn(projectScore(json, settings)));
+  };
+  // A new fret where the link from the first bar lands: the first bar is rebuilt to go on to it.
+  setNote(doc, cursorAt(doc, guitar, barIds[1]!), "s3", { fret: 0, slideOut: "legato" });
+  check(1, 0);
+  expect(noteOf(projection, 0, 3)!.hammerPullDestination).toBe(noteOf(projection, 1, 0));
+  // The note the second bar's slide goes on to is taken away, then put back: the second bar is
+  // rebuilt each time, and so the first, whose link goes into it.
+  const third = cursorAt(doc, guitar, barIds[2]!, 3);
+  setNote(doc, third, "s3", null);
+  check(2, 0);
+  expect(noteOf(projection, 1, 3)!.slideOutType).toBe(alphaTab.model.SlideOutType.None);
+  setNote(doc, third, "s3", { fret: 2 });
+  check(2, 0);
+  expect(noteOf(projection, 1, 3)!.slideTarget).toBe(noteOf(projection, 2, 0));
+  // A link taken away: the bar it went into no longer goes on from it.
+  const beatId = docToJson(doc).parts[0]!.content[barIds[0]!]!["0:0"]![3]!.id;
+  setNote(doc, { ...cursorAt(doc, guitar, barIds[0]!, 3), beatId }, "s3", { fret: 4 });
+  check(0, 0);
+  expect(noteOf(projection, 1, 0)!.hammerPullOrigin).toBeNull();
+  // The last bar, which no link reaches, was never rebuilt.
+  expect(bars()[3]).toBe(last);
 });

@@ -463,7 +463,7 @@ test("over a selection, a slide takes every note to the kind after the first not
   expect(slides()).toEqual(["legato", "legato", "legato"]);
   toggleOnSelection(doc, range, cursor, slideOutCycle);
   expect(slides()).toEqual(["shift", "shift", "shift"]);
-  for (const _ of [1, 2, 3]) toggleOnSelection(doc, range, cursor, slideOutCycle);
+  for (let step = 0; step < 3; step++) toggleOnSelection(doc, range, cursor, slideOutCycle);
   expect(slides()).toEqual([null, null, null]);
   expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });

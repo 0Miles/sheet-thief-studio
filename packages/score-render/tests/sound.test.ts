@@ -219,3 +219,78 @@ test("a dynamic holds from its beat on, in its part and voice: the beats after i
   expect(soft).toEqual([soft[0], soft[0], soft[0]]);
   expect(soft[0]).toBeLessThan(velocityOf(59, 3840));
 });
+
+/** Every event alphaTab generates for the guitar of a score, in a form that can be compared: what, when, which key, how loud or how bent. */
+function eventsOf(doc: Y.Doc): string[] {
+  const { score } = projectScore(docToJson(doc), settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  return file.events.flatMap((event) => {
+    if (event instanceof alphaTab.midi.NoteOnEvent) return [`on ${event.tick} ${event.noteKey} ${event.noteVelocity}`];
+    if (event instanceof alphaTab.midi.NoteOffEvent) return [`off ${event.tick} ${event.noteKey}`];
+    if (event instanceof alphaTab.midi.NoteBendEvent) return [`bend ${event.tick} ${event.noteKey} ${event.value}`];
+    return [];
+  });
+}
+
+/**
+ * Two quarters on string 3 of a guitar, frets 5 and 7, the second in the next bar when `across`;
+ * the first with `fields`, the second with `second`.
+ */
+function twoNotes(fields: Partial<NoteJSON>, { across = false, second = {} }: { across?: boolean; second?: Partial<NoteJSON> } = {}): string[] {
+  const doc = new Y.Doc();
+  createScore(doc, "Links");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = insertBeat(doc, cursorAt(doc, guitar, barIds[0]!), { value: 4 });
+  setNote(doc, first, "s3", { fret: 5, ...fields });
+  const next = across ? cursorAt(doc, guitar, barIds[1]!) : { ...first, at: "after" as const };
+  setNote(doc, insertBeat(doc, next, { value: 4 }), "s3", { fret: 7, ...second });
+  return eventsOf(doc);
+}
+
+test("a hammer-on, a legato slide and a shift slide sound otherwise than the same two notes plain, in a bar and across a bar line", () => {
+  for (const across of [false, true]) {
+    const plain = twoNotes({}, { across });
+    const ons = (events: string[]) => events.filter((event) => event.startsWith("on "));
+    // A hammer-on: the note it goes on to is softer, nothing else changes.
+    const hammer = twoNotes({ legato: true }, { across });
+    expect(hammer).not.toEqual(plain);
+    const [firstOn, secondOn] = ons(hammer).map((event) => Number(event.split(" ")[3]));
+    expect(secondOn).toBeLessThan(Number(ons(plain)[1]!.split(" ")[3]));
+    expect(firstOn).toBe(Number(ons(plain)[0]!.split(" ")[3]));
+    // A legato slide bends the first note up to the second, which is not struck again.
+    const legato = twoNotes({ slideOut: "legato" }, { across });
+    expect(ons(legato)).toHaveLength(1);
+    expect(legato.filter((event) => event.startsWith("bend ")).length).toBeGreaterThan(plain.filter((event) => event.startsWith("bend ")).length);
+    // A shift slide bends the first note too, and strikes the second.
+    const shift = twoNotes({ slideOut: "shift" }, { across });
+    expect(ons(shift)).toHaveLength(2);
+    expect(shift).not.toEqual(plain);
+    expect(shift).not.toEqual(legato);
+  }
+});
+
+test("a slide out up or down, and a slide in from below or above, bend the note they are on: each its own way", () => {
+  const plain = twoNotes({});
+  const slides = [{ slideOut: "outUp" }, { slideOut: "outDown" }, { slideIn: "inBelow" }, { slideIn: "inAbove" }] as const;
+  const sounds = slides.map((fields) => twoNotes(fields));
+  for (const sound of sounds) expect(sound).not.toEqual(plain);
+  expect(new Set(sounds.map((sound) => sound.join("|"))).size).toBe(slides.length);
+});
+
+test("a dangling link sounds as the note would plain: alphaTab is not told of it", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dangling");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const first = insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 4 });
+  setNote(doc, first, "s3", { fret: 5 });
+  const rest = insertBeat(doc, { ...first, at: "after" }, { value: 4 });
+  setNote(doc, insertBeat(doc, { ...rest, at: "after" }, { value: 4 }), "s3", { fret: 7 });
+  const plain = eventsOf(doc);
+  for (const fields of [{ legato: true }, { slideOut: "legato" }, { slideOut: "shift" }] as const) {
+    setNote(doc, first, "s3", { fret: 5, ...fields });
+    expect(eventsOf(doc)).toEqual(plain);
+  }
+});

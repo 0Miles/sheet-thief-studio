@@ -82,13 +82,12 @@ export function linksOn(note: NoteJSON): boolean {
 }
 
 /**
- * The note a link from beat `index` of a voice goes on to (docs/spec/flags.md, "下一個音"): the
- * note with the same key, its string, on the beat just after it in its voice, which is the first
- * beat of the same voice in the next bar (`next`, its beats) for the last beat of a bar. None when
- * that beat is a rest, holds no note on the string, or there is no beat after.
+ * The beat just after beat `index` of a voice, where a link from it goes on to the note on its
+ * string (docs/spec/flags.md, "下一個音"): the first beat of the same voice in the next bar (`next`,
+ * its beats) for the last beat of a bar. None when there is no beat after.
  */
-export function linkTarget(beats: readonly BeatJSON[], index: number, next: readonly BeatJSON[] | undefined, key: string): NoteJSON | undefined {
-  return (index + 1 < beats.length ? beats[index + 1] : next?.[0])?.notes[key];
+export function beatAfter(beats: readonly BeatJSON[], index: number, next: readonly BeatJSON[] | undefined): BeatJSON | undefined {
+  return index + 1 < beats.length ? beats[index + 1] : next?.[0];
 }
 
 /** Where a flag stands in the score, to put the flags in order: what it has no part, bar, voice or beat for comes first. */
@@ -125,7 +124,7 @@ export function flagsOf(score: ScoreJSON, invalid: readonly InvalidContentFlag[]
           for (const [noteKey, note] of Object.entries(beat.notes)) {
             const at = { partId: part.id, barId: bar.id, voice, beatId: beat.id, noteKey };
             if (note.tie && !continues(part.kind, note, before?.notes[noteKey])) flags.push({ kind: "danglingTie", ...at });
-            if (part.kind === "fretted" && linksOn(note) && linkTarget(beats, beatIndex, following, noteKey) === undefined) flags.push({ kind: "danglingLink", ...at });
+            if (part.kind === "fretted" && linksOn(note) && beatAfter(beats, beatIndex, following)?.notes[noteKey] === undefined) flags.push({ kind: "danglingLink", ...at });
           }
           before = beat;
         }
