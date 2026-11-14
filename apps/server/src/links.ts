@@ -38,9 +38,10 @@ export function withoutLinkTokens(url: string): string {
   return shown + query.replace(/([?&]token=)[^&#]*/g, "$1[token]");
 }
 
-/** Whether the token is the read-only link of this score, and the score is not deleted. */
-export async function isLinkOf(scoreId: string, token: string): Promise<boolean> {
-  return isToken(token) && (await Score.count({ where: { id: scoreId, linkToken: token, deletedAt: null } })) === 1;
+/** The score the token is the read-only link of (its id and title only); null when it is none, or the score is deleted. */
+export async function scoreOfLink(token: string): Promise<Score | null> {
+  if (!isToken(token)) return null;
+  return Score.findOne({ where: { linkToken: token, deletedAt: null }, attributes: ["id", "title"] });
 }
 
 /**
@@ -110,9 +111,9 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
     if (!attempt.ok) return rateLimited(reply, attempt.retryAfterSeconds);
     const { token } = request.params;
     // Wrong, revoked, or the score deleted: all the same 404.
-    const score = isToken(token) ? await Score.findOne({ where: { linkToken: token, deletedAt: null }, attributes: ["id", "title"] }) : null;
+    const score = await scoreOfLink(token);
     if (score === null) return notFound(reply);
-    const ticket = await tickets.issue({ scoreId: score.id, linkToken: token });
+    const ticket = await tickets.issue({ kind: "guest", scoreId: score.id, linkToken: token });
     return guestTicket.parse({ scoreId: score.id, title: score.title, ticket });
   });
 }

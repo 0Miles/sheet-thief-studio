@@ -74,12 +74,12 @@ async function makeLink(app: FastifyInstance, scoreId: string, session: string):
 }
 
 /** What a guest's page asks with the link, without any cookie. */
-function guest(app: FastifyInstance, token: string, remoteAddress?: string) {
+function askAsGuest(app: FastifyInstance, token: string, remoteAddress?: string) {
   return app.inject({ method: "POST", url: `/api/s/${token}`, headers: { origin: ORIGIN }, remoteAddress });
 }
 
 async function guestTicketFor(app: FastifyInstance, token: string): Promise<string> {
-  const response = await guest(app, token);
+  const response = await askAsGuest(app, token);
   if (response.statusCode !== 200) throw new Error(`the guest's ticket was refused: ${response.statusCode} ${response.body}`);
   return (response.json() as { ticket: string }).ticket;
 }
@@ -129,18 +129,18 @@ test("a link token has at least 128 random bits; the Owner can read it again, an
   expect(first).toMatch(/^[A-Za-z0-9_-]+$/);
   expect(Buffer.from(first, "base64url").length * 8).toBeGreaterThanOrEqual(128);
   expect((await link(app, "GET", id, session)).json()).toEqual({ token: first });
-  const opened = await guest(app, first);
+  const opened = await askAsGuest(app, first);
   expect(opened.statusCode).toBe(200);
   expect(opened.json()).toEqual({ scoreId: id, title: "唯讀連結測試", ticket: expect.any(String) });
 
   const second = await makeLink(app, id, session);
   expect(second).not.toBe(first);
   expect((await link(app, "GET", id, session)).json()).toEqual({ token: second });
-  expect((await guest(app, first)).statusCode).toBe(404);
-  expect((await guest(app, second)).statusCode).toBe(200);
+  expect((await askAsGuest(app, first)).statusCode).toBe(404);
+  expect((await askAsGuest(app, second)).statusCode).toBe(200);
 
   expect((await link(app, "DELETE", id, session)).statusCode).toBe(204);
-  expect((await guest(app, second)).statusCode).toBe(404);
+  expect((await askAsGuest(app, second)).statusCode).toBe(404);
   expect((await link(app, "GET", id, session)).json()).toEqual({ token: null });
 });
 
@@ -152,7 +152,7 @@ test("a wrong token answers 404; right and wrong answers both say no referrer an
   const deletedToken = await makeLink(app, deleted.id, deleted.session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted.id } });
 
-  const answers = [await guest(app, token), await guest(app, "x".repeat(43)), await guest(app, "not-a-token"), await guest(app, deletedToken)];
+  const answers = [await askAsGuest(app, token), await askAsGuest(app, "x".repeat(43)), await askAsGuest(app, "not-a-token"), await askAsGuest(app, deletedToken)];
   expect(answers.map((answer) => answer.statusCode)).toEqual([200, 404, 404, 404]);
   for (const answer of answers) {
     expect(answer.headers["referrer-policy"]).toBe("no-referrer");
@@ -168,13 +168,13 @@ test("a wrong token answers 404; right and wrong answers both say no referrer an
 test("a guest's tickets are limited to 30 a minute from one IP", async () => {
   const { app } = await startApp();
   const statuses: number[] = [];
-  for (let attempt = 0; attempt < 30; attempt += 1) statuses.push((await guest(app, "x".repeat(43), "10.0.0.7")).statusCode);
+  for (let attempt = 0; attempt < 30; attempt += 1) statuses.push((await askAsGuest(app, "x".repeat(43), "10.0.0.7")).statusCode);
   expect(statuses.every((status) => status === 404)).toBe(true);
-  const over = await guest(app, "x".repeat(43), "10.0.0.7");
+  const over = await askAsGuest(app, "x".repeat(43), "10.0.0.7");
   expect(over.statusCode).toBe(429);
   expect(over.headers["retry-after"]).toBeDefined();
   // Another IP is not held back.
-  expect((await guest(app, "x".repeat(43), "10.0.0.8")).statusCode).toBe(404);
+  expect((await askAsGuest(app, "x".repeat(43), "10.0.0.8")).statusCode).toBe(404);
 });
 
 test("only the Owner manages the link: 403 to another member, 404 to anyone else, 401 without a session", async () => {
@@ -196,10 +196,10 @@ test("what a guest's provider sends does not change the score", async () => {
   const token = await makeLink(app, id, session);
   const before = docToJson((await openAsMember(app, url, id, session)).doc);
 
-  const visitor = await openAsGuest(app, url, id, token);
-  expect(docToJson(visitor.doc)).toEqual(before);
-  const answer = nextSyncStatus(visitor.provider);
-  metaOf(visitor.doc).set("title", "訪客改的標題");
+  const guest = await openAsGuest(app, url, id, token);
+  expect(docToJson(guest.doc)).toEqual(before);
+  const answer = nextSyncStatus(guest.provider);
+  metaOf(guest.doc).set("title", "訪客改的標題");
   expect(await answer).toBe(false);
 
   expect(docToJson((await openAsMember(app, url, id, session)).doc)).toEqual(before);
@@ -217,9 +217,9 @@ test("a guest's awareness reaches no member, and no member's awareness reaches a
 
   // The guest comes in after Anna's state is there (sent to each new connection), then states
   // its own, as a provider that sets one would.
-  const visitor = await openAsGuest(app, url, id, token);
-  const toVisitor = awarenessReceived(visitor.provider);
-  visitor.provider.awareness!.setLocalStateField("cursor", { bar: 5 });
+  const guest = await openAsGuest(app, url, id, token);
+  const toGuest = awarenessReceived(guest.provider);
+  guest.provider.awareness!.setLocalStateField("cursor", { bar: 5 });
 
   // Anna again, in another tab, after both, with a state of her own: every state is sent to
   // this tab, and its own to everyone, so once the first tab has it, the guest has had every
@@ -229,14 +229,14 @@ test("a guest's awareness reaches no member, and no member's awareness reaches a
   await awarenessOf(anna.provider, tab.doc.clientID);
   await awarenessOf(tab.provider, anna.doc.clientID);
   // And a change made after that reaches the guest after any awareness sent before it.
-  const changed = new Promise<void>((resolve) => visitor.doc.once("update", () => resolve()));
+  const changed = new Promise<void>((resolve) => guest.doc.once("update", () => resolve()));
   metaOf(tab.doc).set("title", "之後改的標題");
   await changed;
 
-  expect([...anna.provider.awareness!.getStates().keys()]).not.toContain(visitor.doc.clientID);
-  expect([...tab.provider.awareness!.getStates().keys()]).not.toContain(visitor.doc.clientID);
-  expect(toVisitor()).toBe(0);
-  expect([...visitor.provider.awareness!.getStates().keys()]).toEqual([visitor.doc.clientID]);
+  expect([...anna.provider.awareness!.getStates().keys()]).not.toContain(guest.doc.clientID);
+  expect([...tab.provider.awareness!.getStates().keys()]).not.toContain(guest.doc.clientID);
+  expect(toGuest()).toBe(0);
+  expect([...guest.provider.awareness!.getStates().keys()]).toEqual([guest.doc.clientID]);
 });
 
 test("revoking the link, or making it anew, closes the guests' connections and leaves the members' open", async () => {
@@ -247,14 +247,14 @@ test("revoking the link, or making it anew, closes the guests' connections and l
 
   for (const replace of ["DELETE", "POST"] as const) {
     const token = await makeLink(app, id, session);
-    const visitor = await openAsGuest(app, url, id, token);
-    const visitorClosed = socketClosed(visitor.provider);
+    const guest = await openAsGuest(app, url, id, token);
+    const guestClosed = socketClosed(guest.provider);
     // Refused when it reconnects: its token opens nothing any more.
-    const refused = new Promise<void>((resolve) => visitor.provider.on("authenticationFailed", () => resolve()));
+    const refused = new Promise<void>((resolve) => guest.provider.on("authenticationFailed", () => resolve()));
 
     expect((await link(app, replace, id, session)).statusCode).toBe(replace === "DELETE" ? 204 : 200);
 
-    expect(await visitorClosed).toBe(Forbidden.code);
+    expect(await guestClosed).toBe(Forbidden.code);
     await refused;
   }
   const applied = nextSyncStatus(member.provider);
@@ -269,12 +269,17 @@ test("a link revoked while a guest's document is being loaded leaves no connecti
   const token = await makeLink(app, id, session);
   const ticket = await guestTicketFor(app, token);
   // The ticket has passed onAuthenticate's checks; the link is revoked while the document comes
-  // from Postgres, before the connection is in the register. Loading a document is the one
-  // caller of Score.findOne then (liveScore in src/scores.ts): the spy stands in that window.
+  // from Postgres, before the connection is in the register. The link's own lookup (scoreOfLink,
+  // by its token) passes; the first other call of Score.findOne is loading the document
+  // (liveScore in src/scores.ts): the spy stands in that window.
   const load = Score.findOne.bind(Score);
-  let revoked = false;
-  vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
-    revoked = (await link(app, "DELETE", id, session)).statusCode === 204;
+  let revoking: Promise<boolean> | null = null;
+  vi.spyOn(Score, "findOne").mockImplementation(async (options) => {
+    const lookup = typeof options?.where === "object" && "linkToken" in options.where;
+    if (!lookup && revoking === null) {
+      revoking = link(app, "DELETE", id, session).then((answer) => answer.statusCode === 204);
+      await revoking;
+    }
     return load(options);
   });
 
@@ -282,7 +287,9 @@ test("a link revoked while a guest's document is being loaded leaves no connecti
   opened.push({ provider, doc: provider.document });
 
   expect(await socketClosed(provider)).toBe(Forbidden.code);
-  expect(revoked).toBe(true);
+  expect(await revoking).toBe(true);
+  // Closed before it was sent the document: nothing of the score ever reached it.
+  expect(provider.document.store.clients.size).toBe(0);
 });
 
 test("a member's connection still loading is closed by an event that concerns it, and only it", async () => {
@@ -302,6 +309,7 @@ test("a member's connection still loading is closed by an event that concerns it
   opened.push({ provider, doc: provider.document });
 
   expect(await socketClosed(provider)).toBe(Forbidden.code);
+  expect(provider.document.store.clients.size).toBe(0);
 });
 
 test("logs show no link token, in the path or in a parameter", () => {
@@ -317,11 +325,11 @@ test("a guest whose link is still valid reconnects with a new ticket after the s
   const { app, url } = await startApp();
   const { id, session } = await annasScore(app);
   const token = await makeLink(app, id, session);
-  const visitor = await openAsGuest(app, url, id, token);
-  const closed = socketClosed(visitor.provider);
+  const guest = await openAsGuest(app, url, id, token);
+  const closed = socketClosed(guest.provider);
 
   expect(app.collab.closeConnections({ linkToken: token }, Forbidden)).toBe(1);
 
   expect(await closed).toBe(Forbidden.code);
-  await insync(visitor.provider);
+  await insync(guest.provider);
 });

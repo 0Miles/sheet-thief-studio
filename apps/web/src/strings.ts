@@ -27,7 +27,7 @@ export const strings = {
     settings: "設定",
   },
   // A guest's page, opened with a read-only link (/s/:token).
-  shared: {
+  guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
     gone: "這個唯讀連結已經失效。",
   },

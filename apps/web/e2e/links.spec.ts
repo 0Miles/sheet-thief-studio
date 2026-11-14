@@ -35,17 +35,17 @@ test("an Owner makes a read-only link; a browser without cookies opens it read-o
 
   // A browser of its own, never logged in.
   const guestContext = await browser.newContext();
-  const visitor = await guestContext.newPage();
-  const visitorErrors = pageErrors(visitor, [{ status: 404, path: `/api${path}` }]);
-  await visitor.goto(link);
-  await expect(visitor.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  await expect(visitor.locator('[data-sync="synced"]')).toHaveText(strings.shared.sync.synced);
-  await expect(visitor.getByRole("heading", { name: title })).toBeVisible();
-  expect(new URL(visitor.url()).pathname).toBe(path);
+  const guest = await guestContext.newPage();
+  const guestErrors = pageErrors(guest, [{ status: 404, path: `/api${path}` }]);
+  await guest.goto(link);
+  await expect(guest.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await expect(guest.locator('[data-sync="synced"]')).toHaveText(strings.guest.sync.synced);
+  await expect(guest.getByRole("heading", { name: title })).toBeVisible();
+  expect(new URL(guest.url()).pathname).toBe(path);
   expect(await guestContext.cookies()).toEqual([]);
   // Read-only: nothing to type into, no cursor.
-  expect(await visitor.evaluate(() => window.__studioTest!.cursor())).toBeNull();
-  expect(await firstBeats(visitor)).toEqual([]);
+  expect(await guest.evaluate(() => window.__studioTest!.cursor())).toBeNull();
+  expect(await firstBeats(guest)).toEqual([]);
 
   // The Owner types a fret on the score: the guest's page follows.
   const editing = await owner.context().newPage();
@@ -55,19 +55,33 @@ test("an Owner makes a read-only link; a browser without cookies opens it read-o
   await expect(editing.locator('[data-sync="synced"]')).toBeVisible();
   await editing.keyboard.press("5");
   await expect(editing.locator('[data-sync="synced"]')).toBeVisible();
-  await expect.poll(async () => (await firstBeats(visitor)).map((beat) => beat.notes.s1?.fret)).toEqual([5]);
+  await expect.poll(async () => (await firstBeats(guest)).map((beat) => beat.notes.s1?.fret)).toEqual([5]);
+
+  // From here on, whether the Owner's score page ever loses its connection, even for a moment.
+  await editing.evaluate(() => {
+    const page = window as { wentOffline?: boolean };
+    page.wentOffline = false;
+    new MutationObserver(() => {
+      if (document.querySelector('[data-sync="offline"]')) page.wentOffline = true;
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-sync"] });
+  });
 
   // Revoked: the guest's page says it is disconnected, for good.
   await owner.getByRole("button", { name: text.revoke }).click();
   await expect(owner.getByText(text.none)).toBeVisible();
-  await expect(visitor.locator('[data-sync="offline"]')).toHaveText(strings.shared.sync.offline);
-  await expect(visitor.getByText(strings.shared.gone)).toBeVisible();
-  // The Owner's own page is still connected.
+  await expect(guest.locator('[data-sync="offline"]')).toHaveText(strings.guest.sync.offline);
+  await expect(guest.getByText(strings.guest.gone)).toBeVisible();
+  // The Owner's own connection stayed open: never offline, and what it types now reaches the
+  // server, as a page opened afresh reads it from there.
   await editing.keyboard.press("ArrowRight");
   await editing.keyboard.press("7");
-  await expect(editing.locator('[data-sync="synced"]')).toBeVisible();
+  await owner.goto(`/scores/${id}`);
+  await expect(owner.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(async () => (await firstBeats(owner)).map((beat) => beat.notes.s1?.fret)).toEqual([5, 7]);
+  expect(await editing.evaluate(() => (window as { wentOffline?: boolean }).wentOffline)).toBe(false);
 
   expect(ownerErrors).toEqual([]);
   expect(editingErrors).toEqual([]);
-  expect(visitorErrors).toEqual([]);
+  expect(guestErrors).toEqual([]);
+  await guestContext.close();
 });

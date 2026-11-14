@@ -7,14 +7,13 @@ import type { Duplex } from "node:stream";
 
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
-import type { Role } from "@studio/contracts";
 import crossws from "crossws/adapters/node";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
-import type { CollabTickets } from "./collabTickets";
+import type { CollabTickets, Guest, Member } from "./collabTickets";
 import { Score } from "./db/models";
-import { isLinkOf } from "./links";
+import { scoreOfLink } from "./links";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
 
@@ -22,16 +21,9 @@ export const COLLAB_PATH = "/collab";
 
 /**
  * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
- * member has an account, a session and a role; a guest has the token of the read-only link it
- * came with, and nothing else.
+ * member's role is the one the database gave when the connection was let in.
  */
-export interface CollabContext {
-  accountId: string | null;
-  sessionId: string | null;
-  linkToken: string | null;
-  /** Null for a guest, who is no member. */
-  role: Role | null;
-}
+export type CollabContext = Member | Guest;
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -50,8 +42,8 @@ export interface Collab {
   /**
    * Close the connections that match, and only those (never `closeConnections(documentName)`,
    * which closes everyone's). Their providers reconnect, each with a new ticket of its own. A
-   * connection that matches while its document is still loading is closed once it is loaded.
-   * Returns how many were closed or will be.
+   * connection that matches while its document is still loading has its socket closed at once,
+   * before it is sent the document. Returns how many were closed.
    */
   closeConnections(which: ConnectionsToClose, event: CloseEvent): number;
   /** The ids of the scores whose documents are in memory now. For diagnostics and tests only. */
@@ -69,13 +61,14 @@ type Holder = CollabContext & { scoreId: string };
 
 /** One WebSocket: the scores it opened as a guest, whose presence it is never sent, and whether it has closed. */
 interface Socket {
+  websocket: WebSocket;
   guestOf: Set<string>;
   closed: boolean;
 }
 
 /**
  * A connection let in whose document is loading, not in the register yet (it gets there in the
- * `connected` hook): the event that closes it once it is there, if one came meanwhile.
+ * `connected` hook): the event that closed it meanwhile, if one did.
  */
 interface Loading {
   holder: Holder;
@@ -83,12 +76,14 @@ interface Loading {
   closeWith: CloseEvent | null;
 }
 
+/** Whether the connection is one of those to close: a field given that a member or a guest does not have never matches. */
 function matches(holder: Holder, which: ConnectionsToClose): boolean {
+  if (which.scoreId !== undefined && holder.scoreId !== which.scoreId) return false;
+  if (holder.kind === "guest") return which.accountId === undefined && which.sessionId === undefined && (which.linkToken === undefined || holder.linkToken === which.linkToken);
   return (
-    (which.scoreId === undefined || holder.scoreId === which.scoreId) &&
+    which.linkToken === undefined &&
     (which.accountId === undefined || holder.accountId === which.accountId) &&
-    (which.sessionId === undefined || holder.sessionId === which.sessionId) &&
-    (which.linkToken === undefined || holder.linkToken === which.linkToken)
+    (which.sessionId === undefined || holder.sessionId === which.sessionId)
   );
 }
 
@@ -113,11 +108,11 @@ function isAwarenessOf(message: Uint8Array, documents: Set<string>): boolean {
  * awareness to every connection of it, and its current state to each new one, with no hook to
  * leave one out.
  */
-function withoutGuestPresence(websocket: WebSocket, socket: Socket): WebSocket {
+function withoutGuestPresence(socket: Socket): WebSocket {
   const send = (message: Uint8Array) => {
-    if (!isAwarenessOf(message, socket.guestOf)) websocket.send(message);
+    if (!isAwarenessOf(message, socket.guestOf)) socket.websocket.send(message);
   };
-  return new Proxy(websocket, {
+  return new Proxy(socket.websocket, {
     get(target, key) {
       if (key === "send") return send;
       const value: unknown = Reflect.get(target, key, target);
@@ -146,17 +141,18 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   }
 
   /**
-   * The role the ticket's member has in the score now (null for a guest), as the database says,
-   * not as it said when the ticket was given; `Forbidden` when they may no longer open it.
+   * Check that the ticket's holder may still open the score, as the database says now and not as
+   * it said when the ticket was given, and give a member the role they have now; `Forbidden` when
+   * they may no longer open it.
    */
-  async function roleNow(holder: Holder): Promise<Role | null> {
-    if (holder.linkToken !== null) {
-      if (!(await isLinkOf(holder.scoreId, holder.linkToken))) throw Forbidden;
-      return null;
+  async function confirm(holder: Holder): Promise<void> {
+    if (holder.kind === "guest") {
+      if ((await scoreOfLink(holder.linkToken))?.id !== holder.scoreId) throw Forbidden;
+      return;
     }
-    const member = await membership(holder.scoreId, holder.accountId!);
-    if (member === null || !(await sessions.isActive(holder.sessionId!))) throw Forbidden;
-    return member.role;
+    const member = await membership(holder.scoreId, holder.accountId);
+    if (member === null || !(await sessions.isActive(holder.sessionId))) throw Forbidden;
+    holder.role = member.role;
   }
 
   const hocuspocus = new Hocuspocus<CollabContext>({
@@ -171,10 +167,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       // A socket that closed while the ticket was redeemed would never take the entry below out.
       const socket = socketByRequest.get(request);
       if (socket === undefined || socket.closed) throw Forbidden;
-      const holder: Holder =
-        "linkToken" in ticket
-          ? { scoreId: documentName, accountId: null, sessionId: null, linkToken: ticket.linkToken, role: null }
-          : { scoreId: documentName, accountId: ticket.accountId, sessionId: ticket.sessionId, linkToken: null, role: null };
+      const holder: Holder = { ...ticket, scoreId: documentName };
       // Closable from here on, before the checks: an event that comes after a check has read
       // the database still finds the connection.
       const entry: Loading = { holder, socket, closeWith: null };
@@ -182,35 +175,33 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       try {
         // The rights now, not those of the ticket: they may have changed in the last 60 seconds.
         // No member, no link, no score (or a deleted one): refused before any document is made.
-        holder.role = await roleNow(holder);
+        await confirm(holder);
       } catch (error) {
         loading.delete(connectionConfig);
         throw error;
       }
       // Hocuspocus drops the changes a read-only connection sends.
-      connectionConfig.readOnly = holder.role === null || holder.role === "viewer";
+      connectionConfig.readOnly = holder.kind === "guest" || holder.role === "viewer";
       // Before the connection is made: it is sent the current awareness as it is made.
-      if (holder.linkToken !== null) socket.guestOf.add(documentName);
-      return { accountId: holder.accountId, sessionId: holder.sessionId, linkToken: holder.linkToken, role: holder.role };
+      if (holder.kind === "guest") socket.guestOf.add(documentName);
+      return holder;
     },
     async connected({ connection, connectionConfig }) {
       const entry = loading.get(connectionConfig);
       loading.delete(connectionConfig);
-      if (entry === undefined) {
-        // Its socket closed while the document was loading.
-        close(connection, ResetConnection);
+      if (entry === undefined || entry.closeWith !== null) {
+        // Its socket closed while the document was loading: by itself, or because an event
+        // concerned it (a session that ended, a member removed, a link revoked).
+        close(connection, entry?.closeWith ?? ResetConnection);
         return;
       }
       register.set(connection, entry.holder);
       connection.onClose(() => register.delete(connection));
-      // An event that concerned it came while the document was loading: a session that ended,
-      // a member removed, a link revoked.
-      if (entry.closeWith !== null) close(connection, entry.closeWith);
     },
     async beforeHandleAwareness({ context, states, removedClients }) {
       // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
       // itself or anyone else is applied.
-      if (context === undefined || context.linkToken === null) return;
+      if (context?.kind !== "guest") return;
       states.clear();
       removedClients.clear();
     },
@@ -244,9 +235,12 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
         close(connection, event);
         closed += 1;
       }
+      // Not in the register yet: the socket is closed now, before the document is sent on it.
+      // Hocuspocus then never makes the connection, or closes it as it makes it.
       for (const entry of loading.values()) {
         if (entry.closeWith !== null || !matches(entry.holder, which)) continue;
         entry.closeWith = event;
+        entry.socket.websocket.close(event.code, event.reason);
         closed += 1;
       }
       return closed;
@@ -267,10 +261,10 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   const server = crossws({
     hooks: {
       open(peer) {
-        const socket: Socket = { guestOf: new Set(), closed: false };
+        const socket: Socket = { websocket: peer.websocket as unknown as WebSocket, guestOf: new Set(), closed: false };
         // The same object for the socket's whole life; Hocuspocus hands it to the hooks.
         socketByRequest.set(peer.request, socket);
-        clients.set(peer, hocuspocus.handleConnection(withoutGuestPresence(peer.websocket as unknown as WebSocket, socket), peer.request as Request));
+        clients.set(peer, hocuspocus.handleConnection(withoutGuestPresence(socket), peer.request as Request));
       },
       message(peer, message) {
         clients.get(peer)?.handleMessage(message.uint8Array());

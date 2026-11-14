@@ -107,7 +107,7 @@ export function registerScores(app: FastifyInstance, { collab, tickets }: { coll
   app.post<{ Params: { id: string } }>("/api/scores/:id/collab-ticket", async (request, reply) => {
     const member = await membership(request.params.id, request.account!.id);
     if (member === null) return notFound(reply);
-    const ticket = await tickets.issue({ scoreId: member.score.id, accountId: request.account!.id, sessionId: request.session!.id, role: member.role });
+    const ticket = await tickets.issue({ kind: "member", scoreId: member.score.id, accountId: request.account!.id, sessionId: request.session!.id, role: member.role });
     return collabTicket.parse({ ticket, role: member.role });
   });
 }

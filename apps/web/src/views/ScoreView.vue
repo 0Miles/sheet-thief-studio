@@ -25,7 +25,7 @@ import NotFoundView from "./NotFoundView.vue";
 /** One of the two: a member's score id, or a guest's link token. */
 const props = defineProps<{ id?: string; token?: string }>();
 const text = strings.score;
-const guest = props.token !== undefined;
+const isGuest = props.token !== undefined;
 
 /** What opening the score needs: its id, title and the role in it (null for a guest), and a ticket for every connection. */
 interface Opening {
@@ -51,8 +51,8 @@ const gone = ref(false);
  * server restarting) is passing, and the provider tries again once its socket times out.
  */
 async function asGuest(token: string): Promise<Opening> {
-  const shared = await guestTicketFor(token);
-  let first: string | null = shared.ticket;
+  const guest = await guestTicketFor(token);
+  let first: string | null = guest.ticket;
   const ticket = async () => {
     const given = first;
     first = null;
@@ -64,9 +64,9 @@ async function asGuest(token: string): Promise<Opening> {
       throw error;
     }
   };
-  return { scoreId: shared.scoreId, title: shared.title, role: null, ticket };
+  return { scoreId: guest.scoreId, title: guest.title, role: null, ticket };
 }
-const syncText = guest ? strings.shared.sync : text.sync;
+const syncText = isGuest ? strings.guest.sync : text.sync;
 const notFound = ref(false);
 /** What to say when the score could not be asked for, for a reason other than not being found; null while all is well. */
 const loadError = ref<string | null>(null);
@@ -189,7 +189,7 @@ function updateSync(): void {
 onMounted(async () => {
   let opened: Opening;
   try {
-    opened = guest ? await asGuest(props.token!) : await asMember(props.id!);
+    opened = isGuest ? await asGuest(props.token!) : await asMember(props.id!);
     opening.value = opened;
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
@@ -201,7 +201,7 @@ onMounted(async () => {
     throw error;
   }
   if (host.value === undefined) return;
-  view.value = decideView({ role: opened.role, isGuest: guest, canType: canType() });
+  view.value = decideView({ role: opened.role, isGuest, canType: canType() });
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003).
   engine = createAlphaTabEngine(host.value, { fontDirectory: "/font/", soundFont: null, useWorkers: !editing.value });
   engine.renderer.onRendered(() => {
@@ -217,7 +217,7 @@ onMounted(async () => {
     // A guest has no presence (docs/spec/collab.md, section 5): it states none, and the server
     // sends it none. With no awareness coming in, a quiet score would send it nothing at all, and
     // the provider reconnects after 30 seconds of silence: it asks for the state every 15.
-    ...(guest ? { awareness: null, forceSyncInterval: 15_000 } : {}),
+    ...(isGuest ? { awareness: null, forceSyncInterval: 15_000 } : {}),
     onAuthenticationFailed: () => {
       if (!gone.value) return;
       // Its link opens nothing any more: stop, rather than ask it for tickets again and again.
@@ -256,14 +256,14 @@ onBeforeUnmount(() => {
       <header class="score__toolbar">
         <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
         <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ syncText[sync] }}</span>
-        <RouterLink v-if="opening && !guest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
+        <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
           <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
         </p>
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
-      <p v-if="gone" class="score__error" role="alert">{{ strings.shared.gone }}</p>
+      <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
       <div
         ref="scroller"
         class="score__scroller"

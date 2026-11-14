@@ -76,7 +76,7 @@
 - **補充**：關閉時用 `@hocuspocus/common` 的 `Forbidden`（權限變動、連結撤銷、團譜刪除）或 `Unauthorized`（session 結束）。
 - **補充**（#6）：關閉一條連線時，先用 `Connection.close()` 讓它離開文件（之後它送來的東西不再套用），再關閉它的 WebSocket。只送 Hocuspocus 的 CLOSE 訊息的話，provider 不會重連，那份文件就停在那裡；關掉 socket，provider 才會重連，並取一張新的 ticket。函式是 `app.collab.closeConnections({ scoreId?, accountId?, sessionId?, linkToken? }, event)`，只關所有欄位都相符的連線。
 - **補充**（#6）：`onAuthenticate` 也確認 ticket 的 session 還沒結束，以免 ticket 發出後到連上之間結束的 session 留下連線。
-- **補充**（#6、#14）：連線要到 `connected` 掛鉤才進對照表，而文件在那之前就從 Postgres 載入。這段時間發生的事件用「載入中」的標記處理，不需要 I/O：`onAuthenticate` 一取出 ticket、在查資料庫之前，就把這條連線（帳號、session、連結 token、團譜 id）放進載入中的集合，查核失敗時移除；`closeConnections` 除了關閉對照表裡符合的連線，也在載入中符合的連線上記下關閉的事件；`connected` 把連線移進對照表時看到記號，就以那個事件關閉。所以 session 結束、成員被移除或降級、連結撤銷、團譜刪除，不論發生在查核之後或載入期間，都關得到這條連線（#6 原本在 `connected` 再查一次 session 的做法因此拿掉）。載入失敗、沒有走到 `connected` 的連線，在它的 socket 關閉時移出集合。
+- **補充**（#6、#14）：連線要到 `connected` 掛鉤才進對照表，而文件在那之前就從 Postgres 載入。這段時間發生的事件用「載入中」的標記處理，不需要 I/O：`onAuthenticate` 一取出 ticket、在查資料庫之前，就把這條連線（帳號、session、連結 token、團譜 id）放進載入中的集合，查核失敗時移除；`closeConnections` 除了關閉對照表裡符合的連線，也在載入中符合的連線上記下關閉的事件，並立刻關閉它的 socket，讓它收不到文件；萬一 Hocuspocus 還是走到 `connected`，看到記號就以那個事件關閉。所以 session 結束、成員被移除或降級、連結撤銷、團譜刪除，不論發生在查核之後或載入期間，都關得到這條連線（#6 原本在 `connected` 再查一次 session 的做法因此拿掉）。載入失敗、沒有走到 `connected` 的連線，在它的 socket 關閉時移出集合。
 
 ## 7. 客戶端：斷線、離線、重連
 
