@@ -10,20 +10,24 @@ export const RECOGNIZER_CONTRACT = "sheet-thief-studio/recognition";
 /** The version of the contract: one more whenever its shape changes. */
 export const RECOGNIZER_CONTRACT_VERSION = 1;
 
-/** The strings a recognized TAB may have. */
-export const RECOGNIZER_STRINGS = { min: 4, max: 7 } as const;
-
-/** The highest fret the recognizer reads (Guitar Pro 5's, in the predecessor's extract/common.py). */
-export const RECOGNIZER_MAX_FRET = 29;
+/** The strings a recognized TAB may have, and the highest fret read (Guitar Pro 5's, in the predecessor's extract/common.py). */
+export const recognizerLimits = { strings: { min: 4, max: 7 }, fret: { max: 29 } } as const;
 
 /** Written lengths in 32nd notes: each is one note value with no, one or two dots. */
 export const RECOGNIZER_UNITS = [1, 2, 3, 4, 6, 7, 8, 12, 14, 16, 24, 28, 32, 48] as const;
 
 const envelope = { contract: z.literal(RECOGNIZER_CONTRACT), version: z.literal(RECOGNIZER_CONTRACT_VERSION) };
 
-const fret = z.int().min(0).max(RECOGNIZER_MAX_FRET);
+const fret = z.int().min(0).max(recognizerLimits.fret.max);
+/** Pages and bars are counted from 1. */
 const page = z.int().min(1);
+const barNumber = z.int().min(1);
 const count = z.int().min(1);
+
+/** Each value at most once. */
+function distinct<T>(values: T[]): boolean {
+  return new Set(values).size === values.length;
+}
 const noParams = z.strictObject({});
 
 const tuningMidi = z.array(z.int().min(0).max(127));
@@ -47,15 +51,16 @@ export const recognizerCapo = z.union([
 export type RecognizerCapo = z.infer<typeof recognizerCapo>;
 
 export const recognizerTimeSignature = z.strictObject({
-  numerator: z.int().min(1).max(16),
-  denominator: z.literal([2, 4, 8, 16]),
+  /** The first bar's is at most 16 over 2, 4, 8 or 16; a later one may be wider. */
+  numerator: z.int().min(1).max(32),
+  denominator: z.literal([1, 2, 4, 8, 16, 32]),
 });
 export type RecognizerTimeSignature = z.infer<typeof recognizerTimeSignature>;
 
 /** A note (the predecessor's ScoreNote), its marks already resolved: string 1 is the highest. */
 export const recognizerNote = z
   .strictObject({
-    string: z.int().min(1).max(RECOGNIZER_STRINGS.max),
+    string: z.int().min(1).max(recognizerLimits.strings.max),
     /** null for a dead note, and only for one. */
     fret: fret.nullable(),
     dead: z.boolean(),
@@ -96,7 +101,7 @@ export const recognizerBeat = z.strictObject({
   units: z.literal(RECOGNIZER_UNITS),
   /** A triplet: it sounds two thirds of its written length. */
   tuplet: z.boolean(),
-  notes: z.array(recognizerNote).refine((notes) => new Set(notes.map((note) => note.string)).size === notes.length, "one note per string at most"),
+  notes: z.array(recognizerNote).refine((notes) => distinct(notes.map((note) => note.string)), "one note per string at most"),
 });
 export type RecognizerBeat = z.infer<typeof recognizerBeat>;
 
@@ -112,7 +117,7 @@ export const recognizerBar = z.strictObject({
   /** A repeat ends with this bar, played this many times in all; 0 when none ends here. */
   repeatTimes: z.union([z.literal(0), z.int().min(2).max(32)]),
   /** The passes of a repeat this bar is played on (a volta), smallest first. */
-  endings: z.array(z.int().min(1).max(9)).refine((passes) => new Set(passes).size === passes.length, "each pass once"),
+  endings: z.array(z.int().min(1).max(9)).refine(distinct, "each pass once"),
   sign: z.enum(["segno", "coda", "fine"]).nullable(),
   /** Where to go after this bar. */
   jump: z.enum(["da_capo", "da_capo_al_coda", "da_capo_al_fine", "da_segno", "da_segno_al_coda", "da_segno_al_fine", "to_coda"]).nullable(),
@@ -124,7 +129,7 @@ export type RecognizerBar = z.infer<typeof recognizerBar>;
 
 /** A warning, or something recognition left out: a code and its parameters, never text. */
 export const recognizerWarning = z.discriminatedUnion("code", [
-  z.strictObject({ code: z.literal("rhythm_estimated"), params: z.strictObject({ bars: z.array(page).min(1).refine((bars) => new Set(bars).size === bars.length, "each bar once") }) }),
+  z.strictObject({ code: z.literal("rhythm_estimated"), params: z.strictObject({ bars: z.array(barNumber).min(1).refine(distinct, "each bar once") }) }),
   z.strictObject({ code: z.literal("overlapping_notes"), params: z.strictObject({ page, count }) }),
   z.strictObject({ code: z.literal("staves_ignored"), params: z.strictObject({ count }) }),
   z.strictObject({ code: z.literal("bar_too_dense"), params: z.strictObject({ page, notes: count }) }),
@@ -138,7 +143,7 @@ export type RecognizerWarning = z.infer<typeof recognizerWarning>;
 export const recognizerResult = z
   .strictObject({
     ...envelope,
-    strings: z.int().min(RECOGNIZER_STRINGS.min).max(RECOGNIZER_STRINGS.max),
+    strings: z.int().min(recognizerLimits.strings.min).max(recognizerLimits.strings.max),
     tuning: recognizerTuning,
     capo: recognizerCapo,
     /** The first bar's. */

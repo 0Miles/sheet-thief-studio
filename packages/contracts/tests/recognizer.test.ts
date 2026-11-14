@@ -72,6 +72,7 @@ test.each<[string, string, (json: Json) => void]>([
   ["a default capo on a fret", "six-strings", (json) => (json.capo.fret = 2)],
   ["a capo past fret 24", "capo", (json) => (json.capo.fret = 25)],
   ["a time signature over 3", "six-strings", (json) => (json.timeSignature.denominator = 3)],
+  ["a bar in 33/8", "four-strings", (json) => (json.bars[1].timeSignature = { numerator: 33, denominator: 8 })],
   ["no bars", "six-strings", (json) => (json.bars = [])],
   ["a bar with no beats", "six-strings", (json) => (json.bars[0].beats = [])],
   ["a length no note value has", "six-strings", (json) => (json.bars[0].beats[0].units = 5)],

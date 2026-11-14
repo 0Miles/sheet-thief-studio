@@ -44,7 +44,7 @@
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `POST /recognize` | `multipart/form-data`，欄位 `images` 依頁序重複出現。成功 200，回傳第 5 節的結果；辨識失敗 422，回傳錯誤；忙碌 503，回傳 code 是 `busy` 的錯誤（第 5.2 節）；請求本身不合（沒有圖片、格式不對）400 |
+| `POST /recognize` | `multipart/form-data`，欄位 `images` 依頁序重複出現。成功 200，回傳第 5 節的結果；辨識失敗 422，回傳錯誤；忙碌 503，回傳 code 是 `busy` 的錯誤（第 5.2 節；補充，#59）；請求本身不合（沒有圖片、格式不對）400 |
 | `GET /healthz` | 200 |
 
 - 同步呼叫：一次只跑一件；正在跑的時候，新的請求立刻回 503，對應舊的 `busy` code。
@@ -125,13 +125,15 @@
   - 小節的 `sign`、`jump` 用小寫的 code（`segno`、`coda`、`fine`；`da_capo`、`da_capo_al_coda`、`da_capo_al_fine`、`da_segno`、`da_segno_al_coda`、`da_segno_al_fine`、`to_coda`），不用前身 Guitar Pro 的名稱（前身的 `"Da Coda"` 就是 To Coda）。
   - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出。
   - 所有物件都不接受多出來的欄位；多了欄位就是另一個版本。
+  - 拍號：整首的（第一小節的）`timeSignature` 在前身 `music_settings` 的範圍內，曲中的可以到前身讀譜面拍號的範圍（分子 1–32，分母 1、2、4、8、16、32），和 `schema.md` 的拍號範圍相同。
+  - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `d` 也吃得到 `0.`）不輸出。
 - `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。
 
 **補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
 
 | code | `params` | 意思 |
 |---|---|---|
-| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的（前身 `converter.py` 的 `_flag_estimated_rhythm`） |
+| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致（前身 `converter.py` 的 `_flag_estimated_rhythm`，只在讀到印出的節奏時才發） |
 | `overlapping_notes` | `{ page, count }` | 那一頁同一條弦上重疊的音符，略過了幾個（前身 `rhythm.py:81`） |
 | `staves_ignored` | `{ count }` | 弦數和多數不同的譜表，略過了幾行（前身 `converter.py` 的 `_main_staves`） |
 | `bar_too_dense` | `{ page, notes }` | 那一頁有個小節讀到的音多到超出拍號，這個小節的音都當成 32 分音符（前身 `rhythm.py:447`） |
