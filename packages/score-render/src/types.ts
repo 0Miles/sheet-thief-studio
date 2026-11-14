@@ -68,7 +68,7 @@ export interface ScoreRenderer {
 export type PlayerState = "loading" | "paused" | "playing";
 
 /** A bar as playback finds it: its id, and its index in the score as the sound has it. */
-export interface PlayedBarOf {
+export interface PlayedBar {
   barId: string;
   index: number;
 }
@@ -103,10 +103,10 @@ export interface ScorePlayer {
   readonly state: PlayerState;
   readonly position: PlayerPosition;
   seek(tick: number): void;
-  /** The tick a bar starts at, the first time it is played; null before the sound is made. */
+  /** The tick a bar starts at, the first time it is played; null for a bar not in the score drawn. */
   tickOf(barId: string): number | null;
   /** The bar played at a tick; null before the sound is made. */
-  barAt(tick: number): PlayedBarOf | null;
+  barAt(tick: number): PlayedBar | null;
   setMute(partId: string, mute: boolean): void;
   setSolo(partId: string, solo: boolean): void;
   /** 0 is silent, 1 the volume written in the score. */

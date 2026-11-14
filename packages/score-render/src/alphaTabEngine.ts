@@ -5,7 +5,7 @@ import type { Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 import { cursorAtPoint, cursorRect, type DrawnExtent, type PartShape, playbackRect, reservedRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
-import type { PlayedBarOf, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import type { PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -80,8 +80,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private playerState: PlayerState = "loading";
   private playerIsReady = false;
   private lastPosition: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
-  /** Set while `load()` waits for alphaTab to take the new sound. */
+  /**
+   * Set while alphaTab makes the sound again (`load()`, or a new model): whether to play on once
+   * it is in place, and from where. Playing, pausing, stopping and seeking meanwhile change it.
+   */
   private reload: { resume: boolean; tick: number; done: () => void } | null = null;
+  /** The model changed in place since the sound was made: `load()` has something to do. */
+  private soundStale = false;
   /** Where playback was sent back to after a reload, until alphaTab reports from there. */
   private resumedAt: { tick: number; at: number } | null = null;
   /**
@@ -239,6 +244,19 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   load(): Promise<void> {
     // Before the player is ready alphaTab makes the sound itself, once it is.
     if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
+    if (!this.soundStale) {
+      // The sound is that of the model already, or alphaTab is making it (a new model).
+      const pending = this.reload;
+      if (pending === null) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = pending.done;
+        pending.done = () => {
+          done();
+          resolve();
+        };
+      });
+    }
+    this.soundStale = false;
     return new Promise((resolve) => {
       // A reload still waiting is replaced: its promise settles with this one.
       const previous = this.reload;
@@ -257,15 +275,27 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   play(): void {
-    this.api.play();
+    // alphaTab plays once the new sound is in place.
+    if (this.reload) this.reload.resume = true;
+    else this.api.play();
   }
 
   pause(): void {
+    this.resuming = false;
     this.api.pause();
+    if (this.reload === null) return;
+    // alphaTab has stopped to take the new sound already, and will not say it paused.
+    this.reload.resume = false;
+    this.setState("paused");
   }
 
   stop(): void {
+    this.resuming = false;
     this.api.stop();
+    if (this.reload === null) return;
+    this.reload.resume = false;
+    this.reload.tick = 0;
+    this.setState("paused");
   }
 
   get state(): PlayerState {
@@ -277,18 +307,21 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   seek(tick: number): void {
+    // alphaTab goes back to the start when the new sound is in place: from there, then.
+    if (this.reload) this.reload.tick = tick;
     this.api.tickPosition = tick;
   }
 
   tickOf(barId: string): number | null {
     const index = this.projection?.barIndex.get(barId);
     const masterBar = index === undefined ? undefined : this.projection?.score.masterBars[index];
+    if (masterBar === undefined) return null;
+    // While a new model's sound is made, where the bar is written: the projection has no repeats yet.
     const cache = this.api.tickCache;
-    // 0 for a bar not in the sound (yet): playing it starts at the top.
-    return masterBar === undefined || cache === null ? null : cache.getMasterBarStart(masterBar);
+    return cache === null ? masterBar.start : cache.getMasterBarStart(masterBar);
   }
 
-  barAt(tick: number): PlayedBarOf | null {
+  barAt(tick: number): PlayedBar | null {
     const cache = this.api.tickCache;
     const played = cache && barAtTick(cache, tick);
     const barId = played && this.projection?.barIds[played.index];
@@ -378,11 +411,16 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       startedAt: performance.now(),
     };
     if (projection.score === this.api.score) {
+      this.soundStale = true;
       this.api.render(hints);
       return;
     }
-    // alphaTab makes the sound of a score it has not seen and, doing so, stops playback.
-    if (this.api.playerState === alphaTab.synth.PlayerState.Playing) this.reload ??= { resume: true, tick: this.api.tickPosition, done: () => {} };
+    // alphaTab makes the sound of a score it has not seen and, doing so, stops playback and goes
+    // back to the start, playing or paused: playback goes on from where it was.
+    this.soundStale = false;
+    if (this.playerIsReady && this.options.soundFont !== null) {
+      this.reload ??= { resume: this.api.playerState === alphaTab.synth.PlayerState.Playing, tick: this.api.tickPosition, done: () => {} };
+    }
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
   }
 

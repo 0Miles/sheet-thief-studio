@@ -7,13 +7,13 @@ type MidiTickLookup = alphaTab.midi.MidiTickLookup;
 type MasterBarTickLookup = alphaTab.midi.MasterBarTickLookup;
 
 /** A bar of the score by its index, and how many ticks into it. */
-export interface PlayedBar {
+export interface TickInBar {
   index: number;
   offset: number;
 }
 
 /** The bar played at a tick: the last one started by then (past the end, the last bar). Null for a score with no bars. */
-export function barAtTick(lookup: MidiTickLookup, tick: number): PlayedBar | null {
+export function barAtTick(lookup: MidiTickLookup, tick: number): TickInBar | null {
   const bars = lookup.masterBars;
   // The played bars are sorted by time: the last one starting at or before the tick.
   let low = 0;
