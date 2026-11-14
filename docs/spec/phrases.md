@@ -22,6 +22,8 @@ interface BarsFragment {
 
 - 不帶 tempo、反覆、段落、capo、調號。
 - **補充**：`bars` 至少 1 個；聲線鍵的範圍規則同 [`schema.md`](schema.md) 第 5 節；percussion 不帶 `tuning` 也不帶 `staves`。
+- **補充**（#53）：片段本身與它的小節只認得上面列出的欄位，帶了其他欄位（`id`、`tempo`、`keySig`、反覆、`section`、`capo`……）就驗證失敗，不是略過；拍點帶 `id` 也驗證失敗。拍點與音符的其他欄位照 [`schema.md`](schema.md) 第 9 節的規則：不認得的忽略。zod schema 是 `score-model` 的 `barsFragmentSchema`、`beatsFragmentSchema`、`fragmentSchema`（`src/phrases.ts`），1 MB 的上限也在裡面檢查。
+- **補充**（#53）：`score-model` 的純函式：`fragmentOfBars`（從 `ScoreJSON` 的一個聲部取出一段小節範圍）、`fragmentToScore`（片段轉成只有一個聲部的 `ScoreJSON`，所有 id 重新產生，形狀和 `docToJson` 的輸出相同；聲部名稱是空字串、`program` 是該種類的預設）、`scoreToFragment`（反過來，取出整份）、`blankFragment`（空白樂句）。
 
 ### 1.2 拍點段（只在剪貼簿）
 
@@ -58,6 +60,7 @@ interface BeatsFragment {
 - 可以依種類篩選、依名稱搜尋；可以改名、刪除、複製一份。
 - 「從圖片辨識」的入口在這頁。**補充**：還沒審核完的辨識，列在頁面上方的「待審核」區塊。
 - 「從圖片辨識」用 `<input type="file" accept="image/*" multiple>`，**不設** `capture`：手機會讓使用者選擇直接拍照或從相簿挑（owner 在 2026-11-13 裁定手機可以上傳）。
+- **補充**（#53）：搜尋是名稱裡的子字串、不分大小寫（Postgres 的 `ILIKE`），`%`、`_` 照字面比對；空白的搜尋等於沒有搜尋。新增空白樂句的對話框有名稱（預設「未命名樂句」）與聲部預設兩欄；建立後留在列表（樂句編輯器在之後的票）。刪除前先確認。
 - 在不能打譜的裝置上（手機、平板；判定同 [`views.md`](views.md) 第 1 節的 `canType`），這一頁可以列出、篩選、搜尋樂句，也可以「從圖片辨識」。**補充**：新增空白樂句、改名、刪除、複製一份，只在能打譜的裝置上出現，維持「手機與平板只看譜與播放」的限制，只開放上傳這一項。上傳後照常進審核頁看進度，結果留在「待審核」區塊，到桌面再審核。
 
 ### 4.1 `phrases` 表
@@ -72,7 +75,7 @@ interface BeatsFragment {
 | `staff_count` | **補充**：pitched 的譜表數，給側欄的相容判定用；其他種類是 null |
 | `bar_count` | 小節數 |
 | `content` | `jsonb`，小節段，最大 1 MB |
-| `revision` | integer，每次寫入加 1 |
+| `revision` | integer，每次寫入加 1。**補充**：建立時是 1，複製出來的樂句也從 1 開始 |
 | `created_at`、`updated_at` | |
 
 - `CONTEXT.md` 不新增 Revision 這個詞，它只是 API 的欄位名稱（和前身的做法相同，前身 `docs/ARCHITECTURE.md:39`）。
