@@ -46,6 +46,8 @@ class StandIn {
   readonly playerFinished = new Event();
   readonly playerPositionChanged = new Event<Position>();
   readonly midiLoaded = new Event();
+  /** The player behind the API: a sound the worker could not take is reported by it alone. */
+  readonly player = { midiLoadFailed: new Event<Error>() };
   score: alphaTab.model.Score | null = null;
   tickCache: alphaTab.midi.MidiTickLookup | null = null;
   readonly boundsLookup = null;
@@ -54,6 +56,8 @@ class StandIn {
   ready = false;
   /** What the engine asked of alphaTab, in order; `seek:<tick>` for a position set. */
   readonly calls: string[] = [];
+  /** How many notes each sound made holds, in order. */
+  readonly heard: number[] = [];
   /** As the worker last reported them (alphaTab's caches). */
   reportedState = AtState.Paused;
   reportedTick = 0;
@@ -92,9 +96,11 @@ class StandIn {
   /** The tick lookup is made at once, on the page's thread; the worker takes the sound later. */
   loadMidiForScore(): void {
     this.calls.push("loadMidi");
-    const generator = new alphaTab.midi.MidiFileGenerator(this.score!, this.settings, new alphaTab.midi.AlphaSynthMidiFileHandler(new alphaTab.midi.MidiFile()));
+    const file = new alphaTab.midi.MidiFile();
+    const generator = new alphaTab.midi.MidiFileGenerator(this.score!, this.settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file));
     generator.generate();
     this.tickCache = generator.tickLookup;
+    this.heard.push(file.events.filter((event) => event instanceof alphaTab.midi.NoteOnEvent).length);
   }
 
   play(): void {
@@ -134,6 +140,13 @@ function scoreOf(bars: number): ScoreJSON {
   return docToJson(doc);
 }
 
+/** The score with a quarter note on the top string of the guitar in a bar, by index. */
+function withFret(json: ScoreJSON, bar: number, fret: number): ScoreJSON {
+  const barId = json.bars[bar]!.id;
+  const parts = json.parts.map((part) => ({ ...part, content: { ...part.content, [barId]: { "0:0": [{ id: `fret-${bar}`, value: 4, dots: 0, notes: { s1: { fret } } }] } } }));
+  return { ...json, parts } as ScoreJSON;
+}
+
 let engine: ScoreEngine;
 let api: StandIn;
 let score: ScoreJSON;
@@ -165,6 +178,18 @@ function newSound(): void {
   api.midiLoaded.emit();
   api.playerReady.emit();
   at(0);
+}
+
+/**
+ * The worker could not take the new sound, reporting as alphaTab 1.9 does: it stopped, back at
+ * the start; ready (the page's side checks before passing the failure on); the failure, from
+ * the player only (the API tells it as an error).
+ */
+function soundFailed(): void {
+  at(0);
+  now("paused");
+  api.playerReady.emit();
+  api.player.midiLoadFailed.emit(new Error("The sound could not be loaded"));
 }
 
 /** What the engine asked of alphaTab since the last call to this. */
@@ -333,12 +358,43 @@ test("a change of content that needs a new model makes the sound once, not again
   expect(asked().filter((call) => call === "loadMidi")).toEqual(["loadMidi"]);
 });
 
-test("a change asked for before it is drawn is heard: the sound is made again", async () => {
-  // Drawing the first change; the next waits for it.
-  engine.renderer.patchBars(score, [score.bars[1]!.id]);
-  engine.renderer.patchBars(score, [score.bars[2]!.id]);
-  const loaded = engine.player.load();
+test("a change that waits for the drawing before it is heard too: the sound is made once it is in the model, and is in place only then", async () => {
+  const first = withFret(score, 1, 5);
+  const second = withFret(first, 2, 7);
+  // Drawing the first change; the second waits for it.
+  engine.renderer.patchBars(first, [first.bars[1]!.id]);
+  engine.renderer.patchBars(second, [second.bars[2]!.id]);
+  let inPlace = false;
+  const loaded = engine.player.load().then(() => {
+    inPlace = true;
+  });
+  expect(asked()).toEqual(["render"]);
+  // The first is drawn: the second goes into the model and is drawn, and the sound is made of both.
+  api.postRenderFinished.emit();
   expect(asked()).toEqual(["render", "loadMidi"]);
+  expect(api.heard.at(-1)).toBe(2);
+  await Promise.resolve();
+  expect(inPlace).toBe(false);
   newSound();
   await loaded;
+  expect(inPlace).toBe(true);
+});
+
+test("a new sound the worker could not take: nothing waits for it any more, and playback goes on from where it was", async () => {
+  playingAt(5000);
+  changeInPlace();
+  const loaded = engine.player.load();
+  expect(asked()).toEqual(["loadMidi"]);
+  soundFailed();
+  await loaded;
+  expect(asked()).toEqual(["seek:5000", "play"]);
+  at(5000);
+  now("playing");
+  // The member's pause is alphaTab's to report again.
+  engine.player.pause();
+  expect(asked()).toEqual(["pause"]);
+  expect(engine.player.state).toBe("playing");
+  now("paused");
+  expect(states).toEqual(["paused"]);
+  expect(positions).toEqual([5000]);
 });

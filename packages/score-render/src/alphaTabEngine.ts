@@ -97,6 +97,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
    * many sounds are being made, each reporting its own `midiLoaded`: the last one counts.
    */
   private reload: { loads: number; done: () => void } | null = null;
+  /** `load()` asked for while a change waited to be drawn: it makes the sound once that is in the model. */
+  private loadAfterDrawing: (() => void) | null = null;
   /** The model changed in place since the sound was made: `load()` has something to do. */
   private soundStale = false;
   private destroyed = false;
@@ -169,6 +171,9 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       this.positions.emit(this.lastPosition);
     });
     api.midiLoaded.on(() => this.onMidiLoaded());
+    // A sound the worker could not take is over too (alphaTab tells the API only as an error):
+    // nothing is to wait for it, and playback goes back to where it was.
+    api.player?.midiLoadFailed.on(() => this.onMidiLoaded());
   }
 
   // --- ScoreRenderer ---
@@ -241,6 +246,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const waiting = this.waiting;
     this.waiting = null;
     if (waiting) this.run(waiting);
+    // Every change asked for is in the model now: the sound asked for meanwhile can be made.
+    const load = this.loadAfterDrawing;
+    this.loadAfterDrawing = null;
+    load?.();
   }
 
   destroy(): void {
@@ -253,24 +262,42 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   load(): Promise<void> {
     // Before the player is ready alphaTab makes the sound itself, once it is.
     if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
-    // Nothing to make, and none being made: the sound is that of the model.
-    if (!this.soundStale && this.reload === null) return Promise.resolve();
+    // Nothing to make, none being made, and no change waiting to be drawn: the sound is that of the model.
+    if (!this.soundStale && this.reload === null && this.waiting === null) return Promise.resolve();
     return new Promise((resolve) => {
-      // A new sound under way settles this promise too.
-      const previous = this.reload;
-      this.reload = {
-        loads: previous?.loads ?? 0,
-        done: () => {
-          previous?.done();
-          resolve();
-        },
-      };
-      // A new model's sound is being made already, of the model as it is now.
-      if (!this.soundStale) return;
-      this.soundStale = false;
-      this.reload.loads += 1;
-      this.api.loadMidiForScore();
+      // A change waiting for the drawing under way is not in the model yet: the sound is made once it is.
+      if (this.waiting !== null) {
+        const before = this.loadAfterDrawing;
+        this.loadAfterDrawing = () => {
+          before?.();
+          this.makeSound(resolve);
+        };
+        return;
+      }
+      this.makeSound(resolve);
     });
+  }
+
+  /** Make the sound of the model as it is now, unless one is being made of it already; `done` once it is in place. */
+  private makeSound(done: () => void): void {
+    if (!this.soundStale && this.reload === null) {
+      done();
+      return;
+    }
+    // A new sound under way settles this one too.
+    const previous = this.reload;
+    this.reload = {
+      loads: previous?.loads ?? 0,
+      done: () => {
+        previous?.done();
+        done();
+      },
+    };
+    // A new model's sound is being made already, of the model as it is now.
+    if (!this.soundStale) return;
+    this.soundStale = false;
+    this.reload.loads += 1;
+    this.api.loadMidiForScore();
   }
 
   play(): void {
