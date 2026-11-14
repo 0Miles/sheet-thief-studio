@@ -1,6 +1,20 @@
 // What a projected score sounds like: the MIDI alphaTab generates from it (question S6).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, cursorAt, docToJson, insertBars, insertBeat, type NoteJSON, setNote } from "@studio/score-model";
+import {
+  addPart,
+  type BeatChange,
+  changeBeatAt,
+  createScore,
+  cursorAt,
+  docToJson,
+  dynamicCycle,
+  insertBars,
+  insertBeat,
+  type NoteJSON,
+  setNote,
+  slapPopCycle,
+  strokeCycle,
+} from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -121,4 +135,56 @@ test("a dead note without a fret sounds, short, on its open string", () => {
   const fretless = soundOf({ dead: true });
   expect(fretless).toEqual(soundOf({ fret: 0, dead: true }));
   expect(fretless.length).toBeLessThan(soundOf({ fret: 0 }).length);
+});
+
+/**
+ * The notes alphaTab plays for one beat of a guitar, a chord of three strings (the open G, B and
+ * high E), after `flag` changed it: key, velocity and tick of each note-on, lowest string first.
+ */
+function chordPlayed(...changes: BeatChange<unknown>[]): { key: number; velocity: number; tick: number }[] {
+  const doc = new Y.Doc();
+  createScore(doc, "Chord");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const beat = insertBeat(doc, cursorAt(doc, guitar, barId!), { value: 4 });
+  for (const key of ["s1", "s2", "s3"]) setNote(doc, beat, key, { fret: 0 });
+  for (const change of changes) changeBeatAt(doc, beat, change);
+  const { score } = projectScore(docToJson(doc), settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  return file.events
+    .filter((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent)
+    .map((event) => ({ key: event.noteKey, velocity: event.noteVelocity, tick: event.tick }))
+    .sort((a, b) => a.key - b.key);
+}
+
+test("a dynamic changes how loud the notes of its beat are, softer for pp, louder for ff, and nothing else", () => {
+  const plain = chordPlayed();
+  expect(plain.map((note) => [note.key, note.tick])).toEqual([
+    [55, 0],
+    [59, 0],
+    [64, 0],
+  ]);
+  const velocities = (changes: number) => chordPlayed(...Array.from({ length: changes }, () => dynamicCycle)).map((note) => note.velocity);
+  const [pp, p, mp, mf, f, ff] = [1, 2, 3, 4, 5, 6].map(velocities);
+  // A beat without a dynamic plays as f.
+  expect(f).toEqual(plain.map((note) => note.velocity));
+  const loudness = [pp, p, mp, mf, f, ff].map((each) => each![0]!);
+  expect([...loudness].sort((a, b) => a - b)).toEqual(loudness);
+  expect(new Set(loudness).size).toBe(6);
+  expect(chordPlayed(dynamicCycle).map(({ key, tick }) => [key, tick])).toEqual(plain.map(({ key, tick }) => [key, tick]));
+});
+
+test("a stroke spreads the starts of the notes of its beat: down from the lowest string, up from the highest", () => {
+  const starts = (notes: { key: number; tick: number }[]) => notes.map((note) => note.tick);
+  const down = starts(chordPlayed(strokeCycle));
+  expect(down[0]).toBe(0);
+  expect(down[0]).toBeLessThan(down[1]!);
+  expect(down[1]).toBeLessThan(down[2]!);
+  const up = starts(chordPlayed(strokeCycle, strokeCycle));
+  expect(up[2]).toBe(0);
+  expect(up[2]).toBeLessThan(up[1]!);
+  expect(up[1]).toBeLessThan(up[0]!);
+  // Slap and pop are only drawn: alphaTab plays them as any other beat, so they are tested in the projection only.
+  expect(chordPlayed(slapPopCycle)).toEqual(chordPlayed());
 });

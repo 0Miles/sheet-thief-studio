@@ -149,6 +149,24 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON): AtNote | null
   return note;
 }
 
+/**
+ * How long a strummed beat takes to strum, in ticks (960 a quarter), from its first string to its
+ * last: a 64th note, some 30 ms at 120 beats a minute. Without it alphaTab sounds every string at
+ * once. How it sounds is for the owner to judge by ear (docs/spec/testing.md, section 6).
+ */
+export const STROKE_TICKS = 60;
+
+const BRUSH_TYPES = { down: model.BrushType.BrushDown, up: model.BrushType.BrushUp } as const;
+
+const DYNAMICS = {
+  pp: model.DynamicValue.PP,
+  p: model.DynamicValue.P,
+  mp: model.DynamicValue.MP,
+  mf: model.DynamicValue.MF,
+  f: model.DynamicValue.F,
+  ff: model.DynamicValue.FF,
+} as const;
+
 function rest(value: NoteValue): AtBeat {
   const beat = new model.Beat();
   beat.duration = value as alphaTab.model.Duration;
@@ -162,6 +180,15 @@ function projectBeat(part: PartJSON, json: BeatJSON): AtBeat {
     beat.tupletNumerator = json.tuplet.actual;
     beat.tupletDenominator = json.tuplet.normal;
   }
+  if (json.stroke) {
+    beat.brushType = BRUSH_TYPES[json.stroke];
+    beat.brushDuration = STROKE_TICKS;
+  }
+  if (json.slap) beat.slap = true;
+  if (json.pop) beat.pop = true;
+  // A beat without a dynamic keeps alphaTab's own, f: alphaTab marks a dynamic only where it changes.
+  if (json.dynamic) beat.dynamics = DYNAMICS[json.dynamic];
+  if (json.text) beat.text = json.text;
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson);
     if (!note) continue;
