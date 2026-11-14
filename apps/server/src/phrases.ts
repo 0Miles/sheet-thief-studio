@@ -64,16 +64,29 @@ async function ownPhrase(id: string, ownerId: string): Promise<Phrase | null> {
   return Phrase.findOne({ where: { id, ownerId } });
 }
 
+/** What a write names: the account's phrase, the revision it was made from, and the kind its content is of when it writes content. */
+interface WriteTarget {
+  id: string;
+  ownerId: string;
+  baseRevision: number;
+  kind?: Phrase["kind"];
+}
+
 /**
  * Write over the account's phrase, made from `baseRevision`, counting one more revision. Answers
- * the new revision; 409 `revision_conflict` when the phrase is at another one; 404.
+ * the new revision; 400 when the content is of another kind than the phrase (a phrase's kind
+ * never changes, docs/spec/phrases.md section 5); 409 `revision_conflict` when the phrase is at
+ * another revision; 404.
  */
-async function writePhrase(reply: FastifyReply, { id, ownerId, baseRevision }: { id: string; ownerId: string; baseRevision: number }, fields: Partial<Phrase>) {
+async function writePhrase(reply: FastifyReply, { id, ownerId, baseRevision, kind }: WriteTarget, fields: Partial<Phrase>) {
   if (!isUuid(id)) return notFound(reply);
   // One statement, so that two writes made from the same revision cannot both pass.
-  const [written, rows] = await Phrase.update({ ...fields, revision: literal("revision + 1") as unknown as number }, { where: { id, ownerId, revision: baseRevision }, returning: ["revision"] });
+  const where = { id, ownerId, revision: baseRevision, ...(kind === undefined ? {} : { kind }) };
+  const [written, rows] = await Phrase.update({ ...fields, revision: literal("revision + 1") as unknown as number }, { where, returning: ["revision"] });
   if (written === 1) return phraseRevision.parse({ revision: rows[0]!.revision });
-  if ((await Phrase.count({ where: { id, ownerId } })) === 0) return notFound(reply);
+  const phrase = await Phrase.findOne({ where: { id, ownerId }, attributes: ["kind"] });
+  if (phrase === null) return notFound(reply);
+  if (kind !== undefined && phrase.kind !== kind) return reply.code(400).send({ code: "invalid_request", params: { issues: [{ path: ["fragment", "kind"], code: "custom" }] } });
   return reply.code(409).send({ code: "revision_conflict" });
 }
 
@@ -118,7 +131,7 @@ export function registerPhrases(app: FastifyInstance): void {
     const body = savePhraseRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
     const { fragment, baseRevision } = body.data;
-    return writePhrase(reply, { id: request.params.id, ownerId: request.account!.id, baseRevision }, { content: fragment, ...countsOf(fragment) });
+    return writePhrase(reply, { id: request.params.id, ownerId: request.account!.id, baseRevision, kind: fragment.kind }, { content: fragment, ...countsOf(fragment) });
   });
 
   app.patch<{ Params: { id: string } }>("/api/phrases/:id", async (request, reply) => {
@@ -131,8 +144,8 @@ export function registerPhrases(app: FastifyInstance): void {
   app.post<{ Params: { id: string } }>("/api/phrases/:id/duplicate", async (request, reply) => {
     const phrase = await ownPhrase(request.params.id, request.account!.id);
     if (phrase === null) return notFound(reply);
-    const { ownerId, content, kind, stringCount, staffCount, barCount } = phrase;
-    const copy = await Phrase.create({ ownerId, name: copyName(phrase.name), content, kind, stringCount, staffCount, barCount, revision: 1 }, { returning: ["id"] });
+    const { ownerId, content } = phrase;
+    const copy = await Phrase.create({ ownerId, name: copyName(phrase.name), content, revision: 1, ...countsOf(content) }, { returning: ["id"] });
     return reply.code(201).send(duplicatedPhrase.parse({ id: copy.id }));
   });
 

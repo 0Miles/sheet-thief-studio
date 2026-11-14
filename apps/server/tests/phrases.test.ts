@@ -1,7 +1,7 @@
 // The phrases API (docs/spec/routes.md, 3.7; docs/spec/phrases.md, sections 4 and 5.1): my
 // library listed, filtered and searched; the revision every write counts; the 1 MB limit; and
 // nobody but the owner reaching a phrase.
-import { type BarsFragment, blankFragment, MAX_FRAGMENT_BYTES, jsonBytes, PART_PRESETS } from "@studio/score-model";
+import { type BarsFragment, blankFragment, jsonBytes, MAX_FRAGMENT_BYTES, PART_PRESETS } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
@@ -50,8 +50,8 @@ const bass = blankFragment(PART_PRESETS.bass5);
 const drums = blankFragment(PART_PRESETS.drums);
 const keys = blankFragment(PART_PRESETS.keys);
 
-/** A riff of two bars: one beat in the first. */
-const riff: BarsFragment = {
+/** Two bars of tablature: one beat in the first. */
+const twoBars: BarsFragment = {
   kind: "fretted",
   tuning: [...PART_PRESETS.guitar6.tuning],
   bars: [
@@ -74,10 +74,34 @@ function fragmentOfAtLeast(bytes: number): BarsFragment {
   return { kind: "fretted", tuning: [...PART_PRESETS.guitar6.tuning], bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": Array(count).fill(beat) } }] };
 }
 
+/**
+ * A fragment of exactly `bytes` of JSON in UTF-8: beats whose text is 1 to 64 ASCII characters,
+ * as many beats as it takes, the characters shared out between them.
+ */
+function fragmentOfExactly(bytes: number): BarsFragment {
+  const beatOf = (length: number) => ({ value: 64 as const, dots: 0 as const, notes: {}, text: "a".repeat(length) });
+  const fragment = (lengths: number[]): BarsFragment => ({
+    kind: "fretted",
+    tuning: [...PART_PRESETS.guitar6.tuning],
+    bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": lengths.map(beatOf) } }],
+  });
+  const left = bytes - jsonBytes(fragment([]));
+  // Each beat takes its bytes without text, its text, and a comma but the first.
+  const bare = jsonBytes(beatOf(0));
+  const count = Math.ceil((left + 1) / (bare + 65));
+  let characters = left - count * bare - (count - 1);
+  const lengths = Array.from({ length: count }, (_, index) => {
+    const length = Math.min(64, characters - (count - index - 1));
+    characters -= length;
+    return length;
+  });
+  return fragment(lengths);
+}
+
 test("a new phrase is read back as it was written, its revision 1, and is listed with its counts", async () => {
-  const id = await createPhrase(anna, "前奏", riff);
+  const id = await createPhrase(anna, "前奏", twoBars);
   const read = await call("GET", `/api/phrases/${id}`, anna);
-  expect([read.statusCode, read.json()]).toEqual([200, { id, name: "前奏", fragment: riff, revision: 1, updatedAt: expect.any(String) }]);
+  expect([read.statusCode, read.json()]).toEqual([200, { id, name: "前奏", fragment: twoBars, revision: 1, updatedAt: expect.any(String) }]);
 
   await createPhrase(anna, "鍵盤", keys);
   const list = await call("GET", "/api/phrases", anna);
@@ -91,7 +115,7 @@ test("a new phrase is read back as it was written, its revision 1, and is listed
 
 test("saving writes the whole fragment over the phrase and counts one more revision; a save or rename made from another revision is refused with 409", async () => {
   const id = await createPhrase(anna, "前奏");
-  const saved = await call("PUT", `/api/phrases/${id}`, anna, { fragment: riff, baseRevision: 1 });
+  const saved = await call("PUT", `/api/phrases/${id}`, anna, { fragment: twoBars, baseRevision: 1 });
   expect([saved.statusCode, saved.json()]).toEqual([200, { revision: 2 }]);
 
   // Another tab still at revision 1: refused, and what was saved stays.
@@ -99,13 +123,13 @@ test("saving writes the whole fragment over the phrase and counts one more revis
   expect([stale.statusCode, stale.json()]).toEqual([409, { code: "revision_conflict" }]);
   const ahead = await call("PUT", `/api/phrases/${id}`, anna, { fragment: bass, baseRevision: 3 });
   expect([ahead.statusCode, ahead.json()]).toEqual([409, { code: "revision_conflict" }]);
-  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ fragment: riff, revision: 2 });
+  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ fragment: twoBars, revision: 2 });
 
   const renamed = await call("PATCH", `/api/phrases/${id}`, anna, { name: "主歌", baseRevision: 2 });
   expect([renamed.statusCode, renamed.json()]).toEqual([200, { revision: 3 }]);
   const staleName = await call("PATCH", `/api/phrases/${id}`, anna, { name: "副歌", baseRevision: 2 });
   expect([staleName.statusCode, staleName.json()]).toEqual([409, { code: "revision_conflict" }]);
-  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ name: "主歌", fragment: riff, revision: 3 });
+  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ name: "主歌", fragment: twoBars, revision: 3 });
 
   // The counts the list shows follow the content.
   await call("PUT", `/api/phrases/${id}`, anna, { fragment: bass, baseRevision: 3 });
@@ -114,9 +138,19 @@ test("saving writes the whole fragment over the phrase and counts one more revis
   });
 });
 
+test("a save of content of another kind is refused with 400, whatever its revision, and nothing is written: a phrase's kind never changes", async () => {
+  const id = await createPhrase(anna, "前奏", twoBars);
+  for (const baseRevision of [1, 2]) {
+    const answer = await call("PUT", `/api/phrases/${id}`, anna, { fragment: keys, baseRevision });
+    expect([answer.statusCode, answer.json().code]).toEqual([400, "invalid_request"]);
+  }
+  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ fragment: twoBars, revision: 1 });
+  expect((await call("GET", "/api/phrases", anna)).json().phrases).toEqual([expect.objectContaining({ kind: "fretted", stringCount: 6, staffCount: null })]);
+});
+
 test("two saves made from the same revision at once: one is written, the other refused", async () => {
   const id = await createPhrase(anna, "前奏");
-  const answers = await Promise.all([riff, bass].map((fragment) => call("PUT", `/api/phrases/${id}`, anna, { fragment, baseRevision: 1 })));
+  const answers = await Promise.all([twoBars, bass].map((fragment) => call("PUT", `/api/phrases/${id}`, anna, { fragment, baseRevision: 1 })));
   expect(answers.map((answer) => answer.statusCode).sort()).toEqual([200, 409]);
   expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ revision: 2 });
 });
@@ -139,22 +173,40 @@ test("a fragment of more than 1 MB of JSON is refused with 413, counted in bytes
   expect(jsonBytes(fits)).toBeLessThanOrEqual(MAX_FRAGMENT_BYTES);
   expect((await call("PUT", `/api/phrases/${id}`, anna, { fragment: fits, baseRevision: 1 })).json()).toEqual({ revision: 2 });
 
+  // Exactly 1 MB is within it.
+  const exact = fragmentOfExactly(MAX_FRAGMENT_BYTES);
+  expect(jsonBytes(exact)).toBe(MAX_FRAGMENT_BYTES);
+  expect((await call("PUT", `/api/phrases/${id}`, anna, { fragment: exact, baseRevision: 2 })).json()).toEqual({ revision: 3 });
+  expect((await call("POST", "/api/phrases", anna, { name: "剛好", fragment: exact })).statusCode).toBe(201);
+
   // A body far past the fragment's limit is refused before it is read.
-  const huge = await call("PUT", `/api/phrases/${id}`, anna, { fragment: fragmentOfAtLeast(2 * MAX_FRAGMENT_BYTES), baseRevision: 2 });
-  expect([huge.statusCode, huge.json()]).toEqual([413, { code: "payload_too_large" }]);
+  const huge = fragmentOfAtLeast(2 * MAX_FRAGMENT_BYTES);
+  for (const response of [await call("PUT", `/api/phrases/${id}`, anna, { fragment: huge, baseRevision: 3 }), await call("POST", "/api/phrases", anna, { name: "太大", fragment: huge })]) {
+    expect([response.statusCode, response.json()]).toEqual([413, { code: "payload_too_large" }]);
+  }
+  expect((await call("GET", `/api/phrases/${id}`, anna)).json()).toMatchObject({ revision: 3 });
+});
+
+test("a request that carries no fragment takes at most 64 KB of body", async () => {
+  const id = await createPhrase(anna, "前奏");
+  const rename = await call("PATCH", `/api/phrases/${id}`, anna, { name: "名".repeat(30 * 1024), baseRevision: 1 });
+  expect([rename.statusCode, rename.json()]).toEqual([413, { code: "payload_too_large" }]);
+  const copy = await call("POST", `/api/phrases/${id}/duplicate`, anna, { padding: "a".repeat(65 * 1024) });
+  expect([copy.statusCode, copy.json()]).toEqual([413, { code: "payload_too_large" }]);
+  expect((await call("GET", "/api/phrases", anna)).json().phrases).toEqual([expect.objectContaining({ id, name: "前奏", revision: 1 })]);
 });
 
 test("a fragment that is not legal is refused with 400, as is a name too long or empty", async () => {
   const id = await createPhrase(anna, "前奏");
-  const withIds = { ...riff, bars: [{ ...riff.bars[0], voices: { "0:0": [{ id: "x1", value: 4, dots: 0, notes: {} }] } }] };
-  const withTempo = { ...riff, bars: [{ ...riff.bars[0], tempo: 120 }] };
+  const withIds = { ...twoBars, bars: [{ ...twoBars.bars[0], voices: { "0:0": [{ id: "x1", value: 4, dots: 0, notes: {} }] } }] };
+  const withTempo = { ...twoBars, bars: [{ ...twoBars.bars[0], tempo: 120 }] };
   const answers = [
     await call("POST", "/api/phrases", anna, { name: "有 id", fragment: withIds }),
     await call("POST", "/api/phrases", anna, { name: "有速度", fragment: withTempo }),
     await call("POST", "/api/phrases", anna, { name: "", fragment: guitar }),
     await call("POST", "/api/phrases", anna, { name: "長".repeat(101), fragment: guitar }),
     await call("PUT", `/api/phrases/${id}`, anna, { fragment: withIds, baseRevision: 1 }),
-    await call("PUT", `/api/phrases/${id}`, anna, { fragment: riff }),
+    await call("PUT", `/api/phrases/${id}`, anna, { fragment: twoBars }),
     await call("PATCH", `/api/phrases/${id}`, anna, { name: "  ", baseRevision: 1 }),
   ];
   for (const answer of answers) expect([answer.statusCode, answer.json().code]).toEqual([400, "invalid_request"]);
@@ -165,13 +217,15 @@ test("someone else's phrase does not exist for me: every call on it answers 404,
   const id = await createPhrase(anna, "前奏");
   const answers = [
     await call("GET", `/api/phrases/${id}`, ben),
-    await call("PUT", `/api/phrases/${id}`, ben, { fragment: riff, baseRevision: 1 }),
+    await call("PUT", `/api/phrases/${id}`, ben, { fragment: twoBars, baseRevision: 1 }),
     await call("PATCH", `/api/phrases/${id}`, ben, { name: "我的", baseRevision: 1 }),
     await call("POST", `/api/phrases/${id}/duplicate`, ben),
     await call("DELETE", `/api/phrases/${id}`, ben),
     // No such phrase, and an id that is none.
     await call("GET", "/api/phrases/00000000-0000-4000-8000-000000000000", anna),
-    await call("PUT", "/api/phrases/not-a-phrase", anna, { fragment: riff, baseRevision: 1 }),
+    await call("PUT", "/api/phrases/not-a-phrase", anna, { fragment: twoBars, baseRevision: 1 }),
+    await call("PATCH", "/api/phrases/not-a-phrase", anna, { name: "我的", baseRevision: 1 }),
+    await call("POST", "/api/phrases/not-a-phrase/duplicate", anna),
     await call("DELETE", "/api/phrases/not-a-phrase", anna),
   ];
   for (const answer of answers) expect([answer.statusCode, answer.json()]).toEqual([404, { code: "not_found" }]);
@@ -184,18 +238,18 @@ test("someone else's phrase does not exist for me: every call on it answers 404,
 });
 
 test("the list is most recently updated first, filtered by kind, searched by a part of the name in either case", async () => {
-  const intro = await createPhrase(anna, "Intro 前奏", riff);
+  const intro = await createPhrase(anna, "Intro 前奏", twoBars);
   const groove = await createPhrase(anna, "Groove", drums);
   const chords = await createPhrase(anna, "intro chords", keys);
   const percent = await createPhrase(anna, "100% 前奏", bass);
-  await createPhrase(ben, "Intro of Ben", riff);
+  await createPhrase(ben, "Intro of Ben", twoBars);
   // Every phrase so far a minute older, so that the next write is the most recent by far.
   const age = () => sequelize.query("UPDATE phrases SET updated_at = updated_at - interval '1 minute'");
   await age();
   // The oldest were changed last: saving or renaming makes a phrase the most recent.
   await call("PATCH", `/api/phrases/${groove}`, anna, { name: "Groove A", baseRevision: 1 });
   await age();
-  await call("PUT", `/api/phrases/${intro}`, anna, { fragment: riff, baseRevision: 1 });
+  await call("PUT", `/api/phrases/${intro}`, anna, { fragment: twoBars, baseRevision: 1 });
 
   const ids = async (query: string) => ((await call("GET", `/api/phrases${query}`, anna)).json() as { phrases: { id: string }[] }).phrases.map((phrase) => phrase.id);
   const all = await ids("");
@@ -210,6 +264,9 @@ test("the list is most recently updated first, filtered by kind, searched by a p
   // A wildcard of SQL is only itself.
   expect(await ids(`?q=${encodeURIComponent("%")}`)).toEqual([percent]);
   expect(await ids(`?q=${encodeURIComponent("_")}`)).toEqual([]);
+  // LIKE's own escape character is only itself too.
+  const backslash = await call("GET", `/api/phrases?q=${encodeURIComponent("\\")}`, anna);
+  expect([backslash.statusCode, backslash.json()]).toEqual([200, { phrases: [] }]);
   expect(await ids("?q=nothing")).toEqual([]);
   expect((await ids("?q=")).length).toBe(4);
 
@@ -218,12 +275,12 @@ test("the list is most recently updated first, filtered by kind, searched by a p
 });
 
 test("a copy has the same content under the name with 「（副本）」, at revision 1; deleting removes only the phrase deleted", async () => {
-  const id = await createPhrase(anna, "前奏", riff);
-  await call("PUT", `/api/phrases/${id}`, anna, { fragment: riff, baseRevision: 1 });
+  const id = await createPhrase(anna, "前奏", twoBars);
+  await call("PUT", `/api/phrases/${id}`, anna, { fragment: twoBars, baseRevision: 1 });
   const copied = await call("POST", `/api/phrases/${id}/duplicate`, anna);
   expect([copied.statusCode, copied.json()]).toEqual([201, { id: expect.any(String) }]);
   const copy = (copied.json() as { id: string }).id;
-  expect((await call("GET", `/api/phrases/${copy}`, anna)).json()).toEqual({ id: copy, name: "前奏（副本）", fragment: riff, revision: 1, updatedAt: expect.any(String) });
+  expect((await call("GET", `/api/phrases/${copy}`, anna)).json()).toEqual({ id: copy, name: "前奏（副本）", fragment: twoBars, revision: 1, updatedAt: expect.any(String) });
 
   // A name that would pass 100 characters with the suffix is cut short to fit.
   const long = await createPhrase(anna, "長".repeat(100));

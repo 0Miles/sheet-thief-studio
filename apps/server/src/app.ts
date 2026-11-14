@@ -14,6 +14,9 @@ import { RateLimiter } from "./rateLimit";
 import { registerScores } from "./scores";
 import { Sessions } from "./sessions";
 
+/** The body of a JSON request that carries no fragment (docs/spec/security.md, section 5). */
+const JSON_BODY_LIMIT = 64 * 1024;
+
 export interface Dependencies {
   config: Config;
   /** Connected; the caller closes it after the app (main.ts). */
@@ -25,7 +28,8 @@ export interface Dependencies {
 export function buildApp({ config, redis, logger = true }: Dependencies): FastifyInstance {
   // Only nginx stands in front of the server: the client's IP is the address nginx adds to
   // X-Forwarded-For (docs/spec/security.md, 4).
-  const app = Fastify({ logger: logger ? { serializers: { req: loggedRequest } } : false, trustProxy: config.trustedProxies });
+  // JSON requests carry at most 64 KB; the routes that carry a fragment set their own limit (docs/spec/security.md, section 5).
+  const app = Fastify({ logger: logger ? { serializers: { req: loggedRequest } } : false, trustProxy: config.trustedProxies, bodyLimit: JSON_BODY_LIMIT });
   app.register(cookie);
   registerErrorAnswers(app);
   registerOriginCheck(app, config.publicOrigin);
