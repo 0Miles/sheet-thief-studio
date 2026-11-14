@@ -91,6 +91,8 @@ const narrow = computed(() => reading.value && isNarrow());
 const display = ref<DisplayOptions>({ hidden: [], scale: 1 });
 /** The one part the narrow Read view shows; null until the score is there. */
 const narrowPart = ref<string | null>(null);
+/** The score's id, once it is opened (a guest's page learns it from the link): its display options are stored under it. */
+let scoreId = "";
 /** The parts the renderer was asked to show, in the score's order (`data-parts`, for the e2e tests). */
 const shown = shallowRef<string[]>([]);
 /** The narrow Read view's drawer, with the options that do not fit in its bars, is open. */
@@ -283,6 +285,7 @@ function draw(change: ScoreChange): void {
   score.value = json;
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.
+    if (narrow.value) keepNarrowPart(json);
     shown.value = partsToShow(json);
     engine.renderer.setScore(json, shown.value);
     keepCursorShown();
@@ -300,12 +303,15 @@ function firstCursor(json: ScoreJSON, partId: string | undefined, barId = json.b
   return part && barId ? cursorAt(doc, part.id, barId, part.kind === "fretted" ? 1 : 4) : null;
 }
 
+/** The narrow Read view's one part, as long as the score has it; else the one chosen last here, or the first. */
+function keepNarrowPart(json: ScoreJSON): void {
+  const ids = json.parts.map((part) => part.id);
+  if (narrowPart.value === null || !ids.includes(narrowPart.value)) narrowPart.value = loadNarrowPart(scoreId, ids);
+}
+
 /** The parts to show: the narrow Read view's one part, or all but those the member hid. */
 function partsToShow(json: ScoreJSON): string[] {
-  const ids = json.parts.map((part) => part.id);
-  if (!narrow.value) return shownParts(ids, display.value.hidden);
-  const kept = narrowPart.value !== null && ids.includes(narrowPart.value);
-  if (!kept) narrowPart.value = opening.value ? loadNarrowPart(opening.value.scoreId, ids) : (ids[0] ?? null);
+  if (!narrow.value) return shownParts(json.parts.map((part) => part.id), display.value.hidden);
   return narrowPart.value === null ? [] : [narrowPart.value];
 }
 
@@ -328,7 +334,7 @@ function keepCursorShown(): void {
 }
 
 function saveOptions(): void {
-  if (opening.value) saveDisplay(opening.value.scoreId, display.value);
+  saveDisplay(scoreId, display.value);
 }
 
 function onHide(partId: string, hidden: boolean): void {
@@ -352,7 +358,7 @@ function onScale(scale: number): void {
 function onNarrowPart(event: Event): void {
   const partId = (event.target as HTMLSelectElement).value;
   narrowPart.value = partId;
-  if (opening.value) saveNarrowPart(opening.value.scoreId, partId);
+  saveNarrowPart(scoreId, partId);
   showChosenParts();
 }
 
@@ -430,7 +436,8 @@ onMounted(async () => {
   }
   if (host.value === undefined) return;
   view.value = decideView({ role: opened.role, isGuest, canType: canType() });
-  display.value = loadDisplay(opened.scoreId);
+  scoreId = opened.scoreId;
+  display.value = loadDisplay(scoreId);
   if (reading.value) stopped.value = false;
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
   // Read view in a worker, and a click on it sends playback there.

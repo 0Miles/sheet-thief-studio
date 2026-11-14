@@ -69,6 +69,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private parts = new Map<string, PartShape>();
   /** Parts to show; null shows all of them. */
   private shown: readonly string[] | null = null;
+  /**
+   * The scale asked for. alphaTab's own (`settings.display.scale`) is that of the drawing under
+   * way, or of the last one: the places on the page are measured with it until the next drawing starts.
+   */
+  private scale: number;
   /** The drawing alphaTab is working on, and the change that arrived meanwhile. */
   private running: { partial: boolean; timings: RenderTimings; startedAt: number } | null = null;
   private waiting: Request | null = null;
@@ -109,6 +114,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     private element: HTMLElement,
     private options: EngineOptions,
   ) {
+    this.scale = options.scale ?? 1;
     const settings = new alphaTab.Settings();
     settings.core.fontDirectory = options.fontDirectory;
     settings.core.useWorkers = options.useWorkers ?? true;
@@ -116,7 +122,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     settings.core.enableLazyLoading = true; // partial layout needs it
     settings.display.layoutMode = alphaTab.LayoutMode.Page;
     settings.display.staveProfile = alphaTab.StaveProfile.Default;
-    settings.display.scale = options.scale ?? 1;
+    settings.display.scale = this.scale;
     settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
     if (options.soundFont === null) {
       settings.player.playerMode = alphaTab.PlayerMode.Disabled;
@@ -203,10 +209,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   setScale(scale: number): void {
-    const display = this.api.settings.display;
-    if (display.scale === scale) return;
-    display.scale = scale;
-    this.api.updateSettings();
+    if (this.scale === scale) return;
+    this.scale = scale;
     this.relayout();
   }
 
@@ -349,7 +353,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private seekToBeat(beat: alphaTab.model.Beat): void {
     const cache = this.api.tickCache;
     if (cache === null) return;
-    this.seek(cache.getMasterBarStart(beat.voice.bar.masterBar) + (cache.getRelativeBeatPlaybackRange(beat)?.startTick ?? beat.playbackStart));
+    const tick = cache.getMasterBarStart(beat.voice.bar.masterBar) + (cache.getRelativeBeatPlaybackRange(beat)?.startTick ?? beat.playbackStart);
+    // Within the loop, when there is one: a click outside it goes to its nearer end.
+    const range = this.api.playbackRange;
+    this.seek(range ? Math.min(Math.max(tick, range.startTick), range.endTick) : tick);
   }
 
   tickOf(barId: string): number | null {
@@ -449,6 +456,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       timings: { project: projectionTimings.build, finish: projectionTimings.finish, render: 0 },
       startedAt: performance.now(),
     };
+    this.applyScale();
     if (projection.score === this.api.score) {
       this.soundStale = true;
       // Other parts shown, or another scale, since the last drawing: nothing laid out before holds.
@@ -479,7 +487,16 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const projection = this.projection as Projection;
     this.layoutChanged = false;
     this.running ??= { partial: false, timings: { ...NO_TIMINGS }, startedAt: performance.now() };
+    this.applyScale();
     this.api.renderTracks(this.trackIndexes(projection).map((index) => projection.score.tracks[index] as alphaTab.model.Track));
+  }
+
+  /** A drawing starts: at the scale asked for last. */
+  private applyScale(): void {
+    const display = this.api.settings.display;
+    if (display.scale === this.scale) return;
+    display.scale = this.scale;
+    this.api.updateSettings();
   }
 
   /**

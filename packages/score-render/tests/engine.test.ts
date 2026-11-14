@@ -53,6 +53,7 @@ class StandIn {
   tickCache: alphaTab.midi.MidiTickLookup | null = null;
   readonly boundsLookup = null;
   isLooping = false;
+  playbackRange: alphaTab.synth.PlaybackRange | null = null;
   /** The sound font is in: alphaTab makes a new model's sound as it gets the model. */
   ready = false;
   /** What the engine asked of alphaTab, in order; `seek:<tick>` for a position set. */
@@ -154,6 +155,11 @@ function withFret(json: ScoreJSON, bar: number, fret: number): ScoreJSON {
   const barId = json.bars[bar]!.id;
   const parts = json.parts.map((part) => ({ ...part, content: { ...part.content, [barId]: { "0:0": [{ id: `fret-${bar}`, value: 4, dots: 0, notes: { s1: { fret } } }] } } }));
   return { ...json, parts } as ScoreJSON;
+}
+
+/** The first beat of the first voice of a bar of the guitar, by index, in the model alphaTab has. */
+function beatIn(bar: number): alphaTab.model.Beat {
+  return api.score!.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[0]!;
 }
 
 let engine: ScoreEngine;
@@ -413,9 +419,11 @@ test("a new sound the worker could not take: nothing waits for it any more, and 
 test("a new zoom asked for while a change is drawn: the score is drawn again at that scale after it", () => {
   engine.renderer.patchBars(score, [score.bars[1]!.id]);
   engine.renderer.setScale(1.5);
-  expect(asked()).toEqual(["render", "updateSettings:1.5"]);
+  // The drawing under way is at the scale it started with: the page is measured with that one.
+  expect(asked()).toEqual(["render"]);
+  expect(api.settings.display.scale).toBe(1);
   api.postRenderFinished.emit();
-  expect(asked()).toEqual(["renderTracks:0"]);
+  expect(asked()).toEqual(["updateSettings:1.5", "renderTracks:0"]);
   // Drawn: nothing more to do.
   api.postRenderFinished.emit();
   expect(asked()).toEqual([]);
@@ -428,7 +436,6 @@ test("the same zoom again draws nothing", () => {
 
 test("with seekOnClick, a click on a beat sends playback to it; while a new sound is made, there once it is in", () => {
   start({ seekOnClick: true });
-  const beatIn = (bar: number) => api.score!.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[0]!;
   api.beatMouseUp.emit(beatIn(2));
   expect(asked()).toEqual([`seek:${2 * BAR}`]);
   // Off the beats: nothing.
@@ -441,7 +448,16 @@ test("with seekOnClick, a click on a beat sends playback to it; while a new soun
   expect(asked()).toEqual([`seek:${4 * BAR}`, `seek:${4 * BAR}`]);
 });
 
+test("with seekOnClick and a loop, a click outside the loop sends playback to its nearer end", () => {
+  start({ seekOnClick: true });
+  engine.player.setLoop({ startTick: 2 * BAR, endTick: 4 * BAR });
+  api.beatMouseUp.emit(beatIn(0));
+  api.beatMouseUp.emit(beatIn(6));
+  api.beatMouseUp.emit(beatIn(3));
+  expect(asked()).toEqual([`seek:${2 * BAR}`, `seek:${4 * BAR}`, `seek:${3 * BAR}`]);
+});
+
 test("without seekOnClick, a click on a beat leaves playback where it is", () => {
-  api.beatMouseUp.emit(api.score!.tracks[0]!.staves[0]!.bars[2]!.voices[0]!.beats[0]!);
+  api.beatMouseUp.emit(beatIn(2));
   expect(asked()).toEqual([]);
 });

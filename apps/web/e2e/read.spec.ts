@@ -50,9 +50,22 @@ async function namesDrawn(page: Page, names: string[]): Promise<string[]> {
   return names.filter((name) => drawing.includes(name));
 }
 
-/** No overlay and no bar of the page covers a reserved area, with the score scrolled to its top. */
-async function clearOfReserved(page: Page, playbar: string): Promise<void> {
-  expect(await page.locator("[data-scroller]").evaluate((element) => element.scrollTop)).toBe(0);
+/**
+ * No overlay and no bar of the page covers a reserved area, with the score scrolled to its top.
+ * The player is never over the score at all (docs/spec/views.md, section 7): on a phone it and
+ * the drawer, when open, are below where the score scrolls; wide, the toolbar holding it is above.
+ */
+async function clearOfReserved(page: Page, playbar: "[data-playbar]" | "[data-player]"): Promise<void> {
+  const scroller = page.locator("[data-scroller]");
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
+  const score = (await scroller.boundingBox())!;
+  if (playbar === "[data-playbar]") {
+    const below = [page.locator(playbar), ...(await page.locator("[data-drawer]").all())];
+    for (const part of below) expect((await part.boundingBox())!.y, "below the score").toBeGreaterThanOrEqual(score.y + score.height);
+  } else {
+    const toolbar = (await page.locator("main > header").boundingBox())!;
+    expect(toolbar.y + toolbar.height, "the toolbar is above the score").toBeLessThanOrEqual(score.y);
+  }
   const reserved = await Promise.all((await page.locator("[data-reserved]").all()).map((area) => area.boundingBox()));
   expect(reserved).not.toHaveLength(0);
   const bar = (await page.locator(playbar).boundingBox())!;
@@ -191,12 +204,17 @@ test("a part hidden and a zoom chosen in the edit view are kept after a reload, 
   expect(await cursorHeight()).toBeCloseTo(before * 1.5, 0);
   expect(await namesDrawn(page, names)).toEqual([first!.name, third!.name]);
 
-  // The same browser, 900 px wide: the Read view, with the same options.
+  // The same browser, 900 px wide: the Read view, with the same options, drawn at that zoom:
+  // back at 100%, the system playback is in is two thirds as tall.
   await page.setViewportSize({ width: 900, height: 900 });
   await openToRead(page, `/scores/${id}`);
   await expect(page.locator("main")).toHaveAttribute("data-view", "read");
   await expect(partsShown(page)).toHaveAttribute("data-parts", `${first!.id},${third!.id}`);
   await expect.poll(() => namesDrawn(page, names)).toEqual([first!.name, third!.name]);
   await expect(page.getByLabel(text.display.zoom)).toHaveValue("1.5");
+  const systemHeight = async () => (await page.locator("[data-playhead]").boundingBox())!.height;
+  const zoomed = await systemHeight();
+  await page.getByLabel(text.display.zoom).selectOption({ label: text.display.scale(1) });
+  await expect.poll(async () => zoomed / (await systemHeight())).toBeCloseTo(1.5, 1);
   expect(errors).toEqual([]);
 });
