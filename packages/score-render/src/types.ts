@@ -38,6 +38,8 @@ export interface ScoreRenderer {
   patchBars(score: ScoreJSON, barIds: readonly string[]): void;
   /** Change which parts are shown, without changing the score. */
   showParts(partIds: readonly string[]): void;
+  /** Draw the score bigger or smaller: 1 is its own size. */
+  setScale(scale: number): void;
   /** Where the cursor is on the page, or null when its place is not drawn (yet). */
   boundsOf(cursor: Cursor): Rect | null;
   /**

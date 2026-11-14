@@ -97,6 +97,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
    * many sounds are being made, each reporting its own `midiLoaded`: the last one counts.
    */
   private reload: { loads: number; done: () => void } | null = null;
+  /** The parts shown or the scale changed while a drawing was under way: the whole score is drawn again after it. */
+  private layoutChanged = false;
   /** `load()` asked for while a change waited to be drawn: it makes the sound once that is in the model. */
   private loadAfterDrawing: (() => void) | null = null;
   /** The model changed in place since the sound was made: `load()` has something to do. */
@@ -174,6 +176,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // A sound the worker could not take is over too (alphaTab tells the API only as an error):
     // nothing is to wait for it, and playback goes back to where it was.
     api.player?.midiLoadFailed.on(() => this.onMidiLoaded());
+    // alphaTab seeks on a click only with its own cursor, which is off: the engine does it.
+    if (options.seekOnClick) {
+      api.beatMouseUp.on((beat) => {
+        if (beat) this.seekToBeat(beat);
+      });
+    }
   }
 
   // --- ScoreRenderer ---
@@ -191,10 +199,15 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   showParts(partIds: readonly string[]): void {
     this.shown = partIds;
-    const projection = this.projection;
-    if (projection === null || this.running) return; // the drawing under way or to come uses it
-    this.running = { partial: false, timings: { ...NO_TIMINGS }, startedAt: performance.now() };
-    this.api.renderTracks(this.trackIndexes(projection).map((index) => projection.score.tracks[index] as alphaTab.model.Track));
+    this.relayout();
+  }
+
+  setScale(scale: number): void {
+    const display = this.api.settings.display;
+    if (display.scale === scale) return;
+    display.scale = scale;
+    this.api.updateSettings();
+    this.relayout();
   }
 
   boundsOf(cursor: Cursor): Rect | null {
@@ -246,6 +259,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const waiting = this.waiting;
     this.waiting = null;
     if (waiting) this.run(waiting);
+    else if (this.layoutChanged) this.drawAll();
     // Every change asked for is in the model now: the sound asked for meanwhile can be made.
     const load = this.loadAfterDrawing;
     this.loadAfterDrawing = null;
@@ -332,6 +346,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // While a new sound is made, alphaTab goes back to the start after this: it comes back here then.
     this.sentTo = { tick, at: performance.now() };
     this.api.tickPosition = tick;
+  }
+
+  /** Send playback to where a beat starts, the first time its bar is played (as alphaTab's own seek on a click). */
+  private seekToBeat(beat: alphaTab.model.Beat): void {
+    const cache = this.api.tickCache;
+    if (cache === null) return;
+    this.seek(cache.getMasterBarStart(beat.voice.bar.masterBar) + (cache.getRelativeBeatPlaybackRange(beat)?.startTick ?? beat.playbackStart));
   }
 
   tickOf(barId: string): number | null {
@@ -424,7 +445,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     if (firstChanged === null) this.projection = projectScore(score, settings, projectionTimings);
     const projection = this.projection as Projection;
     const sameWindow = this.moveWindow(firstChanged ?? 0, projection.barIds.length);
-    const partial = firstChanged !== null && sameWindow && (this.options.partialLayout ?? true);
+    const partial = firstChanged !== null && sameWindow && !this.layoutChanged && (this.options.partialLayout ?? true);
     const hints = partial ? { firstChangedMasterBar: firstChanged as number, reuseViewport: true } : firstChanged !== null ? { reuseViewport: true } : undefined;
     this.running = {
       partial,
@@ -433,9 +454,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     };
     if (projection.score === this.api.score) {
       this.soundStale = true;
-      this.api.render(hints);
+      // Other parts shown, or another scale, since the last drawing: nothing laid out before holds.
+      if (this.layoutChanged) this.drawAll();
+      else this.api.render(hints);
       return;
     }
+    this.layoutChanged = false;
     // alphaTab makes the sound of a score it has not seen and, doing so, stops playback and goes
     // back to the start, playing or paused: playback goes on from where it was.
     this.soundStale = false;
@@ -444,6 +468,21 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       this.reload.loads += 1;
     }
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
+  }
+
+  /** Draw the score again as it is, with the parts shown and at the scale asked for now; once alphaTab is free. */
+  private relayout(): void {
+    // Not drawn yet: the first drawing uses them.
+    if (this.projection === null) return;
+    if (this.running) this.layoutChanged = true;
+    else this.drawAll();
+  }
+
+  private drawAll(): void {
+    const projection = this.projection as Projection;
+    this.layoutChanged = false;
+    this.running ??= { partial: false, timings: { ...NO_TIMINGS }, startedAt: performance.now() };
+    this.api.renderTracks(this.trackIndexes(projection).map((index) => projection.score.tracks[index] as alphaTab.model.Track));
   }
 
   /**

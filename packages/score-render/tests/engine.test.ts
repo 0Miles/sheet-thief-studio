@@ -46,6 +46,7 @@ class StandIn {
   readonly playerFinished = new Event();
   readonly playerPositionChanged = new Event<Position>();
   readonly midiLoaded = new Event();
+  readonly beatMouseUp = new Event<alphaTab.model.Beat | null>();
   /** The player behind the API: a sound the worker could not take is reported by it alone. */
   readonly player = { midiLoadFailed: new Event<Error>() };
   score: alphaTab.model.Score | null = null;
@@ -91,6 +92,14 @@ class StandIn {
 
   render(): void {
     this.calls.push("render");
+  }
+
+  renderTracks(tracks: alphaTab.model.Track[]): void {
+    this.calls.push(`renderTracks:${tracks.map((track) => track.index).join(",")}`);
+  }
+
+  updateSettings(): void {
+    this.calls.push(`updateSettings:${this.settings.display.scale}`);
   }
 
   /** The tick lookup is made at once, on the page's thread; the worker takes the sound later. */
@@ -200,10 +209,10 @@ function asked(): string[] {
   return calls;
 }
 
-/** An engine drawing an 8-bar score, its first sound in place, paused at the start. */
-beforeEach(() => {
+/** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
+function start(options: { seekOnClick?: boolean } = {}): void {
   standIns.length = 0;
-  engine = createAlphaTabEngine({} as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false });
+  engine = createAlphaTabEngine({} as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false, ...options });
   api = standIns[0]!;
   score = scoreOf(8);
   engine.renderer.setScore(score);
@@ -217,7 +226,9 @@ beforeEach(() => {
   engine.player.onState((state) => states.push(state));
   engine.player.onPosition((position) => positions.push(position.tick));
   seen = api.calls.length;
-});
+}
+
+beforeEach(() => start());
 
 /** Playing, as alphaTab reports it, at a tick. */
 function playingAt(tick: number): void {
@@ -397,4 +408,40 @@ test("a new sound the worker could not take: nothing waits for it any more, and 
   now("paused");
   expect(states).toEqual(["paused"]);
   expect(positions).toEqual([5000]);
+});
+
+test("a new zoom asked for while a change is drawn: the score is drawn again at that scale after it", () => {
+  engine.renderer.patchBars(score, [score.bars[1]!.id]);
+  engine.renderer.setScale(1.5);
+  expect(asked()).toEqual(["render", "updateSettings:1.5"]);
+  api.postRenderFinished.emit();
+  expect(asked()).toEqual(["renderTracks:0"]);
+  // Drawn: nothing more to do.
+  api.postRenderFinished.emit();
+  expect(asked()).toEqual([]);
+});
+
+test("the same zoom again draws nothing", () => {
+  engine.renderer.setScale(1);
+  expect(asked()).toEqual([]);
+});
+
+test("with seekOnClick, a click on a beat sends playback to it; while a new sound is made, there once it is in", () => {
+  start({ seekOnClick: true });
+  const beatIn = (bar: number) => api.score!.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[0]!;
+  api.beatMouseUp.emit(beatIn(2));
+  expect(asked()).toEqual([`seek:${2 * BAR}`]);
+  // Off the beats: nothing.
+  api.beatMouseUp.emit(null);
+  expect(asked()).toEqual([]);
+  engine.renderer.setScore(scoreOf(9));
+  expect(asked()).toEqual(["renderScore", "loadMidi"]);
+  api.beatMouseUp.emit(beatIn(4));
+  newSound();
+  expect(asked()).toEqual([`seek:${4 * BAR}`, `seek:${4 * BAR}`]);
+});
+
+test("without seekOnClick, a click on a beat leaves playback where it is", () => {
+  api.beatMouseUp.emit(api.score!.tracks[0]!.staves[0]!.bars[2]!.voices[0]!.beats[0]!);
+  expect(asked()).toEqual([]);
 });
