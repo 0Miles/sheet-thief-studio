@@ -27,6 +27,8 @@ import {
   SCHEMA_VERSION,
   type Staff,
   staffCountOf,
+  startLine,
+  MAX_TITLE,
   stringCountOf,
   contentMapOf,
   type TimeSignature,
@@ -38,7 +40,6 @@ import {
   type YVoice,
   voiceKeys,
 } from "./schema";
-import { startLine } from "./navigation";
 import { readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
@@ -457,9 +458,17 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
   }
   const part = partsOf(doc).get(selection.partId);
   if (part === undefined) return [];
-  return selectedBars(doc, selection).flatMap((barId) =>
-    [...(contentOf(part).get(barId)?.entries() ?? [])].map(([voiceKey, voice]) => ({ barId, voiceKey, voice, first: 0, last: voice.length - 1 })),
-  );
+  // The voices reading reads, in their order (docs/spec/schema.md, section 11): not a voice of a
+  // staff the part does not have, and not one stored as something else than beats.
+  const keys = voiceKeys(staffCountOf(part));
+  return selectedBars(doc, selection).flatMap((barId) => {
+    const voices: unknown = contentMapOf(part)?.get(barId);
+    if (!(voices instanceof Y.Map)) return [];
+    return keys.flatMap((voiceKey) => {
+      const voice: unknown = voices.get(voiceKey);
+      return voice instanceof Y.Array ? [{ barId, voiceKey, voice: voice as YVoice, first: 0, last: voice.length - 1 }] : [];
+    });
+  });
 }
 
 /** A beat of a selection that reading keeps, and where it is. */
@@ -744,7 +753,7 @@ export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
 
 /** Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false, and nothing set, for any other length. */
 export function setTitle(doc: Y.Doc, title: string): boolean {
-  if (title.length < 1 || title.length > 100) return false;
+  if (title.length < 1 || title.length > MAX_TITLE) return false;
   doc.transact(() => metaOf(doc).set("title", title), LOCAL);
   return true;
 }
@@ -753,7 +762,7 @@ export function setTitle(doc: Y.Doc, title: string): boolean {
  * The cursor at the first place of the first voice of a bar of a part: its first beat, or the
  * append slot of an empty voice. On `line`, else where the part starts (`startLine`).
  */
-export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = startLine(partKindOf(partsOf(doc).get(partId)) ?? "fretted")): Cursor {
+export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = startLine(partKindOf(partsOf(doc).get(partId)))): Cursor {
   const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
   return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;

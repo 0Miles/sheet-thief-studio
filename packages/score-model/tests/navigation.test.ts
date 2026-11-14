@@ -287,14 +287,14 @@ test("moving to another part, the cursor takes the line it had there, else where
   const bass = addPart(doc, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
   const onGuitar: Cursor = { ...cursorAt(doc, guitar, barIds[1]!), line: 6 };
   const lines = new Map([[keys, 9]]);
-  expect(moveByStaff(doc, onGuitar, 1, (partId) => lines.get(partId)).line).toBe(9);
+  expect(moveByStaff(doc, onGuitar, 1, lines).line).toBe(9);
   expect(moveByStaff(doc, onGuitar, 1).line).toBe(4);
   // From the keyboard's lower staff, through the drums, to the bass, which has four strings.
   const lower: Cursor = { ...cursorAt(doc, keys, barIds[1]!), voice: "1:0", line: 7 };
-  const toBass = moveByStaff(doc, moveByStaff(doc, lower, 1), 1, () => 6);
+  const toBass = moveByStaff(doc, moveByStaff(doc, lower, 1), 1, new Map([[bass, 6]]));
   expect(toBass).toMatchObject({ partId: bass, line: 4 });
   // Through the staves of one part the line stays.
-  expect(moveByStaff(doc, { ...cursorAt(doc, keys, barIds[1]!), line: 11 }, 1, () => 2)).toMatchObject({ voice: "1:0", line: 11 });
+  expect(moveByStaff(doc, { ...cursorAt(doc, keys, barIds[1]!), line: 11 }, 1, new Map([[keys, 2]]))).toMatchObject({ voice: "1:0", line: 11 });
 });
 
 test("Nav+↑/↓ keeps the voice of the staff it leaves where the part has it; a fretted part has only its first", () => {
@@ -313,13 +313,13 @@ test("in the append slot the cursor stands at the end of its beats: in another v
   const third: Cursor = { ...slot, beatId: beats.upper[2]!, at: "on" };
   expect(moveToVoice(doc, third, 1)).toMatchObject({ voice: "0:1", beatId: beats.second[0], at: "after" });
   // Back from that append slot, at the end of the half: the third quarter.
-  expect(moveToVoice(doc, moveToVoice(doc, third, 1), 0)).toMatchObject({ voice: "0:0", beatId: beats.upper[2], at: "on" });
+  expect(moveToVoice(doc, moveToVoice(doc, third, 1) as Cursor, 0)).toMatchObject({ voice: "0:0", beatId: beats.upper[2], at: "on" });
 });
 
-test("a voice the cursor is in already, or a fretted part's second voice, leaves the cursor where it is", () => {
+test("a voice the cursor is in already leaves the cursor where it is; a fretted part's second voice is not offered", () => {
   const { doc, barIds, guitar, keys, beats } = band();
   const onGuitar: Cursor = { ...cursorAt(doc, guitar, barIds[0]!), beatId: beats.guitar[1]! };
-  expect(moveToVoice(doc, onGuitar, 1)).toEqual(onGuitar);
+  expect(moveToVoice(doc, onGuitar, 1)).toBe("notOffered");
   expect(moveToVoice(doc, onGuitar, 0)).toEqual(onGuitar);
   const lower: Cursor = { ...cursorAt(doc, keys, barIds[0]!), voice: "1:0", beatId: beats.lower[0]! };
   expect(moveToVoice(doc, lower, 1)).toMatchObject({ voice: "1:1", beatId: null, at: "after" });

@@ -13,6 +13,7 @@ import {
   createScore,
   type Cursor,
   cursorAt,
+  deleteSelection,
   docToJson,
   type Duration,
   dotCycle,
@@ -23,6 +24,8 @@ import {
   type Selection,
   setFret,
   setTitle,
+  techniqueToggle,
+  toggleOnSelection,
   tripletToggle,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
@@ -150,6 +153,43 @@ test("over a bar range, clearing takes the notes off every beat of every voice o
   undo.undo();
   expect(beats().map((beat) => beat.notes)).toEqual([{ s2: { fret: 1 } }, { s2: { fret: 2 } }]);
   expect(beats(1).map((beat) => beat.notes)).toEqual([{ s3: { fret: 8 } }]);
+});
+
+test("over a bar range, only the voices reading reads change, in their order: not a voice of a staff the part has not, nor one that holds no beats", () => {
+  const { doc, partId, barIds, beats, on } = guitar([{ value: 4, dots: 2 }]);
+  const voices = contentOf(partsOf(doc).get(partId)!).get(barIds[0]!)!;
+  // The first voice made again after the second: it comes last in the map, first in the voices of the staff.
+  const first = voices.get("0:0")!.toArray().map((beat) => beat.clone());
+  doc.transact(() => {
+    voices.delete("0:0");
+    voices.set("0:0", Y.Array.from(first));
+  });
+  setFret(doc, { ...cursorAt(doc, partId, barIds[0]!, 3), voice: "0:1", beatId: null, at: "after" }, 7);
+  // A guitar has one staff: a voice "5:0" is left out when read, and so is a voice that is not a list of beats.
+  const stray = new Y.Map<unknown>();
+  doc.transact(() => {
+    stray.set("id", "stray");
+    stray.set("value", 4);
+    stray.set("dots", 0);
+    const notes = new Y.Map<unknown>();
+    notes.set("s1", { fret: 9 });
+    stray.set("notes", notes);
+    voices.set("5:0", Y.Array.from([stray]));
+    (voices as Y.Map<unknown>).set("1:1", "not beats");
+  });
+  const bars: Selection = { kind: "bars", partId, anchorBarId: barIds[0]!, focusBarId: barIds[0]! };
+  // `.` is decided by the first beat of the first voice: two dots, so none.
+  changeBeatsOnSelection(doc, bars, on(0), dotCycle);
+  const second = () => docToJson(doc).parts[0]!.content[barIds[0]!]!["0:1"]!;
+  expect(beats().map((beat) => beat.dots)).toEqual([0]);
+  expect(second().map((beat) => beat.dots)).toEqual([0]);
+  toggleOnSelection(doc, bars, on(0), techniqueToggle("accent"));
+  changeBeatsOnSelection(doc, bars, on(0), clearNotes);
+  deleteSelection(doc, bars, on(0));
+  expect(stray.toJSON()).toEqual({ id: "stray", value: 4, dots: 0, notes: { s1: { fret: 9 } } });
+  expect(voices.get("5:0")!.length).toBe(1);
+  expect((voices as Y.Map<unknown>).get("1:1")).toBe("not beats");
+  expect(beats()).toEqual([]);
 });
 
 test("in the append slot there is no beat to change; a selection whose beats are gone changes nothing", () => {

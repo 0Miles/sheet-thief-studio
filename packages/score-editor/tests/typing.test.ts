@@ -1,5 +1,6 @@
 // Keyboard entry on a fretted part, moved here with the spike's typing (docs/spec/testing.md).
-import { cursorAt, docToJson, setFret, setTitle } from "@studio/score-model";
+import { contentOf, cursorAt, docToJson, partsOf, setFret, setTitle } from "@studio/score-model";
+import * as Y from "yjs";
 import { expect, test } from "vitest";
 
 import { TWO_DIGIT_WINDOW } from "../src/index";
@@ -231,4 +232,34 @@ test("another member's change between the two digits does not split the fret's u
   press("z", 1000, { ctrlKey: true });
   expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 1 }]);
   expect(docToJson(doc).title).toBe("改名");
+});
+
+test("when another member deletes the beat between the two digits, the second digit is an entry of its own", () => {
+  const { doc, press, beats, partId, barIds, cursor } = sessionOn();
+  press("1");
+  const { other, send } = otherMember(doc);
+  other.transact(() => contentOf(partsOf(other).get(partId)!).get(barIds[0]!)!.get("0:0")!.delete(0, 1));
+  send();
+  expect(cursor()).toMatchObject({ beatId: null, at: "after" });
+  press("2", 100);
+  expect(beats().map((beat) => beat.notes.s6)).toEqual([{ fret: 2 }]);
+  press("z", 1000, { ctrlKey: true });
+  expect(beats()).toEqual([]);
+});
+
+test("when another member changes the same note between the two digits, the fret is still 12 in one step, and undo leaves their fret", () => {
+  const { doc, press, beats, cursor } = sessionOn();
+  press("5");
+  const { other, send } = otherMember(doc);
+  press("1");
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+  setFret(other, cursor(), 7);
+  send();
+  expect(beats()[0]!.notes.s6).toEqual({ fret: 7 });
+  press("2", 100);
+  expect(beats()[0]!.notes.s6).toEqual({ fret: 12 });
+  press("z", 1000, { ctrlKey: true });
+  expect(beats()[0]!.notes.s6).toEqual({ fret: 7 });
+  press("z", 1000, { ctrlKey: true });
+  expect(beats()).toEqual([]);
 });

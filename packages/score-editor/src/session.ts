@@ -40,7 +40,6 @@ import {
   toggleAt,
   toggleOnSelection,
   tripletToggle,
-  voicesOffered,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -280,8 +279,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    * does nothing, the selection stays, and the member is told so.
    */
   const toVoice = (voiceIndex: 0 | 1): KeyCommand => {
-    const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
-    if (!kind || voiceIndex < voicesOffered(kind)) return move((at) => moveToVoice(doc, at, voiceIndex));
+    const next = cursor && moveToVoice(doc, cursor, voiceIndex);
+    if (next !== "notOffered") return move((at) => next ?? at);
     return {
       changes: false,
       run: (at) => {
@@ -290,9 +289,6 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       },
     };
   };
-
-  /** The line the cursor had last in a part. */
-  const lineIn = (partId: string): number | undefined => lines.get(partId);
 
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
@@ -341,9 +337,9 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "previousBar":
         return move((at) => moveByBar(doc, at, -1));
       case "nextStaff":
-        return move((at) => moveByStaff(doc, at, 1, lineIn));
+        return move((at) => moveByStaff(doc, at, 1, lines));
       case "previousStaff":
-        return move((at) => moveByStaff(doc, at, -1, lineIn));
+        return move((at) => moveByStaff(doc, at, -1, lines));
       case "firstVoice":
         return toVoice(0);
       case "secondVoice":

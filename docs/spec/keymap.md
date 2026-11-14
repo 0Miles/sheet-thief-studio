@@ -85,7 +85,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Ctrl+Insert` | `Cmd+Return` | `Insert` 加 `Mod`；Mac：`Enter` 加 `metaKey` | 在游標小節之前插入小節（結構操作） |
 | `Ctrl+Shift+Insert`（補充） | `Cmd+Shift+Return` | 同上，加 `shiftKey` | 在游標小節之後插入小節（結構操作） |
 | `Ctrl+Delete` | `Cmd+delete`、`Cmd+Fn+delete` | `Delete` 加 `Mod`；Mac：`Backspace` 或 `Delete` 加 `metaKey` | 刪除小節範圍，或游標小節（結構操作） |
-| `+` | 同左 | `Equal`（有沒有 `Shift` 都可以）、`NumpadAdd` | 時值變短，沿用 spike 的方向（`commands.ts` 的 `stepDuration`） |
+| `+` | 同左 | `Equal`（有沒有 `Shift` 都可以）、`NumpadAdd` | 時值變短，沿用 spike 的方向（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用） |
 | `-` | 同左 | `Minus`、`NumpadSubtract` | 時值變長 |
 | `.` | 同左 | `Period`、`NumpadDecimal` | 附點 0 → 1 → 2 → 0 |
 | `Shift+←` `Shift+→` | 同左 | 加 `shiftKey` | 延伸拍點範圍 |

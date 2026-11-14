@@ -7,6 +7,7 @@ import { barTicks, beatTicks, fillOf } from "./flags";
 import {
   barsOf,
   COMMON_TIME,
+  lineRange,
   durationOf,
   ordered,
   type PartKind,
@@ -14,10 +15,12 @@ import {
   partsOf,
   staffAndVoiceOf,
   staffCountOf,
+  startLine,
   stringCountOf,
   timeSigSchema,
   voiceIn,
   voiceKey,
+  voicesOffered,
   type YBeat,
   type YVoice,
 } from "./schema";
@@ -149,37 +152,17 @@ export function moveFromAppendedBeat(doc: Y.Doc, from: Cursor): Cursor {
   return cursor.at === "on" ? pastLastBeat(doc, cursor) : toNextBar(doc, cursor, 1);
 }
 
-/** How many lines the cursor can stand on in a part: its strings when fretted, else the staff positions of a five-line staff with two ledger lines each side. */
-function lineRange(kind: PartKind, strings: number): { first: number; last: number } {
-  return kind === "fretted" ? { first: 1, last: Math.max(strings, 1) } : { first: -4, last: 12 };
-}
-
-/** A line kept within those of a part. */
-function keptOn(kind: PartKind, strings: number, line: number): number {
+/** A line kept within those of a part (`lineRange`). */
+function keptOn(kind: PartKind | undefined, strings: number, line: number): number {
   const { first, last } = lineRange(kind, strings);
   return Math.min(Math.max(line, first), last);
-}
-
-/**
- * The line the cursor starts on in a part of this kind, the first time it comes there
- * (docs/spec/commands.md, section 2): the first string, the highest, of a fretted part; the
- * middle line of the staff of the others.
- */
-export function startLine(kind: PartKind): number {
-  return kind === "fretted" ? 1 : 4;
 }
 
 /** The cursor one line lower on the page (`step` 1) or higher (-1), kept on the staff. */
 export function moveByLine(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
   const part = partsOf(doc).get(cursor.partId);
   if (part === undefined) return cursor;
-  // A part whose kind cannot be read is not drawn; the cursor is kept as if on a staff.
-  return { ...cursor, line: keptOn(partKindOf(part) ?? "pitched", stringCountOf(part), cursor.line + step) };
-}
-
-/** How many voices each staff of a part of this kind offers: a fretted part only its first (docs/spec/commands.md, section 3). */
-export function voicesOffered(kind: PartKind): 1 | 2 {
-  return kind === "fretted" ? 1 : 2;
+  return { ...cursor, line: keptOn(partKindOf(part), stringCountOf(part), cursor.line + step) };
 }
 
 /** The tick of its bar the cursor stands at: where its beat starts, or in the append slot where its anchor ends. */
@@ -214,11 +197,11 @@ function landAt(doc: Y.Doc, cursor: Cursor, tick: number): Cursor {
  * the order of `staves`; past the last, on the first staff of the next part, past the first, on
  * the last staff of the part before. It stays in its bar and in the voice it is in, where the part
  * offers it (`voicesOffered`), and lands on the beat that holds the tick it stood at, else where
- * End goes. In another part it takes the line `lineIn` says it had there, else the part's
- * `startLine`, kept within its strings. It stays at either end of the score, and when its part
- * or bar is gone.
+ * End goes. In another part it takes the line it had there last (`lines`, by part), else the
+ * part's `startLine`, kept within its strings. It stays at either end of the score, and when its
+ * part or bar is gone.
  */
-export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (partId: string) => number | undefined = () => undefined): Cursor {
+export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lines: ReadonlyMap<string, number> = new Map()): Cursor {
   const cursor = settleCursor(doc, from);
   if (cursor === null) return from;
   const parts = partsOf(doc);
@@ -235,21 +218,23 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lineIn: (par
   const part = parts.get(partId)!;
   const kind = partKindOf(part)!;
   const voice = voiceKey(step === 1 ? 0 : staffCountOf(part) - 1, Math.min(voiceIndex, voicesOffered(kind) - 1));
-  const line = keptOn(kind, stringCountOf(part), lineIn(partId) ?? startLine(kind));
+  const line = keptOn(kind, stringCountOf(part), lines.get(partId) ?? startLine(kind));
   return landAt(doc, { ...cursor, partId, voice, line }, tick);
 }
 
 /**
  * The cursor in the first (`voiceIndex` 0, Alt+1) or second voice (1, Alt+2) of its staff, in the
  * same bar, on the beat that holds the tick it stood at, else where End goes. It stays where it is
- * in that voice already, and on a fretted part, which offers no second voice.
+ * in that voice already. `"notOffered"` for a voice its part does not offer (`voicesOffered`: a
+ * fretted part's second): the cursor stays, and the member is told why.
  */
-export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor {
+export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor | "notOffered" {
   const cursor = settleCursor(doc, from);
   const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
   if (!kind) return from;
+  if (voiceIndex >= voicesOffered(kind)) return "notOffered";
   const [staff, current] = staffAndVoiceOf(cursor.voice);
-  if (voiceIndex === current || voiceIndex >= voicesOffered(kind)) return cursor;
+  if (voiceIndex === current) return cursor;
   return landAt(doc, { ...cursor, voice: voiceKey(staff, voiceIndex) }, tickAt(doc, cursor));
 }
 

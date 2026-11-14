@@ -49,7 +49,7 @@ interface Cursor {
 - **補充**：游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
 - 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。**補充**：看的人這邊沒有那位成員的拍點位置，所以不帶位置解析：那位成員所在的拍點被刪除時，在看的人這邊先落在那條聲線的最後一個拍點，直到那位成員自己的 session 送出新的 presence。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
-  - **補充**（#20）：起始的 `line` 由 `navigation.ts` 的 `startLine(kind)` 給出，`cursorAt` 沒給 `line` 時用它（Vue 殼放第一個游標時也是）。`Ctrl+↑/↓` 換到另一個聲部時，`moveByStaff` 取 `EditorSession` 記下的那個聲部的 `line`，沒有記錄就用 `startLine`，再夾在範圍內。
+  - **補充**（#20）：起始的 `line` 由 `schema.ts` 的 `startLine(kind)` 給出（旁邊是 `lineRange`、`voicesOffered`；讀不懂種類的聲部都當成譜表），`cursorAt` 沒給 `line` 時用它（Vue 殼放第一個游標時也是）。`Ctrl+↑/↓` 換到另一個聲部時，`moveByStaff` 取 `EditorSession` 記下的那個聲部的 `line`，沒有記錄就用 `startLine`，再夾在範圍內。
 
 ## 3. 移動
 
@@ -74,7 +74,7 @@ interface Cursor {
   - **補充**（#20）：在附加位置上，「目前的 tick」是錨點拍點的結尾；空聲線是小節的開頭。時值讀不懂的拍點長度算 0（讀取時被略過）。
   - **補充**（#20）：`Ctrl+↑/↓` 依 `staves` 的順序經過聲部的各個譜表；過了最後一個（或第一個）譜表，到下一個聲部的第一個譜表（或上一個聲部的最後一個譜表）。聲線的編號不變（第二聲線到下一個譜表的第二聲線），目標聲部不提供時（fretted）落在第一聲線。讀不懂種類的聲部不畫出來，跳過。在第一個聲部的第一個譜表按 `Ctrl+↑`、最後一個聲部的最後一個譜表按 `Ctrl+↓`：不動。寫法是 `navigation.ts` 的 `moveByStaff`、`moveToVoice`；`Home`、`End` 是 `moveToBarStart`、`moveToBarEnd`。
   - **補充**（#20）：`Ctrl+←/→`、`Home`、`End`、`Ctrl+↑/↓`、`Alt+1/2` 都先用 `settleCursor` 解析游標，和 `←`、`→` 一樣；游標的聲部或小節不在了就不動（不會跳到第一小節）。
-- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `navigation.ts` 的 `voicesOffered` 決定。
+- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `schema.ts` 的 `voicesOffered` 決定；`navigation.ts` 的 `moveToVoice` 對不提供的聲線回傳 `"notOffered"`。
 
 ## 4. Selection
 
@@ -143,7 +143,7 @@ interface Cursor {
 
 | Command | 鍵 | 語意 |
 |---|---|---|
-| `stepDuration` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts` 的 `stepDuration`）；到 64 分或全音符就不動 |
+| `stepDuration` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用）；到 64 分或全音符就不動 |
 | `cycleDots` | `.` | 附點 0 → 1 → 2 → 0（補充） |
 | `toggleTriplet` | `Shift+T` | 沒有連音時設成 `{ actual: 3, normal: 2 }`，有任何連音時移除（補充） |
 
@@ -178,7 +178,7 @@ interface Cursor {
   - pitched（補充）：游標那條線上有音時設 `tie: true`；那條線上沒有音、而前一個拍點同一條線上有音時，建立同一個音高與拼寫的音並設 `tie: true`。
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
-  - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
+  - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
   - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
     - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
     - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值，沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
