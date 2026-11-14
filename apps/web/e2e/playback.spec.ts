@@ -234,16 +234,18 @@ test("playback that goes off screen is followed; after an arrow key or a scroll 
   await expect.poll(inSight).toBe(true);
   expect(oneAfterAnother((await barsShown(page)).slice(2)), (await barsShown(page)).join(", ")).toBe(true);
 
-  // Scrolled by the member while it plays, here a little with the wheel: from then on the page
-  // stays where they put it.
+  // Scrolled by the member while it plays, here a little by setting the position, as a scroll
+  // bar does (no wheel, no key): from then on the page stays where they put it.
   await page.getByRole("button", { name: text.stop }).click();
   await toTop();
   await recordBarsShown(page);
   await page.keyboard.press("Space");
   await expect(page.locator('[data-player="playing"]')).toBeVisible();
-  await page.mouse.wheel(0, 10);
-  await expect.poll(scrollTop).toBeGreaterThan(0);
+  await scroller.evaluate((element) => {
+    element.scrollTop += 10;
+  });
   const scrolled = await scrollTop();
+  expect(scrolled).toBeGreaterThan(0);
   await untilShown(page, last + 2);
   expect(await barsShown(page)).toEqual([last, last + 1, last + 2]);
   expect(await inSight()).toBe(false);

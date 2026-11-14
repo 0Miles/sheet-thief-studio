@@ -219,7 +219,16 @@ function scrollTo(top: number): void {
  */
 function onScroll(): void {
   const element = scroller.value;
-  if (element === undefined || (ownScrollTop !== null && Math.abs(element.scrollTop - ownScrollTop) < 1)) return;
+  if (element === undefined) return;
+  if (ownScrollTop !== null) {
+    if (Math.abs(element.scrollTop - ownScrollTop) < 1) return;
+    // The score got shorter, or the view taller, than where the page had put it: the browser
+    // brought it back as far as it goes. Not the member.
+    if (element.scrollTop < ownScrollTop && element.scrollTop >= element.scrollHeight - element.clientHeight - 1) {
+      ownScrollTop = element.scrollTop;
+      return;
+    }
+  }
   stopFollowing();
 }
 
