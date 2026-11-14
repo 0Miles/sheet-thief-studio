@@ -106,6 +106,31 @@ test("an Editor jumps a bar with Ctrl+→, dots a beat with ., goes back with Ho
   expect(errors).toEqual([]);
 });
 
+test("an Editor bends a note with Shift+B, 2 semitones, takes it a semitone up and down with Shift+↑ and Shift+↓; after reloading the score holds the bend", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+
+  await page.keyboard.press("7");
+  const bendOf = async () => beatsIn(await scoreOf(page), 0)[0]!.notes.s1;
+  expect(await bendOf()).toEqual({ fret: 7 });
+  await page.keyboard.press("Shift+B");
+  expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
+  await page.keyboard.press("Shift+ArrowUp");
+  expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 3 } });
+  await page.keyboard.press("Shift+ArrowDown");
+  expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
+  // The cursor stays on the note and its string: Shift with the arrows is not a move.
+  expect(await cursorOf(page)).toMatchObject({ beatId: beatsIn(await scoreOf(page), 0)[0]!.id, at: "on", line: 1 });
+  await synced(page);
+
+  await page.reload();
+  await drawn(page);
+  expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
+  expect(errors).toEqual([]);
+});
+
 test("a Viewer moves the cursor but changes nothing; the notice that a Viewer cannot edit shows only the first time", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, VIEWER);

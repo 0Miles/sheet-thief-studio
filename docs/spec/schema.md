@@ -189,10 +189,18 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 
 - 欄位出現在不適用的聲部種類，或值超出範圍：讀取時略過整個音符並標 `invalidContent`。
 - 沒有 `fret` 而且沒有 `dead` 的 fretted 音符：讀不懂，略過並標記。投影時，沒有格號的 dead note 用格號 0：畫成那條弦上的 X，發出空弦的短音（#26，`projection.ts` 的 `projectNote`）。
-- **補充**（#27）：`legato` 與 `slideOut` 的 `legato`、`shift` 是連結，連到「下一個音」：同一條聲線緊接在後的拍點上同一條弦的音，可以是下一個小節的第一個拍點（[`flags.md`](flags.md) 第 1 節，`flags.ts` 的 `beatAfter`）。投影只在那裡有音時設 `isHammerPullOrigin` 或 `slideOutType`；沒有時不設，那個音是 `danglingLink`。理由：alphaTab 自己找目的音時會跳過休止往後找最多 3 個小節（`Note.nextNoteOnSameLine`），畫出、發出團譜沒有的連結；完全找不到時它也會自己清掉這兩個欄位。`outUp`、`outDown`、`slideIn` 不連到別的音，一律照設。alphaTab 的目的音由它自己在 `finish` 時找，和「下一個音」是同一個音。
-  - **補充**（#27）：`replaceBars` 重建一個小節時，連結跨過的小節線（重建前的 alphaTab 模型裡，或新的 `ScoreJSON` 裡）兩邊的小節也一起重建，連續跨過的一路重建下去：連結由兩個音各自指向對方，而且是 alphaTab 在 finish 起點音那個小節時才建立的。所有要重建的小節先建好、放進模型，再依序 finish，讓每個連結都建立在新的音之間。測試：`packages/score-render/tests/projection.test.ts` 比對部分重建與整份重新投影的連結。
+- **補充**（#27）：`legato` 與 `slideOut` 的 `legato`、`shift` 是連奏，連到「下一個音」：同一條聲線緊接在後的拍點上同一條弦的音，可以是下一個小節的第一個拍點（[`flags.md`](flags.md) 第 1 節，`flags.ts` 的 `beatAfter`）。投影只在那裡有音時設 `isHammerPullOrigin` 或 `slideOutType`；沒有時不設，那個音是 `danglingLink`。理由：alphaTab 自己找目的音時會跳過休止往後找最多 3 個小節（`Note.nextNoteOnSameLine`），畫出、發出團譜沒有的連奏；完全找不到時它也會自己清掉這兩個欄位。`outUp`、`outDown`、`slideIn` 不連到別的音，一律照設。alphaTab 的目的音由它自己在 `finish` 時找，和「下一個音」是同一個音。
+  - **補充**（#27）：`replaceBars` 重建一個小節時，連奏跨過的小節線（重建前的 alphaTab 模型裡，或新的 `ScoreJSON` 裡）兩邊的小節也一起重建，連續跨過的一路重建下去：連奏由兩個音各自指向對方，而且是 alphaTab 在 finish 起點音那個小節時才建立的。所有要重建的小節先建好、放進模型，再依序 finish，讓每個連奏都建立在新的音之間。測試：`packages/score-render/tests/projection.test.ts` 比對部分重建與整份重新投影的連奏。
   - 聲音（alphaTab 1.9 的 `MidiFileGenerator`）：搥弦、勾弦的目的音比較小聲；`legato` 滑音把起點音滑到目的音，目的音不再撥一次；`shift` 滑音也滑過去，但目的音照樣撥；`outUp`、`outDown`、`inBelow`、`inAbove` 在音的結尾或開頭彎一下音高。測試：`packages/score-render/tests/sound.test.ts`。
 - `bend.semitones`：integer 1–4。新設定的 bend 預設 2 個半音（補充，見 [`keymap.md`](keymap.md)）。
+  - **補充**（#28）：型與範圍在 `schema.ts` 的 `BEND_TYPES`、`BEND_SEMITONES`（`min` 1、`max` 4、新的 bend 用 `initial` 2）。
+  - **補充**（#28）：投影是 `projection.ts` 的 `BENDS`。bend point 的 offset 是 alphaTab 的 0–60（整個音符的長度），值是 alphaTab 的四分之一音（`BendPoint.value`，1 個半音是 2），下面寫成 `semitones` 的倍數 `q`：
+    - `bend` → `BendType.Bend`：`(0, 0)`、`(15, q)`：在音符的前四分之一推上去，之後保持。
+    - `bendRelease` → `BendType.BendRelease`：`(0, 0)`、`(15, q)`、`(45, q)`、`(60, 0)`：前四分之一推上去，保持，最後四分之一放回來。
+    - `preBend` → `BendType.Prebend`：`(0, q)`、`(60, q)`：先推好再撥，保持。
+    - `preBendRelease` → `BendType.PrebendRelease`：`(0, q)`、`(15, 0)`：先推好再撥，在前四分之一放回來。
+    - 點數照 alphaTab 1.9 畫推弦的方式：除了 `BendRelease` 讀四個點裡的第 1、2、4 個，其他型只讀前兩個點（`TabBendGlyph` 的 `_createRenderingPoints`）；多給的點會畫錯。點先加，型後設：沒有型的音加上點時，alphaTab 會把它當成自訂（`Custom`）。
+    - 聲音（`MidiFileGenerator`，GuitarPro 記譜模式）照這些點送出音符自己的 pitch bend（MIDI 2.0 的 per-note pitch bend，32 位元，`2^31` 是不推）；聲道的 pitch bend range 是 alphaTab 設的 16 個半音。最高點就是 `semitones` 個半音。測試：`packages/score-render/tests/sound.test.ts`。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
   - **補充**（#30）：`stroke` 另外設 `Beat.brushDuration` 為 60 tick（`projection.ts` 的 `STROKE_TICKS`，64 分音符，120 BPM 時約 30 ms），短的拍點最多是拍點長度的四分之一：alphaTab 在 `brushDuration` 是 0 時所有弦同時發聲。down 從最低的弦開始，up 從最高的弦開始（alphaTab 的 `_fillBrushInfo`）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
   - **補充**（#30，host 在 2026-11-14 的兩次裁定）：`dynamic` 表示「從這個拍點起」，和樂譜的寫法一樣：在同一個聲部、同一條聲線（`"譜表:聲線"`）裡往後延續，跨小節也延續，直到下一個寫著 `dynamic` 的拍點；在那之前沒有任何 `dynamic` 時是 alphaTab 的 `F`。投影時每個 alphaTab 拍點（包括補滿小節的休止）的 `Beat.dynamics` 都是當時生效的力度，所以後面沒寫的拍點聲音一樣小（`projection.ts` 的 `projectBar`：每條聲線以前一小節同一條聲線最後一個拍點的力度開始）。`replaceBars` 重建一個小節之後，若它留給下一小節的力度和原本不同，就連下一小節一起重建，直到某個小節的每條聲線都和原本接得上，也就是下一個寫著力度的地方。

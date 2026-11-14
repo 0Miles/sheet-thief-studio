@@ -18,8 +18,8 @@ Flag 是團譜裡不合規則、但系統不會自動修改的地方：只提醒
 - **「前一個音」**（補充）：同一聲部、同一條聲線裡，緊接在前的那個拍點（可以是上一個小節同一條聲線的最後一個拍點）上，同一個音符鍵的音。前一個拍點是休止或沒有那個鍵，就是不存在。
 - **「下一個音」**（補充）：同一聲部、同一條聲線裡，緊接在後的那個拍點（可以是下一個小節同一條聲線的第一個拍點）上，同一條弦的音。
 - 拍點之間的「緊接」只看同一條聲線；另一條聲線或另一個聲部的音不算。
-- **補充**（#27）：`danglingLink` 的寫法是 `flags.ts` 的 `linksOn(note)`（帶 `legato`，或 `slideOut` 是 `legato`、`shift`）與 `beatAfter(beats, index, next)`（「下一個音」所在的拍點）。下一個拍點是休止、那條弦沒有音、在下一個小節而那個小節的同一條聲線是空的，或沒有下一個拍點（譜尾），都是懸空的。`outUp`、`outDown` 與 `slideIn` 不連到別的音，不會懸空。同一個音同時有懸空的 tie 與 link 時是兩個 Flag，tie 在前。
-- **補充**（#27）：投影用同一個「下一個音」：只有連得到時才把 `isHammerPullOrigin`、`slideOutType` 的 `Legato`、`Shift` 交給 alphaTab（[`schema.md`](schema.md) 第 8 節的補充），所以懸空的連結不畫也不發聲，只由這個 Flag 標出來。
+- **補充**（#27）：`danglingLink` 的寫法是 `flags.ts` 的 `linksOn(note)`（帶 `legato`，或 `slideOut` 是 `legato`、`shift`）與 `beatAfter(beats, index, next)`（「下一個音」所在的拍點）；連不連得到由 `linkReaches(key, after)` 判斷（#28：投影與 `replaceBars` 也用它）。下一個拍點是休止、那條弦沒有音、在下一個小節而那個小節的同一條聲線是空的，或沒有下一個拍點（譜尾），都是懸空的。`outUp`、`outDown` 與 `slideIn` 不連到別的音，不會懸空。同一個音同時有懸空的連結線與連奏時是兩個 Flag，tie 在前。
+- **補充**（#27）：投影用同一個「下一個音」：只有連得到時才把 `isHammerPullOrigin`、`slideOutType` 的 `Legato`、`Shift` 交給 alphaTab（[`schema.md`](schema.md) 第 8 節的補充），所以懸空的連奏不畫也不發聲，只由這個 Flag 標出來。
 - 時值的 tick 算法見 [`schema.md`](schema.md) 第 6 節。
 
 ## 2. 形狀
@@ -51,7 +51,7 @@ type Flag =
 
 ## 4. 顯示
 
-- 時值類的 Flag（`underfull`、`overfull`）在小節上畫框；連結類的 Flag（`danglingTie`、`danglingLink`）在音符上加標記。
+- 時值類的 Flag（`underfull`、`overfull`）在小節上畫框；連結線與連奏的 Flag（`danglingTie`、`danglingLink`）在音符上加標記。
 - **補充**：`invalidContent` 有小節時在小節上畫框（和時值類不同的樣式）；只有聲部、沒有小節時（例如整個聲部被略過），只出現在工具列的清單與總數裡。
 - 工具列顯示總數；`F8` 或工具列按鈕跳到下一個（到最後一個之後回到第一個，補充）。
   - **補充**（#36）：寫法是 `flags.ts` 的 `nextFlag`。「下一個」是游標之後的第一個 Flag（附加位置算在錨點拍點之後）；游標還停在 `F8` 上次停的地方時，是清單裡那一個的下一個，所以同一個拍點上的兩個 Flag 會依序停到。只停在游標去得了的 Flag：聲部有畫出來（成員隱藏的聲部不算）、小節在團譜裡；沒有聲部或小節的 `invalidContent` 只算進總數。游標停在 Flag 的拍點上，沒有拍點時是那條聲線的第一個位置（聲線不是這個聲部有的就用第一條聲線，沒有小節就用第一小節）；fretted 的音符 Flag 停在那條弦，其他時候留在游標原本的線上（換了聲部時用 `startLine`）。

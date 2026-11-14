@@ -62,7 +62,7 @@ export const strings = {
         underfull: "這條聲線的時值少於拍號",
         overfull: "這條聲線的時值超出拍號",
         danglingTie: "連結線前面沒有同一個音可以連接",
-        danglingLink: "搥弦、勾弦或滑音後面沒有音可以連過去",
+        danglingLink: "搥弦、勾弦或連到下一個音的滑音後面沒有音",
         invalidContent: "這裡有讀不懂的內容，已經略過",
       } satisfies Record<Flag["kind"], string>,
     },
