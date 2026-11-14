@@ -2,7 +2,7 @@
 // stored, in the order F8 goes through them.
 import { expect, test } from "vitest";
 
-import { type BeatJSON, type Flag, flagsOf, type InvalidContentFlag, type NoteJSON, type PartJSON, type ScoreJSON } from "../src/index";
+import { type BeatJSON, type Cursor, type Flag, flagsOf, type InvalidContentFlag, nextFlag, type NoteJSON, type PartJSON, type ScoreJSON } from "../src/index";
 
 /** A quarter holding these notes. */
 const quarter = (id: string, notes: Record<string, NoteJSON> = {}): BeatJSON => ({ id, value: 4, dots: 0, notes });
@@ -118,4 +118,64 @@ test("flags come in score order, the invalid content read among them: by part, b
     { kind: "invalidContent", partId: "h", barId: "a", voice: "0:0", beatId: "gone", what: "beat" },
     { kind: "invalidContent", partId: "lost", what: "part.kind" },
   ]);
+});
+
+// F8 (docs/spec/flags.md, section 4): the cursor goes to the next flag, in the order of the list,
+// from the first again after the last.
+const at = (partId: string, barId: string, beatId: string | null, line = 1): Cursor => ({ partId, barId, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line });
+
+test("F8 goes from the cursor to the next flag after it in score order, and from the last back to the first", () => {
+  const part = guitar("g", {
+    a: full("a", { fret: 1 }, { fret: 1 }, { fret: 1 }),
+    b: [quarter("b0", { s3: { fret: 1 } }), quarter("b1", { s2: { fret: 4, tie: true } })],
+    c: [],
+  });
+  const json = score(part);
+  const flags = flagsOf(json);
+  expect(flags.map((flag) => flag.kind)).toEqual(["underfull", "danglingTie"]);
+  // From bar a: the underfull bar b, its first beat, on the line the cursor was on.
+  expect(nextFlag(json, flags, at("g", "a", "a1", 4))).toEqual({ flag: flags[0], cursor: at("g", "b", "b0", 4) });
+  // Stopped there, the next is the tie on b's second beat, on its string.
+  expect(nextFlag(json, flags, at("g", "b", "b0", 4), flags[0])).toEqual({ flag: flags[1], cursor: at("g", "b", "b1", 2) });
+  // Moved onto the first beat of b without F8: past the bar's flag, the tie is next.
+  expect(nextFlag(json, flags, at("g", "b", "b0"))?.flag).toEqual(flags[1]);
+  // From the tie, or from anywhere after it: back to the first.
+  expect(nextFlag(json, flags, at("g", "b", "b1", 2), flags[1])?.flag).toEqual(flags[0]);
+  expect(nextFlag(json, flags, at("g", "c", null))?.flag).toEqual(flags[0]);
+  // Without a cursor (none yet), the first.
+  expect(nextFlag(json, flags, null)?.flag).toEqual(flags[0]);
+  expect(nextFlag(json, [], at("g", "a", "a0"))).toBeNull();
+});
+
+test("two flags on one beat are stopped at one after the other; a flag F8 stopped at that is gone goes on from where it was", () => {
+  const part = guitar("g", { a: [quarter("a0", { s1: { fret: 1, tie: true }, s2: { fret: 2, tie: true } }), quarter("a1"), quarter("a2", { s3: { fret: 3, tie: true } })] });
+  const json = score(part);
+  const flags = flagsOf(json);
+  expect(flags).toHaveLength(3);
+  const first = nextFlag(json, flags, null)!;
+  expect(first.cursor).toEqual(at("g", "a", "a0", 1));
+  expect(nextFlag(json, flags, first.cursor, first.flag)).toEqual({ flag: flags[1], cursor: at("g", "a", "a0", 2) });
+  // The first tie is untied: the flag F8 stopped at is no longer there.
+  const untied = flagsOf(score(guitar("g", { a: [quarter("a0", { s1: { fret: 1 }, s2: { fret: 2, tie: true } }), quarter("a1"), quarter("a2", { s3: { fret: 3, tie: true } })] })));
+  expect(nextFlag(json, untied, first.cursor, first.flag)?.flag).toEqual(untied[1]);
+});
+
+test("F8 does not stop where the cursor cannot go: the parts not given, a part or a bar not in the score, the score as a whole", () => {
+  const first = guitar("g", { a: [quarter("a0", { s3: { fret: 1 } })] });
+  const second = guitar("h", { b: [quarter("b0", { s3: { fret: 1 } })] });
+  const json = score(first, second);
+  const invalid: InvalidContentFlag[] = [
+    { kind: "invalidContent", what: "meta.title" },
+    { kind: "invalidContent", partId: "lost", what: "part.kind" },
+    { kind: "invalidContent", partId: "g", barId: "gone", what: "bar" },
+  ];
+  const flags = flagsOf(json, invalid);
+  expect(nextFlag(json, flags, null)?.cursor).toEqual(at("g", "a", "a0"));
+  expect(nextFlag(json, flags, at("g", "a", "a0"))?.cursor).toEqual(at("h", "b", "b0"));
+  // Only the first guitar is shown: F8 stays in it.
+  expect(nextFlag(json, flags, at("g", "a", "a0"), undefined, ["g"])?.cursor).toEqual(at("g", "a", "a0"));
+  // A part's invalid content goes to its first bar; one in a voice the part does not have, to its first voice.
+  const named = flagsOf(json, [{ kind: "invalidContent", partId: "h", what: "part.name" }, { kind: "invalidContent", partId: "h", barId: "c", voice: "5:0", what: "voice" }]);
+  expect(nextFlag(json, named, at("g", "a", "a0"), undefined, ["h"])?.cursor).toEqual(at("h", "a", null));
+  expect(nextFlag(json, named, at("h", "b", "b0"), undefined, ["h"])?.cursor).toEqual(at("h", "c", null));
 });

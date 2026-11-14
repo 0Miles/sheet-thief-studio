@@ -43,8 +43,12 @@ export type SessionEffect =
  */
 export type NativeEffect = "copy" | "cut" | "paste";
 
-/** What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4). */
-export type PageEffect = "playPause";
+/**
+ * What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4),
+ * and going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
+ * section 4).
+ */
+export type PageEffect = "playPause" | "nextFlag";
 
 /** Where a key works: on the score whatever the kind of the part, or on parts of one kind only. */
 export type KeyContext = "score" | PartKind;
@@ -159,6 +163,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "cut", context: "score", keys: ["Mod+KeyX", "Shift+Delete"], mac: ["Mod+KeyX"], native: true, keymap: { other: ["Ctrl+KeyX", "Shift+Delete"], mac: ["Cmd+KeyX"] } },
   { effect: "paste", context: "score", keys: ["Mod+KeyV", "Shift+Insert"], mac: ["Mod+KeyV"], native: true, keymap: { other: ["Ctrl+KeyV", "Shift+Insert"], mac: ["Cmd+KeyV"] } },
   { effect: "playPause", context: "score", keys: ["Space"], page: true, keymap: both("Space") },
+  // Fn+F8 on a Mac, whose function keys are its own: the toolbar has the same button (keymap.md, section 5).
+  { effect: "nextFlag", context: "score", keys: ["F8"], page: true, keymap: both("F8") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
