@@ -30,7 +30,10 @@ async function logout(): Promise<void> {
       <template v-if="session.me">
         <!-- No way to /account while the password must be changed first. -->
         <span v-if="session.me.mustChangePassword" class="app-header__account">{{ session.me.displayName }}</span>
-        <RouterLink v-else class="app-header__account" :to="{ name: 'account' }" :title="strings.header.account">{{ session.me.displayName }}</RouterLink>
+        <template v-else>
+          <RouterLink v-if="session.me.isAdmin" class="app-header__account" :to="{ name: 'admin' }">{{ strings.header.admin }}</RouterLink>
+          <RouterLink class="app-header__account" :to="{ name: 'account' }" :title="strings.header.account">{{ session.me.displayName }}</RouterLink>
+        </template>
         <AppButton variant="ghost" size="sm" :loading="leaving" @click="logout">{{ strings.header.logout }}</AppButton>
       </template>
     </Cluster>

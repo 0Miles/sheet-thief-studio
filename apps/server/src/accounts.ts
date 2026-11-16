@@ -87,3 +87,32 @@ export async function chooseOwnPassword(accountId: string, newPassword: string):
     await Account.update({ mustChangePassword: false }, { where: { id: accountId }, transaction });
   });
 }
+
+/**
+ * Give the account a temporary password, an admin's: its person must change it at the next login.
+ * False when there is no such account. The caller has checked the password against the rules,
+ * and ends the account's sessions.
+ */
+export async function setTemporaryPassword(accountId: string, temporaryPassword: string): Promise<boolean> {
+  const secretHash = await hashPassword(temporaryPassword);
+  return Account.sequelize!.transaction(async (transaction) => {
+    const [found] = await Account.update({ mustChangePassword: true }, { where: { id: accountId }, transaction });
+    if (found !== 1) return false;
+    const [changed] = await Identity.update({ secretHash }, { where: { accountId, provider: "password" }, transaction });
+    // An account that only logged in another way gets a password to log in with.
+    if (changed === 0) await Identity.create({ accountId, provider: "password", subject: accountId, secretHash }, { transaction });
+    return true;
+  });
+}
+
+/**
+ * Disable the account, or enable it again: a disabled account cannot log in. False when there is
+ * no such account. One already disabled stays disabled since when it was. The caller ends the
+ * sessions of an account it disables.
+ */
+export async function setDisabled(accountId: string, disabled: boolean): Promise<boolean> {
+  const account = await Account.findByPk(accountId);
+  if (!account) return false;
+  if (disabled !== (account.disabledAt !== null)) await account.update({ disabledAt: disabled ? new Date() : null });
+  return true;
+}

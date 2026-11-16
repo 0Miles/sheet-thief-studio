@@ -91,6 +91,34 @@ export const changePasswordRequest = z.object({
 });
 export type ChangePasswordRequest = z.infer<typeof changePasswordRequest>;
 
+// The admin's page (docs/spec/routes.md, 3.2; docs/spec/accounts.md, section 2).
+/** A way an account logs in (docs/spec/accounts.md, 1.1). */
+export const identityProvider = z.enum(["password", "karyl-chan"]);
+export type IdentityProvider = z.infer<typeof identityProvider>;
+
+/** An account as an admin sees it on /admin. */
+export const adminAccount = z.object({
+  accountId: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  isAdmin: z.boolean(),
+  disabled: z.boolean(),
+  identities: z.array(z.object({ id: z.string(), provider: identityProvider })),
+});
+export type AdminAccount = z.infer<typeof adminAccount>;
+
+/** Every account, by username (`GET /api/admin/accounts`). */
+export const adminAccountList = z.object({ accounts: z.array(adminAccount) });
+export type AdminAccountList = z.infer<typeof adminAccountList>;
+
+/** A new account with a temporary password, which its person must change first (`POST /api/admin/accounts`). */
+export const createAccountRequest = z.object({ username, displayName, password });
+export type CreateAccountRequest = z.infer<typeof createAccountRequest>;
+
+/** A new temporary password (`POST /api/admin/accounts/:id/reset-password`). */
+export const resetPasswordRequest = z.object({ password });
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequest>;
+
 // Scores (docs/spec/routes.md, 3.3; docs/spec/collab.md, section 3).
 /** A member's role in a score (docs/spec/accounts.md, section 3). */
 export const role = z.enum(["owner", "editor", "viewer"]);
