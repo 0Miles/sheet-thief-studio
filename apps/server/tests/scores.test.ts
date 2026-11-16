@@ -96,6 +96,23 @@ test("a member gets a collab ticket with their role", async () => {
   expect(response.json().ticket).not.toBe((await askTicket(app, id, anna)).json().ticket);
 });
 
+test("a member's collab tickets are limited to 60 a minute for one account, whatever the score", async () => {
+  const id = await createScore(app, anna);
+  const statuses: number[] = [];
+  for (let attempt = 0; attempt < 59; attempt += 1) statuses.push((await askTicket(app, id, anna)).statusCode);
+  // A score that is not theirs counts as well.
+  statuses.push((await askTicket(app, "not-a-score", anna)).statusCode);
+  expect(statuses).toEqual([...Array.from({ length: 59 }, () => 200), 404]);
+  const over = await askTicket(app, id, anna);
+  expect([over.statusCode, over.json()]).toEqual([429, { code: "rate_limited" }]);
+  expect(Number(over.headers["retry-after"])).toBeGreaterThan(0);
+  expect(Number(over.headers["retry-after"])).toBeLessThanOrEqual(60);
+  // Another session of the same account is held back too; another account is not.
+  expect((await askTicket(app, id, await sessionOf(app, "anna", PASSWORD))).statusCode).toBe(429);
+  await ScoreMember.create({ scoreId: id, accountId: benId, role: "viewer" });
+  expect((await askTicket(app, id, ben)).statusCode).toBe(200);
+});
+
 function create(payload: unknown, origin = ORIGIN) {
   return app.inject({ method: "POST", url: "/api/scores", headers: { origin }, cookies: { [COOKIE]: anna }, payload: payload as object });
 }

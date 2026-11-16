@@ -1,6 +1,6 @@
 // The phrase library (#53; docs/spec/phrases.md, section 4): on a desktop, making a blank phrase,
 // renaming, copying and deleting one through the page; on a phone, the list and its search only.
-import { type BrowserContextOptions, expect, type Locator, type Page, test } from "@playwright/test";
+import { type BrowserContextOptions, expect, type Locator, type Page, test } from "./test";
 import { blankFragment, PART_PRESETS } from "@studio/score-model";
 
 import { strings } from "../src/strings";

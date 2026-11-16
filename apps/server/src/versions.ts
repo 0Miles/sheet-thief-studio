@@ -9,6 +9,7 @@ import { gzip } from "node:zlib";
 import type { ScoreJSON } from "@studio/score-model";
 
 import { Score, Version, type VersionReason } from "./db/models";
+import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
 
 const compress = promisify(gzip);
 
@@ -24,7 +25,7 @@ export const AUTO_VERSIONS_KEPT = 200;
  * as one. Whoever reads a version back (M5) gunzips it with `maxOutputLength` set to this, so
  * that no row, however it got there, inflates beyond it.
  */
-export const MAX_VERSION_BYTES = 8 * 1024 * 1024;
+export const MAX_VERSION_BYTES = WEBSOCKET_MESSAGE_LIMIT;
 
 /** The content is more than a version holds: none was made. */
 export class VersionTooLarge extends Error {

@@ -3,7 +3,7 @@
 // screen until the member presses a key. Every key and click goes through the real keyboard and
 // mouse; the page is read through the DOM and `window.__studioTest`. How it sounds is for a
 // person to judge (#41): here the positions and the states are checked.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";

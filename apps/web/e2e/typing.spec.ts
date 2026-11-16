@@ -1,7 +1,7 @@
 // Typing on a score the server keeps, in the edit view (#19; docs/spec/views.md, sections 1-4
 // and 9). Every key goes through the real keyboard, every click through the real mouse; the page
 // is read through `window.__studioTest` and the DOM only.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import type { BeatJSON, Cursor, ScoreJSON } from "@studio/score-model";
 import type { Rect } from "@studio/score-render";
 

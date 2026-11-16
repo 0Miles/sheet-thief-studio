@@ -1,5 +1,8 @@
+// First: the schemas the modules below build must already know (see the module).
+import "@studio/contracts/without-eval";
 import "@karyl-chan/ui/tokens.css";
 import "./styles/app.css";
+import "./icons";
 
 import { useColorScheme } from "@karyl-chan/ui";
 import { createPinia } from "pinia";

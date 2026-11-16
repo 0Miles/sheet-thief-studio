@@ -2,7 +2,7 @@
 // Owner makes one on the settings page, a browser with no cookie opens it and follows the score
 // live, and revoking it disconnects that browser. The page is read through `window.__studioTest`
 // and the DOM only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import type { BeatJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";

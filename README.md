@@ -49,6 +49,13 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 
   `NODE_ENV=production` 時這個設定無效，一律是 `__Host-studio_session`。
 
+- **區網實機測試**（手機連開發機）：會改動東西的請求要帶和 `PUBLIC_ORIGIN` 相同的 `Origin`，所以 server 要知道手機用的網址，Vite 也要對區網開放：
+
+  ```bash
+  INSECURE_COOKIES=1 PUBLIC_ORIGIN=http://<區網 IP>:5183 pnpm --filter @studio/server dev
+  pnpm --filter @studio/web dev --host
+  ```
+
 伺服器讀的環境變數（開發時都有預設值，正式環境的前三個必須設定）：
 
 | 變數 | 開發時的預設 | 說明 |
@@ -59,6 +66,8 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 | `INSECURE_COOKIES` | 不設 | `1`：開發用 cookie（見上） |
 | `TRUSTED_PROXIES` | `loopback` | 前面那台 nginx 的位址，從它的 `X-Forwarded-For` 取得使用者的 IP |
 | `HOST`、`PORT` | `127.0.0.1`、`8031` | |
+| `WEB_ROOT` | 不設 | 網頁 build 的目錄（`apps/web/dist`）：設了之後由 server 提供網頁，正式環境這樣用；開發時由 Vite 提供 |
+| `HSTS` | 不設 | `1`：回應帶 `Strict-Transport-Security`（網站走 https 時才開） |
 
 送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著，用獨立的 `studio_test` 資料庫）：
 
@@ -66,7 +75,7 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
-端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）。它自己啟動 server 與網頁，用 `compose.dev.yaml` 裡獨立的 `studio_e2e` 資料庫，每次重建；先停掉開發中的 server：
+端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）。它自己啟動 server 與網頁，用 `compose.dev.yaml` 裡獨立的 `studio_e2e` 資料庫，每次重建；先停掉開發中的 server（port 8031、5183，以及由 server 自己提供網頁的那個測試用的 8032 都要空著）：
 
 ```bash
 pnpm --filter @studio/web test:e2e

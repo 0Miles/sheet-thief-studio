@@ -2,7 +2,7 @@
 // page, after a dialog asks; it leaves "my scores" for the "deleted" block of `/`, from where the
 // Owner restores it. Accounts of the test's own: the "deleted" block lists every score its Owner
 // deleted, so every run, retry and browser makes its Owner anew.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 import { strings } from "../src/strings";
 import { loggedIn, pageErrors, seedAccount, seedScore } from "./pages";

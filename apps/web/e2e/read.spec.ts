@@ -3,7 +3,7 @@
 // with its player at the bottom, and the parts shown and the zoom are each member's own, kept in
 // this browser. Every choice goes through the real page; the page is read through the DOM and
 // `window.__studioTest`.
-import { type BrowserContextOptions, expect, type Page, test } from "@playwright/test";
+import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";

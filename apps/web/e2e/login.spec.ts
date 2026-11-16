@@ -1,6 +1,6 @@
 // Logging in and out through the pages, and what someone not logged in can open
 // (docs/spec/routes.md, section 1).
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";

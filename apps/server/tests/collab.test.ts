@@ -212,6 +212,32 @@ test("a provider the server disconnects connects again with a ticket it fetched 
   expect(await applied).toBe(true);
 });
 
+test("a message of 7 MB is applied; one of 9 MB closes the connection that sent it, and only that one", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  const id = await createScore(app, session);
+  const sender = await open(app, url, id, session);
+  const other = await open(app, url, id, session);
+  const otherClosed = closes(other);
+
+  // Under the 8 MB of docs/spec/security.md, section 5: a change like any other.
+  const applied = nextSyncStatus(sender.provider);
+  const received = new Promise<void>((resolve) => other.doc.once("update", () => resolve()));
+  sender.doc.getMap("padding").set("bytes", "x".repeat(7 * 1024 * 1024));
+  expect(await applied).toBe(true);
+  await received;
+  expect((other.doc.getMap("padding").get("bytes") as string).length).toBe(7 * 1024 * 1024);
+
+  // Over it: 1009, "message too big", before the message is read whole.
+  const closed = socketClosed(sender.provider);
+  sender.doc.getMap("padding").set("more", "y".repeat(9 * 1024 * 1024));
+  expect(await closed).toBe(1009);
+  // Not left to reconnect and send it again.
+  sender.provider.destroy();
+  expect(other.doc.getMap("padding").has("more")).toBe(false);
+  expect(otherClosed()).toBe(false);
+});
+
 test("a session that ends while the document is being loaded leaves no connection open", async () => {
   const { app, url } = await startApp();
   const session = await sessionOf(app, "anna", PASSWORD);

@@ -2,7 +2,7 @@
 // settings page, by its whole username; that account then finds the score among its own, opens
 // it, and can leave it. Accounts of the test's own: the lookups of usernames are limited by
 // account, so every run, retry and browser makes its Owner anew.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 import { strings } from "../src/strings";
 import { createScore, drawn, loggedIn, pageErrors, seedAccount } from "./pages";

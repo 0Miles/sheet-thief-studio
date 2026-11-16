@@ -50,7 +50,9 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
   // Every /api/ route needs a session unless it says otherwise, so a new route cannot be left
   // open by forgetting to ask for one. Unknown paths have no route and answer 404.
   app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!request.routeOptions.url?.startsWith("/api/") || request.routeOptions.config.public) return;
+    // `/api` itself too: the route `/` of a plugin registered under that prefix.
+    const route = request.routeOptions.url;
+    if (!(route === "/api" || route?.startsWith("/api/")) || request.routeOptions.config.public) return;
     const id = request.cookies[cookie.name];
     const session = id ? await sessions.resume(id) : null;
     const account = session ? await Account.findByPk(session.accountId) : null;

@@ -11,20 +11,11 @@ import { Score } from "./db/models";
 import { notFound, rateLimited } from "./http";
 import { GUEST_TICKET_BY_IP, type RateLimiter } from "./rateLimit";
 import { ownedScore } from "./scores";
+import { routedPath } from "./security";
 import { isToken, newToken } from "./tokens";
 
 /** The page of a read-only link and the API behind it, with the token as the segment after `s/`. */
 const LINK_PATH = /^(\/(?:api\/)?s\/)[^/]*/;
-
-/** The path of a URL as the router matches it: decoded. */
-function routedPath(url: string): string {
-  const path = url.split("?", 1)[0]!;
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
 
 /**
  * The URL as the logs may show it: without the token of a read-only link, in the path or in a
