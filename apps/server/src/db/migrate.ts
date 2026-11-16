@@ -9,6 +9,9 @@ import * as linkTokens from "./migrations/0003-link-tokens";
 import * as phrases from "./migrations/0004-phrases";
 import * as versions from "./migrations/0005-versions";
 
+/** The table that records the migrations run. */
+export const MIGRATIONS_TABLE = "migrations";
+
 /** Bring the database up to the latest schema; returns the names of the migrations it ran. */
 export async function migrate(sequelize: Sequelize): Promise<string[]> {
   const ran = await new Umzug({
@@ -20,7 +23,7 @@ export async function migrate(sequelize: Sequelize): Promise<string[]> {
       { name: "0005-versions", ...versions },
     ],
     context: sequelize.getQueryInterface(),
-    storage: new SequelizeStorage({ sequelize, tableName: "migrations" }),
+    storage: new SequelizeStorage({ sequelize, tableName: MIGRATIONS_TABLE }),
     logger: undefined,
   }).up();
   return ran.map((migration) => migration.name);

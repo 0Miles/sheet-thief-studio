@@ -176,18 +176,27 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   }
 
   /**
-   * Make a version of the document as it is now, unless the score's latest version is the same
+   * Make a version of the document, unless the score's latest version is the same
    * (docs/spec/collab.md, 8.3). The content is read once the score's row is locked
-   * (`createVersion`): what the document is then, a version made meanwhile compared. Never
-   * rejects: a version that could not be made is logged, and the next one is made of whatever the
-   * score is then.
+   * (`createVersion`): what the document is then, a version made meanwhile compared. By then the
+   * document may have been unloaded, and the score loaded again as another one: a version of this
+   * one would put an older content after the versions of the new stay (#114). So none when
+   * another document of the score is in memory; when none is, a timed version is none either (the
+   * stay ended with its own version), and the version of the members leaving or of the server
+   * closing reads this one, whose content nobody changes any more. Never rejects: a version that
+   * could not be made is logged, and the next one is made of whatever the score is then.
    * None of a frozen document, which this server cannot read for sure, nor of one that did not load.
    */
   function makeVersion(document: Y.Doc & { name: string; isLoading: boolean }, reason: VersionReason): Promise<void> {
     const scoreId = document.name;
     if (document.isLoading || frozen.has(scoreId)) return Promise.resolve();
+    const read = () => {
+      const loaded = hocuspocus.documents.get(scoreId);
+      if (loaded === document || (loaded === undefined && reason !== "interval")) return docToJson(document);
+      return null;
+    };
     const making = Promise.resolve()
-      .then(() => createVersion(scoreId, () => docToJson(document), reason))
+      .then(() => createVersion(scoreId, read, reason))
       .then(
         () => undefined,
         (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),

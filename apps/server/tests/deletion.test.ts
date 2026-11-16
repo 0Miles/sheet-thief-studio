@@ -425,6 +425,7 @@ test("what a member typed just before the deletion is stored as the connections 
   expect(stored.updatedAt).toEqual(before.updatedAt);
 
   // Past the longest a store waits and the debounce of a fill: no write comes after the last one.
+  // Only the writes a timer would make late: what a promise still under way would write is not looked for here.
   const update = vi.spyOn(Score, "update");
   await vi.advanceTimersByTimeAsync(STORE_MAX_DEBOUNCE_MS + FILL_DEBOUNCE_MS);
   expect(update).not.toHaveBeenCalled();

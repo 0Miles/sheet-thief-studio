@@ -56,16 +56,18 @@ export interface MadeVersion {
  * row locked, and the content read only then: the versions of one score are made one at a time,
  * each of the content as it is when its turn comes, and compared with the one made before it.
  * Read earlier, a content could wait (gzip, a connection of the pool) while a newer one is made
- * first, and then be made the latest version (#114). Null when the score is no longer there
- * (deleted for good meanwhile); `read` is not called then. A score deleted softly still gets its
- * versions: it can be restored. Throws `VersionTooLarge`, writing nothing, when the content is
- * more than `MAX_VERSION_BYTES`.
+ * first, and then be made the latest version (#114). Null, with nothing written, when the score
+ * is no longer there (deleted for good meanwhile; `read` is not called then), or when `read`
+ * gives null: there is nothing to make a version of any more. A score deleted softly still gets
+ * its versions: it can be restored. Throws `VersionTooLarge`, writing nothing, when the content
+ * is more than `MAX_VERSION_BYTES`.
  */
-export async function createVersion(scoreId: string, read: () => ScoreJSON, reason: VersionReason, createdBy: string | null = null): Promise<MadeVersion | null> {
+export async function createVersion(scoreId: string, read: () => ScoreJSON | null, reason: VersionReason, createdBy: string | null = null): Promise<MadeVersion | null> {
   return Version.sequelize!.transaction(async (transaction) => {
     const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id"], lock: transaction.LOCK.UPDATE, transaction });
     if (row === null) return null;
     const score = read();
+    if (score === null) return null;
     const json = sortedJson(score);
     const byteSize = Buffer.byteLength(json);
     if (byteSize > MAX_VERSION_BYTES) throw new VersionTooLarge(scoreId, byteSize);

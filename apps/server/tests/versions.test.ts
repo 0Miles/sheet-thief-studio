@@ -199,6 +199,26 @@ test("a score edited for 25 minutes gets two timed versions, and none for 10 min
   expect(made).not.toHaveBeenCalled();
 });
 
+/**
+ * Hold the next transaction opened on the database at its start, before it has locked anything:
+ * `held` resolves once it is reached, `release()` lets it run, and `ended` resolves once it is over.
+ */
+function holdNextTransaction(): { held: Promise<void>; release: () => void; ended: () => Promise<unknown> } {
+  const database = Version.sequelize!;
+  const transaction = database.transaction.bind(database) as (run: (t: unknown) => Promise<unknown>) => Promise<unknown>;
+  let reached = () => {};
+  const held = new Promise<void>((resolve) => (reached = resolve));
+  let release = () => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let running: Promise<unknown> = held;
+  vi.spyOn(database, "transaction").mockImplementationOnce(((run: (t: unknown) => Promise<unknown>) => {
+    running = released.then(() => transaction(run));
+    reached();
+    return running;
+  }) as never);
+  return { held, release, ended: () => running };
+}
+
 test("a timed version held back until the members have changed the score and left never makes the older content the latest version", async () => {
   // #114: the tick reads the score, then waits (gzip, a connection of the pool); meanwhile a
   // member changes it and leaves, and that version is made first. Here the tick is held at the
@@ -211,31 +231,49 @@ test("a timed version held back until the members have changed the score and lef
   await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
   await expect.poll(() => titlesOf(id)).toEqual(["第 10 分鐘"]);
 
-  const database = Version.sequelize!;
-  const transaction = database.transaction.bind(database) as (run: (t: unknown) => Promise<unknown>) => Promise<unknown>;
-  let reached = () => {};
-  const held = new Promise<void>((resolve) => (reached = resolve));
-  let release = () => {};
-  const released = new Promise<void>((resolve) => (release = resolve));
-  let tick: Promise<unknown> | undefined;
-  vi.spyOn(database, "transaction").mockImplementationOnce(((run: (t: unknown) => Promise<unknown>) => {
-    reached();
-    tick = released.then(() => transaction(run));
-    return tick;
-  }) as never);
+  const tick = holdNextTransaction();
   // The tick of minute 20: the content is still the one of the latest version.
   await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
-  await held;
+  await tick.held;
 
   await retitle(member, "第 20 分鐘後改的");
   await leave(started, member);
   expect(await titlesOf(id)).toEqual(["第 10 分鐘", "第 20 分鐘後改的"]);
-  release();
-  await tick;
+  tick.release();
+  await tick.ended();
 
   // The latest version is what the score is: the tick made none.
   expect(await titlesOf(id)).toEqual(["第 10 分鐘", "第 20 分鐘後改的"]);
   expect((await versionsOf(id)).map(({ reason }) => reason)).toEqual(["interval", "last_disconnect"]);
+});
+
+test("a timed version held back until its document was unloaded, loaded again and versioned makes none of the document it started with", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "重新載入測試");
+  const first = await open(started, id);
+  await retitle(first, "第一次開");
+
+  // The tick of the first stay, held before it has the row.
+  const tick = holdNextTransaction();
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await tick.held;
+
+  // Meanwhile the members leave, and the score is opened again, changed, and versioned by the
+  // tick of the second stay.
+  await leave(started, first);
+  expect(await titlesOf(id)).toEqual(["第一次開"]);
+  const second = await open(started, id);
+  await retitle(second, "第二次開");
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await expect.poll(() => titlesOf(id)).toEqual(["第一次開", "第二次開"]);
+
+  tick.release();
+  await tick.ended();
+
+  // The first document is no longer the score: its tick made none, the latest is still the second stay's.
+  expect(await titlesOf(id)).toEqual(["第一次開", "第二次開"]);
+  expect((await versionsOf(id)).map(({ reason }) => reason)).toEqual(["last_disconnect", "interval"]);
 });
 
 test("the 201st automatic version deletes the oldest automatic one, and no named one", async () => {
