@@ -9,6 +9,7 @@
     "cli": "tsx src/cliMain.ts",
     "seed:e2e": "tsx tests/seedE2e.ts",
     "score:e2e": "tsx tests/scoreE2e.ts",
+    "account:e2e": "tsx tests/accountE2e.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run"
   },

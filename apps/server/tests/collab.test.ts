@@ -286,3 +286,49 @@ test("logging out closes the session's connections even when Redis's reply to de
   expect(await applied).toBe(true);
   expect(keptClosed()).toBe(false);
 });
+
+/** Change the password of the account of this session through the API, as /account does. */
+async function changePassword(app: FastifyInstance, session: string, currentPassword: string, newPassword: string): Promise<void> {
+  const response = await app.inject({ method: "POST", url: "/api/me/password", headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, payload: { currentPassword, newPassword } });
+  if (response.statusCode !== 204) throw new Error(`changing the password answered ${response.statusCode} ${response.body}`);
+}
+
+test("changing one's password closes the connection of the session that is kept too, and it comes back with a new ticket", async () => {
+  const { app, url } = await startApp();
+  await createAccount({ username: "cara", displayName: "cara", password: PASSWORD, isAdmin: false, mustChangePassword: false });
+  const session = await sessionOf(app, "cara", PASSWORD);
+  const id = await createScore(app, session);
+  const score = await open(app, url, id, session);
+  const closed = socketClosed(score.provider);
+
+  await changePassword(app, session, PASSWORD, "the password cara chose");
+
+  expect(await closed).toBe(4401);
+  // The session is still good for a ticket: the provider is back in without anyone doing anything.
+  await insync(score.provider);
+  const applied = nextSyncStatus(score.provider);
+  metaOf(score.doc).set("title", "改密碼之後改的標題");
+  expect(await applied).toBe(true);
+});
+
+test("changing one's password while the kept session's document is being loaded leaves that connection closed", async () => {
+  const { app, url } = await startApp();
+  await createAccount({ username: "dora", displayName: "dora", password: PASSWORD, isAdmin: false, mustChangePassword: false });
+  const session = await sessionOf(app, "dora", PASSWORD);
+  const id = await createScore(app, session);
+  const ticket = await ticketFor(app, id, session);
+  // As in the test of a session ending while its document loads: the spy stands in that window.
+  // Here the session stays, so only the event for the whole account can close the connection.
+  const load = Score.findOne.bind(Score);
+  const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
+    await changePassword(app, session, PASSWORD, "the password dora chose");
+    return load(options);
+  });
+
+  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
+  opened.push({ provider, doc: provider.document });
+  const closed = await socketClosed(provider);
+
+  expect(loading).toHaveBeenCalledOnce();
+  expect(closed).toBe(4401);
+});

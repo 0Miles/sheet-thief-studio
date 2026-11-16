@@ -6,7 +6,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 
 - Session cookie：`__Host-` 前綴，`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，不設 `Domain`。**補充**：名稱是 `__Host-studio_session`。
 - Session 存在 Redis，sliding 30 天：每次帶著有效 session 的請求，把到期時間延長成 30 天後。
-- **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt }`；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
+- **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt, via }`；`via` 是登入方式（`'password'` 或 `'karyl-chan'`，#7），強制改密碼只看用密碼登入的 session，沒有 `via` 的舊 session 視為密碼登入；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
 - 登入成功時換一個新的 session id（避免 session fixation，補充）。
 - 停用帳號或重設密碼時，刪除該帳號所有的 Redis session，並關閉它的 `/collab` 連線（[`accounts.md`](accounts.md)）。
 - **補充**（#87）：結束單一 session 時，只要已經請 Redis 刪除它，就通知關閉該 session 的 `/collab` 連線，不論 Redis 回覆成功或失敗（刪除可能已執行、只是回覆遺失）；唯一不通知的情況是 Redis 明確回答沒有這個 session。回覆遺失時不知道帳號，通知只帶 session id；錯誤照樣丟給呼叫端。
@@ -35,7 +35,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 |---|---|---|
 | 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
 | 加入成員的帳號名稱查詢（`POST /api/scores/:id/members`） | 同一帳號 15 分鐘內最多 20 次 | 補充 |
-| 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼） | 補充 |
+| 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼）。和登入一樣只計猜錯的次數；強制改密碼不檢查目前的密碼，所以不計（#7） | 補充 |
 | 訪客取 ticket（`POST /api/s/:token`） | 同一 IP 每分鐘最多 30 次 | 補充 |
 | 成員取 ticket（`POST /api/scores/:id/collab-ticket`） | 同一帳號每分鐘最多 60 次 | 補充 |
 | karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |

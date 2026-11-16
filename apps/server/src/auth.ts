@@ -1,6 +1,6 @@
 // Logging in and out, and the session behind every other API call (docs/spec/routes.md, 3.1;
 // docs/spec/security.md, sections 1 and 4).
-import { loginRequest, me } from "@studio/contracts";
+import { loginRequest } from "@studio/contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { checkCredentials, normalizeUsername } from "./accounts";
@@ -17,12 +17,26 @@ declare module "fastify" {
   interface FastifyContextConfig {
     /** Open without a session. Every other /api/ route answers 401 to a request without one. */
     public?: boolean;
+    /**
+     * Open to a session that must change its password first: changing it, logging out, and
+     * reading whose session it is. Every other /api/ route answers it 403.
+     */
+    beforePasswordChange?: boolean;
   }
   interface FastifyRequest {
     /** The session and its account, on every /api/ route not marked public. */
     session: Session | null;
     account: Account | null;
   }
+}
+
+/**
+ * Whether the request's session must change its password before anything else: the account has a
+ * temporary one, and the session logged in with it. A session that logged in another way never
+ * typed it (docs/spec/accounts.md, section 1).
+ */
+export function mustChangePassword(request: FastifyRequest): boolean {
+  return request.account?.mustChangePassword === true && request.session?.via === "password";
 }
 
 export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }: { cookie: CookieSettings; sessions: Sessions; limiter: RateLimiter }): void {
@@ -48,6 +62,10 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     request.session = session;
     request.account = account;
     keepSession(reply, session.id);
+    // On the server too, not only in the page's router: a new route is behind it unless it says otherwise.
+    if (mustChangePassword(request) && !request.routeOptions.config.beforePasswordChange) {
+      return reply.code(403).send({ code: "password_change_required" });
+    }
   });
 
   app.post("/api/auth/login", { config: { public: true } }, async (request, reply) => {
@@ -67,7 +85,7 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     // A new session id at every login; the session this browser had, if any, ends.
     const previous = request.cookies[cookie.name];
     if (previous) await sessions.end({ sessionId: previous });
-    keepSession(reply, await sessions.start(account.id));
+    keepSession(reply, await sessions.start(account.id, "password"));
     return reply.code(204).send();
   });
 
@@ -78,14 +96,10 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     return reply.code(204).send();
   });
 
-  app.get("/api/me", async (request) => {
-    const account = request.account!;
-    return me.parse({
-      accountId: account.id,
-      username: account.username,
-      displayName: account.displayName,
-      isAdmin: account.isAdmin,
-      mustChangePassword: account.mustChangePassword,
-    });
+  // Every device: this session too, and every connection of the account.
+  app.post("/api/auth/logout-all", { config: { beforePasswordChange: true } }, async (request, reply) => {
+    await sessions.end({ accountId: request.account!.id });
+    reply.clearCookie(cookie.name, cookieOptions);
+    return reply.code(204).send();
   });
 }

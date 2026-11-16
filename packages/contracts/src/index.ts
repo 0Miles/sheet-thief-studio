@@ -77,6 +77,20 @@ export const me = z.object({
 });
 export type Me = z.infer<typeof me>;
 
+/** A new display name of one's own (`PATCH /api/me`). */
+export const updateMeRequest = z.object({ displayName });
+export type UpdateMeRequest = z.infer<typeof updateMeRequest>;
+
+/**
+ * A new password of one's own (`POST /api/me/password`). The current one is only bounded, like
+ * the one typed to log in; it is not asked of someone who must change a temporary password.
+ */
+export const changePasswordRequest = z.object({
+  currentPassword: z.string().min(1).max(256).optional(),
+  newPassword: password,
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequest>;
+
 // Scores (docs/spec/routes.md, 3.3; docs/spec/collab.md, section 3).
 /** A member's role in a score (docs/spec/accounts.md, section 3). */
 export const role = z.enum(["owner", "editor", "viewer"]);
@@ -235,6 +249,7 @@ export const errorCode = z.enum([
   "unauthenticated",
   "invalid_credentials",
   "password_change_required",
+  "wrong_current_password",
   "bad_origin",
   "forbidden",
   "not_found",

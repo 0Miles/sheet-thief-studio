@@ -14,6 +14,9 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", name: "login", component: () => import("./views/LoginView.vue"), meta: { public: true } },
+    // Where an account with a temporary password is held until it has chosen its own.
+    { path: "/account/password", name: "account-password", component: () => import("./views/AccountPasswordView.vue") },
+    { path: "/account", name: "account", component: () => import("./views/AccountView.vue") },
     { path: "/", name: "home", component: HomeView },
     { path: "/phrases", name: "phrases", component: () => import("./views/PhrasesView.vue") },
     { path: "/scores/:id", name: "score", component: () => import("./views/ScoreView.vue"), props: true },
@@ -28,8 +31,13 @@ router.beforeEach(async (to) => {
   if (to.meta.public) return true;
   const session = useSessionStore();
   await session.load();
-  if (session.me) return true;
-  return { name: "login", query: to.fullPath === "/" ? {} : { redirect: to.fullPath } };
+  // The page they were going to comes after logging in, and after the password is changed.
+  const query = to.fullPath === "/" ? {} : { redirect: to.fullPath };
+  if (!session.me) return { name: "login", query };
+  const gate = to.name === "account-password";
+  if (session.me.mustChangePassword) return gate ? true : { name: "account-password", query };
+  // Nothing to change: the password is changed on /account, which asks for the current one.
+  return gate ? { name: "account" } : true;
 });
 
 /** Where to go after logging in: the page that sent them to /login, if it is one of ours. */

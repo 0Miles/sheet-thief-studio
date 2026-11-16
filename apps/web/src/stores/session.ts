@@ -1,9 +1,9 @@
 // Who is logged in in this browser: the account `GET /api/me` answers with, or nobody.
-import { type LoginRequest, type Me, me as meShape } from "@studio/contracts";
+import { type ChangePasswordRequest, type LoginRequest, type Me, me as meShape } from "@studio/contracts";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-import { ApiError, get, post } from "../api";
+import { ApiError, get, patchFor, post } from "../api";
 
 export const useSessionStore = defineStore("session", () => {
   const me = ref<Me | null>(null);
@@ -38,5 +38,22 @@ export const useSessionStore = defineStore("session", () => {
     asked = Promise.resolve();
   }
 
-  return { me, load, login, logout };
+  /** Every device, this one included: nobody is logged in here afterwards. */
+  async function logoutAll(): Promise<void> {
+    await post("/api/auth/logout-all");
+    me.value = null;
+    asked = Promise.resolve();
+  }
+
+  async function rename(displayName: string): Promise<void> {
+    me.value = await patchFor("/api/me", { displayName }, meShape);
+  }
+
+  /** This session stays logged in; the account then no longer has to change its password. */
+  async function changePassword(passwords: ChangePasswordRequest): Promise<void> {
+    await post("/api/me/password", passwords);
+    me.value = await get("/api/me", meShape);
+  }
+
+  return { me, load, login, logout, logoutAll, rename, changePassword };
 });
