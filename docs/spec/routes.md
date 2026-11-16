@@ -63,7 +63,7 @@
 | `POST /api/auth/logout-all` | 刪除這個帳號所有的 session（包含目前這一個，並清掉 cookie），關閉它的所有連線 → 204 |
 | `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401。**補充**（#7）：`mustChangePassword` 說的是這個 session 要不要先改密碼：帳號的 `must_change_password` 為真，而且這個 session 是用密碼登入的；karyl-chan 登入的 session 一律是 false |
 | `PATCH /api/me` | `{ displayName }` → 改完之後的帳號，形狀同 `GET /api/me`（補充，#7） |
-| `POST /api/me/password` | `{ currentPassword?, newPassword }` → 204；強制改密碼時不必 `currentPassword`（給了也不檢查）。成功後 `mustChangePassword` 變成 false，保留目前的 session，其餘失效。**補充**（#7）：不是強制改密碼時，沒給 `currentPassword` 回 400 `invalid_request`，給錯回 403 `wrong_current_password`；429 `rate_limited` |
+| `POST /api/me/password` | `{ currentPassword?, newPassword }` → 204；強制改密碼時不必 `currentPassword`（給了也不檢查）。成功後 `mustChangePassword` 變成 false，保留目前的 session，其餘失效（密碼已改而其餘 session 刪除失敗時仍回 204，伺服器記 error log）。**補充**（#7）：不是強制改密碼時，沒給 `currentPassword` 回 400 `invalid_request`，給錯回 403 `wrong_current_password`；429 `rate_limited` |
 
 ### 3.2 後台（只有 admin）
 

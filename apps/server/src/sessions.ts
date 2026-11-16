@@ -10,7 +10,8 @@ import { isToken, newToken } from "./tokens";
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 /** How a session logged in: a provider of the `identities` table (docs/spec/accounts.md, 1.1). */
-export type LoginMethod = "password" | "karyl-chan";
+const loginMethod = z.enum(["password", "karyl-chan"]);
+export type LoginMethod = z.infer<typeof loginMethod>;
 
 export interface Session {
   id: string;
@@ -24,7 +25,7 @@ export interface Session {
  * What Redis holds of a session. One stored before sessions said how they logged in did so with
  * a password, the only way there was.
  */
-const storedSession = z.object({ accountId: z.string(), createdAt: z.string(), via: z.enum(["password", "karyl-chan"]).default("password") });
+const storedSession = z.object({ accountId: z.string(), createdAt: z.string(), via: loginMethod.default("password") });
 
 /**
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account

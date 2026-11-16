@@ -91,6 +91,29 @@ export function seedScore(fixture: ScoreFixture): string {
   return (JSON.parse(made.stdout) as { id: string }).id;
 }
 
+/** An account as the server's script makes it (apps/server/tests/accountE2e.ts). */
+export interface AccountFixture {
+  username: string;
+  displayName: string;
+  password: string;
+  isAdmin: boolean;
+  mustChangePassword: boolean;
+}
+
+/**
+ * An account of the test's own, written into the tests' database by the server's script: one the
+ * test uses up (it changes its temporary password), so each run, retry and browser makes another.
+ */
+export function seedAccount(fixture: AccountFixture): void {
+  const made = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "account:e2e"], {
+    input: JSON.stringify(fixture),
+    env: { ...process.env, ...SERVER_ENV },
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (made.status !== 0) throw new Error(`Could not make the account: ${made.stderr}`);
+}
+
 /** Every change typed here has reached the server. */
 export async function synced(page: Page): Promise<void> {
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();

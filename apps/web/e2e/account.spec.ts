@@ -1,15 +1,20 @@
 // Having to change a temporary password before anything else, and one's own account page
 // (docs/spec/accounts.md, section 1; docs/spec/routes.md, section 1).
+import { randomBytes } from "node:crypto";
+
 import { expect, test } from "@playwright/test";
 
 import { strings } from "../src/strings";
-import { NEWCOMER } from "./environment";
-import { logIn, pageErrors } from "./pages";
+import { logIn, pageErrors, seedAccount } from "./pages";
 
 const text = strings.account;
 const CHOSEN = "e2e password of her own";
 
 test("an account with a temporary password is held on /account/password until it has chosen its own, then renames itself on /account", async ({ page }) => {
+  // As an admin makes an account, with a temporary password. The test changes it, so it makes
+  // an account of its own every time it runs: again, retried, or in another browser.
+  const NEWCOMER = { username: `e2e-new-${randomBytes(6).toString("hex")}`, displayName: "新來的帳號", password: "e2e temporary password", isAdmin: false, mustChangePassword: true };
+  seedAccount(NEWCOMER);
   const errors = pageErrors(page);
   await page.goto("/login");
   await logIn(page, NEWCOMER.username, NEWCOMER.password);

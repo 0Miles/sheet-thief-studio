@@ -34,6 +34,7 @@
 - e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
   - **補充**（#19）：還沒有介面或 API 可以建立的前置資料（帶 Editor、Viewer 成員的團譜、超過 8 小節的團譜，或多聲部的團譜），由 server 自己的腳本直接寫進 e2e 資料庫（`apps/server/tests/scoreE2e.ts`，`e2e/pages.ts` 的 `seedScore`）。腳本只接受名稱以 `_e2e` 結尾的資料庫，而且只建立新的團譜，所以不會和 server 記憶體裡的文件衝突。#13 有了加入成員的頁面之後，成員本身的行為仍然要經由介面驗證。
+  - **補充**（#7）：會被測試用掉的帳號（例如要改掉暫時密碼的帳號）不放進 `e2e/environment.ts` 的固定帳號，由測試自己用 `apps/server/tests/accountE2e.ts`（`e2e/pages.ts` 的 `seedAccount`）建立一個名稱帶亂數的新帳號，所以同一個測試可以重跑，也可以在別的瀏覽器 project 再跑一次。
 - **補充**：e2e 從 DOM 判斷狀態，不靠掛鉤：譜面畫好時譜面元素帶 `data-ready="true"`；視圖與版面看 `<main>` 的 `data-view`（`editable`、`readOnlyEdit`、`read`）與 `data-layout`（`narrow`、`wide`），要求畫出的聲部看譜面元素的 `data-parts`（聲部 id，逗號分隔，#32）；同步狀態看指示器的 `data-sync`（`synced`、`syncing`、`offline`），等到 `data-sync="synced"` 就表示本機輸入的內容已經送到伺服器（#19，[`views.md`](views.md) 第 10 節）；頁面錯誤用 Playwright 的 `pageerror` 與 console 事件收集，斷言為空。
 - Playwright 的網頁 `webServer` 是 `pnpm build && pnpm preview`，帶 `VITE_E2E=1` 建置，而且一律不重用已經在跑的 preview（`apps/web/playwright.config.ts`，#6）。
 - M0 的 `SpikeView.vue`、`/spike/:name`、`/local` 與 `window.__studio` 已在 #37 移除；量測改對編輯視圖（第 4 節）。

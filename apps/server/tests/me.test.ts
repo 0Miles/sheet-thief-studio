@@ -124,6 +124,38 @@ test("changing the password keeps this session, ends the account's others, and t
   expect((await login(app, member.username, NEW_PASSWORD)).statusCode).toBe(204);
 });
 
+test("a password that changed is answered as changed even when ending the other sessions fails, and the listeners are still told", async () => {
+  const member = await account(false);
+  const [here, there] = [await sessionOf(app, member.username, member.password), await sessionOf(app, member.username, member.password)];
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+  // Redis fails as the other sessions are deleted.
+  const end = app.sessions.end.bind(app.sessions);
+  const multi = redis.multi.bind(redis);
+  const failing = vi.spyOn(redis, "multi");
+  vi.spyOn(app.sessions, "end").mockImplementationOnce(async (which) => {
+    failing.mockImplementationOnce(() => {
+      const removal = multi();
+      removal.exec = async () => {
+        throw new Error("Redis is away");
+      };
+      return removal;
+    });
+    return end(which);
+  });
+
+  const response = await changePassword(here, { currentPassword: member.password, newPassword: NEW_PASSWORD });
+  failing.mockRestore();
+
+  // Not an error: the old password is gone, and trying again with it would only be refused.
+  expect(response.statusCode).toBe(204);
+  expect((await login(app, member.username, member.password)).statusCode).toBe(401);
+  expect((await login(app, member.username, NEW_PASSWORD)).statusCode).toBe(204);
+  // The connections close whatever Redis did; the session that could not be ended is still there.
+  expect(listener.mock.calls).toEqual([[{ accountId: member.id, sessionId: null }]]);
+  expect([await valid(here), await valid(there)]).toEqual([true, true]);
+});
+
 test("logging out everywhere ends this session too, and tells the listeners", async () => {
   const member = await account(false);
   const [here, there] = [await sessionOf(app, member.username, member.password), await sessionOf(app, member.username, member.password)];

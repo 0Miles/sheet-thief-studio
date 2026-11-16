@@ -8,6 +8,9 @@ import { mustChangePassword } from "./auth";
 import { invalidRequest, rateLimited } from "./http";
 import { OWN_PASSWORD_BY_ACCOUNT, type RateLimiter } from "./rateLimit";
 
+/** The request of someone who is asked for the current password too. */
+const withCurrentPassword = changePasswordRequest.required({ currentPassword: true });
+
 /**
  * The account as its own person sees it. `mustChangePassword` is about this session: false for
  * one that did not log in with the password, which is not held to changing it.
@@ -41,9 +44,7 @@ export function registerMe(app: FastifyInstance, { limiter }: { limiter: RateLim
     // Someone who just logged in with a temporary password is not asked for it again; anyone
     // else is, so that a session left open is not enough to take the account over.
     if (!mustChangePassword(request)) {
-      if (currentPassword === undefined) {
-        return reply.code(400).send({ code: "invalid_request", params: { issues: [{ path: ["currentPassword"], code: "invalid_type" }] } });
-      }
+      if (currentPassword === undefined) return invalidRequest(reply, withCurrentPassword.safeParse(request.body).error!);
       // Only wrong guesses count: a right one gives its attempt back.
       const attempt = await limiter.take(OWN_PASSWORD_BY_ACCOUNT, accountId);
       if (!attempt.ok) return rateLimited(reply, attempt.retryAfterSeconds);
@@ -53,7 +54,15 @@ export function registerMe(app: FastifyInstance, { limiter }: { limiter: RateLim
     await chooseOwnPassword(accountId, newPassword);
     // This session stays; the account's other sessions end, and all its connections close, this
     // session's too: they come back with a new ticket (docs/spec/accounts.md, section 9).
-    await app.sessions.end({ accountId, except: request.session!.id });
+    // The password is changed whatever happens next. Should ending the sessions fail, the answer
+    // is still that it changed: told otherwise, they would try again with a current password
+    // that no longer is. The connections were closed all the same (`end` tells its listeners
+    // either way); what may be left is another session, until it expires: logged, to be ended by hand.
+    try {
+      await app.sessions.end({ accountId, except: request.session!.id });
+    } catch (error) {
+      request.log.error({ err: error, accountId }, "the password changed, but the account's other sessions may not have ended");
+    }
     return reply.code(204).send();
   });
 }

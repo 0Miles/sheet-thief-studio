@@ -41,13 +41,4 @@ export const VIEWER = {
   mustChangePassword: false,
 };
 
-/** As an admin makes an account: its password is temporary, to be changed at the first login (account.spec.ts changes it). */
-export const NEWCOMER = {
-  username: "e2e-eve",
-  displayName: "新來的帳號",
-  password: "e2e temporary password",
-  isAdmin: false,
-  mustChangePassword: true,
-};
-
-export const ACCOUNTS = [ADMIN, OUTSIDER, EDITOR, VIEWER, NEWCOMER];
+export const ACCOUNTS = [ADMIN, OUTSIDER, EDITOR, VIEWER];

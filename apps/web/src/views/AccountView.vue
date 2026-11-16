@@ -70,7 +70,7 @@ async function logoutAll(): Promise<void> {
   <main v-if="session.me" class="account">
     <RouterLink :to="{ name: 'home' }" class="account__back">{{ text.back }}</RouterLink>
     <h1>{{ text.title }}</h1>
-    <p class="account__muted">{{ text.username }}：{{ session.me.username }}</p>
+    <p class="account__muted">{{ text.username(session.me.username) }}</p>
 
     <section class="account__section">
       <h2>{{ text.displayName.title }}</h2>

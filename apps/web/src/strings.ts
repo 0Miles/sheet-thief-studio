@@ -154,7 +154,7 @@ export const strings = {
   account: {
     title: "帳號設定",
     back: "回到我的團譜",
-    username: "帳號名稱",
+    username: (username: string) => `帳號名稱：${username}`,
     displayName: {
       title: "顯示名稱",
       label: "顯示名稱",
