@@ -61,7 +61,7 @@ test("offline, a member keeps typing under a banner; back online, another member
   await expect(owner.locator("[data-offline]")).toHaveCount(0);
 
   await owner.context().setOffline(true);
-  await expect(owner.locator("[data-offline]")).toHaveText(text.offline);
+  await expect(owner.locator("[data-offline]")).toHaveText(text.offline.editing);
   await expect(owner.locator('[data-sync="offline"]')).toBeVisible();
   await goToBar(owner);
   await typeBeats(owner, [3, 5]);
@@ -142,6 +142,12 @@ test("an Editor made a Viewer while the score is open gets it anew, read-only, w
   await editor.keyboard.press("5");
   await expect(editor.getByRole("status").filter({ hasText: text.viewerCannotEdit })).toBeVisible();
   expect(await fretsOf(editor)).toEqual([]);
+  // Offline in the read-only view, the banner does not offer to keep editing.
+  await editor.context().setOffline(true);
+  await expect(editor.locator("[data-offline]")).toHaveText(text.offline.reading);
+  await editor.context().setOffline(false);
+  await expect(editor.locator("[data-offline]")).toHaveCount(0);
+  await expect(editor.locator('[data-sync="synced"]')).toBeVisible({ timeout: 15_000 });
   expect(errors.flat()).toEqual([]);
 });
 

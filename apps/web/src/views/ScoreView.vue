@@ -727,8 +727,10 @@ onBeforeUnmount(() => {
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
-      <!-- Once the score is open: before, there is nothing to keep editing. -->
-      <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>{{ isGuest ? strings.guest.offline : text.offline }}</p>
+      <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
+      <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
+        {{ view === "editable" ? text.offline.editing : text.offline.reading }}
+      </p>
       <div
         ref="scroller"
         class="score__scroller"

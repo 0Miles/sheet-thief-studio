@@ -49,8 +49,12 @@ export const strings = {
     unavailable: "無法開啟這份團譜",
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
-    // The banner while the connection is down (docs/spec/views.md, section 10).
-    offline: "離線中。可以繼續編輯，恢復連線後會自動合併。",
+    // The banner while the connection is down (docs/spec/views.md, section 10): in the edit view
+    // one types in, and in any other (a Viewer's, the Read view, a guest's).
+    offline: {
+      editing: "離線中。可以繼續編輯，恢復連線後會自動合併。",
+      reading: "離線中，恢復連線後會繼續更新。",
+    },
     viewerCannotEdit: "檢視者無法修改",
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
@@ -152,7 +156,6 @@ export const strings = {
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
     gone: "這個唯讀連結已經失效。",
-    offline: "離線中，恢復連線後會繼續更新。",
   },
   settings: {
     title: "團譜設定",
