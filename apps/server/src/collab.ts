@@ -27,6 +27,10 @@ export const COLLAB_PATH = "/collab";
 /** How long a document stays unchanged before the server fills in what it misses (docs/spec/collab.md, section 4). */
 export const FILL_DEBOUNCE_MS = 1000;
 
+/** How long a store waits for more changes, and the longest it waits however many come (docs/spec/collab.md, section 1). */
+export const STORE_DEBOUNCE_MS = 2000;
+export const STORE_MAX_DEBOUNCE_MS = 10_000;
+
 /** The `updated_at` a store leaves: now, or the one the score had when it is deleted. */
 const STORED_AT = literal("CASE WHEN deleted_at IS NULL THEN now() ELSE updated_at END") as unknown as Date;
 
@@ -262,8 +266,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   const hocuspocus = new Hocuspocus<CollabContext>({
     quiet: true,
     // docs/spec/collab.md, section 1. The last connection leaving stores at once.
-    debounce: 2000,
-    maxDebounce: 10_000,
+    debounce: STORE_DEBOUNCE_MS,
+    maxDebounce: STORE_MAX_DEBOUNCE_MS,
     async onAuthenticate({ token, documentName, connectionConfig, request }): Promise<CollabContext> {
       const ticket = await tickets.redeem(token);
       // Refused with a code and a reason only: an error with a message would be logged as a fault.
