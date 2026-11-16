@@ -47,8 +47,12 @@ const dialogError = ref("");
 /** The whole address a guest opens. */
 const address = computed(() => (token.value ? `${location.origin}/s/${token.value}` : ""));
 
+function refusal(failure: unknown): string {
+  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
+}
+
 function failed(failure: unknown): void {
-  error.value = failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
+  error.value = refusal(failure);
 }
 
 /** The score as the server has it now: my role in it, its members, and for its Owner its link. */
@@ -94,10 +98,6 @@ const revoke = () =>
     await del(linkPath);
     return null;
   });
-
-function refusal(failure: unknown): string {
-  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-}
 
 /**
  * Send a change of members, then show them as they now are: after a refusal too, which may mean

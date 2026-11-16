@@ -7,6 +7,7 @@ import { addMemberRequest, changeRoleRequest, type ErrorCode, scoreMember, score
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Transaction } from "sequelize";
 
+import { normalizeUsername } from "./accounts";
 import type { Collab } from "./collab";
 import { Account, Score, ScoreMember } from "./db/models";
 import { invalidRequest, isUuid, notFound, rateLimited } from "./http";
@@ -17,7 +18,7 @@ type ScoreParams = { Params: { id: string } };
 type MemberParams = { Params: { id: string; accountId: string } };
 
 /** A change of members that is not made: the answer to send instead. */
-class Refusal extends Error {
+export class Refusal extends Error {
   constructor(
     readonly status: number,
     readonly code: ErrorCode,
@@ -27,7 +28,7 @@ class Refusal extends Error {
 }
 
 /** The members of a score while they are being changed: the one who asks, and how to find another. */
-interface Members {
+export interface Members {
   me: ScoreMember;
   /** The member with this account; a `Refusal` (404) when there is none. */
   other(accountId: string): ScoreMember;
@@ -40,9 +41,10 @@ interface Members {
  * requests at once could otherwise each pass its checks and leave a score without an Owner, or
  * with a member its Owner of a moment ago added. Refuses with 404 anyone who is no member (or
  * when the score is missing or deleted), and with 403 a member who is not the Owner when the
- * change is the Owner's to make.
+ * change is the Owner's to make. Every change of `score_members` goes through here, whoever makes
+ * it: the lock is what keeps two of them apart.
  */
-async function changeMembers<T>(scoreId: string, accountId: string, by: "owner" | "member", change: (members: Members) => Promise<T>): Promise<T> {
+export async function changeMembers<T>(scoreId: string, accountId: string, by: "owner" | "member", change: (members: Members) => Promise<T>): Promise<T> {
   if (!isUuid(scoreId)) throw new Refusal(404, "not_found");
   return Score.sequelize!.transaction(async (transaction) => {
     const score = await Score.findOne({ where: { id: scoreId, deletedAt: null }, attributes: ["id"], lock: transaction.LOCK.UPDATE, transaction });
@@ -115,8 +117,9 @@ export function registerMembers(app: FastifyInstance, { collab, limiter }: { col
     // exists (docs/spec/security.md, section 4).
     const attempt = await limiter.take(ADD_MEMBER_BY_ACCOUNT, request.account!.id);
     if (!attempt.ok) return rateLimited(reply, attempt.retryAfterSeconds);
-    // The whole username, as it is stored: no directory, no completion (docs/spec/accounts.md, section 4).
-    const account = await Account.findOne({ where: { username: body.data.username } });
+    // The whole username, read as the login page reads one (`Ben` is `ben`): no directory, no
+    // completion (docs/spec/accounts.md, section 4).
+    const account = await Account.findOne({ where: { username: normalizeUsername(body.data.username) } });
     if (account === null) return reply.code(404).send({ code: "account_not_found" });
     return unlessRefused(reply, async () => {
       await changeMembers(score.id, request.account!.id, "owner", async ({ transaction }) => {
@@ -181,11 +184,20 @@ export function registerMembers(app: FastifyInstance, { collab, limiter }: { col
       await changeMembers(score.id, from, "owner", async ({ other, transaction }) => {
         other(to);
         // To someone else, who can log in (docs/spec/accounts.md, section 5): the settings page offers no other.
-        const account = await Account.findByPk(to, { transaction });
+        // Its row is held until the transfer is committed: an admin disabling the account at the
+        // same moment waits, and never leaves the score with an Owner disabled just before.
+        const account = await Account.findByPk(to, { lock: transaction.LOCK.SHARE, transaction });
         if (to === from || account === null || account.disabledAt !== null) throw new Refusal(400, "invalid_request");
-        // In this order: a score never has two Owners, not even between two statements.
-        await ScoreMember.update({ role: "editor" }, { where: { scoreId: score.id, accountId: from }, transaction });
-        await ScoreMember.update({ role: "owner" }, { where: { scoreId: score.id, accountId: to }, transaction });
+        // In this order: a score never has two Owners, not even between two statements. Each must
+        // change its one row: a transfer that changed only one would leave no Owner, or two members
+        // short of one, so it is undone as a whole.
+        for (const [accountId, role, was] of [
+          [from, "editor", "owner"],
+          [to, "owner", ["editor", "viewer"]],
+        ] as const) {
+          const [changed] = await ScoreMember.update({ role }, { where: { scoreId: score.id, accountId, role: was }, transaction });
+          if (changed !== 1) throw new Error(`transferring score ${score.id}: ${changed} rows of ${accountId} changed, not 1`);
+        }
       });
       closeFor(score.id, [from, to], ResetConnection);
       return reply.code(204).send();

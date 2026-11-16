@@ -131,6 +131,11 @@ test("adding an account that does not exist, one that is a member already, or on
 
   const unknown = await call(app, "POST", `${id}/members`, session.anna, { username: "nobody" });
   expect([unknown.statusCode, unknown.json()]).toEqual([404, { code: "account_not_found" }]);
+  // Read as the login page reads a username: in either case, spaces around it left out.
+  const typed = await call(app, "POST", `${id}/members`, session.anna, { username: " Cara ", role: "viewer" });
+  expect([typed.statusCode, typed.json()]).toEqual([201, expect.objectContaining({ username: "cara", role: "viewer" })]);
+  expect((await call(app, "POST", `${id}/members`, session.anna, { username: "BEN" })).json()).toEqual({ code: "already_member" });
+  expect((await call(app, "DELETE", `${id}/members/${ids.cara}`, session.anna)).statusCode).toBe(204);
   // A name no account can have is no account either.
   expect((await call(app, "POST", `${id}/members`, session.anna, { username: "No Such Name!" })).json()).toEqual({ code: "account_not_found" });
   const twice = await call(app, "POST", `${id}/members`, session.anna, { username: "ben", role: "viewer" });
@@ -249,6 +254,29 @@ test("after a transfer the Owner of before is an Editor and the new Owner is the
   const bens = await sessionOf(app, "ben", PASSWORD);
   expect((await call(app, "DELETE", `${id}/members/${ids.anna}`, bens)).statusCode).toBe(204);
   expect(await rolesOf(app, id, bens)).toEqual({ ben: "owner", cara: "editor" });
+});
+
+test("a transfer to a member and that member's removal, sent at once, leave one Owner and members that agree with the answers", async () => {
+  const { app } = await startApp();
+  const anna = await sessionOf(app, "anna", PASSWORD);
+  // Which of the two gets to the database first is not ours to choose: many scores, each raced
+  // once. Ben is put in each straight in the database: the lookups of his username are limited.
+  const scores = await Promise.all(Array.from({ length: 24 }, () => createScore(app, anna, "同時送到")));
+  await ScoreMember.bulkCreate(scores.map((scoreId) => ({ scoreId, accountId: ids.ben!, role: "editor" as const })));
+
+  const answers = await Promise.all(
+    scores.map(async (id) => {
+      const [transfer, remove] = await Promise.all([call(app, "POST", `${id}/transfer`, anna, { accountId: ids.ben }), call(app, "DELETE", `${id}/members/${ids.ben}`, anna)]);
+      const members = await ScoreMember.findAll({ where: { scoreId: id } });
+      return { statuses: [transfer.statusCode, remove.statusCode], roles: Object.fromEntries(members.map(({ accountId, role }) => [accountId, role])) };
+    }),
+  );
+
+  // One of the two was made, as if they had come one after the other: the transfer, after which
+  // Anna removes nobody; or the removal, after which there is nobody to transfer to.
+  const transferred = { statuses: [204, 403], roles: { [ids.anna!]: "editor", [ids.ben!]: "owner" } };
+  const removed = { statuses: [404, 204], roles: { [ids.anna!]: "owner" } };
+  for (const answer of answers) expect([transferred, removed]).toContainEqual(answer);
 });
 
 test("an Editor made a Viewer is disconnected, and what it sends once back is dropped; nobody else's connection closes", async () => {
