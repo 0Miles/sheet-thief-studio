@@ -173,15 +173,17 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
 
   /**
    * Make a version of the document as it is now, unless the score's latest version is the same
-   * (docs/spec/collab.md, 8.3). The content is read at once; the rest never rejects: a version
-   * that could not be made is logged, and the next one is made of whatever the score is then.
+   * (docs/spec/collab.md, 8.3). The content is read once the score's row is locked
+   * (`createVersion`): what the document is then, a version made meanwhile compared. Never
+   * rejects: a version that could not be made is logged, and the next one is made of whatever the
+   * score is then.
    * None of a frozen document, which this server cannot read for sure, nor of one that did not load.
    */
   function makeVersion(document: Y.Doc & { name: string; isLoading: boolean }, reason: VersionReason): Promise<void> {
     const scoreId = document.name;
     if (document.isLoading || frozen.has(scoreId)) return Promise.resolve();
     const making = Promise.resolve()
-      .then(() => createVersion(scoreId, docToJson(document), reason))
+      .then(() => createVersion(scoreId, () => docToJson(document), reason))
       .then(
         () => undefined,
         (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),
