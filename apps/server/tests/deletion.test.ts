@@ -2,6 +2,8 @@
 // Owner deletes it softly and restores it within 30 days; meanwhile nobody finds it, and the
 // connections it had are closed, through real providers; after 30 days the job of the server
 // deletes it for good.
+import { gunzipSync } from "node:zlib";
+
 import { Forbidden } from "@hocuspocus/common";
 import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
@@ -14,7 +16,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, ScoreMember, Version } from "../src/db/models";
 import { PURGE_INTERVAL_MS, purgeDeletedScores } from "../src/deletion";
-import { createVersion } from "../src/versions";
+import { createVersion, VERSION_INTERVAL_MS } from "../src/versions";
 import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -437,6 +439,37 @@ test("what a member typed just before the deletion is stored as the connections 
   const after = (await Score.findByPk(id))!;
   expect(after.title).toBe("還原後改的標題");
   expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+});
+
+test("a score deleted while a member has it open gets the version of what they left, none after that, and keeps its versions when it is restored", async () => {
+  // The interval of the timers only: the one of the versions, and the one of the job.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const { app, url } = await startApp();
+  const { id, anna } = await annasScore(app, "刪除前的標題");
+  const member = await open(url, id, () => ticketFor(app, id, anna));
+  const applied = nextSyncStatus(member.provider);
+  metaOf(member.doc).set("title", "刪除前剛改的標題");
+  expect(await applied).toBe(true);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+
+  // The deletion closes the member's connection, the last one: that is the version.
+  expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
+  member.provider.destroy();
+  await vi.waitFor(() => expect(app.collab.loadedScores()).not.toContain(id), { timeout: 5000 });
+  const versions = await Version.findAll({ where: { scoreId: id } });
+  expect(versions.map(({ reason }) => reason)).toEqual(["last_disconnect"]);
+  expect((await Score.findByPk(id))?.deletedAt).toBeInstanceOf(Date);
+
+  // Deleted, nobody opens it: no timer makes another.
+  const made = vi.spyOn(Version, "create");
+  await vi.advanceTimersByTimeAsync(3 * VERSION_INTERVAL_MS);
+  expect(made).not.toHaveBeenCalled();
+  expect(await Version.count({ where: { scoreId: id } })).toBe(1);
+
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
+  const kept = await Version.findAll({ where: { scoreId: id } });
+  expect(kept.map((version) => version.id)).toEqual(versions.map((version) => version.id));
+  expect((JSON.parse(gunzipSync(kept[0]!.content).toString()) as { title: string }).title).toBe("刪除前剛改的標題");
 });
 
 test("every table that refers to a score goes with it: its foreign key cascades", async () => {

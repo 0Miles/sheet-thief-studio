@@ -18,6 +18,22 @@ export const VERSION_INTERVAL_MS = 10 * 60 * 1000;
 /** How many automatic versions a score keeps; the named ones are never deleted (docs/spec/collab.md, 8.4). */
 export const AUTO_VERSIONS_KEPT = 200;
 
+/**
+ * The most a version holds, in bytes of JSON before it is gzipped: what one WebSocket message
+ * carries (docs/spec/security.md, section 5), since restoring a version sends its whole content
+ * as one. Whoever reads a version back (M5) gunzips it with `maxOutputLength` set to this, so
+ * that no row, however it got there, inflates beyond it.
+ */
+export const MAX_VERSION_BYTES = 8 * 1024 * 1024;
+
+/** The content is more than a version holds: none was made. */
+export class VersionTooLarge extends Error {
+  constructor(scoreId: string, byteSize: number) {
+    super(`the content of score ${scoreId} is ${byteSize} bytes of JSON, more than the ${MAX_VERSION_BYTES} a version holds`);
+    this.name = "VersionTooLarge";
+  }
+}
+
 /** The value as JSON with the keys of every object sorted: the same text for the same content, however it was built. */
 function sortedJson(value: unknown): string {
   return JSON.stringify(value, (_key, inner: unknown) => {
@@ -38,10 +54,13 @@ export interface MadeVersion {
  * same; then delete its oldest automatic versions beyond the 200 kept. With the score's row
  * locked: the versions of one score are made one at a time, each compared with the one before.
  * Null when the score is no longer there (deleted for good meanwhile). A score deleted softly
- * still gets its versions: it can be restored.
+ * still gets its versions: it can be restored. Throws `VersionTooLarge`, writing nothing, when
+ * the content is more than `MAX_VERSION_BYTES`.
  */
 export async function createVersion(scoreId: string, score: ScoreJSON, reason: VersionReason, createdBy: string | null = null): Promise<MadeVersion | null> {
   const json = sortedJson(score);
+  const byteSize = Buffer.byteLength(json);
+  if (byteSize > MAX_VERSION_BYTES) throw new VersionTooLarge(scoreId, byteSize);
   const contentHash = createHash("sha256").update(json).digest("hex");
   const content = await compress(json);
   return Version.sequelize!.transaction(async (transaction) => {
@@ -57,10 +76,10 @@ export async function createVersion(scoreId: string, score: ScoreJSON, reason: V
       transaction,
     });
     if (latest?.contentHash === contentHash) return { id: latest.id, created: false };
-    const version = await Version.create({ scoreId, schemaVersion: score.schemaVersion, content, contentHash, byteSize: Buffer.byteLength(json), reason, createdBy }, { transaction });
+    const version = await Version.create({ scoreId, schemaVersion: score.schemaVersion, content, contentHash, byteSize, reason, createdBy }, { transaction });
     await Version.sequelize!.query(
-      `DELETE FROM versions WHERE id IN (SELECT id FROM versions WHERE score_id = $1 AND name IS NULL ORDER BY created_at DESC, id DESC OFFSET ${AUTO_VERSIONS_KEPT})`,
-      { bind: [scoreId], transaction },
+      "DELETE FROM versions WHERE id IN (SELECT id FROM versions WHERE score_id = $1 AND name IS NULL ORDER BY created_at DESC, id DESC OFFSET $2)",
+      { bind: [scoreId, AUTO_VERSIONS_KEPT], transaction },
     );
     return { id: version.id, created: true };
   });

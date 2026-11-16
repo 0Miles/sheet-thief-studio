@@ -14,7 +14,7 @@ import * as Y from "yjs";
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, Version } from "../src/db/models";
-import { AUTO_VERSIONS_KEPT, createVersion, VERSION_INTERVAL_MS } from "../src/versions";
+import { AUTO_VERSIONS_KEPT, createVersion, MAX_VERSION_BYTES, VERSION_INTERVAL_MS, VersionTooLarge } from "../src/versions";
 import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -289,4 +289,89 @@ test("a version that cannot be made is logged, and the score is stored and unloa
   // The next time the members leave, the version is made of what the score is then.
   await leave(started, await open(started, id));
   expect(await titlesOf(id)).toEqual(["沒有版本的修改"]);
+});
+
+/** The score as its row holds it. */
+async function storedScore(scoreId: string) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
+  return docToJson(doc);
+}
+
+/**
+ * Open the connections of the pool: it opens them as they are needed, and transactions that
+ * start together on a pool with one connection open would run almost one after another.
+ */
+async function warmPool(): Promise<void> {
+  await Promise.all(Array.from({ length: 5 }, () => sequelize.query("SELECT pg_sleep(0.05)")));
+}
+
+test("two versions of the same content asked for at once make one", async () => {
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "同時建立");
+  const score = await storedScore(id);
+  await warmPool();
+
+  const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, score, "interval")));
+
+  expect(await Version.count({ where: { scoreId: id } })).toBe(1);
+  expect(made.filter((version) => version?.created)).toHaveLength(1);
+  expect(new Set(made.map((version) => version?.id)).size).toBe(1);
+});
+
+test("versions made at once near the limit never leave more than 200 automatic ones", async () => {
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "同時到上限");
+  const score = await storedScore(id);
+  const hour = 60 * 60 * 1000;
+  const automatic = await Version.bulkCreate(
+    Array.from({ length: AUTO_VERSIONS_KEPT - 1 }, (_, index) => ({
+      scoreId: id,
+      schemaVersion: SCHEMA_VERSION,
+      content: Buffer.from("old"),
+      contentHash: `${index}`.padStart(64, "0"),
+      byteSize: 3,
+      reason: "interval" as const,
+      createdAt: new Date(Date.now() - (index + 1) * hour),
+    })),
+  );
+  await warmPool();
+
+  const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, { ...score, title: `同時的第 ${index} 個` }, "interval")));
+
+  expect(made.map((version) => version?.created)).toEqual([true, true, true, true, true]);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(AUTO_VERSIONS_KEPT);
+  // The five new ones are all there; the four oldest went.
+  const kept = new Set((await versionsOf(id)).map((version) => version.id));
+  for (const version of made) expect(kept.has(version!.id)).toBe(true);
+  expect(automatic.slice(-5).map((version) => kept.has(version.id))).toEqual([true, false, false, false, false]);
+});
+
+test("the database refuses a version with a reason it does not know", async () => {
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "原因測試");
+  const row = { scoreId: id, schemaVersion: SCHEMA_VERSION, content: Buffer.from("x"), contentHash: "0".repeat(64), byteSize: 1 };
+
+  await expect(Version.create({ ...row, reason: "manual" as never })).rejects.toThrow(/versions_reason_check/);
+
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+  for (const reason of ["last_disconnect", "interval", "before_restore"] as const) await Version.create({ ...row, reason });
+  expect(await Version.count({ where: { scoreId: id } })).toBe(3);
+});
+
+test("content of more than 8 MB of JSON makes no version, and one of exactly as much does", async () => {
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "大小測試");
+  const score = await storedScore(id);
+  const sized = (bytes: number) => {
+    const empty = Buffer.byteLength(JSON.stringify({ ...score, title: "" }));
+    return { ...score, title: "a".repeat(bytes - empty) };
+  };
+
+  await expect(createVersion(id, sized(MAX_VERSION_BYTES + 1), "interval")).rejects.toThrow(VersionTooLarge);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+
+  expect((await createVersion(id, sized(MAX_VERSION_BYTES), "interval"))?.created).toBe(true);
+  const [version] = await versionsOf(id);
+  expect(version!.byteSize).toBe(MAX_VERSION_BYTES);
 });

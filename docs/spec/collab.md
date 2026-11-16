@@ -151,6 +151,7 @@
 - `onDisconnect` 會等版本建完才讓文件卸載。建立失敗只寫 error log，不影響儲存與卸載；下一次建立時用當時的內容。
 - 伺服器關閉時（`preClose`），替每一份還在記憶體裡的文件建立一次版本（`reason = 'last_disconnect'`），並等進行中的版本建完，再關資料庫。
 - 已軟刪除的團譜照樣建立版本（刪除時成員的連線被關閉，就是「最後一個連線離開」），還原後版本都在；團譜列已經永久刪除時不建。
+- 版本的大小上限是 8 MB（未壓縮的 JSON 位元組數，`MAX_VERSION_BYTES`），和 WebSocket 單則訊息的上限相同（[`security.md`](security.md) 第 5 節）：還原是把整份內容當一筆交易送出，更大的版本本來就還原不了。超過時不建立版本、寫 error log，儲存與關閉照常。M5 讀取版本時，解壓要以同一個上限設 `maxOutputLength`。
 - 10 分鐘的計時器從 `afterLoadDocument` 跑到 `afterUnloadDocument`，不看有沒有人在編輯；內容沒變的那一次不會建立版本。
 
 M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原。
