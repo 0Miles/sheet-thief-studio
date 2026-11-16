@@ -27,6 +27,18 @@ export const test = base.extend<{ cspWatch: CspWatch; cspViolations: string[] }>
             report?.(`${event.effectiveDirective} blocked ${event.blockedURI || "inline"} on ${location.pathname}`);
           });
         }, BINDING);
+        // A worker's violations fire in the worker, where the listener above is not, and Playwright
+        // does not pass on what the browser logs about them: Chromium's own log does. It logs a
+        // request refused (connect-src, img-src…), not an eval refused, which goes unheard.
+        if (browser.browserType().name() !== "chromium") return;
+        context.on("page", (page) => {
+          void context.newCDPSession(page).then(async (session) => {
+            session.on("Log.entryAdded", ({ entry }) => {
+              if (entry.source === "worker" && entry.text.includes("Content Security Policy")) violations.push(`in a worker of ${new URL(page.url()).pathname}: ${entry.text}`);
+            });
+            await session.send("Log.enable");
+          });
+        });
       };
       // The contexts a test makes itself (`loggedIn` in pages.ts) are watched like the fixture's.
       const newContext = browser.newContext;

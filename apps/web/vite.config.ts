@@ -23,8 +23,9 @@ export default defineConfig({
     alphaTab({ alphaTabSourceDir: fileURLToPath(new URL("../../packages/score-render/node_modules/@coderline/alphatab/dist", import.meta.url)) }),
   ],
   // The icon component that fetches nothing: @karyl-chan/ui imports `@iconify/vue`, which asks
-  // api.iconify.design for each icon it is given. The icons are bundled instead (src/icons.ts).
-  resolve: { alias: [{ find: new RegExp("^@iconify/vue$"), replacement: "@iconify/vue/offline" }] },
+  // api.iconify.design for each icon it is given. It gets the `Icon` of src/icons.ts instead,
+  // which draws the icons bundled there and reports a name that is not one of them.
+  resolve: { alias: [{ find: new RegExp("^@iconify/vue$"), replacement: fileURLToPath(new URL("src/icons.ts", import.meta.url)) }] },
   // @karyl-chan/ui ships .vue/.ts source with module-level state (confirm dialog, toasts):
   // pre-bundling it beside the source files would create two copies of that state in dev.
   optimizeDeps: {

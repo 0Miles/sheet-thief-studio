@@ -18,7 +18,7 @@ import { registerMembers } from "./members";
 import { registerPhrases } from "./phrases";
 import { RateLimiter } from "./rateLimit";
 import { registerScores } from "./scores";
-import { registerPages, registerSecurityHeaders } from "./security";
+import { answerClientError, answerFrameworkError, registerPages, registerSecurityHeaders } from "./security";
 import { Sessions } from "./sessions";
 
 export interface Dependencies {
@@ -35,9 +35,17 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   // Only nginx stands in front of the server: the client's IP is the address nginx adds to
   // X-Forwarded-For (docs/spec/security.md, 4).
   // JSON requests carry at most 64 KB; the routes that carry a fragment set their own limit (docs/spec/security.md, section 5).
-  const app = Fastify({ logger: logger ? { serializers: { req: loggedRequest } } : false, trustProxy: config.trustedProxies, bodyLimit: JSON_BODY_LIMIT });
+  const headers = { hsts: config.hsts };
+  const app = Fastify({
+    logger: logger ? { serializers: { req: loggedRequest } } : false,
+    trustProxy: config.trustedProxies,
+    bodyLimit: JSON_BODY_LIMIT,
+    // The answers given before any hook runs: a URL the router cannot decode, a request Node cannot parse.
+    frameworkErrors: answerFrameworkError(headers),
+    clientErrorHandler: answerClientError(headers),
+  });
   // First: the answers of every hook after it carry the headers too.
-  registerSecurityHeaders(app, { hsts: config.hsts });
+  registerSecurityHeaders(app, headers);
   app.register(cookie);
   registerErrorAnswers(app);
   registerOriginCheck(app, config.publicOrigin);

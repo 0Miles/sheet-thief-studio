@@ -14,15 +14,13 @@ import {
   renamePhraseRequest,
   savePhraseRequest,
 } from "@studio/contracts";
-import { jsonBytes, MAX_FRAGMENT_BYTES } from "@studio/score-model";
+import { jsonBytes } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { literal, Op, type WhereOptions } from "sequelize";
 
 import { Phrase } from "./db/models";
 import { invalidRequest, isUuid, notFound } from "./http";
-
-/** A body that carries a fragment: the fragment's 1 MB and room for the rest (docs/spec/security.md, section 5). */
-const FRAGMENT_BODY_LIMIT = MAX_FRAGMENT_BYTES + 64 * 1024;
+import { FRAGMENT_BODY_LIMIT, MAX_FRAGMENT_BYTES } from "./limits";
 
 /** What the name of a copy ends with. */
 const COPY = "（副本）";

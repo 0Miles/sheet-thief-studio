@@ -1,9 +1,16 @@
-// The size limits more than one module reads (docs/spec/security.md, section 5).
+// The size limits of the server, in one place (docs/spec/security.md, section 5).
+import { MAX_FRAGMENT_BYTES } from "@studio/score-model";
+
+// The most a fragment takes, 1 MB of JSON: defined in score-model, which the web app reads it from too.
+export { MAX_FRAGMENT_BYTES };
 
 export const MB = 1024 * 1024;
 
 /** The body of a JSON request that carries no fragment. */
 export const JSON_BODY_LIMIT = 64 * 1024;
+
+/** A body that carries a fragment: the fragment's 1 MB and room for the rest. */
+export const FRAGMENT_BODY_LIMIT = MAX_FRAGMENT_BYTES + JSON_BODY_LIMIT;
 
 /**
  * One WebSocket message on /collab; a connection that sends more is closed. Restoring a version

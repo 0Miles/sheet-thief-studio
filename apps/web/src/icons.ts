@@ -1,10 +1,12 @@
 // The icons of the interface, bundled: the page asks no other host for anything, which its
-// Content Security Policy would refuse anyway (docs/spec/security.md, section 7). `@iconify/vue`
-// is its offline build here and in @karyl-chan/ui (vite.config.ts), which draws only the icons
-// registered below; tests/icons.test.ts checks that every icon either of them names is one.
+// Content Security Policy would refuse anyway (docs/spec/security.md, section 7). Every import of
+// `@iconify/vue`, the ones of @karyl-chan/ui too, gets the `Icon` of this module (vite.config.ts):
+// the offline component, which draws only the icons registered below. tests/icons.test.ts checks
+// that every icon the sources name is one; a name made as the page runs is caught here instead.
 //
 // Material Symbols by Google, Apache License 2.0, as the Iconify icon set `material-symbols` has them.
-import { addCollection } from "@iconify/vue/offline";
+import { addCollection, Icon as OfflineIcon } from "@iconify/vue/offline";
+import { defineComponent, h } from "vue";
 
 const path = (d: string) => ({ body: `<path fill="currentColor" d="${d}"/>` });
 
@@ -29,3 +31,31 @@ export const MATERIAL_SYMBOLS = {
 };
 
 addCollection(MATERIAL_SYMBOLS);
+
+/** Whether an icon of this name, `prefix:name`, is bundled. */
+export function isBundled(name: string): boolean {
+  const [prefix, icon, ...rest] = name.split(":");
+  return rest.length === 0 && prefix === MATERIAL_SYMBOLS.prefix && icon !== undefined && Object.hasOwn(MATERIAL_SYMBOLS.icons, icon);
+}
+
+const reported = new Set<string>();
+
+/**
+ * `@iconify/vue`'s `Icon`, without its fetching. An icon asked for by a name that is not bundled
+ * would be drawn as nothing, silently: it is reported as an error, once, which the end-to-end
+ * tests fail on.
+ */
+export const Icon = defineComponent({
+  name: "BundledIcon",
+  inheritAttrs: false,
+  setup(_props, { attrs, slots }) {
+    return () => {
+      const { icon } = attrs;
+      if (typeof icon === "string" && !isBundled(icon) && !reported.has(icon)) {
+        reported.add(icon);
+        console.error(`The icon "${icon}" is not bundled: add it to apps/web/src/icons.ts`);
+      }
+      return h(OfflineIcon, attrs as unknown as InstanceType<typeof OfflineIcon>["$props"], slots);
+    };
+  },
+});
