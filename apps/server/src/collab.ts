@@ -9,16 +9,17 @@ import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocu
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
 import type { CollabNotice } from "@studio/contracts";
-import { fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
+import { docToJson, fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import { literal } from "sequelize";
 import * as Y from "yjs";
 
 import type { CollabTickets, Guest, Member } from "./collabTickets";
-import { Score } from "./db/models";
+import { Score, type VersionReason } from "./db/models";
 import { scoreOfLink } from "./links";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
+import { createVersion, VERSION_INTERVAL_MS } from "./versions";
 
 export const COLLAB_PATH = "/collab";
 
@@ -27,6 +28,9 @@ export const FILL_DEBOUNCE_MS = 1000;
 
 /** The `updated_at` a store leaves: now, or the one the score had when it is deleted. */
 const STORED_AT = literal("CASE WHEN deleted_at IS NULL THEN now() ELSE updated_at END") as unknown as Date;
+
+/** The `socketId` Hocuspocus gives the `onDisconnect` of a direct connection: the server's own, not a member's. */
+const SERVER_SOCKET = "server";
 
 /** Why a document is frozen: read-only for every connection, neither migrated, filled in nor stored. */
 type FrozenReason = CollabNotice["reason"];
@@ -153,6 +157,38 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   const frozen = new Map<string, FrozenReason>();
   // The documents changed less than FILL_DEBOUNCE_MS ago, each with the timer that fills it in.
   const fills = new Map<string, NodeJS.Timeout>();
+
+  // The documents in memory, each with the timer that makes a version of it every 10 minutes.
+  const versionTimers = new Map<string, NodeJS.Timeout>();
+  // The versions being made now: the app waits for them before it closes.
+  const versioning = new Set<Promise<void>>();
+  // Set as the app closes: from then on the versions are the ones `preClose` makes.
+  let closing = false;
+
+  function stopVersions(scoreId: string): void {
+    clearInterval(versionTimers.get(scoreId));
+    versionTimers.delete(scoreId);
+  }
+
+  /**
+   * Make a version of the document as it is now, unless the score's latest version is the same
+   * (docs/spec/collab.md, 8.3). The content is read at once; the rest never rejects: a version
+   * that could not be made is logged, and the next one is made of whatever the score is then.
+   * None of a frozen document, which this server cannot read for sure, nor of one that did not load.
+   */
+  function makeVersion(document: Y.Doc & { name: string; isLoading: boolean }, reason: VersionReason): Promise<void> {
+    const scoreId = document.name;
+    if (document.isLoading || frozen.has(scoreId)) return Promise.resolve();
+    const making = Promise.resolve()
+      .then(() => createVersion(scoreId, docToJson(document), reason))
+      .then(
+        () => undefined,
+        (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),
+      )
+      .finally(() => versioning.delete(making));
+    versioning.add(making);
+    return making;
+  }
 
   function cancelFill(scoreId: string): void {
     clearTimeout(fills.get(scoreId));
@@ -343,8 +379,27 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
         setTimeout(() => fill(documentName), FILL_DEBOUNCE_MS),
       );
     },
+    async afterLoadDocument({ documentName }) {
+      // While the document is in memory; a tick that finds the content of the latest version makes none.
+      stopVersions(documentName);
+      versionTimers.set(
+        documentName,
+        setInterval(() => {
+          const document = hocuspocus.documents.get(documentName);
+          if (document !== undefined && !closing) void makeVersion(document, "interval");
+        }, VERSION_INTERVAL_MS),
+      );
+    },
+    async onDisconnect({ clientsCount, document, socketId }) {
+      // The last connection left (docs/spec/collab.md, 8.3): of the document still in memory,
+      // and awaited, so that it is unloaded only once its version is made. Not when the server's
+      // own connection ends (`collab.change`): a version is made as the members leave.
+      if (clientsCount > 0 || socketId === SERVER_SOCKET || closing) return;
+      await makeVersion(document, "last_disconnect");
+    },
     async afterUnloadDocument({ documentName }) {
       cancelFill(documentName);
+      stopVersions(documentName);
       frozen.delete(documentName);
     },
     async onStoreDocument({ documentName, document }) {
@@ -429,14 +484,20 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       socket.destroy();
     }
   });
-  // Shutting down: close every connection before the server waits for them to end, then store
-  // every document still open, while the database is there. `storeDocumentHooks` with
+  // Shutting down: close every connection before the server waits for them to end, then make a
+  // version of every document still open and store it, while the database is there. `storeDocumentHooks` with
   // `immediately` is awaited and runs after a store already under way; `flushPendingStores()`
   // would only start the debounced stores, without a promise to wait for. The payload is the one
   // Hocuspocus builds for a store that no connection made.
   app.addHook("preClose", async () => {
     for (const scoreId of [...fills.keys()]) cancelFill(scoreId);
+    for (const scoreId of [...versionTimers.keys()]) stopVersions(scoreId);
+    // The connections closed here leave no time to their `onDisconnect`: the versions of the
+    // documents they leave are made here, and the ones under way end, while the database is there.
+    closing = true;
     collab.closeConnections({}, ResetConnection);
+    await Promise.all([...hocuspocus.documents.values()].map((document) => makeVersion(document, "last_disconnect")));
+    await Promise.all(versioning);
     await Promise.all(
       [...hocuspocus.documents.values()].map((document) =>
         hocuspocus.storeDocumentHooks(document, { clientsCount: 0, document, documentName: document.name, instance: hocuspocus, lastContext: {}, lastTransactionOrigin: null }, true),
