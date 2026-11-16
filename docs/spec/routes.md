@@ -22,7 +22,7 @@
 
 - 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/<團譜 id>` 與 `/local` 已在 #37 移除。
 - `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。**補充**（#7）：原本要去的頁面帶在 `redirect` 參數裡，改完密碼後回到那一頁（沒有就是 `/`）；不必改密碼的人打開 `/account/password` 會被導到 `/account`。
-- `/admin`：非 admin 看到 404 頁（補充）。
+- `/admin`：非 admin 看到 404 頁（補充）。**補充**（#8）：網址維持 `/admin`；admin 的頁首有「後台」連結。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
 - `/scores/:id/versions` 和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider（[`collab.md`](collab.md) 8.5）。
 
@@ -69,14 +69,16 @@
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式 |
-| `POST /api/admin/accounts` | `{ username, displayName, password }` → 201；帳號名稱重複時 409 `username_taken` |
-| `POST /api/admin/accounts/:id/reset-password` | `{ password }`；刪除該帳號的所有 session、關閉連線 |
-| `POST /api/admin/accounts/:id/disable`、`/enable` | 停用時刪除 session、關閉連線；不能停用自己（409 `cannot_disable_self`） |
+| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式。**補充**（#8）：`{ accounts: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`isAdmin`、`disabled`、`identities: [{ id, provider }]`，依帳號名稱排序 |
+| `POST /api/admin/accounts` | `{ username, displayName, password }` → 201，回建立的帳號（形狀同列表的一筆，補充，#8）；帳號名稱重複時 409 `username_taken`。新帳號一律不是 admin、`must_change_password` 為真 |
+| `POST /api/admin/accounts/:id/reset-password` | `{ password }` → 204；`must_change_password` 設為真，刪除該帳號的所有 session、關閉連線 |
+| `POST /api/admin/accounts/:id/disable`、`/enable` | → 204。停用時刪除 session、關閉連線；不能停用自己（409 `cannot_disable_self`）。**補充**（#8）：已經停用的再停用、啟用中的再啟用都回 204，不改變什麼 |
 | `GET /api/admin/orphaned-scores` | Owner 已停用的團譜：標題、Owner、啟用中的成員 |
 | `POST /api/admin/scores/:id/transfer` | `{ accountId }`：只允許「Owner 已停用」且接收者是啟用中的現有成員 |
 | `POST /api/admin/accounts/:id/identities` | M5：`{ provider: "karyl-chan", subject }`；同一個 `subject` 已綁到別的帳號時 409 `identity_taken` |
 | `DELETE /api/admin/accounts/:id/identities/:identityId` | M5：解除綁定（不能解除密碼那一筆） |
+
+- **補充**（#8）：非 admin 呼叫 `/api/admin/` 底下任何 route 都回 404 `not_found`（[`security.md`](security.md) 第 8 節）；這是對整個路徑前綴的檢查，之後加在底下的 route 不必各自檢查。沒有 session 仍然是 401，要先改密碼的 session 仍然是 403 `password_change_required`：這兩個檢查在前。帳號不存在、`:id` 不是 UUID 時回 404 `not_found`。
 
 ### 3.3 團譜
 

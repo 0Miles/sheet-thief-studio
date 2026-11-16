@@ -3,6 +3,7 @@ import { health } from "@studio/contracts";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 
+import { registerAdmin } from "./admin";
 import { registerAuth } from "./auth";
 import { attachCollab } from "./collab";
 import { CollabTickets } from "./collabTickets";
@@ -41,6 +42,7 @@ export function buildApp({ config, redis, logger = true }: Dependencies): Fastif
   const limiter = new RateLimiter(redis);
   registerAuth(app, { cookie: config.sessionCookie, sessions, limiter });
   registerMe(app, { limiter });
+  registerAdmin(app);
   const collab = attachCollab(app, { tickets, sessions });
   registerScores(app, { collab, tickets });
   registerLinks(app, { collab, tickets, limiter });

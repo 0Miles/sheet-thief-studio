@@ -149,6 +149,7 @@ export const strings = {
   header: {
     logout: "登出",
     account: "帳號設定",
+    admin: "後台",
   },
   // /account, and /account/password where a temporary password must be changed first (docs/spec/accounts.md, section 1).
   account: {
@@ -183,6 +184,47 @@ export const strings = {
       submit: "登出所有裝置",
     },
   },
+  // /admin, for admins only (docs/spec/accounts.md, section 2).
+  admin: {
+    title: "後台",
+    accounts: "帳號",
+    newAccount: "建立帳號",
+    isAdmin: "管理者",
+    disabled: "已停用",
+    reset: "重設密碼",
+    disable: "停用",
+    enable: "啟用",
+    cancel: "取消",
+    close: "關閉",
+    rules: {
+      username: `帳號名稱只能用小寫英數、- 與 _，長度 ${accountLimits.username.min}–${accountLimits.username.max} 個字元；建立後不能改。`,
+      displayName: `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`,
+      password: `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`,
+    },
+    create: {
+      title: "建立帳號",
+      username: "帳號名稱",
+      displayName: "顯示名稱",
+      password: "初始密碼",
+      help: `初始密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。請把它交給本人；首次登入時要先設定自己的密碼。`,
+      submit: "建立",
+    },
+    resetPassword: {
+      title: (username: string) => `重設 ${username} 的密碼`,
+      help: `設定一組暫時密碼（${accountLimits.password.min}–${accountLimits.password.max} 個字元）交給本人。這個帳號所有已登入的裝置都會登出，下次登入時要先設定自己的密碼。`,
+      password: "暫時密碼",
+      submit: "重設密碼",
+    },
+    disableAccount: {
+      title: "停用帳號",
+      message: (username: string) => `要停用 ${username} 嗎？這個帳號所有已登入的裝置都會登出，啟用之前不能登入。`,
+      confirm: "停用",
+    },
+    created: (username: string) => `已建立帳號 ${username}。`,
+    wasReset: (username: string) => `已重設 ${username} 的密碼。`,
+    wasDisabled: (username: string) => `已停用 ${username}。`,
+    wasEnabled: (username: string) => `已啟用 ${username}。`,
+  },
   login: {
     username: "帳號名稱",
     password: "密碼",
@@ -202,6 +244,8 @@ export const strings = {
     wrong_current_password: "目前的密碼不正確。",
     password_change_required: "請先設定新密碼。",
     forbidden: "你的角色不能做這件事。",
+    username_taken: "這個帳號名稱已經有人使用。",
+    cannot_disable_self: "不能停用自己的帳號。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",
   } satisfies Partial<Record<ErrorCode, string>>,
