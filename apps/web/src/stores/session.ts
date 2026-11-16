@@ -7,7 +7,16 @@ import { ApiError, get, patchFor, post } from "../api";
 
 export const useSessionStore = defineStore("session", () => {
   const me = ref<Me | null>(null);
+  /** A page found the session ended while it was open: /login says so until someone logs in. */
+  const expired = ref(false);
   let asked: Promise<void> | null = null;
+
+  /** The server no longer knows this session (logged out elsewhere, a new password, the account disabled): nobody is logged in here. */
+  function expire(): void {
+    me.value = null;
+    expired.value = true;
+    asked = Promise.resolve();
+  }
 
   /** Ask the server once per page load; later calls wait for that answer. A failure is asked again. */
   function load(): Promise<void> {
@@ -29,6 +38,7 @@ export const useSessionStore = defineStore("session", () => {
   async function login(credentials: LoginRequest): Promise<void> {
     await post("/api/auth/login", credentials);
     me.value = await get("/api/me", meShape);
+    expired.value = false;
     asked = Promise.resolve();
   }
 
@@ -55,5 +65,5 @@ export const useSessionStore = defineStore("session", () => {
     me.value = await get("/api/me", meShape);
   }
 
-  return { me, load, login, logout, logoutAll, rename, changePassword };
+  return { me, expired, expire, load, login, logout, logoutAll, rename, changePassword };
 });

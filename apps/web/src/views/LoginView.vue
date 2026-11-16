@@ -37,6 +37,7 @@ async function submit(): Promise<void> {
     <form class="login__form" @submit.prevent="submit">
       <Stack gap="4">
         <h1 class="login__title">{{ strings.app.name }}</h1>
+        <p v-if="session.expired" class="login__expired" role="status">{{ strings.login.expired }}</p>
         <AppTextField v-model="username" :label="strings.login.username" name="username" autocomplete="username" autofocus required />
         <AppTextField v-model="password" :label="strings.login.password" name="password" type="password" autocomplete="current-password" required />
         <p v-if="error" class="login__error" role="alert">{{ error }}</p>
@@ -66,6 +67,10 @@ async function submit(): Promise<void> {
 .login__title {
   margin: 0;
   font-size: 1.25rem;
+}
+.login__expired {
+  margin: 0;
+  font-size: 0.875rem;
 }
 .login__error {
   margin: 0;

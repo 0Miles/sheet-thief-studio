@@ -8,9 +8,12 @@
 // screen; narrower than 768 px it shows one part at a time, its player at the bottom (section 7).
 // The parts shown and the zoom are each member's own (section 6). Anyone who is not a member, and
 // a link that opens nothing, gets the 404 page.
+// Offline, the page keeps going, Yjs merging what was typed once it is back; a reconnection that
+// finds the member's rights changed closes the score, for ScorePage to open it anew or leave it
+// (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
-import { type Role, scoreDetails } from "@studio/contracts";
+import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   type Cursor,
@@ -32,6 +35,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
+import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -46,8 +50,9 @@ import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
-/** One of the two: a member's score id, or a guest's link token. */
-const props = defineProps<{ id?: string; token?: string }>();
+/** One of the two: a member's score id, or a guest's link token; and what to say first, when the score was opened anew. */
+const props = defineProps<{ id?: string; token?: string; notice?: string }>();
+const emit = defineEmits<{ closed: [closing: Closing] }>();
 const text = strings.score;
 const isGuest = props.token !== undefined;
 
@@ -59,10 +64,38 @@ interface Opening {
   ticket: () => Promise<string>;
 }
 
-/** A member's score: a new ticket for every connection, reconnections included (ADR 0005). */
+/**
+ * A member's score: a new ticket for every connection, reconnections included (ADR 0005), with
+ * the role as it is now. The server closes the connections of a member whose rights changed, so
+ * a reconnection is where the page learns of it: a session ended (401), a member removed or a
+ * score deleted (404), a role that can no longer type, or now can, close the score before the
+ * ticket is shown, so that nothing of this document reaches the server any more.
+ */
 async function asMember(id: string): Promise<Opening> {
   const details = await get(`/api/scores/${id}`, scoreDetails);
-  return { scoreId: id, title: details.title, role: details.role, ticket: () => newCollabTicket(id) };
+  let role = details.role;
+  const ticket = async () => {
+    let given: CollabTicket;
+    try {
+      given = await newCollabTicket(id);
+    } catch (error) {
+      const refusal = ticketRefusal(error);
+      if (refusal !== null) close({ kind: refusal });
+      throw error;
+    }
+    if (given.role !== role) {
+      const said = text.roleChanged(strings.home.roles[given.role]);
+      if (afterRoleChange(role, given.role) === "reopen") {
+        close({ kind: "reopen", notice: said });
+        throw new Error(`the role on this score is now ${given.role}: opened anew`);
+      }
+      // An Owner made an Editor by a transfer, or the other way: still typing, on the same document.
+      role = given.role;
+      notice.value = said;
+    }
+    return given.ticket;
+  };
+  return { scoreId: id, title: details.title, role, ticket };
 }
 
 const opening = ref<Opening | null>(null);
@@ -98,6 +131,12 @@ const loadError = ref<string | null>(null);
 const ready = ref(false);
 /** `syncing` while a change made here has not reached the server yet. */
 const sync = ref<"syncing" | "synced" | "offline">("syncing");
+/** The browser says it is online. While it is not, the page is offline, whatever the provider is trying. */
+const online = ref(navigator.onLine);
+/** What the indicator shows (`data-sync`): offline throughout, while the browser is, and not only between the provider's attempts. */
+const shownSync = computed(() => (online.value ? sync.value : "offline"));
+/** Why nobody may change the score here, whatever their role; null while they may (access.ts). */
+let readOnlyBecause: ReadOnlyReason | null = null;
 const view = ref<View | null>(null);
 /** One of the two edit views: the cursor and the keys of the score are there. */
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
@@ -115,7 +154,7 @@ const shown = shallowRef<string[]>([]);
 /** The narrow Read view's drawer, with the options that do not fit in its bars, is open. */
 const drawerOpen = ref(false);
 /** A notice for the member, shown above the score, never over it; null when there is none. */
-const notice = ref<string | null>(null);
+const notice = ref<string | null>(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
@@ -166,7 +205,8 @@ let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
 let stopObserving: (() => void) | undefined;
 const hideFromTests = exposeForTests({
-  scoreJson: () => (provider?.isSynced ? docToJson(doc) : null),
+  // Once open, as this page holds it: what was typed offline too.
+  scoreJson: () => (stopObserving !== undefined ? docToJson(doc) : null),
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
 });
@@ -320,6 +360,9 @@ function reveal(): void {
 
 function draw(change: ScoreChange): void {
   if (engine === undefined) return;
+  // A score of a newer schema, as synced at first or as a newer server migrated it since.
+  const lockedBy = readOnlyReasonOf(doc);
+  if (lockedBy !== null) lockReadOnly(lockedBy);
   const startedAt = performance.now();
   const { score: json, invalid } = readScore(doc);
   measurement.drawing(startedAt);
@@ -448,7 +491,7 @@ function startEditing(json: ScoreJSON): void {
     if (!isFollowing()) reveal();
   });
   session.onRefused(() => {
-    notice.value = text.viewerCannotEdit;
+    notice.value = readOnlyBecause === null ? text.viewerCannotEdit : text.readOnly[readOnlyBecause];
   });
   session.onHint((hint) => {
     notice.value = text.hints[hint];
@@ -515,6 +558,55 @@ function updateSync(): void {
   else if (sync.value !== "offline") sync.value = "syncing";
 }
 
+/**
+ * Nobody may change the score here: a newer schema (docs/spec/schema.md, section 9), or the
+ * server's `readOnly` notice (#109 hands its reason here). The edit view opens read-only, saying
+ * why; one open for typing already is closed and opened anew, read-only, from the server's document.
+ */
+function lockReadOnly(reason: ReadOnlyReason): void {
+  if (readOnlyBecause !== null) return;
+  readOnlyBecause = reason;
+  notice.value = text.readOnly[reason];
+  if (view.value === "editable" && session !== undefined) close({ kind: "reopen", notice: text.readOnly[reason] });
+  else if (view.value !== null) view.value = openedView(view.value, reason);
+}
+
+/** Closed once: the provider goes at once, so that nothing more of this document reaches the server; ScorePage does the rest. */
+let closed = false;
+function close(closing: Closing): void {
+  if (closed) return;
+  closed = true;
+  const dropped = provider;
+  provider = undefined;
+  // Not from within the provider's own call (the ticket is asked for by it).
+  queueMicrotask(() => dropped?.destroy());
+  emit("closed", closing);
+}
+
+/**
+ * The browser went offline: so is the page, at once, rather than once the provider hears nothing
+ * for 30 seconds. Its socket is closed: what is typed from now on waits for the next connection.
+ */
+function goOffline(): void {
+  online.value = false;
+  provider?.configuration.websocketProvider.webSocket?.close();
+}
+
+/** Back online: connect now, rather than when the provider's next attempt comes up. */
+function goOnline(): void {
+  online.value = true;
+  void provider?.configuration.websocketProvider.connect();
+}
+
+/** Leaving the page with changes the server has not confirmed: the browser asks first (docs/spec/collab.md, section 7). */
+function warnUnsynced(event: BeforeUnloadEvent): void {
+  if (view.value === "editable" && provider !== undefined && provider.unsyncedChanges > 0) event.preventDefault();
+}
+
+window.addEventListener("offline", goOffline);
+window.addEventListener("online", goOnline);
+window.addEventListener("beforeunload", warnUnsynced);
+
 onMounted(async () => {
   let opened: Opening;
   try {
@@ -530,7 +622,7 @@ onMounted(async () => {
     throw error;
   }
   if (host.value === undefined) return;
-  view.value = decideView({ role: opened.role, isGuest, canType: canType() });
+  view.value = openedView(decideView({ role: opened.role, isGuest, canType: canType() }), readOnlyBecause);
   scoreId = opened.scoreId;
   display.value = loadDisplay(scoreId);
   if (reading.value) stopped.value = false;
@@ -587,6 +679,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("offline", goOffline);
+  window.removeEventListener("online", goOnline);
+  window.removeEventListener("beforeunload", warnUnsynced);
   clearTimeout(soundTimer);
   hideFromTests();
   measurement.stop();
@@ -605,7 +700,7 @@ onBeforeUnmount(() => {
     <main class="score" :data-view="view" :data-layout="view && (narrow ? 'narrow' : 'wide')">
       <header class="score__toolbar">
         <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
-        <span v-if="!loadError" class="score__sync" :data-sync="sync">{{ syncText[sync] }}</span>
+        <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
         <template v-if="view && !narrow">
           <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
@@ -632,6 +727,10 @@ onBeforeUnmount(() => {
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
+      <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
+      <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
+        {{ view === "editable" ? text.offline.editing : text.offline.reading }}
+      </p>
       <div
         ref="scroller"
         class="score__scroller"
@@ -754,6 +853,15 @@ onBeforeUnmount(() => {
 .score__error {
   margin: 1rem 1.5rem;
   color: var(--danger);
+}
+/* Above the score, never over it: the score moves down while it is there. */
+.score__banner {
+  margin: 0;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: 0.875rem;
 }
 .score__scroller {
   flex: 1;
