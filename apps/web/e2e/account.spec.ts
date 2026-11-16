@@ -2,7 +2,7 @@
 // (docs/spec/accounts.md, section 1; docs/spec/routes.md, section 1).
 import { randomBytes } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 import { strings } from "../src/strings";
 import { logIn, pageErrors, seedAccount } from "./pages";

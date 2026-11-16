@@ -15,6 +15,10 @@ export interface Config {
   /** The addresses of the proxy in front (nginx), whose `X-Forwarded-For` tells the client's IP. */
   trustedProxies: string;
   sessionCookie: CookieSettings;
+  /** Whether answers tell the browser to use https only from now on; for a site that is served over https. */
+  hsts: boolean;
+  /** The directory of the web app's build, which the server then serves; null when something else does (Vite, in development). */
+  webRoot: string | null;
 }
 
 /**
@@ -44,5 +48,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicOrigin: setting("PUBLIC_ORIGIN", "http://localhost:5183"),
     trustedProxies: env.TRUSTED_PROXIES ?? "loopback",
     sessionCookie: sessionCookie(env),
+    hsts: env.HSTS === "1",
+    webRoot: env.WEB_ROOT || null,
   };
 }

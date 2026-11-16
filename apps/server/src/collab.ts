@@ -16,6 +16,7 @@ import * as Y from "yjs";
 
 import type { CollabTickets, Guest, Member } from "./collabTickets";
 import { Score, type VersionReason } from "./db/models";
+import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
 import { scoreOfLink } from "./links";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
@@ -450,6 +451,9 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   type ClientConnection = ReturnType<Hocuspocus["handleConnection"]>;
   const clients = new WeakMap<object, ClientConnection>();
   const server = crossws({
+    // A socket that sends a larger message is closed (1009), the message never read whole
+    // (docs/spec/security.md, section 5).
+    serverOptions: { maxPayload: WEBSOCKET_MESSAGE_LIMIT },
     hooks: {
       open(peer) {
         const socket: Socket = { websocket: peer.websocket as unknown as WebSocket, guestOf: new Set(), closed: false };

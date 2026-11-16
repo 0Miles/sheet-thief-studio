@@ -11,16 +11,15 @@ import { CollabTickets } from "./collabTickets";
 import type { Config } from "./config";
 import { registerDeletion } from "./deletion";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
+import { JSON_BODY_LIMIT } from "./limits";
 import { registerMe } from "./me";
 import { registerLinks, withoutLinkTokens } from "./links";
 import { registerMembers } from "./members";
 import { registerPhrases } from "./phrases";
 import { RateLimiter } from "./rateLimit";
 import { registerScores } from "./scores";
+import { registerPages, registerSecurityHeaders } from "./security";
 import { Sessions } from "./sessions";
-
-/** The body of a JSON request that carries no fragment (docs/spec/security.md, section 5). */
-const JSON_BODY_LIMIT = 64 * 1024;
 
 export interface Dependencies {
   config: Config;
@@ -37,6 +36,8 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   // X-Forwarded-For (docs/spec/security.md, 4).
   // JSON requests carry at most 64 KB; the routes that carry a fragment set their own limit (docs/spec/security.md, section 5).
   const app = Fastify({ logger: logger ? { serializers: { req: loggedRequest } } : false, trustProxy: config.trustedProxies, bodyLimit: JSON_BODY_LIMIT });
+  // First: the answers of every hook after it carry the headers too.
+  registerSecurityHeaders(app, { hsts: config.hsts });
   app.register(cookie);
   registerErrorAnswers(app);
   registerOriginCheck(app, config.publicOrigin);
@@ -49,11 +50,12 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   registerMe(app, { limiter });
   registerAdmin(app);
   const collab = attachCollab(app, { tickets, sessions, migrations });
-  registerScores(app, { collab, tickets });
+  registerScores(app, { collab, tickets, limiter });
   registerMembers(app, { collab, limiter });
   registerDeletion(app, { collab });
   registerLinks(app, { collab, tickets, limiter });
   registerPhrases(app);
+  if (config.webRoot !== null) registerPages(app, config.webRoot);
   return app;
 }
 

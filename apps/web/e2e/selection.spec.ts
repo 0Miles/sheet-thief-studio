@@ -1,7 +1,7 @@
 // Selecting in the edit view and clearing what is selected (#21; docs/spec/commands.md, section 4
 // and 5.6; docs/spec/views.md, section 9). Every key goes through the real keyboard; the page is
 // read through `window.__studioTest` and the DOM only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import type { BeatJSON } from "@studio/score-model";
 
 import { overlaps } from "../src/overlay";
