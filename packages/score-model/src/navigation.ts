@@ -10,6 +10,7 @@ import {
   lineRange,
   durationOf,
   ordered,
+  parsePlain,
   type PartKind,
   partKindOf,
   partsOf,
@@ -41,7 +42,7 @@ function lengthOf(beat: YBeat): number {
 
 /** Whether the beats of the cursor's voice add up to less than its bar: then its append slot can be reached by →. */
 function isUnderfull(doc: Y.Doc, cursor: Cursor): boolean {
-  const timeSig = timeSigSchema.safeParse(barsOf(doc).get(cursor.barId)?.get("timeSig"));
+  const timeSig = parsePlain(timeSigSchema, barsOf(doc).get(cursor.barId)?.get("timeSig"));
   let held = 0;
   voiceOf(doc, cursor)?.forEach((beat) => {
     held += lengthOf(beat);
