@@ -38,13 +38,13 @@
 
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建：`POST /api/scores` 在伺服器端建好 `Y.Doc`、寫進 `scores.doc_state`，然後回傳 id。
 - 讀取用的函式（建立版本、鏡射標題）和客戶端是同一個 `docToJson`，讀取時容錯（[`schema.md`](schema.md) 第 11 節）。
-- **補充**（#12）：Hocuspocus 在 `onLoadDocument` 結束之後才開始監聽文件的變動，所以載入時的遷移與補齊不會觸發儲存；它們隨成員的下一次修改一起存下，在那之前每次載入都重做一次（結果相同）。`scores.schema_version` 也是到那次儲存才更新。
+- **補充**（#12）：Hocuspocus 在 `onLoadDocument` 結束之後才開始監聽文件的變動，而且沒人修改過的文件在最後一條連線離開時直接卸載、不儲存。所以載入時的遷移或補齊**確實改了文件**時，`onLoadDocument` 自己立刻存一次（`doc_state`、`title`、`artist`、`schema_version`、`updated_at`，和 `onStoreDocument` 同一個函式）；沒有改動時不存。理由：不存的話，下次載入會用新的 Yjs client id 重做一次，還留著上一次那些操作的分頁（斷線重連、離線編輯）把它們推回來時，同一個小節的兩個內容容器只留一個，寫在另一個裡的音符會無聲消失。這次儲存失敗時只寫 error log，文件照常開啟，隨下一次修改儲存。載入時的補齊丟例外時也只寫 error log、照常開啟。
 
 ### 2.1 凍結的文件與 `readOnly` 通知（補充，#12）
 
-伺服器載入時發現文件比自己新（[`schema.md`](schema.md) 第 9 節），或缺少遷移步驟（第 10 節），這份文件在記憶體裡的期間就是**凍結**的：
+伺服器載入時發現文件比自己新（[`schema.md`](schema.md) 第 9 節）、缺少遷移步驟（第 10 節）、或某個遷移步驟執行時丟出例外，這份文件在記憶體裡的期間就是**凍結**的：
 
-- 不遷移、不執行 `fillMissingContent`、不儲存（關閉伺服器時的儲存也跳過）。
+- 不遷移、不執行 `fillMissingContent`、不儲存（關閉伺服器時的儲存也跳過）。遷移在一份複本上執行，所以步驟執行到一半失敗時，成員拿到的仍是資料庫裡原本的內容。
 - 每一條連線都是 readOnly，Owner 與 Editor 也一樣。第一批連線在文件載入之前就通過了 `onAuthenticate`，那時還不知道要凍結，所以不在那裡設，而是在 `beforeHandleMessage` 設 `connection.readOnly`：每則訊息（包含載入期間排隊的）套用之前都會經過它。Hocuspocus 在驗證通過時回給 provider 的 `scope` 因此可能仍是 `read-write`，客戶端不能靠它判斷。
 - 伺服器自己的修改（`app.collab.change`）也被拒絕（丟例外）。
 - 文件卸載後解除；下次載入重新判定（部署補上遷移之後就恢復正常）。
@@ -52,12 +52,12 @@
 **回報管道**：伺服器在 `connected` 掛鉤對這條連線送一則 Hocuspocus stateless 訊息（`connection.sendStateless`），內容是 JSON，形狀是 `packages/contracts` 的 `collabNotice`：
 
 ```ts
-{ type: "readOnly", reason: "newerSchema" | "missingMigration" }
+{ type: "readOnly", reason: "newerSchema" | "missingMigration" | "migrationFailed" }
 ```
 
 - 每條連線建立時（包含重連）送一次；文件沒有被凍結時不送。訪客與 Viewer 也收得到（他們本來就唯讀，可以忽略）。
 - 這則訊息在連線建立時就送出，通常早於同步完成：客戶端要在建立 provider 時就給 `onStateless`，不能等 `synced` 之後才掛。
-- 客戶端收到後以唯讀開啟並提示原因（[`views.md`](views.md)）。`newerSchema` 客戶端自己也讀得出來（`meta.schemaVersion`）；`missingMigration` 只有這則通知能告訴它。
+- 客戶端收到後以唯讀開啟並提示原因（[`views.md`](views.md)）。`newerSchema` 客戶端自己也讀得出來（`meta.schemaVersion`）；`missingMigration`（缺步驟，`migrateDoc` 丟 `MissingMigration`）與 `migrationFailed`（步驟執行失敗；log 裡兩者的訊息不同）只有這則通知能告訴它。
 - `type` 留給日後其他通知使用；客戶端忽略不認得的 `type`。
 
 ## 3. Collab ticket
@@ -81,7 +81,7 @@
 - 只有伺服器補齊缺少的內容容器：在 debounce 過的 `onChange` 裡，以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補（ADR 0002:21）。
 - `fillMissingContent` 也補齊缺少的聲線（[`schema.md`](schema.md) 1.1）。
 - **補充**：debounce 1000 ms。沒有缺漏時不開交易，避免觸發多餘的儲存。
-- **補充**（#12）：補齊直接在伺服器記憶體裡的文件上執行，像任何修改一樣廣播給成員並排進 debounce 的儲存。所有連線在 debounce 到期之前就離開、文件已卸載時，這次補齊不做；下次載入時在 `onLoadDocument` 補上（第 2 節）。凍結的文件不補（2.1）。
+- **補充**（#12）：補齊直接在伺服器記憶體裡的文件上執行，像任何修改一樣廣播給成員並排進 debounce 的儲存。所有連線在 debounce 到期之前就離開、文件已卸載時，這次補齊不做；下次載入時在 `onLoadDocument` 補上並立刻儲存（第 2 節）。凍結的文件不補（2.1）。
 
 ## 5. 在場（awareness）
 

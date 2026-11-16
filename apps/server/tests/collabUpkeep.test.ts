@@ -2,7 +2,7 @@
 // docs/spec/schema.md, sections 9 and 10): migrate it when it loads it, fill in the content two
 // members left missing, and mirror its title and artist to the `scores` table when it stores it.
 import { collabNotice, type CollabNotice } from "@studio/contracts";
-import { addPart, barsOf, contentOf, docToJson, insertBars, metaOf, type Migration, partsOf, SCHEMA_VERSION, STANDARD_GUITAR } from "@studio/score-model";
+import { addPart, barsOf, contentOf, docToJson, fillMissingContent, insertBars, metaOf, type Migration, partsOf, SCHEMA_VERSION, STANDARD_GUITAR } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
@@ -15,6 +15,12 @@ import { buildApp } from "../src/app";
 import { FILL_DEBOUNCE_MS } from "../src/collab";
 import { Score } from "../src/db/models";
 import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor } from "./support";
+
+// The model as it is, with a fill that one test makes fail once.
+vi.mock("@studio/score-model", async (original) => {
+  const actual = await original<typeof import("@studio/score-model")>();
+  return { ...actual, fillMissingContent: vi.fn(actual.fillMissingContent) };
+});
 
 const PASSWORD = "a password long enough";
 /** The debounce of a store (docs/spec/collab.md, section 1). */
@@ -90,6 +96,28 @@ function countStores(): () => number {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The document the score's row holds now. */
+async function storedDoc(scoreId: string): Promise<Y.Doc> {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
+  return doc;
+}
+
+/** Leave the score, and wait until the server has let go of its document. */
+async function leave(app: FastifyInstance, score: OpenScore): Promise<void> {
+  score.provider.destroy();
+  await expect.poll(() => app.collab.loadedScores()).toEqual([]);
+}
+
+/** Schema 0 to 1 that fails on every document, after it has changed something in it. */
+const failing: Migration = {
+  ...zeroToOne,
+  doc(doc) {
+    zeroToOne.doc(doc);
+    throw new Error("a step that fails");
+  },
+};
+
 /** For the tests that wait for the debounced fill and store, and then for nothing more to follow. */
 const SLOW = 20_000;
 
@@ -98,7 +126,7 @@ test("a score stored in an older schema reaches the provider migrated to the cur
   const id = await createScore(started.app, started.session);
   await storeAs(id, docV0(), 0);
 
-  const { provider, doc, notices } = await open(started, id);
+  const { provider, doc } = await open(started, id);
   expect(metaOf(doc).get("schemaVersion")).toBe(SCHEMA_VERSION);
   const score = docToJson(doc);
   expect(score.title).toBe("Old");
@@ -106,36 +134,113 @@ test("a score stored in an older schema reaches the provider migrated to the cur
   // Every voice of the staves the migration gave the parts is there too.
   for (const part of partsOf(doc).values()) for (const voices of contentOf(part).values()) expect([...voices.keys()].sort()).toEqual(["0:0", "0:1"]);
 
-  // Migrated, it is a score like any other: a member changes it, and the row follows.
+  // What loading changed is in the row already, though no member changed anything.
+  expect((await Score.findByPk(id))!.schemaVersion).toBe(SCHEMA_VERSION);
+  expect(docToJson(await storedDoc(id))).toEqual(score);
+  expect(Y.encodeStateVector(await storedDoc(id))).toEqual(Y.encodeStateVector(doc));
+  // So the next load has nothing to do again: no new operations, nothing stored.
+  await leave(started.app, { provider, doc });
+  const state = (await Score.findByPk(id))!.docState;
+  const stores = countStores();
+  const again = await open(started, id);
+  expect(Y.encodeStateVector(again.doc)).toEqual(Y.encodeStateVector(doc));
+  await leave(started.app, again);
+  expect(stores()).toBe(0);
+  expect((await Score.findByPk(id))!.docState).toEqual(state);
+});
+
+test("a migrated score is a score like any other: a member changes it, and the row follows", async () => {
+  const started = await startApp([zeroToOne]);
+  const id = await createScore(started.app, started.session);
+  await storeAs(id, docV0(), 0);
+  const { provider, doc, notices } = await open(started, id);
   const applied = nextSyncStatus(provider);
   metaOf(doc).set("title", "Migrated");
   expect(await applied).toBe(true);
   expect(notices).toEqual([]);
-  await expect.poll(async () => (await Score.findByPk(id))!.schemaVersion, { timeout: 2 * STORE_DEBOUNCE_MS }).toBe(SCHEMA_VERSION);
-  expect((await Score.findByPk(id))!.title).toBe("Migrated");
+  await expect.poll(async () => (await Score.findByPk(id))!.title, { timeout: 2 * STORE_DEBOUNCE_MS }).toBe("Migrated");
+});
+
+/** A new score stored with the content of its second bar gone, and the second voice of its third. */
+async function scoreWithGaps(started: Started): Promise<{ id: string; partId: string; bars: string[] }> {
+  const id = await createScore(started.app, started.session);
+  const doc = await storedDoc(id);
+  const [partId] = [...partsOf(doc).keys()];
+  const bars = [...barsOf(doc).keys()];
+  const content = contentOf(partsOf(doc).get(partId!)!);
+  doc.transact(() => {
+    content.delete(bars[1]!);
+    content.get(bars[2]!)!.delete("0:1");
+  });
+  await storeAs(id, doc, SCHEMA_VERSION);
+  return { id, partId: partId!, bars };
+}
+
+test("a score stored with content missing is filled in as it is loaded, and stored at once", async () => {
+  const started = await startApp();
+  const { id, partId, bars } = await scoreWithGaps(started);
+  const stores = countStores();
+
+  const { provider, doc } = await open(started, id);
+  const voicesOf = (from: Y.Doc) => bars.map((barId) => [...(contentOf(partsOf(from).get(partId)!).get(barId)?.keys() ?? [])].sort());
+  expect(voicesOf(doc)).toEqual(bars.map(() => ["0:0", "0:1"]));
+  expect(stores()).toBe(1);
+  expect(voicesOf(await storedDoc(id))).toEqual(voicesOf(doc));
+  expect(Y.encodeStateVector(await storedDoc(id))).toEqual(Y.encodeStateVector(doc));
+
+  // Loaded again, nothing is missing: no new operations, nothing stored.
+  await leave(started.app, { provider, doc });
+  const again = await open(started, id);
+  expect(Y.encodeStateVector(again.doc)).toEqual(Y.encodeStateVector(doc));
+  await leave(started.app, again);
+  expect(stores()).toBe(1);
+});
+
+test("a score whose content cannot be filled in as it is loaded opens all the same", async () => {
+  const started = await startApp();
+  const { id, partId, bars } = await scoreWithGaps(started);
+  const stores = countStores();
+  vi.mocked(fillMissingContent).mockImplementationOnce(() => {
+    throw new Error("a fill that fails");
+  });
+
+  const { provider, doc } = await open(started, id);
+  expect(vi.mocked(fillMissingContent).mock.results.at(-1)!.type).toBe("throw");
+  expect(contentOf(partsOf(doc).get(partId)!).has(bars[1]!)).toBe(false);
+  expect(stores()).toBe(0);
+  // A score like any other: a member changes it, and the fill that follows succeeds.
+  const applied = nextSyncStatus(provider);
+  metaOf(doc).set("title", "Opened");
+  expect(await applied).toBe(true);
+  await expect.poll(() => contentOf(partsOf(doc).get(partId)!).has(bars[1]!), { timeout: 3 * FILL_DEBOUNCE_MS }).toBe(true);
 });
 
 test.each([
-  { reason: "missingMigration", version: 0, stored: () => docV0() },
+  { reason: "missingMigration", version: 0, migrations: undefined, stored: () => docV0() },
+  { reason: "migrationFailed", version: 0, migrations: [failing], stored: () => docV0() },
   {
     reason: "newerSchema",
     version: SCHEMA_VERSION + 1,
+    migrations: undefined,
     stored: () => {
       const doc = docV0();
       metaOf(doc).set("schemaVersion", SCHEMA_VERSION + 1);
       return doc;
     },
   },
-] as const)("a score the server cannot bring to its schema ($reason) is read-only for its Owner, who is told why, and is never written", async ({ reason, version, stored }) => {
-  // No migration registered: the published list has none from schema 0.
-  const started = await startApp();
+] as const)("a score the server cannot bring to its schema ($reason) is read-only for its Owner, who is told why, and is never written", async ({ reason, version, migrations, stored }) => {
+  // With no migration registered, the published list has none from schema 0.
+  const started = await startApp(migrations);
   const id = await createScore(started.app, started.session);
   const state = await storeAs(id, stored(), version);
   const row = (await Score.findByPk(id))!;
   const stores = countStores();
 
   const { provider, doc, notices } = await open(started, id);
+  // As it was stored: nothing of a step that failed half-way either.
+  expect(Y.encodeStateVector(doc)).toEqual(Y.encodeStateVector(await storedDoc(id)));
   expect(metaOf(doc).get("schemaVersion")).toBe(version);
+  expect([...partsOf(doc).values()].map((part) => part.get("staves"))).toEqual([undefined, undefined]);
   await expect.poll(() => notices).toEqual([{ type: "readOnly", reason }]);
   const applied = nextSyncStatus(provider);
   metaOf(doc).set("title", "not kept");

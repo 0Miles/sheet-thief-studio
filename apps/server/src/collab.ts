@@ -9,7 +9,7 @@ import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocu
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
 import type { CollabNotice } from "@studio/contracts";
-import { fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, readScore } from "@studio/score-model";
+import { fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
@@ -156,6 +156,19 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   }
 
   /**
+   * Write the document's row. The document is only read: a change made while storing would be
+   * stored again. The title and the artist are read as every reader reads them
+   * (docs/spec/schema.md, section 11): whatever a member wrote there, this does not throw. The
+   * whole state every time, never increments (docs/spec/collab.md, section 1). Only updates:
+   * storing never makes a score. `updated_at` is set by the update.
+   */
+  async function store(scoreId: string, document: Y.Doc): Promise<void> {
+    const { title, artist, schemaVersion } = readScore(document).score;
+    const [count] = await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(document)), title, artist: artist ?? null, schemaVersion }, { where: { id: scoreId } });
+    if (count === 0) throw new Error(`no score ${scoreId} to store`);
+  }
+
+  /**
    * As a participant: what the fill adds reaches every member and is stored like any change. The
    * change it makes comes back through `onChange` once; by then nothing is missing, and
    * `fillMissingContent` opens no transaction.
@@ -260,26 +273,57 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       // Authentication has found the score; a direct connection only ever opens one that exists.
       const score = await liveScore(documentName);
       if (score === null) throw new Error(`no score ${documentName} to load`);
-      Y.applyUpdate(document, score.docState);
-      // Migrating and filling in happen here and never while storing (a change made there would
-      // be stored again). Hocuspocus listens to the document's changes only once it is loaded:
-      // what this changes is stored with the next change a member makes, and done again at the
-      // next load until then.
       frozen.delete(documentName);
-      if (isNewerSchema(document)) {
+      // Migrating and filling in happen here and never while storing (a change made there would
+      // be stored again). The migration runs on a copy: a step that fails half-way leaves the
+      // members the document as it was stored.
+      const migrated = new Y.Doc();
+      Y.applyUpdate(migrated, score.docState);
+      let changed = false;
+      if (isNewerSchema(migrated)) {
         frozen.set(documentName, "newerSchema");
         app.log.warn({ scoreId: documentName }, "a score of a newer schema than this server: opened read-only");
-        return;
+      } else {
+        try {
+          changed = migrateDoc(migrated, migrations);
+        } catch (error) {
+          if (error instanceof MissingMigration) {
+            frozen.set(documentName, "missingMigration");
+            app.log.error({ scoreId: documentName, error }, "a score with no migration step to the current schema: opened read-only");
+          } else {
+            frozen.set(documentName, "migrationFailed");
+            app.log.error({ scoreId: documentName, error }, "a migration step failed on a score: opened read-only, as it was stored");
+          }
+        }
       }
-      try {
-        migrateDoc(document, migrations);
-      } catch (error) {
-        frozen.set(documentName, "missingMigration");
-        app.log.error({ scoreId: documentName, error }, "a score that cannot be migrated to the current schema: opened read-only");
-        return;
-      }
+      Y.applyUpdate(document, frozen.has(documentName) || !changed ? score.docState : Y.encodeStateAsUpdate(migrated));
+      migrated.destroy();
+      if (frozen.has(documentName)) return;
       // What the last members left missing, when they all left before the debounced fill ran.
-      fillMissingContent(document);
+      const filled = () => {
+        changed = true;
+      };
+      document.on("update", filled);
+      try {
+        fillMissingContent(document);
+      } catch (error) {
+        // The score still opens; the fill is tried again after the next change.
+        app.log.error({ scoreId: documentName, error }, "filling in the missing content failed");
+      } finally {
+        document.off("update", filled);
+      }
+      // Hocuspocus listens to the document's changes only once it is loaded, and unloads one
+      // nobody changed without storing it. What the load changed is stored now: done again at
+      // the next load, it would be other operations, and a member who still holds these (a tab
+      // that reconnects) would bring them back beside the new ones, one content container
+      // hiding the other and the notes written in it.
+      if (!changed) return;
+      try {
+        await store(documentName, document);
+      } catch (error) {
+        // The score still opens; it is stored with the next change.
+        app.log.error({ scoreId: documentName, error }, "storing what loading changed in a score failed");
+      }
     },
     async onChange({ documentName }) {
       if (frozen.has(documentName)) return;
@@ -296,17 +340,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
     async onStoreDocument({ documentName, document }) {
       // Nothing of a frozen document is ours to write, its row's `updated_at` included.
       if (frozen.has(documentName)) return;
-      // The document is only read here: a change would be stored again. The title and the artist
-      // are read as every reader reads them (docs/spec/schema.md, section 11): whatever a member
-      // wrote there, this does not throw.
-      const { title, artist, schemaVersion } = readScore(document).score;
-      // The whole state every time, never increments (docs/spec/collab.md, section 1). Only
-      // updates: storing never makes a score. `updated_at` is set by the update.
-      const [count] = await Score.update(
-        { docState: Buffer.from(Y.encodeStateAsUpdate(document)), title, artist: artist ?? null, schemaVersion },
-        { where: { id: documentName } },
-      );
-      if (count === 0) throw new Error(`no score ${documentName} to store`);
+      await store(documentName, document);
     },
   });
 

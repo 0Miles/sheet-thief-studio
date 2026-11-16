@@ -153,7 +153,7 @@ interface PresenceState {
 - **離線**：連線中斷時顯示「離線」橫幅；已開啟的分頁可以繼續編輯，重連時由 Yjs 合併（[`collab.md`](collab.md)）。
 - **權限改變**：被降級或移除、或 session 失效時，丟掉本機文件並以唯讀重新載入，提示原因。
 - **較新的 schema**：以唯讀開啟，提示重新整理（[`schema.md`](schema.md) 第 9 節）。
-- **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
+- **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 或 `"migrationFailed"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。
   - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機的修改都已經由伺服器確認收到（`provider.isSynced && provider.unsyncedChanges === 0`；`unsyncedChanges` 在伺服器回覆 SyncStatus 時才減少）；還有修改沒被確認時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。
