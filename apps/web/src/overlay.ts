@@ -1,6 +1,6 @@
 // What the overlays drawn over the score share: none of them may cover an area the renderer
 // reserves (docs/spec/views.md, section 9). An overlay in the way moves, the reserved area stays.
-import type { Flag } from "@studio/score-model";
+import type { Cursor, Flag, Selection } from "@studio/score-model";
 import type { Rect, ScoreRenderer } from "@studio/score-render";
 
 /** The two rectangles share some area; touching edges do not count. */
@@ -96,5 +96,29 @@ export function flagMarksOf(
         return rect === null ? [] : [{ kind, shape: "box" as const, rect }];
       }),
     );
+  });
+}
+
+/** The width of the dashed stroke of a structural box, drawn inside it as a flag's box is. */
+export const STRUCTURE_STROKE = FLAG_STROKE;
+
+/**
+ * The first and last bar a structural box is drawn over, to show that what is done there changes
+ * every part (docs/spec/commands.md, sections 1 and 6): a bar range's always; while the panel of
+ * the cursor's bar is open, a beat range's bar, else the cursor's. Null when none is drawn.
+ */
+export function structuralEnds(selection: Selection | null, cursor: Cursor | null, panelOpen: boolean): [anchor: string, focus: string] | null {
+  if (selection?.kind === "bars") return [selection.anchorBarId, selection.focusBarId];
+  if (!panelOpen) return null;
+  if (selection?.kind === "beats") return [selection.barId, selection.barId];
+  return cursor === null ? null : [cursor.barId, cursor.barId];
+}
+
+/** Where the structural boxes are drawn, over every part shown and out of the reserved areas, shrunk by half their stroke. */
+export function structureBoxesOf(renderer: Pick<ScoreRenderer, "boundsOfBars">, ends: [string, string] | null, reserved: readonly Rect[]): Rect[] {
+  if (ends === null) return [];
+  return renderer.boundsOfBars(...ends).flatMap((box) => {
+    const rect = shrink(clearOf(box, reserved), STRUCTURE_STROKE / 2);
+    return rect === null ? [] : [rect];
   });
 }

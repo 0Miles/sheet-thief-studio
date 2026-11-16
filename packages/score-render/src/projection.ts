@@ -2,6 +2,7 @@
 // One way only: nothing built here is ever written back to the score.
 import * as alphaTab from "@coderline/alphatab";
 import {
+  DEFAULT_TEMPO,
   type BarJSON,
   barTicks,
   beatAfter,
@@ -30,9 +31,6 @@ type AtNote = alphaTab.model.Note;
 type AtDynamic = alphaTab.model.DynamicValue;
 
 const { model } = alphaTab;
-
-/** Quarter notes per minute of a score whose first bar gives no tempo. */
-export const DEFAULT_TEMPO = 120;
 
 /** The MIDI channel every percussion part plays on. */
 const PERCUSSION_CHANNEL = 9;

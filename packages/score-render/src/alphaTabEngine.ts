@@ -2,7 +2,7 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { barRangeRects, cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
 import type { NoteHead, PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
@@ -213,6 +213,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
     return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+  }
+
+  boundsOfBars(anchorBarId: string, focusBarId: string): Rect[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return barRangeRects(lookup, this.projection, this.parts, anchorBarId, focusBarId, this.metrics()).map((rect) => this.fromSurface(rect));
   }
 
   noteHeadsOf(cursor: Cursor): NoteHead[] {

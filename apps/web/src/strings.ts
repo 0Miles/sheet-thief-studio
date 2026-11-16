@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type Flag, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 
@@ -69,7 +69,31 @@ export const strings = {
     // The box Enter opens for the text over a beat, such as a chord name.
     beatText: "拍點文字",
     // What a key that did nothing tells the member (`SessionHint`).
-    hints: { oneVoice: "弦樂聲部只有一條聲線" } satisfies Record<SessionHint, string>,
+    hints: { oneVoice: "弦樂聲部只有一條聲線", tooManyBars: `小節最多 ${MAX_BARS} 個`, lastBar: "至少要留下一個小節" } satisfies Record<SessionHint, string>,
+    // Bars inserted and deleted, and the panel of the cursor's bar (docs/spec/commands.md, section 6):
+    // the toolbar's buttons say the key of this platform, the panel works on every part.
+    bars: {
+      insert: "插入小節",
+      insertKey: (key: string) => `在游標所在的小節之前插入小節（${key}）`,
+      remove: "刪除小節",
+      removeKey: (key: string) => `刪除游標所在的小節，或選取的小節（${key}）`,
+      append: "＋小節",
+      appendTitle: "在譜尾加一個小節",
+      panel: "小節屬性",
+      panelKey: (key: string) => `開關小節屬性面板（${key}）`,
+      bar: (bar: number) => `第 ${bar} 小節`,
+      range: (first: number, last: number) => `第 ${first}–${last} 小節`,
+      allParts: "會改動所有聲部",
+      timeSig: "拍號",
+      timeSigOnward: "套用到這個小節，直到下一個不同的拍號",
+      timeSigRange: "套用到選取的每一個小節",
+      tempo: "速度（每分鐘四分音符數）",
+      tempoHere: "從這個小節起",
+      tempoInherited: (tempo: number) => `沒有變化，沿用 ${tempo}`,
+      clearTempo: "清除速度",
+      apply: "套用",
+      close: "關閉",
+    },
     dismiss: "關閉",
     settings: "設定",
     player: {

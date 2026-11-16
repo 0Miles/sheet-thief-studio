@@ -167,6 +167,9 @@ export const barSchema = z.object({
 });
 export type BarJSON = z.infer<typeof barSchema>;
 
+/** Quarter notes per minute of a score whose first bar gives no tempo (docs/spec/schema.md, section 3). */
+export const DEFAULT_TEMPO = 120;
+
 // Notes and beats -------------------------------------------------------------------------------
 
 /** Every field a note can have, whatever its part; `kindSchemas` says which ones each kind has. */
@@ -451,6 +454,17 @@ export const scoreSchema = metaSchema
   });
 export type ScoreJSON = z.infer<typeof scoreSchema>;
 
+/** The tempo in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_TEMPO`; none for a bar not in the score. */
+export function tempoAt(score: ScoreJSON, barId: string): number | undefined {
+  const index = score.bars.findIndex((bar) => bar.id === barId);
+  if (index < 0) return undefined;
+  for (let at = index; at >= 0; at--) {
+    const tempo = score.bars[at]?.tempo;
+    if (tempo !== undefined) return tempo;
+  }
+  return DEFAULT_TEMPO;
+}
+
 /** How many bytes a string takes in UTF-8. */
 function utf8Length(value: string): number {
   let bytes = 0;
@@ -594,6 +608,25 @@ export function stringCountOf(part: YPart): number {
   const kind = partKindOf(part);
   const tuning = kind === undefined ? undefined : parsePlain(partSchemas[kind].shape.tuning, part.get("tuning"));
   return tuning?.success ? tuning.data.length : 0;
+}
+
+/**
+ * The voices of a bar's content that reading reads (docs/spec/schema.md, section 11), in the
+ * order of `voiceKeys`, whatever order the map holds them in: not a voice of a staff the part has
+ * not (`isVoiceKey`), nor one stored as something else than a list of beats. Reading, the
+ * commands over a bar range and nothing else go through it, so that all see the same voices.
+ */
+export function readableVoicesIn(voices: Y.Map<unknown>, staves: number): [key: string, voice: YVoice][] {
+  return voiceKeys(staves).flatMap((key) => {
+    const voice: unknown = voices.get(key);
+    return voice instanceof Y.Array ? [[key, voice as YVoice] as [string, YVoice]] : [];
+  });
+}
+
+/** The voices of a part in a bar that reading reads (`readableVoicesIn`); none when the part has no content for that bar it can read. */
+export function readableVoicesOf(part: YPart, barId: string): [key: string, voice: YVoice][] {
+  const voices: unknown = contentMapOf(part)?.get(barId);
+  return voices instanceof Y.Map ? readableVoicesIn(voices, staffCountOf(part)) : [];
 }
 
 /**

@@ -54,6 +54,12 @@ export interface ScoreRenderer {
    */
   boundsOfSelection(selection: Selection): Rect[];
   /**
+   * Where the bars a structural command works on are drawn, from one to the other: a box for each
+   * system they are on, over every part shown (docs/spec/commands.md, section 6). None when they
+   * are not drawn (yet).
+   */
+  boundsOfBars(anchorBarId: string, focusBarId: string): Rect[];
+  /**
    * Where the note heads of the cursor's beat are drawn, as the engine reports them; none in an
    * append slot, or when the beat is not drawn. Diagnostic: the measurements compare them with
    * `boundsOf`.
