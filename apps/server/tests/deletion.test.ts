@@ -3,11 +3,12 @@
 // connections it had are closed, through real providers; after 30 days the job of the server
 // deletes it for good.
 import { Forbidden } from "@hocuspocus/common";
-import { DELETED_SCORE_DAYS } from "@studio/contracts";
+import { metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
-import type { Sequelize } from "sequelize";
+import { QueryTypes, type Sequelize } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
@@ -16,7 +17,6 @@ import { PURGE_INTERVAL_MS, purgeDeletedScores } from "../src/deletion";
 import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 let sequelize: Sequelize;
 let redis: Redis;
@@ -93,6 +93,11 @@ async function listed(app: FastifyInstance, path: "scores" | "scores/deleted", s
   const response = await call(app, "GET", path, session);
   expect(response.statusCode).toBe(200);
   return (response.json() as { scores: { id: string }[] }).scores.map(({ id }) => id);
+}
+
+/** Make the score one deleted this long ago, by the clock of the database (an interval of Postgres, such as `29 days`). */
+async function deletedFor(scoreId: string, interval: string): Promise<void> {
+  await sequelize.query("UPDATE scores SET deleted_at = now() - $1::interval WHERE id = $2", { bind: [interval, scoreId] });
 }
 
 /** What each way of reaching the score answers to this member: its details, its members, a collab ticket. */
@@ -227,9 +232,8 @@ test("the deleted scores are listed the last deleted first, without the ones I d
 });
 
 test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted 31 days ago for good, with its members", async () => {
-  // The clock and the interval of the job only: the sockets, Postgres and Redis keep real time.
-  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
-  const start = Date.now();
+  // The interval of the job only: the clock that says how long ago a score was deleted is the one of the database.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const { app } = await startApp();
   const { id, anna } = await annasScore(app);
   const live = await createScore(app, anna, "沒刪的");
@@ -243,33 +247,51 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
     await destroy.mock.results.at(-1)!.value;
   };
 
-  vi.setSystemTime(start + 29 * DAY_MS);
+  await deletedFor(id, "29 days");
   await nextRun();
   expect(await Score.count({ where: { id } })).toBe(1);
   expect(await ScoreMember.count({ where: { scoreId: id } })).toBe(2);
   expect(await listed(app, "scores/deleted", anna)).toEqual([id]);
 
   // Past the 30 days, before the job comes by: already out of reach of the Owner.
-  vi.setSystemTime(start + DELETED_SCORE_DAYS * DAY_MS + 60_000);
+  await deletedFor(id, "30 days 1 minute");
   expect(await listed(app, "scores/deleted", anna)).toEqual([]);
   expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(404);
   expect(await Score.count({ where: { id } })).toBe(1);
 
-  vi.setSystemTime(start + 31 * DAY_MS);
+  await deletedFor(id, "31 days");
   await nextRun();
   expect(await Score.count({ where: { id } })).toBe(0);
   expect(await ScoreMember.count({ where: { scoreId: id } })).toBe(0);
   // Nothing that is not deleted goes, however old.
+  await sequelize.query("UPDATE scores SET created_at = now() - interval '2 years', updated_at = now() - interval '1 year' WHERE id = $1", { bind: [live] });
+  await nextRun();
   expect(await Score.count({ where: { id: live } })).toBe(1);
   expect(await ScoreMember.count({ where: { scoreId: live } })).toBe(1);
   expect(await listed(app, "scores", anna)).toEqual([live]);
+});
+
+test("how long ago a score was deleted is told by the clock of the database, not by the one of the server", async () => {
+  // The clock of the process jumps two months ahead: nothing deleted a moment ago goes.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { app } = await startApp();
+  const { id, anna } = await annasScore(app);
+  vi.setSystemTime(Date.now() + 60 * 24 * 60 * 60 * 1000);
+  expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
+  vi.setSystemTime(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+  expect(await purgeDeletedScores()).toBe(0);
+  expect(await listed(app, "scores/deleted", anna)).toEqual([id]);
+  const [row] = await sequelize.query<{ recent: boolean }>("SELECT deleted_at BETWEEN now() - interval '1 minute' AND now() AS recent FROM scores WHERE id = $1", { bind: [id], type: QueryTypes.SELECT });
+  expect(row?.recent).toBe(true);
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
 });
 
 test("the job runs once as the server starts", async () => {
   const { app } = await startApp();
   const { id, anna } = await annasScore(app);
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
-  await Score.update({ deletedAt: new Date(Date.now() - 31 * DAY_MS) }, { where: { id }, silent: true });
+  await deletedFor(id, "31 days");
   expect(await Score.count({ where: { id } })).toBe(1);
 
   const next = buildApp({ config: testConfig(), redis, logger: false });
@@ -279,18 +301,137 @@ test("the job runs once as the server starts", async () => {
   expect(await Score.count({ where: { id } })).toBe(0);
 });
 
+test("a run of the job under way ends before the app is closed", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const app = buildApp({ config: testConfig(), redis, logger: false });
+  apps.push(app);
+  // What whoever built the app does as it closes (src/main.ts closes the database there).
+  let endedAtClose: boolean | null = null;
+  app.addHook("onClose", async () => {
+    endedAtClose = ended;
+  });
+  await app.ready();
+  let ended = false;
+  let release = () => {};
+  vi.spyOn(Score, "destroy").mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => (release = resolve));
+    ended = true;
+    return 0;
+  });
+  await vi.advanceTimersByTimeAsync(PURGE_INTERVAL_MS);
+
+  const closing = app.close();
+  setTimeout(release, 50);
+  await closing;
+
+  expect(endedAtClose).toBe(true);
+});
+
 test("a score restored while the job waits for it is not deleted", async () => {
   const { app } = await startApp();
   const { id, anna } = await annasScore(app);
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
-  const deletedAt = (await Score.findByPk(id))!.deletedAt!;
-  // The job, a moment after the 30 days, while the restoration, asked a moment before them, holds the row.
+  await deletedFor(id, "31 days");
+  // The job comes by while a restoration holds the row.
   let waiting: Promise<number> | undefined;
   await sequelize.transaction(async (transaction) => {
     await Score.findByPk(id, { lock: transaction.LOCK.UPDATE, transaction });
-    waiting = purgeDeletedScores(new Date(deletedAt.getTime() + DELETED_SCORE_DAYS * DAY_MS + 1));
+    waiting = purgeDeletedScores();
     await Score.update({ deletedAt: null }, { where: { id }, silent: true, transaction });
   });
   expect(await waiting).toBe(0);
   expect(await Score.count({ where: { id } })).toBe(1);
+});
+
+test("a link asked for as the score is deleted is not made, and none comes back with the restoration", async () => {
+  const { app } = await startApp();
+  const { id, anna } = await annasScore(app);
+  // The request for a link has passed the check of its Owner; the score is deleted before the
+  // request locks its row: the first locked read of a score is that one, and the deletion runs
+  // to its end in front of it.
+  const find = Score.findOne.bind(Score);
+  let deleted: number | null = null;
+  vi.spyOn(Score, "findOne").mockImplementation(async (options) => {
+    if (options?.lock !== undefined && deleted === null) {
+      deleted = 0;
+      deleted = (await call(app, "DELETE", `scores/${id}`, anna)).statusCode;
+    }
+    return find(options);
+  });
+
+  const made = await call(app, "POST", `scores/${id}/link`, anna);
+
+  expect(deleted).toBe(204);
+  expect([made.statusCode, made.json()]).toEqual([404, { code: "not_found" }]);
+  expect((await Score.findByPk(id))?.linkToken).toBeNull();
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
+  expect((await call(app, "GET", `scores/${id}/link`, anna)).json()).toEqual({ token: null });
+});
+
+test("a restoration clears whatever link the deleted row holds", async () => {
+  const { app } = await startApp();
+  const { id, anna } = await annasScore(app);
+  expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
+  const token = "t".repeat(43);
+  await Score.update({ linkToken: token }, { where: { id }, silent: true });
+
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
+
+  expect((await Score.findByPk(id))?.linkToken).toBeNull();
+  expect((await call(app, "POST", `s/${token}`, null)).statusCode).toBe(404);
+});
+
+test("what a member typed just before the deletion is stored as the connections close, without a new updated_at; nothing is written after that", async () => {
+  const { app, url } = await startApp();
+  const { id, anna } = await annasScore(app, "刪除前的標題");
+  const unloaded = () => vi.waitFor(() => expect(app.collab.loadedScores()).not.toContain(id), { timeout: 5000 });
+  const member = await open(url, id, () => ticketFor(app, id, anna));
+  const before = (await Score.findByPk(id))!;
+  const applied = nextSyncStatus(member.provider);
+  metaOf(member.doc).set("title", "刪除前剛改的標題");
+  expect(await applied).toBe(true);
+  // Not stored yet: the store waits two seconds for more changes.
+  expect((await Score.findByPk(id))?.title).toBe("刪除前的標題");
+
+  expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
+  member.provider.destroy();
+  await unloaded();
+
+  const stored = (await Score.findByPk(id))!;
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, stored.docState);
+  expect(metaOf(doc).get("title")).toBe("刪除前剛改的標題");
+  expect(stored.title).toBe("刪除前剛改的標題");
+  expect(stored.deletedAt).toBeInstanceOf(Date);
+  expect(stored.updatedAt).toEqual(before.updatedAt);
+
+  // Longer than the debounce of a store and the one of a fill: no write comes after the last one.
+  const update = vi.spyOn(Score, "update");
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  expect(update).not.toHaveBeenCalled();
+  expect((await Score.findByPk(id))?.docState.equals(stored.docState)).toBe(true);
+  update.mockRestore();
+
+  // Restored, a change is a change again.
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
+  const again = await open(url, id, () => ticketFor(app, id, anna));
+  expect(metaOf(again.doc).get("title")).toBe("刪除前剛改的標題");
+  const changed = nextSyncStatus(again.provider);
+  metaOf(again.doc).set("title", "還原後改的標題");
+  expect(await changed).toBe(true);
+  again.provider.destroy();
+  await unloaded();
+  const after = (await Score.findByPk(id))!;
+  expect(after.title).toBe("還原後改的標題");
+  expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+});
+
+test("every table that refers to a score goes with it: its foreign key cascades", async () => {
+  const keys = await sequelize.query<{ table: string; name: string; action: string }>(
+    "SELECT conrelid::regclass::text AS table, conname AS name, confdeltype::text AS action FROM pg_constraint WHERE contype = 'f' AND confrelid = 'scores'::regclass",
+    { type: QueryTypes.SELECT },
+  );
+  // `c` is ON DELETE CASCADE. A table added without it would make the job fail on every score that has rows there.
+  expect(keys.map(({ table }) => table)).toContain("score_members");
+  expect(keys.filter(({ action }) => action !== "c")).toEqual([]);
 });

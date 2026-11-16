@@ -44,14 +44,19 @@ export async function scoreOfLink(token: string): Promise<Score | null> {
   return Score.findOne({ where: { linkToken: token, deletedAt: null }, attributes: ["id", "title"] });
 }
 
-/** Give the score this link token (null: none), and return the one it had. Its column only: the score's `updated_at` stays. */
-async function replaceLink(scoreId: string, token: string | null): Promise<string | null> {
+/**
+ * Give the score this link token (null: none), and return the one it had; `undefined`, nothing
+ * written, when the score is deleted. Its column only: the score's `updated_at` stays.
+ */
+async function replaceLink(scoreId: string, token: string | null): Promise<string | null | undefined> {
   return Score.sequelize!.transaction(async (transaction) => {
     // Locked, so that two requests at once cannot both replace the same token and leave the
-    // connections of the one between them open.
-    const score = await Score.findByPk(scoreId, { attributes: ["id", "linkToken"], lock: transaction.LOCK.UPDATE, transaction });
+    // connections of the one between them open. Deleted since its Owner was checked: a deleted
+    // score gets no link, which a restoration would bring back with it (docs/spec/accounts.md, section 8).
+    const score = await Score.findOne({ where: { id: scoreId, deletedAt: null }, attributes: ["id", "linkToken"], lock: transaction.LOCK.UPDATE, transaction });
+    if (score === null) return undefined;
     await Score.update({ linkToken: token }, { where: { id: scoreId }, silent: true, transaction });
-    return score?.linkToken ?? null;
+    return score.linkToken;
   });
 }
 
@@ -81,14 +86,18 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
     const score = await ownedScore(request, reply);
     if (score === null) return reply;
     const token = newToken();
-    revoked(score.id, await replaceLink(score.id, token));
+    const before = await replaceLink(score.id, token);
+    if (before === undefined) return notFound(reply);
+    revoked(score.id, before);
     return scoreLink.parse({ token });
   });
 
   app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
     const score = await ownedScore(request, reply);
     if (score === null) return reply;
-    revoked(score.id, await replaceLink(score.id, null));
+    const before = await replaceLink(score.id, null);
+    if (before === undefined) return notFound(reply);
+    revoked(score.id, before);
     return reply.code(204).send();
   });
 

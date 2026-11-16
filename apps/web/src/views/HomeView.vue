@@ -7,10 +7,10 @@ import { DELETED_SCORE_DAYS, type DeletedScore, deletedScoreList, type ScoreSumm
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 
-import { ApiError, get, post } from "../api";
+import { get, post, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import NewScoreDialog from "../components/NewScoreDialog.vue";
-import { errorText, strings } from "../strings";
+import { strings } from "../strings";
 
 const text = strings.home;
 
@@ -27,9 +27,6 @@ const loadError = ref<string | null>(null);
 /** What to say when a score could not be restored; null while all is well. */
 const restoreError = ref<string | null>(null);
 
-function refusal(failure: unknown): string {
-  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-}
 
 /** Both lists as the server has them now. */
 async function load(): Promise<void> {

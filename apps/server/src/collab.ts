@@ -11,6 +11,7 @@ import crossws from "crossws/adapters/node";
 import type { CollabNotice } from "@studio/contracts";
 import { fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
+import { literal } from "sequelize";
 import * as Y from "yjs";
 
 import type { CollabTickets, Guest, Member } from "./collabTickets";
@@ -23,6 +24,9 @@ export const COLLAB_PATH = "/collab";
 
 /** How long a document stays unchanged before the server fills in what it misses (docs/spec/collab.md, section 4). */
 export const FILL_DEBOUNCE_MS = 1000;
+
+/** The `updated_at` a store leaves: now, or the one the score had when it is deleted. */
+const STORED_AT = literal("CASE WHEN deleted_at IS NULL THEN now() ELSE updated_at END") as unknown as Date;
 
 /** Why a document is frozen: read-only for every connection, neither migrated, filled in nor stored. */
 type FrozenReason = CollabNotice["reason"];
@@ -160,11 +164,17 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
    * stored again. The title and the artist are read as every reader reads them
    * (docs/spec/schema.md, section 11): whatever a member wrote there, this does not throw. The
    * whole state every time, never increments (docs/spec/collab.md, section 1). Only updates:
-   * storing never makes a score. `updated_at` is set by the update.
+   * storing never makes a score. `updated_at` is set here, to the clock of the database, unless
+   * the score is deleted: what its members typed just before the deletion is stored as their
+   * connections are closed, and a deletion is no change of the score (docs/spec/accounts.md, section 8).
    */
   async function store(scoreId: string, document: Y.Doc): Promise<void> {
     const { title, artist, schemaVersion } = readScore(document).score;
-    const [count] = await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(document)), title, artist: artist ?? null, schemaVersion }, { where: { id: scoreId } });
+    const [count] = await Score.update(
+      { docState: Buffer.from(Y.encodeStateAsUpdate(document)), title, artist: artist ?? null, schemaVersion, updatedAt: STORED_AT },
+      // `silent`: `updated_at` is the one written above, not the one Sequelize would write.
+      { where: { id: scoreId }, silent: true },
+    );
     if (count === 0) throw new Error(`no score ${scoreId} to store`);
   }
 

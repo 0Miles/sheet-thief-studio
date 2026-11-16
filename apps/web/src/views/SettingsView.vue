@@ -10,9 +10,9 @@ import { type MemberRole, memberRole, type ScoreDetails, scoreDetails, scoreLink
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 
-import { ApiError, del, get, patchFor, post, postFor } from "../api";
+import { ApiError, del, get, patchFor, post, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
-import { errorText, strings } from "../strings";
+import { strings } from "../strings";
 import NotFoundView from "./NotFoundView.vue";
 
 const props = defineProps<{ id: string }>();
@@ -47,10 +47,6 @@ const target = ref<ScoreMember | null>(null);
 const dialogError = ref("");
 /** The whole address a guest opens. */
 const address = computed(() => (token.value ? `${location.origin}/s/${token.value}` : ""));
-
-function refusal(failure: unknown): string {
-  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-}
 
 function failed(failure: unknown): void {
   error.value = refusal(failure);
