@@ -2,6 +2,8 @@
 // by itself: the page and the API share one origin.
 import { apiError, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
 
+import { errorText, strings } from "./strings";
+
 /** An answer other than 2xx, with the stable code the server sent (`internal_error` when none). */
 export class ApiError extends Error {
   constructor(
@@ -10,6 +12,11 @@ export class ApiError extends Error {
   ) {
     super(`${status} ${code}`);
   }
+}
+
+/** What to tell the person about a call that failed: the text of the code the server answered with, when it answered. */
+export function refusal(failure: unknown): string {
+  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
 }
 
 async function call(method: string, path: string, body?: unknown): Promise<Response> {

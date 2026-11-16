@@ -85,13 +85,13 @@
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
 | `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
-| `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜 | 任何帳號 |
+| `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜。**補充**（#15）：`{ scores: [...] }`，每一筆是 `id`、`title`、`artist`、`deletedAt`，依 `deletedAt` 由新到舊；不是任何已刪除團譜的 Owner 時是空陣列 | 任何帳號 |
 | `POST /api/scores` | `{ title, parts: [{ preset, count, tuning? }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。**補充**（#11）：`preset` 是 `PART_PRESETS` 的 id；`tuning` 只給 fretted，弦數要和預設相同，不給就是預設的調弦；`title` 以外都可以省略，省略時是一個「吉他 6 弦」、4/4、120、8 小節（`NEW_SCORE`）；第一小節一定寫上 `tempo`。驗證在 contracts 的 `createScoreRequest` | 任何帳號 |
 | `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |
-| `DELETE /api/scores/:id` | 軟刪除 | Owner |
-| `POST /api/scores/:id/restore` | 從「已刪除」還原 | Owner |
+| `DELETE /api/scores/:id` | 軟刪除 → 204。**補充**（#15）：非成員、已刪除的團譜回 404 `not_found`，其他成員回 403 `forbidden` | Owner |
+| `POST /api/scores/:id/restore` | 從「已刪除」還原 → 204。**補充**（#15）：Owner 以外的任何人（包含這份團譜的其他成員）、沒有被刪除的團譜、刪除超過 30 天的團譜，一律回 404 `not_found`（[`security.md`](security.md) 第 8 節） | Owner |
 | `POST /api/scores/:id/transfer` | `{ accountId }`：轉移擁有權 → 204。**補充**（#13）：對方不是成員回 404 `not_found`；對方是自己或是停用的帳號回 400 `invalid_request`（設定頁不提供這兩種） | Owner |
 | `POST /api/scores/:id/leave` | 離開團譜 → 204。Owner 回 409 `owner_cannot_leave` | Editor、Viewer |
 

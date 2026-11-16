@@ -9,6 +9,7 @@ import { registerAuth } from "./auth";
 import { attachCollab } from "./collab";
 import { CollabTickets } from "./collabTickets";
 import type { Config } from "./config";
+import { registerDeletion } from "./deletion";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
 import { registerMe } from "./me";
 import { registerLinks, withoutLinkTokens } from "./links";
@@ -50,6 +51,7 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   const collab = attachCollab(app, { tickets, sessions, migrations });
   registerScores(app, { collab, tickets });
   registerMembers(app, { collab, limiter });
+  registerDeletion(app, { collab });
   registerLinks(app, { collab, tickets, limiter });
   registerPhrases(app);
   return app;

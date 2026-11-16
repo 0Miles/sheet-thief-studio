@@ -192,6 +192,21 @@ export type ScoreSummary = z.infer<typeof scoreSummary>;
 export const scoreList = z.object({ scores: z.array(scoreSummary) });
 export type ScoreList = z.infer<typeof scoreList>;
 
+/** How many days a deleted score can still be restored, before it is deleted for good (docs/spec/accounts.md, section 8). */
+export const DELETED_SCORE_DAYS = 30;
+
+/** A score I own and deleted, as the "deleted" block of `/` lists them (`GET /api/scores/deleted`), most recently deleted first. */
+export const deletedScore = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string().nullable(),
+  deletedAt: z.string(),
+});
+export type DeletedScore = z.infer<typeof deletedScore>;
+
+export const deletedScoreList = z.object({ scores: z.array(deletedScore) });
+export type DeletedScoreList = z.infer<typeof deletedScoreList>;
+
 /** A score I am a member of (`GET /api/scores/:id`). */
 export const scoreDetails = z.object({
   id: z.string(),
