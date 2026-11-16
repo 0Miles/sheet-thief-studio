@@ -260,6 +260,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
+- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。複製只做到合法值的深度（兩層：帶 `bend` 的音符、`staves` 的陣列與物件、帶 `tuplet` 的拍點欄位）；更深的陣列或物件，落在認得的欄位上就是讀不懂（照上面各條標記），落在不認得的欄位下則照樣忽略、不標記、原樣保留，所以巢狀再深也不會丟例外，也不妨礙日後的加法欄位。
+- **補充**（#78）：`ScoreJSON` 與 phrase fragment 裡的 record（聲部的 `content`、小節的聲線、拍點的 `notes`、fragment 的 `voices`）帶有自有的 `__proto__` 鍵時，驗證不通過（匯入與儲存樂句會被拒絕）；zod 的 `z.record` 本來會不經驗證就把這個鍵丟掉。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
 - 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。**補充**：作廢在交易結束、任何 observer 被呼叫之前做（Yjs 的 `beforeObserverCalls`，依 `transaction.changed`），所以在 observer 裡讀取也看得到這次的修改；交易進行中讀取時不用快取。

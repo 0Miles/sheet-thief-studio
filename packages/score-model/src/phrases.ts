@@ -16,6 +16,7 @@ import {
   type PartJSON,
   type PartKind,
   partSchemas,
+  recordOf,
   SCHEMA_VERSION,
   type ScoreJSON,
   timeSigSchema,
@@ -38,7 +39,7 @@ function none<const Fields extends readonly string[]>(fields: Fields): { [Field 
 /** A bar of a fragment: its time signature and its voices ("staff:voice" to beats); none of what the bars of a score share. */
 const fragmentBarSchema = z.object({
   timeSig: timeSigSchema,
-  voices: z.record(z.string(), z.array(fragmentBeatSchema)),
+  voices: recordOf(z.array(fragmentBeatSchema)),
   ...none(["id", "tempo", "keySig", "repeatStart", "repeatEnd", "voltas", "section", "anacrusis"]),
 });
 

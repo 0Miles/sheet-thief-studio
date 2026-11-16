@@ -3,7 +3,7 @@
 // `docToJson` of its day) before anyone reads it. Both sides of a step mean the same change.
 import type * as Y from "yjs";
 
-import { metaOf, metaSchema, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "./schema";
+import { metaOf, metaSchema, parsePlain, SCHEMA_VERSION, type ScoreJSON, scoreSchema } from "./schema";
 
 /** One step of the schema: what it changes in a document, and the same change in a version. */
 export interface Migration {
@@ -33,7 +33,7 @@ function stepsFrom(version: number, migrations: readonly Migration[]): Migration
  * it is missing or cannot be read, so that an odd value neither migrates nor locks a score.
  */
 function versionOf(value: unknown): number {
-  const parsed = metaSchema.shape.schemaVersion.safeParse(value);
+  const parsed = parsePlain(metaSchema.shape.schemaVersion, value);
   return parsed.success ? parsed.data : SCHEMA_VERSION;
 }
 

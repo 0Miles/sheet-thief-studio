@@ -65,6 +65,50 @@ function text(min: number, max: number) {
 
 const midi = z.int().min(0).max(127);
 
+/**
+ * How deep lists and objects go in a legal value of the document: a note with a bend, the staves
+ * of a part (a list of objects), the fields of a beat with a tuplet.
+ */
+const PLAIN_DEPTH = 2;
+
+/** What stands for a list or an object nested deeper than any legal value: no schema reads it. */
+const TOO_DEEP = Symbol("nested too deep");
+
+/**
+ * A value of the document as every member holds it (#78): the fields it has of its own, but one
+ * named __proto__. The member who writes such a field holds it as a field; the others decode it
+ * as the prototype of the value (lib0's readAny), and zod would read the fields of a prototype.
+ * Copied down to the depth of a legal value only, so that a value nested without end costs
+ * nothing and cannot overflow the stack: fields no schema knows are dropped by zod whatever they
+ * hold. A shared type is not a value.
+ */
+function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
+  if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
+  const fields: [string, unknown][] = [];
+  for (const [name, field] of Object.entries(value)) if (name !== "__proto__") fields.push([name, plain(field, depth - 1)]);
+  return Object.fromEntries(fields);
+}
+
+/**
+ * Check a value stored in the document against its schema: every read of one goes through here,
+ * so that all members read it alike (see `plain`). Never throws.
+ */
+export function parsePlain<Schema extends z.ZodType>(schema: Schema, value: unknown): z.ZodSafeParseResult<z.output<Schema>> {
+  return schema.safeParse(plain(value));
+}
+
+/**
+ * A record, keyed by any string but __proto__: zod's records leave that key out without checking
+ * what it holds, so a score or a fragment with one would be read without it. It is refused.
+ */
+export function recordOf<Value extends z.ZodType>(value: Value) {
+  return z
+    .custom<Record<string, unknown>>((record) => typeof record !== "object" || record === null || !Object.hasOwn(record, "__proto__"), "a key named __proto__")
+    .pipe(z.record(z.string(), value));
+}
+
 export const partKindSchema = z.enum(["fretted", "percussion", "pitched"]);
 export type PartKind = z.infer<typeof partKindSchema>;
 
@@ -174,7 +218,7 @@ const beatFieldsSchema = z.object({
 /** Every field a beat can have, whatever its part. */
 export const beatSchema = beatFieldsSchema.extend({
   /** Keyed by position: "s3" a string, "p38" a drum piece, "n60" a pitch. Empty is a rest. */
-  notes: z.record(z.string(), noteSchema),
+  notes: recordOf(noteSchema),
 });
 export type BeatJSON = z.infer<typeof beatSchema>;
 
@@ -261,7 +305,7 @@ export function stringOfNoteKey(key: string): number | undefined {
  */
 export function readNote(kind: PartKind, strings: number, key: string, value: unknown): NoteJSON | undefined {
   if (!isNoteKey(kind, strings, key) || value instanceof Y.AbstractType) return undefined;
-  const note = kindSchemas[kind].note.safeParse(value);
+  const note = parsePlain(kindSchemas[kind].note, value);
   return note.success ? note.data : undefined;
 }
 
@@ -289,7 +333,7 @@ export function voiceKeys(staves: number): string[] {
 // Parts -----------------------------------------------------------------------------------------
 
 /** Bar id, then voice ("staff:voice"), to its beats. A bar or voice left out is empty. */
-const contentSchema = z.record(z.string(), z.record(z.string(), z.array(beatSchema)));
+const contentSchema = recordOf(recordOf(z.array(beatSchema)));
 
 /** The name may be empty when read: an unreadable name reads as empty (section 11). */
 const partName = text(0, 64);
@@ -504,13 +548,13 @@ export type BeatDuration = Duration & { dots: 0 | 1 | 2 };
 
 /** The duration of a beat as stored; undefined when it cannot be read. */
 export function durationOf(beat: YBeat): BeatDuration | undefined {
-  const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  const duration = parsePlain(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
   return duration.success ? duration.data : undefined;
 }
 
 /** The kind of a part, or undefined when it is not a part or its kind cannot be read (docs/spec/schema.md, section 11). */
 export function partKindOf(part: unknown): PartKind | undefined {
-  const kind = partKindSchema.safeParse(part instanceof Y.Map ? part.get("kind") : undefined);
+  const kind = parsePlain(partKindSchema, part instanceof Y.Map ? part.get("kind") : undefined);
   return kind.success ? kind.data : undefined;
 }
 
@@ -541,14 +585,14 @@ export function voicesOffered(kind: PartKind | undefined): 1 | 2 {
 export function staffCountOf(part: YPart): number {
   const kind = partKindOf(part);
   if (kind === undefined) return 1;
-  const staves = partSchemas[kind].shape.staves.safeParse(part.get("staves"));
+  const staves = parsePlain(partSchemas[kind].shape.staves, part.get("staves"));
   return staves.success ? staves.data.length : KIND_DEFAULTS[kind].staves.length;
 }
 
 /** How many strings a part has, as reading counts them: those of its tuning; none when its kind or its tuning cannot be read. */
 export function stringCountOf(part: YPart): number {
   const kind = partKindOf(part);
-  const tuning = kind === undefined ? undefined : partSchemas[kind].shape.tuning.safeParse(part.get("tuning"));
+  const tuning = kind === undefined ? undefined : parsePlain(partSchemas[kind].shape.tuning, part.get("tuning"));
   return tuning?.success ? tuning.data.length : 0;
 }
 

@@ -18,6 +18,7 @@ import {
   metaSchema,
   type NoteJSON,
   ordered,
+  parsePlain,
   type PartJSON,
   type PartKind,
   partKindOf,
@@ -117,7 +118,7 @@ function flag(place: Place, what: string): InvalidContentFlag {
 
 /** The value of a field as its schema reads it, or `fallback` and a flag when it does not fit. */
 function readField<T>(schema: z.ZodType<T>, value: unknown, fallback: T, invalid: InvalidContentFlag[], place: Place, what: string): T {
-  const parsed = schema.safeParse(value);
+  const parsed = parsePlain(schema, value);
   if (parsed.success) return parsed.data;
   invalid.push(flag(place, what));
   return fallback;
@@ -151,7 +152,7 @@ export type BeatFields = Omit<BeatJSON, "notes">;
  */
 export function readBeatFields(kind: PartKind, beat: unknown): BeatFields | undefined {
   if (!(beat instanceof Y.Map) || !(beat.get("notes") instanceof Y.Map)) return undefined;
-  const parsed = kindSchemas[kind].beat.safeParse(beatFieldsOf(beat).fields);
+  const parsed = parsePlain(kindSchemas[kind].beat, beatFieldsOf(beat).fields);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -165,7 +166,7 @@ function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Chec
   const at: Place = typeof fields.id === "string" ? { ...place, beatId: fields.id } : place;
   const invalid: InvalidContentFlag[] = poppedOff ? [flag(at, "beat.pop")] : [];
   const notes = beat.get("notes");
-  const parsed = kindSchemas[kind].beat.safeParse(fields);
+  const parsed = parsePlain(kindSchemas[kind].beat, fields);
   if (!parsed.success || !(notes instanceof Y.Map)) return { beat: null, invalid: [flag(at, "beat")] };
   const read: Record<string, NoteJSON> = {};
   // Keys in sorted order: members who put notes on a beat at the same time can hold its map in different orders.
@@ -225,7 +226,7 @@ function readPart(id: string, part: Y.Map<unknown>, barIds: string[], reuse: boo
     return null;
   }
   const shape = partSchemas[kind].shape;
-  const tuning = shape.tuning.safeParse(part.get("tuning"));
+  const tuning = parsePlain(shape.tuning, part.get("tuning"));
   if (!tuning.success) {
     invalid.push(flag(place, "part.tuning"));
     // Notes on a string cannot be placed without the tuning of the strings.
@@ -271,7 +272,7 @@ function readBar(id: string, bar: Y.Map<unknown>, first: boolean, invalid: Inval
     const value = bar.get(name);
     // A pickup bar anywhere but first is ignored: inserting a bar before it can make one.
     if (value === undefined || (name === "anacrusis" && !first)) continue;
-    const parsed = barSchema.shape[name].safeParse(value);
+    const parsed = parsePlain(barSchema.shape[name], value);
     if (parsed.success) Object.assign(read, { [name]: parsed.data });
     else invalid.push(flag(place, `bar.${name}`));
   }
@@ -320,7 +321,7 @@ export function readScore(doc: Y.Doc): ScoreRead {
     parts: [],
   };
   if (artist !== undefined) {
-    const parsed = shape.artist.safeParse(artist);
+    const parsed = parsePlain(shape.artist, artist);
     if (parsed.success && parsed.data !== undefined) read.artist = parsed.data;
     else invalid.push(flag({}, "meta.artist"));
   }
