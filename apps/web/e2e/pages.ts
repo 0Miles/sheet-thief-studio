@@ -77,8 +77,8 @@ export interface ScoreFixture {
 
 /**
  * A score with its members, written straight into the tests' database by the server's own
- * script (apps/server/tests/scoreE2e.ts): data a test needs before it starts, for which there
- * is no page yet (adding members comes with #13). Returns its id.
+ * script (apps/server/tests/scoreE2e.ts): data a test needs before it starts, set up without
+ * going through the pages (adding members has its own test, members.spec.ts). Returns its id.
  */
 export function seedScore(fixture: ScoreFixture): string {
   const made = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "score:e2e"], {

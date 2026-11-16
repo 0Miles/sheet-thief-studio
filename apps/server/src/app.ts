@@ -12,6 +12,7 @@ import type { Config } from "./config";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
 import { registerMe } from "./me";
 import { registerLinks, withoutLinkTokens } from "./links";
+import { registerMembers } from "./members";
 import { registerPhrases } from "./phrases";
 import { RateLimiter } from "./rateLimit";
 import { registerScores } from "./scores";
@@ -48,6 +49,7 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   registerAdmin(app);
   const collab = attachCollab(app, { tickets, sessions, migrations });
   registerScores(app, { collab, tickets });
+  registerMembers(app, { collab, limiter });
   registerLinks(app, { collab, tickets, limiter });
   registerPhrases(app);
   return app;

@@ -206,6 +206,41 @@ export type ScoreDetails = z.infer<typeof scoreDetails>;
 export const collabTicket = z.object({ ticket: z.string(), role });
 export type CollabTicket = z.infer<typeof collabTicket>;
 
+// Members (docs/spec/routes.md, 3.4; docs/spec/accounts.md, sections 4 to 6).
+/** The roles an Owner gives: there is one Owner, who changes by transfer only. */
+export const memberRole = role.exclude(["owner"]);
+export type MemberRole = z.infer<typeof memberRole>;
+
+/** A member of a score, as every member sees them on its settings page. */
+export const scoreMember = z.object({
+  accountId: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  role,
+  disabled: z.boolean(),
+});
+export type ScoreMember = z.infer<typeof scoreMember>;
+
+/** The members of a score (`GET /api/scores/:id/members`): its Owner first, then in the order they were added. */
+export const scoreMemberList = z.object({ members: z.array(scoreMember) });
+export type ScoreMemberList = z.infer<typeof scoreMemberList>;
+
+/**
+ * An account to add as a member (`POST /api/scores/:id/members`), by its whole username: only
+ * bounded, since a name no account can have is just an account that is not found. An Editor
+ * unless told otherwise.
+ */
+export const addMemberRequest = z.object({ username: z.string().trim().min(1).max(64), role: memberRole.default("editor") });
+export type AddMemberRequest = z.input<typeof addMemberRequest>;
+
+/** A member's new role (`PATCH /api/scores/:id/members/:accountId`). */
+export const changeRoleRequest = z.object({ role: memberRole });
+export type ChangeRoleRequest = z.infer<typeof changeRoleRequest>;
+
+/** The member who becomes the Owner (`POST /api/scores/:id/transfer`). */
+export const transferRequest = z.object({ accountId: z.string().min(1).max(64) });
+export type TransferRequest = z.infer<typeof transferRequest>;
+
 /**
  * What the collab server tells a connection about its document, as the JSON payload of a
  * Hocuspocus stateless message (docs/spec/collab.md, section 2.1). `readOnly`: the server drops
