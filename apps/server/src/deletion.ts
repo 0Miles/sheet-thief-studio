@@ -60,7 +60,7 @@ export function registerDeletion(app: FastifyInstance, { collab }: { collab: Col
     return unlessRefused(reply, async () => {
       // With the score's row locked, as every change of its members: whoever deletes is still its
       // Owner as it is deleted, not the Owner of a moment before a transfer.
-      await changeMembers(id, request.account!.id, "owner", async ({ transaction }) => {
+      await changeMembers(id, { accountId: request.account!.id, by: "owner" }, async ({ transaction }) => {
         // The link goes for good: a score restored has none until its Owner makes one. `silent`:
         // `updated_at` stays what the last change of the content left.
         await Score.update({ deletedAt: NOW, linkToken: null }, { where: { id }, silent: true, transaction });

@@ -252,9 +252,26 @@ export type AddMemberRequest = z.input<typeof addMemberRequest>;
 export const changeRoleRequest = z.object({ role: memberRole });
 export type ChangeRoleRequest = z.infer<typeof changeRoleRequest>;
 
-/** The member who becomes the Owner (`POST /api/scores/:id/transfer`). */
+/** The member who becomes the Owner (`POST /api/scores/:id/transfer`, `POST /api/admin/scores/:id/transfer`). */
 export const transferRequest = z.object({ accountId: z.string().min(1).max(64) });
 export type TransferRequest = z.infer<typeof transferRequest>;
+
+/**
+ * A score whose Owner is disabled, as an admin sees it on /admin (docs/spec/accounts.md, section
+ * 2): its title, its Owner, and its members who can log in, to one of whom it can be handed over;
+ * none of its content. The members in the order they were added.
+ */
+export const orphanedScore = z.object({
+  id: z.string(),
+  title: z.string(),
+  owner: z.object({ accountId: z.string(), username: z.string(), displayName: z.string() }),
+  members: z.array(z.object({ accountId: z.string(), username: z.string(), displayName: z.string(), role: memberRole })),
+});
+export type OrphanedScore = z.infer<typeof orphanedScore>;
+
+/** Every score whose Owner is disabled, by the Owner's username, then title (`GET /api/admin/orphaned-scores`). */
+export const orphanedScoreList = z.object({ scores: z.array(orphanedScore) });
+export type OrphanedScoreList = z.infer<typeof orphanedScoreList>;
 
 /**
  * What the collab server tells a connection about its document, as the JSON payload of a

@@ -78,6 +78,8 @@
 | `POST /api/admin/accounts/:id/identities` | M5：`{ provider: "karyl-chan", subject }`；同一個 `subject` 已綁到別的帳號時 409 `identity_taken` |
 | `DELETE /api/admin/accounts/:id/identities/:identityId` | M5：解除綁定（不能解除密碼那一筆） |
 
+- **補充**（#16）：`GET /api/admin/orphaned-scores` 回 `{ scores: [...] }`，每一筆是 `id`、`title`、`owner: { accountId, username, displayName }`、`members: [{ accountId, username, displayName, role }]`（Owner 以外、啟用中的成員，依加入的先後），依 Owner 的帳號名稱、再依標題排序；沒有啟用中成員的團譜也列出（`members` 是空陣列），只是不能轉移。已刪除的團譜不列出。形狀在 contracts 的 `orphanedScoreList`。
+- **補充**（#16）：`POST /api/admin/scores/:id/transfer` 成功回 204。團譜不存在、已刪除、`:id` 不是 UUID、或 Owner 沒有停用時一律 404 `not_found`（對 admin 而言，Owner 啟用中的團譜和不存在一樣，不透露它存在），這個檢查在 body 驗證之前；之後與 Owner 自己的轉移相同：對方不是成員 404 `not_found`，對方是 Owner 或停用的帳號、body 不合法 400 `invalid_request`。走 `members.ts` 的 `changeMembers`（`{ by: "admin" }`）與共用的 `handOver`：鎖住團譜列之後再確認一次 Owner 已停用（Owner 的帳號列以 `FOR SHARE` 鎖住，同時被啟用的話要等轉移結束），接收者的帳號列同樣 `FOR SHARE`。交易完成後以 `ResetConnection` 關閉原 Owner 與新 Owner 對這份團譜的連線。
 - **補充**（#8）：非 admin 呼叫 `/api/admin/` 底下任何 route 都回 404 `not_found`（[`security.md`](security.md) 第 8 節）；這是對整個路徑前綴的檢查，之後加在底下的 route 不必各自檢查。沒有 session 仍然是 401，要先改密碼的 session 仍然是 403 `password_change_required`：這兩個檢查在前。帳號不存在、`:id` 不是 UUID 時回 404 `not_found`。
 
 ### 3.3 團譜
