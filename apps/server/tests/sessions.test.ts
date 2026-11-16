@@ -129,3 +129,22 @@ test("a session that had already ended tells no listener", async () => {
 
   expect(listener).not.toHaveBeenCalled();
 });
+
+test.each([
+  ["is not JSON", "not JSON"],
+  ["names no account", "{}"],
+])("a session whose stored value %s still ends and has its listeners told, without the account", async (_, stored) => {
+  const session = await sessionOf(app, "anna", PASSWORD);
+  await redis.set(`session:${session}`, stored);
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+  const srem = vi.spyOn(redis, "srem");
+
+  await app.sessions.end({ sessionId: session });
+
+  expect(listener.mock.calls).toEqual([[{ accountId: null, sessionId: session }]]);
+  expect(await redis.exists(`session:${session}`)).toBe(0);
+  // No account, no list to take the session off.
+  expect(srem).not.toHaveBeenCalled();
+  srem.mockRestore();
+});
