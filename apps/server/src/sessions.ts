@@ -17,11 +17,11 @@ export interface Session {
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account
  * (`sessionId` null) — and with them every connection the account has, those of a session that
  * was kept included (they reconnect with a new ticket), and those whose document is still loading.
+ *
+ * The account of one session is null when Redis did not say whose it was (its reply to deleting
+ * the session was lost, or what it stored cannot be read): the session id is all a listener has.
  */
-export interface SessionsEnded {
-  accountId: string;
-  sessionId: string | null;
-}
+export type SessionsEnded = { accountId: string; sessionId: null } | { accountId: string | null; sessionId: string };
 
 export type SessionsEndedListener = (ended: SessionsEnded) => void | Promise<void>;
 
@@ -78,14 +78,24 @@ export class Sessions {
   async end(which: SessionsToEnd): Promise<void> {
     if ("sessionId" in which) {
       if (!isToken(which.sessionId)) return;
-      const stored = await this.redis.getdel(sessionKey(which.sessionId));
-      if (stored === null) return;
-      const { accountId } = JSON.parse(stored) as Omit<Session, "id">;
-      // The session is gone from here on: its connections close even when the bookkeeping fails.
+      const { sessionId } = which;
+      // Once Redis is asked to delete the session, it may be gone whatever comes back (a reply
+      // can be lost after the deletion ran): its connections close unless Redis answered that
+      // there was no such session. Better closed than left open; the error still reaches the caller.
+      let stored: string | null;
       try {
-        await this.redis.srem(accountKey(accountId), which.sessionId);
+        stored = await this.redis.getdel(sessionKey(sessionId));
+      } catch (error) {
+        await this.#notify({ accountId: null, sessionId });
+        throw error;
+      }
+      if (stored === null) return;
+      // The session is gone from here on: its connections close even when the bookkeeping fails.
+      const accountId = this.#accountOf(stored);
+      try {
+        if (accountId !== null) await this.redis.srem(accountKey(accountId), sessionId);
       } finally {
-        await this.#notify({ accountId, sessionId: which.sessionId });
+        await this.#notify({ accountId, sessionId });
       }
       return;
     }
@@ -107,6 +117,18 @@ export class Sessions {
   onEnd(listener: SessionsEndedListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  /** Whose session this was, from what Redis stored; null (and logged) when that cannot be read. */
+  #accountOf(stored: string): string | null {
+    try {
+      const { accountId } = JSON.parse(stored) as { accountId?: unknown } | null ?? {};
+      if (typeof accountId === "string") return accountId;
+    } catch {
+      // Not JSON: the same as JSON without an account.
+    }
+    this.log.error({}, "an ended session's stored value names no account");
+    return null;
   }
 
   async #notify(ended: SessionsEnded): Promise<void> {
