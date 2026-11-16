@@ -101,3 +101,31 @@ test("a listener can stop listening", async () => {
   await app.sessions.end({ accountId: anna });
   expect(listener).not.toHaveBeenCalled();
 });
+
+test("a session whose deletion Redis ran but never answered still has its listeners told, without the account", async () => {
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+  // Redis deletes the session; its reply is lost on the way back.
+  const getdel = redis.getdel.bind(redis);
+  vi.spyOn(redis, "getdel").mockImplementationOnce(async (key) => {
+    await getdel(key);
+    throw new Error("the reply was lost");
+  });
+
+  await expect(app.sessions.end({ sessionId: leaving })).rejects.toThrow("the reply was lost");
+
+  expect(listener.mock.calls).toEqual([[{ accountId: null, sessionId: leaving }]]);
+  expect([await valid(leaving), await valid(staying)]).toEqual([false, true]);
+});
+
+test("a session that had already ended tells no listener", async () => {
+  const session = await sessionOf(app, "anna", PASSWORD);
+  await app.sessions.end({ sessionId: session });
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+
+  await app.sessions.end({ sessionId: session });
+
+  expect(listener).not.toHaveBeenCalled();
+});

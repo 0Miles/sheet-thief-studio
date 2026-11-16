@@ -9,6 +9,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 - **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt }`；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
 - 登入成功時換一個新的 session id（避免 session fixation，補充）。
 - 停用帳號或重設密碼時，刪除該帳號所有的 Redis session，並關閉它的 `/collab` 連線（[`accounts.md`](accounts.md)）。
+- **補充**（#87）：結束單一 session 時，只要已經請 Redis 刪除它，就通知關閉該 session 的 `/collab` 連線，不論 Redis 回覆成功或失敗（刪除可能已執行、只是回覆遺失）；唯一不通知的情況是 Redis 明確回答沒有這個 session。回覆遺失時不知道帳號，通知只帶 session id；錯誤照樣丟給呼叫端。
 - **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：環境變數是 `INSECURE_COOKIES=1`；名稱是 `studio_session` 與 `karyl_result`（[`karyl-login.md`](karyl-login.md) 第 5 節的 cookie 也跟著同一個設定）。
   - WebKit（Safari）在 http 上不接受 `__Host-` cookie，所以 CI 的 WebKit 打譜 smoke、在 Mac 上用 Safari 開發，以及手機的區網實機測試都要用這個設定（owner 在 2026-11-13 裁定桌面 Safari 要能打譜）。
   - Firefox 要不要用，看 [`testing.md`](testing.md) 第 5 節確認檢查 1 的結果。

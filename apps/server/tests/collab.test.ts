@@ -262,3 +262,27 @@ test("logging out closes the session's connections even when Redis fails once th
 
   expect(await closed).toBe(Unauthorized.code);
 });
+
+test("logging out closes the session's connections even when Redis's reply to deleting the session is lost", async () => {
+  const { app, url } = await startApp();
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
+  const id = await createScore(app, leaving);
+  const left = await open(app, url, id, leaving);
+  const kept = await open(app, url, id, staying);
+  const leftClosed = socketClosed(left.provider);
+  const keptClosed = closes(kept);
+  // Redis deletes the session; its reply never arrives, so the account is not known.
+  const getdel = redis.getdel.bind(redis);
+  vi.spyOn(redis, "getdel").mockImplementationOnce(async (key) => {
+    await getdel(key);
+    throw new Error("the reply was lost");
+  });
+
+  await expect(app.sessions.end({ sessionId: leaving })).rejects.toThrow("the reply was lost");
+
+  expect(await leftClosed).toBe(Unauthorized.code);
+  const applied = nextSyncStatus(kept.provider);
+  metaOf(kept.doc).set("title", "另一個分頁改的標題");
+  expect(await applied).toBe(true);
+  expect(keptClosed()).toBe(false);
+});
