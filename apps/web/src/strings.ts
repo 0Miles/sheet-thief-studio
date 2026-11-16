@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import type { ErrorCode } from "@studio/contracts";
+import { accountLimits, type ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -148,6 +148,40 @@ export const strings = {
   },
   header: {
     logout: "登出",
+    account: "帳號設定",
+  },
+  // /account, and /account/password where a temporary password must be changed first (docs/spec/accounts.md, section 1).
+  account: {
+    title: "帳號設定",
+    back: "回到我的團譜",
+    username: "帳號名稱",
+    displayName: {
+      title: "顯示名稱",
+      label: "顯示名稱",
+      rule: `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`,
+      save: "儲存",
+      saved: "已儲存",
+    },
+    password: {
+      title: "變更密碼",
+      current: "目前的密碼",
+      new: "新密碼",
+      again: "再輸入一次新密碼",
+      rule: `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`,
+      mismatch: "兩次輸入的新密碼不一樣。",
+      submit: "變更密碼",
+      changed: "密碼已變更，其他裝置已登出。",
+    },
+    forced: {
+      title: "請先設定新密碼",
+      help: "你是用管理者給的暫時密碼登入的，設定自己的密碼之後才能繼續。",
+      submit: "設定密碼",
+    },
+    logoutAll: {
+      title: "登出所有裝置",
+      help: "包含這個裝置在內，所有已登入的裝置都會登出。",
+      submit: "登出所有裝置",
+    },
   },
   login: {
     username: "帳號名稱",
@@ -165,6 +199,8 @@ export const strings = {
   errors: {
     invalid_credentials: "帳號名稱或密碼錯誤。",
     rate_limited: "嘗試太多次，請稍後再試。",
+    wrong_current_password: "目前的密碼不正確。",
+    password_change_required: "請先設定新密碼。",
     forbidden: "你的角色不能做這件事。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",

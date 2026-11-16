@@ -28,7 +28,9 @@ async function logout(): Promise<void> {
       <Spacer />
       <!-- Nobody to log out on a page open without logging in (a guest's). -->
       <template v-if="session.me">
-        <span class="app-header__account">{{ session.me.displayName }}</span>
+        <!-- No way to /account while the password must be changed first. -->
+        <span v-if="session.me.mustChangePassword" class="app-header__account">{{ session.me.displayName }}</span>
+        <RouterLink v-else class="app-header__account" :to="{ name: 'account' }" :title="strings.header.account">{{ session.me.displayName }}</RouterLink>
         <AppButton variant="ghost" size="sm" :loading="leaving" @click="logout">{{ strings.header.logout }}</AppButton>
       </template>
     </Cluster>

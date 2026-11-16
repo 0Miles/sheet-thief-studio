@@ -21,7 +21,7 @@
 | 找不到頁面 | 404 頁 | M1a |
 
 - 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/<團譜 id>` 與 `/local` 已在 #37 移除。
-- `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。
+- `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。**補充**（#7）：原本要去的頁面帶在 `redirect` 參數裡，改完密碼後回到那一頁（沒有就是 `/`）；不必改密碼的人打開 `/account/password` 會被導到 `/account`。
 - `/admin`：非 admin 看到 404 頁（補充）。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
 - `/scores/:id/versions` 和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider（[`collab.md`](collab.md) 8.5）。
@@ -51,6 +51,7 @@
 - 成功但沒有內容時回 204。
 - 所有非 GET 請求都檢查 `Origin`（[`security.md`](security.md)）。
 - **補充**：`/api/*` 的 route 預設都要 session，沒有就回 401 `unauthenticated`；不需要登入的 route（登入、登出、訪客取 ticket）要在 route 設定上明確標成 public，忘了標就是要登入（#5）。
+- **補充**（#7）：要先改密碼的 session（3.1 的 `mustChangePassword` 為真）只能用 `GET /api/me`、`POST /api/me/password`、`POST /api/auth/logout`、`POST /api/auth/logout-all`；其他 `/api/*` 的 route 一律回 403 `password_change_required`。和 public 一樣是 route 設定上的標記（`beforePasswordChange`），忘了標就是被擋。
 - 資料形狀用 zod 定義在 `packages/contracts`；團譜文件的 schema 從 `score-model` re-export。
 
 ### 3.1 登入與自己的帳號
@@ -59,10 +60,10 @@
 |---|---|
 | `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
 | `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
-| `POST /api/auth/logout-all` | 刪除這個帳號所有的 session，關閉它的所有連線 |
-| `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401 |
-| `PATCH /api/me` | `{ displayName }` |
-| `POST /api/me/password` | `{ currentPassword?, newPassword }`；強制改密碼時不必 `currentPassword`。成功後 `mustChangePassword` 變成 false |
+| `POST /api/auth/logout-all` | 刪除這個帳號所有的 session（包含目前這一個，並清掉 cookie），關閉它的所有連線 → 204 |
+| `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401。**補充**（#7）：`mustChangePassword` 說的是這個 session 要不要先改密碼：帳號的 `must_change_password` 為真，而且這個 session 是用密碼登入的；karyl-chan 登入的 session 一律是 false |
+| `PATCH /api/me` | `{ displayName }` → 改完之後的帳號，形狀同 `GET /api/me`（補充，#7） |
+| `POST /api/me/password` | `{ currentPassword?, newPassword }` → 204；強制改密碼時不必 `currentPassword`（給了也不檢查）。成功後 `mustChangePassword` 變成 false，保留目前的 session，其餘失效。**補充**（#7）：不是強制改密碼時，沒給 `currentPassword` 回 400 `invalid_request`，給錯回 403 `wrong_current_password`；429 `rate_limited` |
 
 ### 3.2 後台（只有 admin）
 
@@ -154,6 +155,7 @@
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
 | `invalid_credentials` | 401 | 帳號名稱或密碼錯誤，或帳號已停用（三者不區分） |
 | `password_change_required` | 403 | 要先改密碼 |
+| `wrong_current_password` | 403 | 自己改密碼時，目前的密碼不對（補充，#7；不用 401，session 仍然有效） |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
 | `not_found` | 404 | 不存在，或不是成員（兩者不區分） |
