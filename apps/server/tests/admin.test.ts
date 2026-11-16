@@ -146,6 +146,32 @@ test("nobody logged in is answered 401 by the admin APIs, like by any other", as
   expect([response.statusCode, response.json()]).toEqual([401, { code: "unauthenticated" }]);
 });
 
+test("a session that must change its password first is answered 403 by the admin APIs, admin or not: that check comes before the admin's", async () => {
+  await createAccount({ username: "temporary-admin", displayName: "管理者", password: TEMPORARY, isAdmin: true, mustChangePassword: true });
+  await createAccount({ username: "temporary-member", displayName: "成員", password: TEMPORARY, isAdmin: false, mustChangePassword: true });
+  const target = await member();
+  for (const username of ["temporary-admin", "temporary-member"]) {
+    const session = await sessionOf(app, username, TEMPORARY);
+    const responses = [
+      await send("GET", "/api/admin/accounts", session),
+      await create({ username: `by-${username}`, displayName: "名稱", password: TEMPORARY }, session),
+      await send("POST", `/api/admin/accounts/${target.id}/disable`, session),
+    ];
+    for (const response of responses) expect([username, response.statusCode, response.json()]).toEqual([username, 403, { code: "password_change_required" }]);
+    expect(await Account.findOne({ where: { username: `by-${username}` } })).toBeNull();
+  }
+  expect((await Account.findByPk(target.id))!.disabledAt).toBeNull();
+});
+
+test("resetting the password of an account that does not exist is answered 404 whatever the body", async () => {
+  for (const id of [NOBODY, "not-an-id"]) {
+    for (const payload of [{}, { password: "short" }]) {
+      const response = await send("POST", `/api/admin/accounts/${id}/reset-password`, admin.session, payload);
+      expect([response.statusCode, response.json()]).toEqual([404, { code: "not_found" }]);
+    }
+  }
+});
+
 test("disabling an account ends all its sessions and refuses its logins; enabling lets it log in again", async () => {
   const [target, other] = [await member(), await member()];
   const sessions = [await sessionOf(app, target.username, PASSWORD), await sessionOf(app, target.username, PASSWORD)];

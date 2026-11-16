@@ -49,10 +49,12 @@ export function registerAdmin(app: FastifyInstance): void {
   });
 
   app.post<AccountParams>("/api/admin/accounts/:id/reset-password", async (request, reply) => {
+    const { id } = request.params;
+    // Whether there is such an account comes first: what is wrong with a request about none is that.
+    if (!isUuid(id) || !(await Account.findByPk(id))) return notFound(reply);
     const body = resetPasswordRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
-    const { id } = request.params;
-    if (!isUuid(id) || !(await setTemporaryPassword(id, body.data.password))) return notFound(reply);
+    if (!(await setTemporaryPassword(id, body.data.password))) return notFound(reply);
     // Whoever is logged in with the old password is out, and the account's connections close.
     await app.sessions.end({ accountId: id });
     return reply.code(204).send();
