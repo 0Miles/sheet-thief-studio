@@ -3,14 +3,14 @@
 // without logging in.
 import { Forbidden } from "@hocuspocus/common";
 import { guestTicket, scoreLink } from "@studio/contracts";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Score } from "./db/models";
 import { notFound, rateLimited } from "./http";
 import { GUEST_TICKET_BY_IP, type RateLimiter } from "./rateLimit";
-import { membership } from "./scores";
+import { ownedScore } from "./scores";
 import { isToken, newToken } from "./tokens";
 
 /** The page of a read-only link and the API behind it, with the token as the segment after `s/`. */
@@ -42,18 +42,6 @@ export function withoutLinkTokens(url: string): string {
 export async function scoreOfLink(token: string): Promise<Score | null> {
   if (!isToken(token)) return null;
   return Score.findOne({ where: { linkToken: token, deletedAt: null }, attributes: ["id", "title"] });
-}
-
-/**
- * The score when the session's account is its Owner; otherwise null, the refusal sent: 404 to
- * anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
- */
-async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<Score | null> {
-  const member = await membership(request.params.id, request.account!.id);
-  if (member?.role === "owner") return member.score;
-  if (member === null) notFound(reply);
-  else reply.code(403).send({ code: "forbidden" });
-  return null;
 }
 
 /** Give the score this link token (null: none), and return the one it had. Its column only: the score's `updated_at` stays. */

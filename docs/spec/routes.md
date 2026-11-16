@@ -92,17 +92,22 @@
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |
 | `DELETE /api/scores/:id` | 軟刪除 | Owner |
 | `POST /api/scores/:id/restore` | 從「已刪除」還原 | Owner |
-| `POST /api/scores/:id/transfer` | `{ accountId }`：轉移擁有權 | Owner |
-| `POST /api/scores/:id/leave` | 離開團譜 | Editor、Viewer |
+| `POST /api/scores/:id/transfer` | `{ accountId }`：轉移擁有權 → 204。**補充**（#13）：對方不是成員回 404 `not_found`；對方是自己或是停用的帳號回 400 `invalid_request`（設定頁不提供這兩種） | Owner |
+| `POST /api/scores/:id/leave` | 離開團譜 → 204。Owner 回 409 `owner_cannot_leave` | Editor、Viewer |
 
 ### 3.4 成員
 
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
-| `GET /api/scores/:id/members` | `accountId`、`username`、`displayName`、`role`、`disabled` | 成員 |
-| `POST /api/scores/:id/members` | `{ username, role }`：加入成員。404 `account_not_found`、409 `already_member`、429 | Owner |
-| `PATCH /api/scores/:id/members/:accountId` | `{ role: "editor" \| "viewer" }` | Owner |
-| `DELETE /api/scores/:id/members/:accountId` | 移除成員 | Owner |
+| `GET /api/scores/:id/members` | `{ members: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`role`、`disabled`。**補充**（#13）：Owner 排第一，其餘依加入的先後 | 成員 |
+| `POST /api/scores/:id/members` | `{ username, role }`：加入成員 → 201，回這名成員（同上的形狀）。`role` 省略時是 `"editor"`。404 `account_not_found`、409 `already_member`（加入自己也是）、429 | Owner |
+| `PATCH /api/scores/:id/members/:accountId` | `{ role: "editor" \| "viewer" }` → 200，回這名成員 | Owner |
+| `DELETE /api/scores/:id/members/:accountId` | 移除成員 → 204 | Owner |
+
+- **補充**（#13）：`:accountId` 不是這份團譜的成員時回 404 `not_found`。Owner 的角色只能經由轉移改變：對 Owner 自己那一筆 `PATCH` 或 `DELETE` 回 409 `owner_cannot_leave`。
+- **補充**（#13）：先檢查角色，再檢查內容：不是 Owner 的成員一律 403 `forbidden`、非成員一律 404，不論內容對不對。加入成員的速率限制只計 Owner 送出的、內容合法的查詢，找到帳號的也算（[`security.md`](security.md) 第 4 節）。
+- **補充**（#13）：改變成員的每個操作都在一筆交易裡先鎖住這份團譜的列，所以同時送到的兩個操作不會讓團譜沒有 Owner。
+- **補充**（#13）：角色改變時（降級與升級都是）、被移除、離開、轉移（雙方），伺服器在交易完成後關閉該帳號對這份團譜的連線（[`accounts.md`](accounts.md) 第 9 節）。升級也關，是為了讓連線的唯讀與否永遠等於放行當時的角色。
 
 ### 3.5 唯讀連結
 

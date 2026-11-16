@@ -134,6 +134,32 @@ export const strings = {
   settings: {
     title: "團譜設定",
     back: "回到團譜",
+    // Every member sees the list; only the Owner changes it (docs/spec/accounts.md, sections 3 to 6).
+    members: {
+      title: "成員",
+      disabled: "已停用",
+      add: {
+        help: "輸入完整的帳號名稱。對方不會收到通知，下次打開「我的團譜」就會看到這份團譜。",
+        username: "帳號名稱",
+        role: "角色",
+        submit: "加入成員",
+      },
+      roleOf: (username: string) => `${username} 的角色`,
+      remove: "移除",
+      transfer: {
+        action: "轉移擁有權",
+        title: "轉移擁有權",
+        message: (displayName: string) => `要把擁有權轉給 ${displayName} 嗎？轉移之後你會變成編輯者，只有對方能管理成員、唯讀連結與刪除團譜。`,
+        confirm: "轉移",
+      },
+      leave: {
+        action: "離開團譜",
+        title: "離開團譜",
+        message: (title: string) => `要離開「${title}」嗎？離開之後你就打不開這份團譜，要請擁有者再把你加入。`,
+        confirm: "離開",
+      },
+      cancel: "取消",
+    },
     link: {
       title: "唯讀連結",
       help: "拿到連結的人不必登入，就能看譜與播放，但不能修改。重新產生或撤銷之後，舊的連結立刻失效。",
@@ -244,6 +270,9 @@ export const strings = {
     wrong_current_password: "目前的密碼不正確。",
     password_change_required: "請先設定新密碼。",
     forbidden: "你的角色不能做這件事。",
+    account_not_found: "找不到這個帳號名稱。",
+    already_member: "這個帳號已經是成員。",
+    owner_cannot_leave: "擁有者要先轉移擁有權。",
     username_taken: "這個帳號名稱已經有人使用。",
     cannot_disable_self: "不能停用自己的帳號。",
     revision_conflict: "這個樂句在別處被修改過。",

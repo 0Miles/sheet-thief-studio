@@ -123,7 +123,7 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   expect(await Score.count()).toBe(scoresBefore);
 });
 
-/** Make Ben a member of the score with this role, as the members API of #13 will. */
+/** Make Ben a member of the score with this role, straight in the database. */
 async function addBen(scoreId: string, role: Role): Promise<void> {
   await ScoreMember.create({ scoreId, accountId: ben, role });
 }

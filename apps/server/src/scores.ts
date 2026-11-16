@@ -2,7 +2,7 @@
 // creating one, listing mine, opening one, and the collab ticket to edit it.
 import { collabTicket, createdScore, createScoreRequest, eachPart, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
 import { addPart, barsOf, createScore, insertBars, PART_PRESETS, partNames, SCHEMA_VERSION } from "@studio/score-model";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
@@ -25,6 +25,18 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
     include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true, attributes: ["id", "title", "artist"] }],
   });
   return member === null ? null : { score: member.get("score") as Score, role: member.role };
+}
+
+/**
+ * The score when the session's account is its Owner; otherwise null, the refusal sent: 404 to
+ * anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
+ */
+export async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<Score | null> {
+  const member = await membership(request.params.id, request.account!.id);
+  if (member?.role === "owner") return member.score;
+  if (member === null) notFound(reply);
+  else reply.code(403).send({ code: "forbidden" });
+  return null;
 }
 
 /**
