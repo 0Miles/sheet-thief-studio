@@ -8,6 +8,8 @@ import type { Duplex } from "node:stream";
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
+import type { CollabNotice } from "@studio/contracts";
+import { fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
@@ -18,6 +20,12 @@ import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
 
 export const COLLAB_PATH = "/collab";
+
+/** How long a document stays unchanged before the server fills in what it misses (docs/spec/collab.md, section 4). */
+export const FILL_DEBOUNCE_MS = 1000;
+
+/** Why a document is frozen: read-only for every connection, neither migrated, filled in nor stored. */
+type FrozenReason = CollabNotice["reason"];
 
 /**
  * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
@@ -36,7 +44,8 @@ export interface ConnectionsToClose {
 export interface Collab {
   /**
    * Change a score's document as the server, a participant like any other (docs/adr/0001): the
-   * change reaches the members who have it open and is stored before this resolves.
+   * change reaches the members who have it open and is stored before this resolves. Rejects,
+   * changing nothing, when the document is frozen (docs/spec/schema.md, sections 9 and 10).
    */
   change(scoreId: string, transaction: (doc: Y.Doc) => void): Promise<void>;
   /**
@@ -121,13 +130,59 @@ function withoutGuestPresence(socket: Socket): WebSocket {
   });
 }
 
-export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tickets: CollabTickets; sessions: Sessions }): Collab {
+export interface CollabDependencies {
+  tickets: CollabTickets;
+  sessions: Sessions;
+  /** The steps of the schema; the published ones unless a test registers its own. */
+  migrations?: readonly Migration[] | undefined;
+}
+
+export function attachCollab(app: FastifyInstance, { tickets, sessions, migrations = MIGRATIONS }: CollabDependencies): Collab {
   const register = new Map<Connection<CollabContext>, Holder>();
   // By the connection configuration Hocuspocus hands both `onAuthenticate` and `connected`: the
   // same object for one connection.
   const loading = new Map<ConnectionConfiguration, Loading>();
   // By the upgrade request each socket was opened with, which the hooks are handed too.
   const socketByRequest = new WeakMap<object, Socket>();
+  // The documents in memory this server must not change, by score id: written by a newer schema,
+  // or by an older one with a migration step missing (docs/spec/schema.md, sections 9 and 10).
+  const frozen = new Map<string, FrozenReason>();
+  // The documents changed less than FILL_DEBOUNCE_MS ago, each with the timer that fills it in.
+  const fills = new Map<string, NodeJS.Timeout>();
+
+  function cancelFill(scoreId: string): void {
+    clearTimeout(fills.get(scoreId));
+    fills.delete(scoreId);
+  }
+
+  /**
+   * Write the document's row. The document is only read: a change made while storing would be
+   * stored again. The title and the artist are read as every reader reads them
+   * (docs/spec/schema.md, section 11): whatever a member wrote there, this does not throw. The
+   * whole state every time, never increments (docs/spec/collab.md, section 1). Only updates:
+   * storing never makes a score. `updated_at` is set by the update.
+   */
+  async function store(scoreId: string, document: Y.Doc): Promise<void> {
+    const { title, artist, schemaVersion } = readScore(document).score;
+    const [count] = await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(document)), title, artist: artist ?? null, schemaVersion }, { where: { id: scoreId } });
+    if (count === 0) throw new Error(`no score ${scoreId} to store`);
+  }
+
+  /**
+   * As a participant: what the fill adds reaches every member and is stored like any change. The
+   * change it makes comes back through `onChange` once; by then nothing is missing, and
+   * `fillMissingContent` opens no transaction.
+   */
+  function fill(scoreId: string): void {
+    fills.delete(scoreId);
+    const document = hocuspocus.documents.get(scoreId);
+    if (document === undefined || document.isLoading || frozen.has(scoreId)) return;
+    try {
+      fillMissingContent(document);
+    } catch (error) {
+      app.log.error({ scoreId, error }, "filling in the missing content failed");
+    }
+  }
 
   /**
    * Out of the document first, so that nothing more it sends is applied; then the socket, so that
@@ -197,6 +252,15 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       }
       register.set(connection, entry.holder);
       connection.onClose(() => register.delete(connection));
+      // Told why what it sends is dropped, whatever its role (docs/spec/collab.md, section 2.1).
+      const reason = frozen.get(connection.document.name);
+      if (reason !== undefined) connection.sendStateless(JSON.stringify({ type: "readOnly", reason } satisfies CollabNotice));
+    },
+    async beforeHandleMessage({ connection, documentName }) {
+      // Every connection of a frozen document is read-only, an Owner's and an Editor's too.
+      // Here and not in `onAuthenticate`: the first connections are let in before the document
+      // is loaded, and each message, the ones queued meanwhile too, passes here before it is applied.
+      if (frozen.has(documentName)) connection.readOnly = true;
     },
     async beforeHandleAwareness({ context, states, removedClients }) {
       // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
@@ -209,13 +273,74 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
       // Authentication has found the score; a direct connection only ever opens one that exists.
       const score = await liveScore(documentName);
       if (score === null) throw new Error(`no score ${documentName} to load`);
-      Y.applyUpdate(document, score.docState);
+      frozen.delete(documentName);
+      // Migrating and filling in happen here and never while storing (a change made there would
+      // be stored again). The migration runs on a copy: a step that fails half-way leaves the
+      // members the document as it was stored.
+      const migrated = new Y.Doc();
+      Y.applyUpdate(migrated, score.docState);
+      let changed = false;
+      if (isNewerSchema(migrated)) {
+        frozen.set(documentName, "newerSchema");
+        app.log.warn({ scoreId: documentName }, "a score of a newer schema than this server: opened read-only");
+      } else {
+        try {
+          changed = migrateDoc(migrated, migrations);
+        } catch (error) {
+          if (error instanceof MissingMigration) {
+            frozen.set(documentName, "missingMigration");
+            app.log.error({ scoreId: documentName, error }, "a score with no migration step to the current schema: opened read-only");
+          } else {
+            frozen.set(documentName, "migrationFailed");
+            app.log.error({ scoreId: documentName, error }, "a migration step failed on a score: opened read-only, as it was stored");
+          }
+        }
+      }
+      Y.applyUpdate(document, frozen.has(documentName) || !changed ? score.docState : Y.encodeStateAsUpdate(migrated));
+      migrated.destroy();
+      if (frozen.has(documentName)) return;
+      // What the last members left missing, when they all left before the debounced fill ran.
+      const filled = () => {
+        changed = true;
+      };
+      document.on("update", filled);
+      try {
+        fillMissingContent(document);
+      } catch (error) {
+        // The score still opens; the fill is tried again after the next change.
+        app.log.error({ scoreId: documentName, error }, "filling in the missing content failed");
+      } finally {
+        document.off("update", filled);
+      }
+      // Hocuspocus listens to the document's changes only once it is loaded, and unloads one
+      // nobody changed without storing it. What the load changed is stored now: done again at
+      // the next load, it would be other operations, and a member who still holds these (a tab
+      // that reconnects) would bring them back beside the new ones, one content container
+      // hiding the other and the notes written in it.
+      if (!changed) return;
+      try {
+        await store(documentName, document);
+      } catch (error) {
+        // The score still opens; it is stored with the next change.
+        app.log.error({ scoreId: documentName, error }, "storing what loading changed in a score failed");
+      }
+    },
+    async onChange({ documentName }) {
+      if (frozen.has(documentName)) return;
+      cancelFill(documentName);
+      fills.set(
+        documentName,
+        setTimeout(() => fill(documentName), FILL_DEBOUNCE_MS),
+      );
+    },
+    async afterUnloadDocument({ documentName }) {
+      cancelFill(documentName);
+      frozen.delete(documentName);
     },
     async onStoreDocument({ documentName, document }) {
-      // The whole state every time, never increments (docs/spec/collab.md, section 1). Only
-      // updates: storing never makes a score.
-      const [count] = await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(document)) }, { where: { id: documentName } });
-      if (count === 0) throw new Error(`no score ${documentName} to store`);
+      // Nothing of a frozen document is ours to write, its row's `updated_at` included.
+      if (frozen.has(documentName)) return;
+      await store(documentName, document);
     },
   });
 
@@ -223,6 +348,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
     async change(scoreId, transaction) {
       const direct = await hocuspocus.openDirectConnection(scoreId);
       try {
+        if (frozen.has(scoreId)) throw new Error(`score ${scoreId} is read-only (${frozen.get(scoreId)}): not changed`);
         await direct.transact(transaction);
       } finally {
         await direct.disconnect();
@@ -299,6 +425,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tick
   // would only start the debounced stores, without a promise to wait for. The payload is the one
   // Hocuspocus builds for a store that no connection made.
   app.addHook("preClose", async () => {
+    for (const scoreId of [...fills.keys()]) cancelFill(scoreId);
     collab.closeConnections({}, ResetConnection);
     await Promise.all(
       [...hocuspocus.documents.values()].map((document) =>

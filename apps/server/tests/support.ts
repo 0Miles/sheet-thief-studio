@@ -143,9 +143,10 @@ export interface OpenScore {
 /**
  * Open a score on /collab with a real provider, as the web app does: `token` is a function, asked
  * again at every connection. Resolves once in sync both ways (see `insync`); rejects with the
- * reason when it is refused.
+ * reason when it is refused. `onStateless` hears what the server tells the connection about the
+ * document from the start: it does so as the connection is made, before it is in sync.
  */
-export function openScore(url: string, scoreId: string, token: () => Promise<string>): Promise<OpenScore> {
+export function openScore(url: string, scoreId: string, token: () => Promise<string>, onStateless?: (payload: string) => void): Promise<OpenScore> {
   const doc = new Y.Doc();
   return new Promise((resolve, reject) => {
     const provider = new HocuspocusProvider({
@@ -153,6 +154,7 @@ export function openScore(url: string, scoreId: string, token: () => Promise<str
       name: scoreId,
       document: doc,
       token,
+      onStateless: ({ payload }) => onStateless?.(payload),
       onAuthenticationFailed: ({ reason }) => {
         provider.destroy();
         reject(new Error(`refused: ${reason}`));

@@ -16,12 +16,20 @@ export interface Migration {
 /** Every step from the first published schema, oldest first. Schema 1 is the first: none yet. */
 export const MIGRATIONS: readonly Migration[] = [];
 
-/** The steps from `version` to the current schema, in order; throws when one is missing. */
+/** No step leads on from this schema version: thrown before anything is changed. */
+export class MissingMigration extends Error {
+  constructor(readonly from: number) {
+    super(`No migration from schema version ${from}`);
+    this.name = "MissingMigration";
+  }
+}
+
+/** The steps from `version` to the current schema, in order; throws `MissingMigration` when one is missing. */
 function stepsFrom(version: number, migrations: readonly Migration[]): Migration[] {
   const steps: Migration[] = [];
   for (let at = version; at < SCHEMA_VERSION; ) {
     const step = migrations.find((item) => item.from === at && item.to > at && item.to <= SCHEMA_VERSION);
-    if (step === undefined) throw new Error(`No migration from schema version ${at}`);
+    if (step === undefined) throw new MissingMigration(at);
     steps.push(step);
     at = step.to;
   }
@@ -49,8 +57,8 @@ export function isNewerSchema(doc: Y.Doc): boolean {
  * Server only, when it loads a document: run every step from the document's schema to the
  * current one, in one transaction, then mark it current. Returns whether it changed anything;
  * a document of the current schema, of a newer one, or whose schema version cannot be read
- * (no score in it yet among them) is left as it is. Throws, changing nothing, when a step is
- * missing. Never call it while the server stores the document: storing it again would follow.
+ * (no score in it yet among them) is left as it is. Throws `MissingMigration`, changing
+ * nothing, when a step is missing; what a step itself throws leaves the document changed in part. Never call it while the server stores the document: storing it again would follow.
  */
 export function migrateDoc(doc: Y.Doc, migrations: readonly Migration[] = MIGRATIONS): boolean {
   const version = versionOf(metaOf(doc).get("schemaVersion"));
