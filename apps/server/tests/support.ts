@@ -70,6 +70,15 @@ export async function freshDatabase(): Promise<Sequelize> {
   return sequelize;
 }
 
+/**
+ * Open the connections of the pool: it opens them as they are needed, and transactions that
+ * start together on a pool with one connection open would run almost one after another, so that
+ * a test of requests at once would pass without any lock.
+ */
+export async function warmPool(sequelize: Sequelize): Promise<void> {
+  await Promise.all(Array.from({ length: 5 }, () => sequelize.query("SELECT pg_sleep(0.05)")));
+}
+
 /** A connection to the emptied test Redis database (the server's tests' own, unless told another). */
 export async function freshRedis(url = TEST_REDIS_URL): Promise<Redis> {
   const redis = new Redis(url);

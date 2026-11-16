@@ -56,8 +56,8 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   const limiter = new RateLimiter(redis);
   registerAuth(app, { cookie: config.sessionCookie, sessions, limiter });
   registerMe(app, { limiter });
-  registerAdmin(app);
   const collab = attachCollab(app, { tickets, sessions, migrations });
+  registerAdmin(app, { collab });
   registerScores(app, { collab, tickets, limiter });
   registerMembers(app, { collab, limiter });
   registerDeletion(app, { collab });

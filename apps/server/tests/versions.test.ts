@@ -15,7 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, Version } from "../src/db/models";
 import { AUTO_VERSIONS_KEPT, createVersion, MAX_VERSION_BYTES, VERSION_INTERVAL_MS, VersionTooLarge } from "../src/versions";
-import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor } from "./support";
+import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -395,19 +395,11 @@ async function storedScore(scoreId: string) {
   return docToJson(doc);
 }
 
-/**
- * Open the connections of the pool: it opens them as they are needed, and transactions that
- * start together on a pool with one connection open would run almost one after another.
- */
-async function warmPool(): Promise<void> {
-  await Promise.all(Array.from({ length: 5 }, () => sequelize.query("SELECT pg_sleep(0.05)")));
-}
-
 test("two versions of the same content asked for at once make one", async () => {
   const started = await startApp();
   const id = await createScore(started.app, started.session, "同時建立");
   const score = await storedScore(id);
-  await warmPool();
+  await warmPool(sequelize);
 
   const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, () => score, "interval")));
 
@@ -432,7 +424,7 @@ test("versions made at once near the limit never leave more than 200 automatic o
       createdAt: new Date(Date.now() - (index + 1) * hour),
     })),
   );
-  await warmPool();
+  await warmPool(sequelize);
 
   const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, () => ({ ...score, title: `同時的第 ${index} 個` }), "interval")));
 

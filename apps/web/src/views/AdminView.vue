@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The admin's page (docs/spec/accounts.md, section 2): every account, making one, giving one a new
-// temporary password, disabling and enabling. The router lets only an admin here; the server
+// temporary password, disabling and enabling; and beside a disabled account, the scores it owns,
+// which can be handed to a member who can log in. The router lets only an admin here; the server
 // answers anyone else as if there were no such thing.
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { type AdminAccount, adminAccount, adminAccountList, accountLimits, createAccountRequest, password as passwordShape } from "@studio/contracts";
-import { onMounted, ref } from "vue";
+import { type AdminAccount, adminAccount, adminAccountList, accountLimits, createAccountRequest, type OrphanedScore, orphanedScoreList, password as passwordShape } from "@studio/contracts";
+import { computed, onMounted, ref } from "vue";
 
 import { ApiError, get, post, postFor } from "../api";
 import AppHeader from "../components/AppHeader.vue";
@@ -15,12 +16,23 @@ const text = strings.admin;
 const session = useSessionStore();
 
 const accounts = ref<AdminAccount[] | null>(null);
-/** What to say when the list could not be asked for; null while all is well. */
+/** The scores whose Owner is disabled, listed beside their Owner. */
+const orphaned = ref<OrphanedScore[]>([]);
+/** What to say when the lists could not be asked for; null while all is well. */
 const loadError = ref<string | null>(null);
+
+/** A disabled Owner's scores, by the Owner's account id. */
+const owned = computed(() => {
+  const byOwner = new Map<string, OrphanedScore[]>();
+  for (const score of orphaned.value) byOwner.set(score.owner.accountId, [...(byOwner.get(score.owner.accountId) ?? []), score]);
+  return byOwner;
+});
 
 async function load(): Promise<void> {
   try {
-    accounts.value = (await get("/api/admin/accounts", adminAccountList)).accounts;
+    const [all, scores] = await Promise.all([get("/api/admin/accounts", adminAccountList), get("/api/admin/orphaned-scores", orphanedScoreList)]);
+    accounts.value = all.accounts;
+    orphaned.value = scores.scores;
     loadError.value = null;
   } catch (failure) {
     loadError.value = say(failure);
@@ -36,9 +48,12 @@ function say(failure: unknown): string {
 }
 
 // Every dialog of the page: which one is open, on which account, and what it is sending.
-type Dialog = "create" | "reset" | "disable";
+type Dialog = "create" | "reset" | "disable" | "transfer";
 const dialog = ref<Dialog | null>(null);
 const target = ref<AdminAccount | null>(null);
+/** The score to hand over, and the member chosen to be its Owner. */
+const score = ref<OrphanedScore | null>(null);
+const recipient = ref("");
 const username = ref("");
 const displayName = ref("");
 const password = ref("");
@@ -51,6 +66,12 @@ function open(which: Dialog, account: AdminAccount | null = null): void {
   dialog.value = which;
   target.value = account;
   username.value = displayName.value = password.value = error.value = "";
+}
+
+function openTransfer(which: OrphanedScore): void {
+  open("transfer");
+  score.value = which;
+  recipient.value = which.members[0]?.accountId ?? "";
 }
 
 function close(): void {
@@ -99,6 +120,13 @@ function disable(): Promise<void> {
   return send(() => post(`/api/admin/accounts/${account.accountId}/disable`), text.wasDisabled(account.username));
 }
 
+function transfer(): Promise<void> | void {
+  const which = score.value!;
+  const member = which.members.find(({ accountId }) => accountId === recipient.value);
+  if (member === undefined) return;
+  return send(() => post(`/api/admin/scores/${which.id}/transfer`, { accountId: member.accountId }), text.transferred(which.title, member.username));
+}
+
 function enable(account: AdminAccount): Promise<void> {
   return send(() => post(`/api/admin/accounts/${account.accountId}/enable`), text.wasEnabled(account.username));
 }
@@ -131,6 +159,17 @@ function enable(account: AdminAccount): Promise<void> {
           <AppButton v-if="account.disabled" variant="ghost" size="sm" :disabled="sending" @click="enable(account)">{{ text.enable }}</AppButton>
           <AppButton v-else variant="ghost" size="sm" @click="open('disable', account)">{{ text.disable }}</AppButton>
         </Cluster>
+        <!-- Its title and its members who can log in: never its content (docs/spec/accounts.md, section 2). -->
+        <ul v-if="owned.get(account.accountId)" class="admin__scores" :aria-label="text.orphaned.label(account.username)">
+          <li v-for="each in owned.get(account.accountId)" :key="each.id" class="admin__score" :data-score="each.id">
+            <span class="admin__title">{{ each.title }}</span>
+            <ul v-if="each.members.length > 0" class="admin__members" :aria-label="text.orphaned.members(each.title)">
+              <li v-for="member in each.members" :key="member.accountId" :data-member="member.username">{{ text.orphaned.member(member.displayName, member.username, strings.home.roles[member.role]) }}</li>
+            </ul>
+            <p v-else class="admin__muted admin__rule">{{ text.orphaned.none }}</p>
+            <AppButton v-if="each.members.length > 0" variant="ghost" size="sm" @click="openTransfer(each)">{{ text.orphaned.transfer }}</AppButton>
+          </li>
+        </ul>
       </li>
     </ul>
 
@@ -160,6 +199,24 @@ function enable(account: AdminAccount): Promise<void> {
           <Cluster gap="2" justify="end">
             <AppButton type="button" variant="ghost" @click="close">{{ text.cancel }}</AppButton>
             <AppButton type="submit" variant="primary" :loading="sending">{{ text.resetPassword.submit }}</AppButton>
+          </Cluster>
+        </Stack>
+      </form>
+    </AppModal>
+    <AppModal :visible="dialog === 'transfer'" :title="text.transfer.title(score?.title ?? '')" :close-label="text.close" @close="close">
+      <form novalidate @submit.prevent="transfer">
+        <Stack gap="4">
+          <p class="admin__muted admin__rule">{{ text.transfer.help(score?.owner.username ?? '') }}</p>
+          <label class="admin__field">
+            <span>{{ text.transfer.to }}</span>
+            <select v-model="recipient" name="new-owner">
+              <option v-for="member in score?.members ?? []" :key="member.accountId" :value="member.accountId">{{ text.transfer.option(member.displayName, member.username) }}</option>
+            </select>
+          </label>
+          <p v-if="error" class="admin__error" role="alert">{{ error }}</p>
+          <Cluster gap="2" justify="end">
+            <AppButton type="button" variant="ghost" @click="close">{{ text.cancel }}</AppButton>
+            <AppButton type="submit" variant="primary" :loading="sending">{{ text.transfer.submit }}</AppButton>
           </Cluster>
         </Stack>
       </form>
@@ -212,6 +269,33 @@ function enable(account: AdminAccount): Promise<void> {
 }
 .admin__username {
   font-weight: 600;
+}
+.admin__scores {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.admin__score {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.admin__title {
+  font-weight: 600;
+}
+.admin__members {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.admin__field {
+  display: grid;
+  gap: 0.25rem;
 }
 .admin__tag {
   color: var(--text-muted);

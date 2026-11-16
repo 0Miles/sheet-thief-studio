@@ -263,6 +263,22 @@ export const strings = {
       message: (username: string) => `要停用 ${username} 嗎？這個帳號所有已登入的裝置都會登出，啟用之前不能登入。`,
       confirm: "停用",
     },
+    // A disabled Owner's scores, which an admin can hand to a member who can log in (docs/spec/accounts.md, section 2).
+    orphaned: {
+      label: (username: string) => `${username} 擁有的團譜`,
+      members: (title: string) => `「${title}」啟用中的成員`,
+      member: (displayName: string, username: string, role: string) => `${displayName}（${username}，${role}）`,
+      none: "沒有啟用中的成員，不能轉移擁有權。",
+      transfer: "轉移擁有權",
+    },
+    transfer: {
+      title: (scoreTitle: string) => `轉移「${scoreTitle}」的擁有權`,
+      help: (owner: string) => `擁有者 ${owner} 已停用。把擁有權轉給一名啟用中的成員；轉移之後 ${owner} 會變成編輯者。`,
+      to: "新的擁有者",
+      option: (displayName: string, username: string) => `${displayName}（${username}）`,
+      submit: "轉移",
+    },
+    transferred: (scoreTitle: string, username: string) => `已把「${scoreTitle}」的擁有權轉給 ${username}。`,
     created: (username: string) => `已建立帳號 ${username}。`,
     wasReset: (username: string) => `已重設 ${username} 的密碼。`,
     wasDisabled: (username: string) => `已停用 ${username}。`,
