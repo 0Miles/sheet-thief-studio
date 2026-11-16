@@ -228,7 +228,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
 - 客戶端遇到比自己新的 `schemaVersion`：以唯讀開啟（`EditorSession` 的唯讀旗標），並顯示「這份團譜由較新的版本建立，請重新整理頁面」（ADR 0002:22）。
-- **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。
+- **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。伺服器怎麼做、怎麼告訴客戶端，見 [`collab.md`](collab.md) 2.1。
 
 ## 10. 遷移
 
@@ -238,7 +238,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - **`Y.Doc` 那一面**：伺服器在 `onLoadDocument` 載入狀態之後，以參與者身分、在一筆交易裡依序跑 `doc` 遷移，最後把 `meta.schemaVersion` 設成目前的版本。不要在 `onStoreDocument` 裡改文件，否則會再觸發一次儲存。
 - **`ScoreJSON` 那一面**：版本存的是 `docToJson` 的結果，帶著當時的 `schemaVersion`。讀取版本時，伺服器先依序跑 `json` 遷移，回傳目前版本的 JSON（補充：由伺服器遷移，客戶端拿到的一律是目前的版本）。還原、預覽都用遷移後的 JSON。
 - **補充**：`schemaVersion` 沒寫或讀不懂（不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時（第 11 節）相同：不遷移，也不會因此被判定為較新。
-- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
+- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步（[`collab.md`](collab.md) 2.1）。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
 - **`jsonToDoc`**：放在 `score-model`，把 `ScoreJSON` 寫進一份 `Y.Doc`。匯入與還原共用；保留 JSON 裡的 id，依陣列順序重新產生 `order`，建好所有內容容器。
 - **測試**（M1a）：一份假的舊版 fixture（`schemaVersion: 0`）與一個只在測試裡註冊的 0 → 1 遷移，兩面都要測：`Y.Doc` 從舊狀態遷移後的 `docToJson`，等於 JSON 遷移後的結果。正式的遷移清單在第一版是空的。
 

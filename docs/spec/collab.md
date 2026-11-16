@@ -27,15 +27,38 @@
 | 掛鉤 | 做什麼 |
 |---|---|
 | `onAuthenticate` | 用 collab ticket 查出帳號或唯讀連結，以及角色（第 3 節）。不存在、已刪除、或和 ticket 不符的團譜 id 一律拒絕，避免建出空文件（`spike-report.md:348`）。Viewer 與訪客設 `readOnly` |
-| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡 |
+| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡。**補充**（#12）：遷移之後也執行一次 `fillMissingContent`（第 4 節）。文件比伺服器新、或缺少遷移步驟時，凍結這份文件（2.1） |
 | `onChange` | debounce 過之後，以參與者身分執行 `fillMissingContent`（第 4 節） |
-| `onStoreDocument` | 整份覆寫 `doc_state`；把 `title`、`artist` 鏡射到 `scores` 表；更新 `schema_version`、`updated_at`。**不要**在這裡修改文件，否則會再觸發一次儲存 |
+| `beforeHandleMessage` | **補充**（#12）：文件被凍結時，把這條連線設成 `readOnly`（2.1） |
+| `connected` | 連線進對照表（第 6 節）。**補充**（#12）：文件被凍結時，送出 `readOnly` 通知（2.1） |
+| `onStoreDocument` | 整份覆寫 `doc_state`；把 `title`、`artist` 鏡射到 `scores` 表；更新 `schema_version`、`updated_at`。**不要**在這裡修改文件，否則會再觸發一次儲存。**補充**（#12）：`title`、`artist`、`schemaVersion` 用 `readScore` 讀，讀不懂的 `title` 鏡射成空字串、`artist` 鏡射成 null、`schemaVersion` 鏡射成目前的版本，不丟例外；被凍結的文件完全不寫（`updated_at` 也不動） |
 | `beforeHandleAwareness` | 覆寫身分欄位、移除訪客的狀態（第 5 節） |
 | `onDisconnect` | 剩 0 個連線時建立版本（第 8 節） |
 | `afterLoadDocument`、`afterUnloadDocument` | 開始、停止這份文件的 10 分鐘版本計時器（補充） |
 
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建：`POST /api/scores` 在伺服器端建好 `Y.Doc`、寫進 `scores.doc_state`，然後回傳 id。
 - 讀取用的函式（建立版本、鏡射標題）和客戶端是同一個 `docToJson`，讀取時容錯（[`schema.md`](schema.md) 第 11 節）。
+- **補充**（#12）：Hocuspocus 在 `onLoadDocument` 結束之後才開始監聽文件的變動，所以載入時的遷移與補齊不會觸發儲存；它們隨成員的下一次修改一起存下，在那之前每次載入都重做一次（結果相同）。`scores.schema_version` 也是到那次儲存才更新。
+
+### 2.1 凍結的文件與 `readOnly` 通知（補充，#12）
+
+伺服器載入時發現文件比自己新（[`schema.md`](schema.md) 第 9 節），或缺少遷移步驟（第 10 節），這份文件在記憶體裡的期間就是**凍結**的：
+
+- 不遷移、不執行 `fillMissingContent`、不儲存（關閉伺服器時的儲存也跳過）。
+- 每一條連線都是 readOnly，Owner 與 Editor 也一樣。第一批連線在文件載入之前就通過了 `onAuthenticate`，那時還不知道要凍結，所以不在那裡設，而是在 `beforeHandleMessage` 設 `connection.readOnly`：每則訊息（包含載入期間排隊的）套用之前都會經過它。Hocuspocus 在驗證通過時回給 provider 的 `scope` 因此可能仍是 `read-write`，客戶端不能靠它判斷。
+- 伺服器自己的修改（`app.collab.change`）也被拒絕（丟例外）。
+- 文件卸載後解除；下次載入重新判定（部署補上遷移之後就恢復正常）。
+
+**回報管道**：伺服器在 `connected` 掛鉤對這條連線送一則 Hocuspocus stateless 訊息（`connection.sendStateless`），內容是 JSON，形狀是 `packages/contracts` 的 `collabNotice`：
+
+```ts
+{ type: "readOnly", reason: "newerSchema" | "missingMigration" }
+```
+
+- 每條連線建立時（包含重連）送一次；文件沒有被凍結時不送。訪客與 Viewer 也收得到（他們本來就唯讀，可以忽略）。
+- 這則訊息在連線建立時就送出，通常早於同步完成：客戶端要在建立 provider 時就給 `onStateless`，不能等 `synced` 之後才掛。
+- 客戶端收到後以唯讀開啟並提示原因（[`views.md`](views.md)）。`newerSchema` 客戶端自己也讀得出來（`meta.schemaVersion`）；`missingMigration` 只有這則通知能告訴它。
+- `type` 留給日後其他通知使用；客戶端忽略不認得的 `type`。
 
 ## 3. Collab ticket
 
@@ -58,6 +81,7 @@
 - 只有伺服器補齊缺少的內容容器：在 debounce 過的 `onChange` 裡，以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補（ADR 0002:21）。
 - `fillMissingContent` 也補齊缺少的聲線（[`schema.md`](schema.md) 1.1）。
 - **補充**：debounce 1000 ms。沒有缺漏時不開交易，避免觸發多餘的儲存。
+- **補充**（#12）：補齊直接在伺服器記憶體裡的文件上執行，像任何修改一樣廣播給成員並排進 debounce 的儲存。所有連線在 debounce 到期之前就離開、文件已卸載時，這次補齊不做；下次載入時在 `onLoadDocument` 補上（第 2 節）。凍結的文件不補（2.1）。
 
 ## 5. 在場（awareness）
 

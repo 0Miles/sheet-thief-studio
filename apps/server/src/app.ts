@@ -1,5 +1,6 @@
 import cookie from "@fastify/cookie";
 import { health } from "@studio/contracts";
+import type { Migration } from "@studio/score-model";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 
@@ -24,10 +25,12 @@ export interface Dependencies {
   /** Connected; the caller closes it after the app (main.ts). */
   redis: Redis;
   logger?: boolean;
+  /** The steps of the score schema, for the tests that register their own; the published ones otherwise. */
+  migrations?: readonly Migration[];
 }
 
 /** The HTTP API and the co-editing server. The database is the one `connectDatabase` bound the models to. */
-export function buildApp({ config, redis, logger = true }: Dependencies): FastifyInstance {
+export function buildApp({ config, redis, logger = true, migrations }: Dependencies): FastifyInstance {
   // Only nginx stands in front of the server: the client's IP is the address nginx adds to
   // X-Forwarded-For (docs/spec/security.md, 4).
   // JSON requests carry at most 64 KB; the routes that carry a fragment set their own limit (docs/spec/security.md, section 5).
@@ -43,7 +46,7 @@ export function buildApp({ config, redis, logger = true }: Dependencies): Fastif
   registerAuth(app, { cookie: config.sessionCookie, sessions, limiter });
   registerMe(app, { limiter });
   registerAdmin(app);
-  const collab = attachCollab(app, { tickets, sessions });
+  const collab = attachCollab(app, { tickets, sessions, migrations });
   registerScores(app, { collab, tickets });
   registerLinks(app, { collab, tickets, limiter });
   registerPhrases(app);

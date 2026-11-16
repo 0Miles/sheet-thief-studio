@@ -3,23 +3,8 @@
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { createScore, docToJson, isNewerSchema, metaOf, type Migration, migrateDoc, migrateJson, partsOf, SCHEMA_VERSION, scoreSchema } from "../src/index";
-import { docV0, SCORE_V0 } from "./fixtures/scoreV0";
-
-const STAVES: Record<string, { clef: string }[]> = { fretted: [{ clef: "tab" }], percussion: [{ clef: "neutral" }], pitched: [{ clef: "treble" }] };
-
-/** Schema 0 to 1, registered here only: every part gets the staves of its kind. */
-const zeroToOne: Migration = {
-  from: 0,
-  to: 1,
-  doc(doc) {
-    for (const part of partsOf(doc).values()) part.set("staves", STAVES[part.get("kind") as string]);
-  },
-  json(json) {
-    const score = json as typeof SCORE_V0;
-    return { ...score, parts: score.parts.map((part) => ({ ...part, staves: STAVES[part.kind] })) };
-  },
-};
+import { createScore, docToJson, isNewerSchema, metaOf, migrateDoc, migrateJson, SCHEMA_VERSION, scoreSchema } from "../src/index";
+import { docV0, SCORE_V0, zeroToOne } from "./fixtures/scoreV0";
 
 test("an old document and an old version are both brought to the current schema, and read the same", () => {
   const doc = docV0();

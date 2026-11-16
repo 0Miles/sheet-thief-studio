@@ -206,6 +206,15 @@ export type ScoreDetails = z.infer<typeof scoreDetails>;
 export const collabTicket = z.object({ ticket: z.string(), role });
 export type CollabTicket = z.infer<typeof collabTicket>;
 
+/**
+ * What the collab server tells a connection about its document, as the JSON payload of a
+ * Hocuspocus stateless message (docs/spec/collab.md, section 2.1). `readOnly`: the server drops
+ * every change to this score, whatever the role, because the score is of a newer schema than the
+ * server or misses a migration step; sent once, as the connection is made.
+ */
+export const collabNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration"]) });
+export type CollabNotice = z.infer<typeof collabNotice>;
+
 // Read-only links (docs/spec/routes.md, 3.5; docs/spec/accounts.md, section 7).
 /** The score's read-only link, for its Owner (`GET`, `POST /api/scores/:id/link`): null when it has none. */
 export const scoreLink = z.object({ token: z.string().nullable() });
