@@ -3,6 +3,8 @@ import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contr
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
+import type { ReadOnlyReason } from "./access";
+
 export const strings = {
   app: {
     name: "Sheet Thief Studio",
@@ -47,7 +49,19 @@ export const strings = {
     unavailable: "無法開啟這份團譜",
     label: "譜面",
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
+    // The banner while the connection is down (docs/spec/views.md, section 10).
+    offline: "離線中。可以繼續編輯，恢復連線後會自動合併。",
     viewerCannotEdit: "檢視者無法修改",
+    // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
+    roleChanged: (role: string) => `你的角色已改為${role}。`,
+    // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).
+    readOnly: {
+      newerSchema: "這份團譜由較新的版本建立，請重新整理頁面。",
+      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
+      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
+    } satisfies Record<ReadOnlyReason, string>,
+    // The 404 page of a member removed from the score, or of a score deleted, while it was open.
+    removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
     beatText: "拍點文字",
     // What a key that did nothing tells the member (`SessionHint`).
@@ -138,6 +152,7 @@ export const strings = {
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
     gone: "這個唯讀連結已經失效。",
+    offline: "離線中，恢復連線後會繼續更新。",
   },
   settings: {
     title: "團譜設定",
@@ -289,6 +304,8 @@ export const strings = {
     password: "密碼",
     submit: "登入",
     help: "帳號由管理者建立；忘記密碼時請找管理者重設。",
+    // A page found the session ended (logged out elsewhere, a new password, an account disabled).
+    expired: "登入已失效，請重新登入。",
   },
   notFound: {
     title: "找不到這個頁面",

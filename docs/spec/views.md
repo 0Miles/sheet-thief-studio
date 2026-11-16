@@ -153,6 +153,8 @@ interface PresenceState {
 - **離線**：連線中斷時顯示「離線」橫幅；已開啟的分頁可以繼續編輯，重連時由 Yjs 合併（[`collab.md`](collab.md)）。
 - **權限改變**：被降級或移除、或 session 失效時，丟掉本機文件並以唯讀重新載入，提示原因。
 - **較新的 schema**：以唯讀開啟，提示重新整理（[`schema.md`](schema.md) 第 9 節）。
+  - **補充**（#35）：判斷是 `apps/web/src/access.ts` 的 `readOnlyReasonOf`（文件的 `meta.schemaVersion` 比 `SCHEMA_VERSION` 新）與 `openedView`（可編輯視圖變成唯讀編輯視圖，另外兩種不變）。每次畫譜時都檢查：同步後第一次畫就發現的，以唯讀編輯視圖開始；已經在可編輯視圖打譜時才變新的（新版伺服器遷移過），丟掉本機文件、以唯讀重新開啟。伺服器的 `readOnly` 通知（#109）走同一個入口（`ScoreView.vue` 的 `lockReadOnly`，理由是通知的 `reason`）。
+  - **補充**（#35）：被鎖成唯讀的 Owner 或 Editor 按了會修改的鍵時，提示的是鎖住的理由，不是「檢視者無法修改」。
 - **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 或 `"migrationFailed"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。

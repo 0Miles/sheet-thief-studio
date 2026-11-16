@@ -106,11 +106,15 @@
 
 - 已開啟的分頁可以繼續編輯，重連時由 Yjs 合併；畫面顯示「離線」橫幅。
 - 不做 IndexedDB 離線保存。
-- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`provider.unsyncedChanges` 在 `ScoreView.vue` 的 `updateSync` 裡讀得到）。
+- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`provider.unsyncedChanges` 在 `ScoreView.vue` 的 `updateSync` 裡讀得到）。**補充**（#35）：只在可編輯視圖警告；只有那裡會有本機的修改。
+- **補充**（#35）：瀏覽器的 `offline` 事件一來就算離線（同步指示器是 `offline`、顯示橫幅），並關掉 provider 的 socket，之後輸入的修改等下一次連線再送；不等 provider 30 秒收不到訊息才發現。`online` 事件時立刻重連，不等 provider 下一次嘗試。瀏覽器說離線的期間，指示器一直是 `offline`，不隨 provider 的重試變成 `syncing`。
 - 重連時：
   - 取 ticket 失敗（401 或 404），或拿到的 `role` 比原本低：客戶端丟掉本機的 `Y.Doc`，重新以唯讀載入並提示；本機未同步的修改放棄。只切換介面不夠，因為本機文件已經和伺服器分歧了。
-  - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」並導向 `/`；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
+  - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
   - 角色變高（例如 Viewer 被改成 Editor）：**補充**：重新載入頁面，以新的角色開啟。
+  - **補充**（#35）：判斷都在 provider 取 ticket 的函式裡（`POST /api/scores/:id/collab-ticket` 回的 `role`），在把 ticket 交給伺服器之前，所以本機文件的任何內容都不會再送出。角色的比較只看「能不能修改」（`apps/web/src/access.ts` 的 `afterRoleChange`）：能改變成不能改、或反過來，丟掉本機文件、重新開啟；Owner 與 Editor 之間的改變（擁有權轉移的雙方）不丟本機文件，照常重連，只提示「你的角色已改為…」。
+  - **補充**（#35）：「重新載入」是在同一頁換一個新的 `ScoreView`（新的 `Y.Doc` 與 provider，`ScorePage.vue`），不是重新整理瀏覽器；提示顯示在新開的譜上。404 時就地顯示 404 頁並帶上那句提示，網址不變（ticket #35 的驗收條件要的是 404 頁，所以不導向 `/`）。401 時登出這個分頁（session store 的 `expire`），導向 `/login`、帶 `redirect` 回到這份團譜，登入頁顯示「登入已失效，請重新登入。」。
+  - **補充**（#35）：取 ticket 的其他失敗（429、5xx、網路）視為暫時的：provider 停在沒有驗證的 socket 上，伺服器在 `timeout`（60 秒）後關掉它，provider 再重連、再取一次 ticket。
 - 訪客的連結被撤銷或重新產生：伺服器關閉連線，重連時取 ticket 回 404。**補充**（#14）：頁面停止重連，狀態顯示「已斷線」，並提示「這個唯讀連結已經失效。」；已經畫出的譜留在畫面上（內容本來就在訪客的瀏覽器裡）。重新整理之後，取 ticket 回 404，顯示 404 頁。
 
 ## 8. 版本

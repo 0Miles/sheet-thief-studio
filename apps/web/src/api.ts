@@ -1,6 +1,6 @@
 // Calls to the server's JSON API (docs/spec/routes.md, section 3). The session cookie goes along
 // by itself: the page and the API share one origin.
-import { apiError, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
+import { apiError, type CollabTicket, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
 
 import { errorText, strings } from "./strings";
 
@@ -60,9 +60,12 @@ export function collabUrl(): string {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
 }
 
-/** A new collab ticket for the score. A provider's `token` calls it for every connection, reconnections included (ADR 0005). */
-export async function newCollabTicket(scoreId: string): Promise<string> {
-  return (await postFor(`/api/scores/${scoreId}/collab-ticket`, undefined, collabTicket)).ticket;
+/**
+ * A new collab ticket for the score, with the member's role as it is now. A provider's `token`
+ * calls it for every connection, reconnections included (ADR 0005).
+ */
+export function newCollabTicket(scoreId: string): Promise<CollabTicket> {
+  return postFor(`/api/scores/${scoreId}/collab-ticket`, undefined, collabTicket);
 }
 
 /** What a read-only link opens, with a new collab ticket: no session needed (docs/spec/collab.md, section 3). */
