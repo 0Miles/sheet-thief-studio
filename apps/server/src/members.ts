@@ -71,17 +71,17 @@ function isDuplicate(error: unknown): boolean {
   return error instanceof Error && error.name === "SequelizeUniqueConstraintError";
 }
 
-export function registerMembers(app: FastifyInstance, { collab, limiter }: { collab: Collab; limiter: RateLimiter }): void {
-  /** Send the refusal of a change that was not made; anything else that went wrong is the server's fault. */
-  async function unlessRefused(reply: FastifyReply, change: () => Promise<unknown>) {
-    try {
-      return await change();
-    } catch (error) {
-      if (error instanceof Refusal) return reply.code(error.status).send({ code: error.code });
-      throw error;
-    }
+/** Send the refusal of a change that was not made; anything else that went wrong is the server's fault. */
+export async function unlessRefused(reply: FastifyReply, change: () => Promise<unknown>) {
+  try {
+    return await change();
+  } catch (error) {
+    if (error instanceof Refusal) return reply.code(error.status).send({ code: error.code });
+    throw error;
   }
+}
 
+export function registerMembers(app: FastifyInstance, { collab, limiter }: { collab: Collab; limiter: RateLimiter }): void {
   /**
    * After the change is committed: the connections these accounts opened to this score are closed,
    * the ones still loading too (docs/spec/collab.md, section 6). Their providers come back with a

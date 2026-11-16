@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, type ErrorCode } from "@studio/contracts";
+import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -13,6 +13,14 @@ export const strings = {
     empty: "還沒有團譜。按「新增團譜」建立第一份。",
     phrases: "樂句庫",
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
+    // The scores I own and deleted, which I can still restore (docs/spec/accounts.md, section 8).
+    deleted: {
+      title: "已刪除",
+      help: `刪除後 ${DELETED_SCORE_DAYS} 天內可以還原，之後會永久刪除。還原後唯讀連結要重新產生。`,
+      until: (date: string) => `${date} 永久刪除`,
+      restore: "還原",
+      restoreOf: (title: string) => `還原「${title}」`,
+    },
   },
   // The dialog of a new score (docs/spec/commands.md, section 10).
   newScore: {
@@ -170,6 +178,15 @@ export const strings = {
       copied: "已複製",
       remake: "重新產生",
       revoke: "撤銷連結",
+    },
+    // Only the Owner deletes the score (docs/spec/accounts.md, section 8).
+    delete: {
+      title: "刪除團譜",
+      help: `刪除之後所有成員都打不開這份團譜，唯讀連結也會失效。${DELETED_SCORE_DAYS} 天內你可以在「我的團譜」的「已刪除」還原，之後會永久刪除。`,
+      action: "刪除團譜",
+      message: (title: string) => `要刪除「${title}」嗎？所有成員會立刻打不開它，唯讀連結會失效。${DELETED_SCORE_DAYS} 天內可以還原。`,
+      confirm: "刪除",
+      cancel: "取消",
     },
   },
   header: {

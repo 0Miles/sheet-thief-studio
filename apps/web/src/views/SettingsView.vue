@@ -2,7 +2,8 @@
 // A score's settings (`/scores/:id/settings`, docs/spec/routes.md, section 1). Its members, whom
 // every member sees and only the Owner changes: adding by username, roles, removing, and handing
 // the score over; an Editor or a Viewer leaves here (docs/spec/accounts.md, sections 3 to 6). Its
-// read-only link, which only the Owner sees and manages (section 7). The deletion comes with #15.
+// read-only link, which only the Owner sees and manages (section 7), and deleting the score, the
+// Owner's too, asked about first (section 8).
 // Anyone who is not a member sees the 404 page.
 import { AppButton, AppConfirmDialog, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import { type MemberRole, memberRole, type ScoreDetails, scoreDetails, scoreLink, type ScoreMember, scoreMember, scoreMemberList } from "@studio/contracts";
@@ -40,8 +41,8 @@ const username = ref("");
 const role = ref<MemberRole>("editor");
 /** A change of members is being sent: one at a time. */
 const changing = ref(false);
-// The dialog that asks before a transfer or before leaving, the member it is about, and what it could not do.
-const dialog = ref<"transfer" | "leave" | null>(null);
+// The dialog that asks before a transfer, before leaving or before deleting the score, the member it is about, and what it could not do.
+const dialog = ref<"transfer" | "leave" | "delete" | null>(null);
 const target = ref<ScoreMember | null>(null);
 const dialogError = ref("");
 /** The whole address a guest opens. */
@@ -140,7 +141,7 @@ function setRole(member: ScoreMember, event: Event): Promise<boolean> {
 
 const remove = (member: ScoreMember) => change(() => del(`${membersPath}/${member.accountId}`));
 
-function ask(which: "transfer" | "leave", member: ScoreMember | null = null): void {
+function ask(which: "transfer" | "leave" | "delete", member: ScoreMember | null = null): void {
   dialog.value = which;
   target.value = member;
   dialogError.value = "";
@@ -152,12 +153,12 @@ function closeDialog(): void {
 
 const transfer = () => change(() => post(`${scorePath}/transfer`, { accountId: target.value!.accountId }));
 
-/** Out of the score: back to my scores, where it no longer is. */
-async function leave(): Promise<void> {
+/** Send what ends my access to the score, then go back to my scores, where it no longer is. */
+async function away(action: () => Promise<void>): Promise<void> {
   dialogError.value = "";
   changing.value = true;
   try {
-    await post(`${scorePath}/leave`);
+    await action();
     await router.push({ name: "home" });
   } catch (failure) {
     dialogError.value = refusal(failure);
@@ -165,6 +166,11 @@ async function leave(): Promise<void> {
     changing.value = false;
   }
 }
+
+const leave = () => away(() => post(`${scorePath}/leave`));
+
+/** Deleted softly: its Owner finds it among the deleted scores of `/`. */
+const deleteScore = () => away(() => del(scorePath));
 
 async function copy(): Promise<void> {
   try {
@@ -251,7 +257,29 @@ async function copy(): Promise<void> {
             </template>
           </Stack>
         </section>
+        <section v-if="details && isOwner" class="settings__section" :aria-label="text.delete.title">
+          <Stack gap="3">
+            <h2>{{ text.delete.title }}</h2>
+            <p class="settings__muted">{{ text.delete.help }}</p>
+            <Cluster gap="2">
+              <AppButton variant="danger" :disabled="changing" @click="ask('delete')">{{ text.delete.action }}</AppButton>
+            </Cluster>
+          </Stack>
+        </section>
       </Stack>
+      <AppConfirmDialog
+        :visible="dialog === 'delete'"
+        :title="text.delete.title"
+        :message="text.delete.message(details?.title ?? '')"
+        :confirm-label="text.delete.confirm"
+        :cancel-label="text.delete.cancel"
+        :loading-label="strings.loading"
+        confirm-variant="danger"
+        :loading="changing"
+        :error="dialogError || undefined"
+        @close="closeDialog"
+        @confirm="deleteScore"
+      />
       <AppConfirmDialog
         :visible="dialog === 'transfer'"
         :title="text.members.transfer.title"
