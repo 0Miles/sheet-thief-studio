@@ -8,6 +8,7 @@ import {
   type ForeignKey,
   type InferAttributes,
   type InferCreationAttributes,
+  literal,
   Model,
   type Sequelize,
 } from "sequelize";
@@ -77,6 +78,29 @@ export class Phrase extends Model<InferAttributes<Phrase>, InferCreationAttribut
   declare updatedAt: CreationOptional<Date>;
 }
 
+/** Why a version was made (docs/spec/collab.md, 8.3). */
+export type VersionReason = "last_disconnect" | "interval" | "before_restore";
+
+/** A version of a score (docs/spec/collab.md, section 8): its whole content at one moment. */
+export class Version extends Model<InferAttributes<Version>, InferCreationAttributes<Version>> {
+  declare id: CreationOptional<string>;
+  declare scoreId: ForeignKey<Score["id"]>;
+  /** The `schemaVersion` of the content. */
+  declare schemaVersion: number;
+  /** The `ScoreJSON`, gzipped. */
+  declare content: Buffer;
+  /** SHA-256 of the `ScoreJSON` with its keys sorted, in hex. */
+  declare contentHash: string;
+  /** Of the JSON before it is gzipped. */
+  declare byteSize: number;
+  declare reason: VersionReason;
+  /** Null for an automatic version. */
+  declare name: CreationOptional<string | null>;
+  declare createdBy: CreationOptional<string | null>;
+  /** By the clock of the database, at the insert. */
+  declare createdAt: CreationOptional<Date>;
+}
+
 /** Bind the models to a connection. The classes are shared, so a process uses one connection. */
 export function initModels(sequelize: Sequelize): void {
   Account.init(
@@ -144,5 +168,21 @@ export function initModels(sequelize: Sequelize): void {
       updatedAt: DataTypes.DATE,
     },
     { sequelize, tableName: "phrases", underscored: true },
+  );
+  Version.init(
+    {
+      id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+      scoreId: { type: DataTypes.UUID, allowNull: false },
+      schemaVersion: { type: DataTypes.INTEGER, allowNull: false },
+      content: { type: DataTypes.BLOB, allowNull: false },
+      contentHash: { type: DataTypes.CHAR(64), allowNull: false },
+      byteSize: { type: DataTypes.INTEGER, allowNull: false },
+      reason: { type: DataTypes.STRING(16), allowNull: false },
+      name: { type: DataTypes.STRING(100), allowNull: true },
+      createdBy: { type: DataTypes.UUID, allowNull: true },
+      // The clock of the database at the insert, as the table's own default.
+      createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: literal("clock_timestamp()") },
+    },
+    { sequelize, tableName: "versions", underscored: true, timestamps: false },
   );
 }

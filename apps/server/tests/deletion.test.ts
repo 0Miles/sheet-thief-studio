@@ -2,8 +2,10 @@
 // Owner deletes it softly and restores it within 30 days; meanwhile nobody finds it, and the
 // connections it had are closed, through real providers; after 30 days the job of the server
 // deletes it for good.
+import { gunzipSync } from "node:zlib";
+
 import { Forbidden } from "@hocuspocus/common";
-import { metaOf } from "@studio/score-model";
+import { docToJson, metaOf } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import { QueryTypes, type Sequelize } from "sequelize";
@@ -12,8 +14,9 @@ import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
-import { Score, ScoreMember } from "../src/db/models";
+import { Score, ScoreMember, Version } from "../src/db/models";
 import { PURGE_INTERVAL_MS, purgeDeletedScores } from "../src/deletion";
+import { createVersion, VERSION_INTERVAL_MS } from "../src/versions";
 import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -231,12 +234,20 @@ test("the deleted scores are listed the last deleted first, without the ones I d
   expect(await listed(app, "scores/deleted", ben)).toEqual([bens]);
 });
 
-test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted 31 days ago for good, with its members", async () => {
+test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted 31 days ago for good, with its members and its versions", async () => {
   // The interval of the job only: the clock that says how long ago a score was deleted is the one of the database.
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const { app } = await startApp();
   const { id, anna } = await annasScore(app);
   const live = await createScore(app, anna, "沒刪的");
+  // Two versions of each, as the server makes them.
+  for (const scoreId of [id, live]) {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
+    const score = docToJson(doc);
+    expect((await createVersion(scoreId, score, "last_disconnect"))?.created).toBe(true);
+    expect((await createVersion(scoreId, { ...score, title: "後來的標題" }, "interval"))?.created).toBe(true);
+  }
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
   const destroy = vi.spyOn(Score, "destroy");
   /** Let the next run of the job come, and end. */
@@ -251,6 +262,7 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
   await nextRun();
   expect(await Score.count({ where: { id } })).toBe(1);
   expect(await ScoreMember.count({ where: { scoreId: id } })).toBe(2);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(2);
   expect(await listed(app, "scores/deleted", anna)).toEqual([id]);
 
   // Past the 30 days, before the job comes by: already out of reach of the Owner.
@@ -263,11 +275,14 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
   await nextRun();
   expect(await Score.count({ where: { id } })).toBe(0);
   expect(await ScoreMember.count({ where: { scoreId: id } })).toBe(0);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+  expect(await Version.count({ where: { scoreId: live } })).toBe(2);
   // Nothing that is not deleted goes, however old.
   await sequelize.query("UPDATE scores SET created_at = now() - interval '2 years', updated_at = now() - interval '1 year' WHERE id = $1", { bind: [live] });
   await nextRun();
   expect(await Score.count({ where: { id: live } })).toBe(1);
   expect(await ScoreMember.count({ where: { scoreId: live } })).toBe(1);
+  expect(await Version.count({ where: { scoreId: live } })).toBe(2);
   expect(await listed(app, "scores", anna)).toEqual([live]);
 });
 
@@ -426,12 +441,43 @@ test("what a member typed just before the deletion is stored as the connections 
   expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
 });
 
+test("a score deleted while a member has it open gets the version of what they left, none after that, and keeps its versions when it is restored", async () => {
+  // The interval of the timers only: the one of the versions, and the one of the job.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const { app, url } = await startApp();
+  const { id, anna } = await annasScore(app, "刪除前的標題");
+  const member = await open(url, id, () => ticketFor(app, id, anna));
+  const applied = nextSyncStatus(member.provider);
+  metaOf(member.doc).set("title", "刪除前剛改的標題");
+  expect(await applied).toBe(true);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+
+  // The deletion closes the member's connection, the last one: that is the version.
+  expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
+  member.provider.destroy();
+  await vi.waitFor(() => expect(app.collab.loadedScores()).not.toContain(id), { timeout: 5000 });
+  const versions = await Version.findAll({ where: { scoreId: id } });
+  expect(versions.map(({ reason }) => reason)).toEqual(["last_disconnect"]);
+  expect((await Score.findByPk(id))?.deletedAt).toBeInstanceOf(Date);
+
+  // Deleted, nobody opens it: no timer makes another.
+  const made = vi.spyOn(Version, "create");
+  await vi.advanceTimersByTimeAsync(3 * VERSION_INTERVAL_MS);
+  expect(made).not.toHaveBeenCalled();
+  expect(await Version.count({ where: { scoreId: id } })).toBe(1);
+
+  expect((await call(app, "POST", `scores/${id}/restore`, anna)).statusCode).toBe(204);
+  const kept = await Version.findAll({ where: { scoreId: id } });
+  expect(kept.map((version) => version.id)).toEqual(versions.map((version) => version.id));
+  expect((JSON.parse(gunzipSync(kept[0]!.content).toString()) as { title: string }).title).toBe("刪除前剛改的標題");
+});
+
 test("every table that refers to a score goes with it: its foreign key cascades", async () => {
   const keys = await sequelize.query<{ table: string; name: string; action: string }>(
     "SELECT conrelid::regclass::text AS table, conname AS name, confdeltype::text AS action FROM pg_constraint WHERE contype = 'f' AND confrelid = 'scores'::regclass",
     { type: QueryTypes.SELECT },
   );
   // `c` is ON DELETE CASCADE. A table added without it would make the job fail on every score that has rows there.
-  expect(keys.map(({ table }) => table)).toContain("score_members");
+  expect(keys.map(({ table }) => table).sort()).toEqual(["score_members", "versions"]);
   expect(keys.filter(({ action }) => action !== "c")).toEqual([]);
 });
