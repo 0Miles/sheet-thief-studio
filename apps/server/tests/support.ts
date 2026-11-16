@@ -13,7 +13,7 @@ import * as Y from "yjs";
 
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
-import { migrate } from "../src/db/migrate";
+import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_test";
 export const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://localhost:6388/1";
@@ -37,16 +37,36 @@ export function e2eDatabaseUrl(script: string): string {
   return DATABASE_URL;
 }
 
-/** Drop every table of the test database, migrations included. */
-export async function emptyDatabase(sequelize: Sequelize): Promise<void> {
+/**
+ * A connection to this database rebuilt from nothing: every table dropped, migrations included,
+ * then migrated. Once per run of the server's tests (tests/globalSetup.ts), and for the
+ * end-to-end tests' database (seedE2e.ts).
+ */
+export async function rebuiltDatabase(url: string): Promise<Sequelize> {
+  const sequelize = connectDatabase(url);
   await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+  await migrate(sequelize);
+  return sequelize;
 }
 
-/** A connection to an empty, migrated test database (the server's tests' own, unless told another). */
-export async function freshDatabase(url = TEST_DATABASE_URL): Promise<Sequelize> {
-  const sequelize = connectDatabase(url);
-  await emptyDatabase(sequelize);
-  await migrate(sequelize);
+/**
+ * A connection to the server's tests' database, migrated once for the run (tests/globalSetup.ts),
+ * with every row of the previous test files gone: the tables are emptied, not rebuilt. The
+ * files run one after another (vitest.config.ts), each emptying it as it starts.
+ */
+export async function freshDatabase(): Promise<Sequelize> {
+  const sequelize = connectDatabase(TEST_DATABASE_URL);
+  await sequelize.query(`
+    DO $$
+    DECLARE tables text;
+    BEGIN
+      SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables
+        FROM pg_tables WHERE schemaname = 'public' AND tablename <> ${sequelize.escape(MIGRATIONS_TABLE)};
+      IF tables IS NOT NULL THEN
+        EXECUTE 'TRUNCATE ' || tables || ' RESTART IDENTITY CASCADE';
+      END IF;
+    END $$;
+  `);
   return sequelize;
 }
 

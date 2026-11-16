@@ -51,22 +51,27 @@ export interface MadeVersion {
 }
 
 /**
- * Make a version of the score with this content, unless its latest version already holds the
- * same; then delete its oldest automatic versions beyond the 200 kept. With the score's row
- * locked: the versions of one score are made one at a time, each compared with the one before.
- * Null when the score is no longer there (deleted for good meanwhile). A score deleted softly
- * still gets its versions: it can be restored. Throws `VersionTooLarge`, writing nothing, when
- * the content is more than `MAX_VERSION_BYTES`.
+ * Make a version of the score with the content `read` gives, unless its latest version already
+ * holds the same; then delete its oldest automatic versions beyond the 200 kept. With the score's
+ * row locked, and the content read only then: the versions of one score are made one at a time,
+ * each of the content as it is when its turn comes, and compared with the one made before it.
+ * Read earlier, a content could wait (gzip, a connection of the pool) while a newer one is made
+ * first, and then be made the latest version (#114). Null, with nothing written, when the score
+ * is no longer there (deleted for good meanwhile; `read` is not called then), or when `read`
+ * gives null: there is nothing to make a version of any more. A score deleted softly still gets
+ * its versions: it can be restored. Throws `VersionTooLarge`, writing nothing, when the content
+ * is more than `MAX_VERSION_BYTES`.
  */
-export async function createVersion(scoreId: string, score: ScoreJSON, reason: VersionReason, createdBy: string | null = null): Promise<MadeVersion | null> {
-  const json = sortedJson(score);
-  const byteSize = Buffer.byteLength(json);
-  if (byteSize > MAX_VERSION_BYTES) throw new VersionTooLarge(scoreId, byteSize);
-  const contentHash = createHash("sha256").update(json).digest("hex");
-  const content = await compress(json);
+export async function createVersion(scoreId: string, read: () => ScoreJSON | null, reason: VersionReason, createdBy: string | null = null): Promise<MadeVersion | null> {
   return Version.sequelize!.transaction(async (transaction) => {
     const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id"], lock: transaction.LOCK.UPDATE, transaction });
     if (row === null) return null;
+    const score = read();
+    if (score === null) return null;
+    const json = sortedJson(score);
+    const byteSize = Buffer.byteLength(json);
+    if (byteSize > MAX_VERSION_BYTES) throw new VersionTooLarge(scoreId, byteSize);
+    const contentHash = createHash("sha256").update(json).digest("hex");
     const latest = await Version.findOne({
       where: { scoreId },
       attributes: ["id", "contentHash"],
@@ -77,6 +82,7 @@ export async function createVersion(scoreId: string, score: ScoreJSON, reason: V
       transaction,
     });
     if (latest?.contentHash === contentHash) return { id: latest.id, created: false };
+    const content = await compress(json);
     const version = await Version.create({ scoreId, schemaVersion: score.schemaVersion, content, contentHash, byteSize, reason, createdBy }, { transaction });
     await Version.sequelize!.query(
       "DELETE FROM versions WHERE id IN (SELECT id FROM versions WHERE score_id = $1 AND name IS NULL ORDER BY created_at DESC, id DESC OFFSET $2)",

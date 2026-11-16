@@ -27,6 +27,10 @@ export const COLLAB_PATH = "/collab";
 /** How long a document stays unchanged before the server fills in what it misses (docs/spec/collab.md, section 4). */
 export const FILL_DEBOUNCE_MS = 1000;
 
+/** How long a store waits for more changes, and the longest it waits however many come (docs/spec/collab.md, section 1). */
+export const STORE_DEBOUNCE_MS = 2000;
+export const STORE_MAX_DEBOUNCE_MS = 10_000;
+
 /** The `updated_at` a store leaves: now, or the one the score had when it is deleted. */
 const STORED_AT = literal("CASE WHEN deleted_at IS NULL THEN now() ELSE updated_at END") as unknown as Date;
 
@@ -172,16 +176,27 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   }
 
   /**
-   * Make a version of the document as it is now, unless the score's latest version is the same
-   * (docs/spec/collab.md, 8.3). The content is read at once; the rest never rejects: a version
-   * that could not be made is logged, and the next one is made of whatever the score is then.
+   * Make a version of the document, unless the score's latest version is the same
+   * (docs/spec/collab.md, 8.3). The content is read once the score's row is locked
+   * (`createVersion`): what the document is then, a version made meanwhile compared. By then the
+   * document may have been unloaded, and the score loaded again as another one: a version of this
+   * one would put an older content after the versions of the new stay (#114). So none when
+   * another document of the score is in memory; when none is, a timed version is none either (the
+   * stay ended with its own version), and the version of the members leaving or of the server
+   * closing reads this one, whose content nobody changes any more. Never rejects: a version that
+   * could not be made is logged, and the next one is made of whatever the score is then.
    * None of a frozen document, which this server cannot read for sure, nor of one that did not load.
    */
   function makeVersion(document: Y.Doc & { name: string; isLoading: boolean }, reason: VersionReason): Promise<void> {
     const scoreId = document.name;
     if (document.isLoading || frozen.has(scoreId)) return Promise.resolve();
+    const read = () => {
+      const loaded = hocuspocus.documents.get(scoreId);
+      if (loaded === document || (loaded === undefined && reason !== "interval")) return docToJson(document);
+      return null;
+    };
     const making = Promise.resolve()
-      .then(() => createVersion(scoreId, docToJson(document), reason))
+      .then(() => createVersion(scoreId, read, reason))
       .then(
         () => undefined,
         (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),
@@ -260,8 +275,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
   const hocuspocus = new Hocuspocus<CollabContext>({
     quiet: true,
     // docs/spec/collab.md, section 1. The last connection leaving stores at once.
-    debounce: 2000,
-    maxDebounce: 10_000,
+    debounce: STORE_DEBOUNCE_MS,
+    maxDebounce: STORE_MAX_DEBOUNCE_MS,
     async onAuthenticate({ token, documentName, connectionConfig, request }): Promise<CollabContext> {
       const ticket = await tickets.redeem(token);
       // Refused with a code and a reason only: an error with a message would be logged as a fault.

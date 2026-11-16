@@ -4,7 +4,7 @@
 import { text } from "node:stream/consumers";
 
 import { createAccount, type NewAccount } from "../src/accounts";
-import { e2eDatabaseUrl, freshDatabase, freshRedis } from "./support";
+import { e2eDatabaseUrl, freshRedis, rebuiltDatabase } from "./support";
 
 const DATABASE_URL = e2eDatabaseUrl("seedE2e");
 const { REDIS_URL } = process.env;
@@ -12,7 +12,7 @@ if (!REDIS_URL) throw new Error("seedE2e: REDIS_URL must be set");
 
 const accounts = JSON.parse(await text(process.stdin)) as NewAccount[];
 
-const sequelize = await freshDatabase(DATABASE_URL);
+const sequelize = await rebuiltDatabase(DATABASE_URL);
 for (const account of accounts) await createAccount(account);
 await sequelize.close();
 

@@ -91,6 +91,14 @@ async function titlesOf(scoreId: string): Promise<string[]> {
   return (await versionsOf(scoreId)).map(({ content }) => (JSON.parse(gunzipSync(content).toString()) as { title: string }).title);
 }
 
+/** Resolves, when called, once the transactions opened since this call have ended: the versions under way among them. */
+function transactionsSince(): () => Promise<void> {
+  const transactions = vi.spyOn(Version.sequelize!, "transaction");
+  return async () => {
+    await Promise.allSettled(transactions.mock.results.map(({ value }) => value as unknown));
+  };
+}
+
 test("a version is made as the last provider leaves, and none when the content is the one of the latest version", async () => {
   const started = await startApp();
   const id = await createScore(started.app, started.session, "第一版");
@@ -174,7 +182,11 @@ test("a score edited for 25 minutes gets two timed versions, and none for 10 min
   // Open for 10 minutes with nothing changed: no version, timed or not. The timer of the first
   // stay ended with it: a tick of it would come 5 minutes in, and find nothing to do either.
   const idle = await open(started, id);
+  const ticks = transactionsSince();
   await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  // The tick reads the score once it has the row: it is over before the change, or it would
+  // make the version of the change.
+  await ticks();
   await retitle(idle, "又改了");
   await leave(started, idle);
   expect(await titlesOf(id)).toEqual(["第 10 分鐘", "第 20 分鐘", "第 25 分鐘", "又改了"]);
@@ -185,6 +197,83 @@ test("a score edited for 25 minutes gets two timed versions, and none for 10 min
   const made = vi.spyOn(Version, "create");
   await vi.advanceTimersByTimeAsync(3 * VERSION_INTERVAL_MS);
   expect(made).not.toHaveBeenCalled();
+});
+
+/**
+ * Hold the next transaction opened on the database at its start, before it has locked anything:
+ * `held` resolves once it is reached, `release()` lets it run, and `ended` resolves once it is over.
+ */
+function holdNextTransaction(): { held: Promise<void>; release: () => void; ended: () => Promise<unknown> } {
+  const database = Version.sequelize!;
+  const transaction = database.transaction.bind(database) as (run: (t: unknown) => Promise<unknown>) => Promise<unknown>;
+  let reached = () => {};
+  const held = new Promise<void>((resolve) => (reached = resolve));
+  let release = () => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let running: Promise<unknown> = held;
+  vi.spyOn(database, "transaction").mockImplementationOnce(((run: (t: unknown) => Promise<unknown>) => {
+    running = released.then(() => transaction(run));
+    reached();
+    return running;
+  }) as never);
+  return { held, release, ended: () => running };
+}
+
+test("a timed version held back until the members have changed the score and left never makes the older content the latest version", async () => {
+  // #114: the tick reads the score, then waits (gzip, a connection of the pool); meanwhile a
+  // member changes it and leaves, and that version is made first. Here the tick is held at the
+  // start of its transaction until the other version is made.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "順序測試");
+  const member = await open(started, id);
+  await retitle(member, "第 10 分鐘");
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await expect.poll(() => titlesOf(id)).toEqual(["第 10 分鐘"]);
+
+  const tick = holdNextTransaction();
+  // The tick of minute 20: the content is still the one of the latest version.
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await tick.held;
+
+  await retitle(member, "第 20 分鐘後改的");
+  await leave(started, member);
+  expect(await titlesOf(id)).toEqual(["第 10 分鐘", "第 20 分鐘後改的"]);
+  tick.release();
+  await tick.ended();
+
+  // The latest version is what the score is: the tick made none.
+  expect(await titlesOf(id)).toEqual(["第 10 分鐘", "第 20 分鐘後改的"]);
+  expect((await versionsOf(id)).map(({ reason }) => reason)).toEqual(["interval", "last_disconnect"]);
+});
+
+test("a timed version held back until its document was unloaded, loaded again and versioned makes none of the document it started with", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const started = await startApp();
+  const id = await createScore(started.app, started.session, "重新載入測試");
+  const first = await open(started, id);
+  await retitle(first, "第一次開");
+
+  // The tick of the first stay, held before it has the row.
+  const tick = holdNextTransaction();
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await tick.held;
+
+  // Meanwhile the members leave, and the score is opened again, changed, and versioned by the
+  // tick of the second stay.
+  await leave(started, first);
+  expect(await titlesOf(id)).toEqual(["第一次開"]);
+  const second = await open(started, id);
+  await retitle(second, "第二次開");
+  await vi.advanceTimersByTimeAsync(VERSION_INTERVAL_MS);
+  await expect.poll(() => titlesOf(id)).toEqual(["第一次開", "第二次開"]);
+
+  tick.release();
+  await tick.ended();
+
+  // The first document is no longer the score: its tick made none, the latest is still the second stay's.
+  expect(await titlesOf(id)).toEqual(["第一次開", "第二次開"]);
+  expect((await versionsOf(id)).map(({ reason }) => reason)).toEqual(["last_disconnect", "interval"]);
 });
 
 test("the 201st automatic version deletes the oldest automatic one, and no named one", async () => {
@@ -237,15 +326,23 @@ test("the same content is the same version however its keys are ordered, and a s
   const score = docToJson(doc);
   const reversed = Object.fromEntries(Object.entries(score).reverse()) as typeof score;
 
-  const made = await createVersion(id, score, "interval");
+  const made = await createVersion(id, () => score, "interval");
   expect(made?.created).toBe(true);
-  expect(await createVersion(id, reversed, "last_disconnect")).toEqual({ id: made!.id, created: false });
-  expect((await createVersion(id, { ...score, title: "另一個標題" }, "last_disconnect"))?.created).toBe(true);
+  expect(await createVersion(id, () => reversed, "last_disconnect")).toEqual({ id: made!.id, created: false });
+  expect((await createVersion(id, () => ({ ...score, title: "另一個標題" }), "last_disconnect"))?.created).toBe(true);
   // Back to the first content: not the latest one any more, so a version again.
-  expect((await createVersion(id, score, "last_disconnect"))?.created).toBe(true);
+  expect((await createVersion(id, () => score, "last_disconnect"))?.created).toBe(true);
   expect(await Version.count({ where: { scoreId: id } })).toBe(3);
 
-  expect(await createVersion("00000000-0000-4000-8000-000000000000", score, "interval")).toBeNull();
+  expect(
+    await createVersion(
+      "00000000-0000-4000-8000-000000000000",
+      () => {
+        throw new Error("no score: nothing to read");
+      },
+      "interval",
+    ),
+  ).toBeNull();
 });
 
 test("a score written by a newer schema gets no version: this server cannot read it for sure", async () => {
@@ -312,7 +409,7 @@ test("two versions of the same content asked for at once make one", async () => 
   const score = await storedScore(id);
   await warmPool();
 
-  const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, score, "interval")));
+  const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, () => score, "interval")));
 
   expect(await Version.count({ where: { scoreId: id } })).toBe(1);
   expect(made.filter((version) => version?.created)).toHaveLength(1);
@@ -337,7 +434,7 @@ test("versions made at once near the limit never leave more than 200 automatic o
   );
   await warmPool();
 
-  const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, { ...score, title: `同時的第 ${index} 個` }, "interval")));
+  const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, () => ({ ...score, title: `同時的第 ${index} 個` }), "interval")));
 
   expect(made.map((version) => version?.created)).toEqual([true, true, true, true, true]);
   expect(await Version.count({ where: { scoreId: id } })).toBe(AUTO_VERSIONS_KEPT);
@@ -368,10 +465,10 @@ test("content of more than 8 MB of JSON makes no version, and one of exactly as 
     return { ...score, title: "a".repeat(bytes - empty) };
   };
 
-  await expect(createVersion(id, sized(MAX_VERSION_BYTES + 1), "interval")).rejects.toThrow(VersionTooLarge);
+  await expect(createVersion(id, () => sized(MAX_VERSION_BYTES + 1), "interval")).rejects.toThrow(VersionTooLarge);
   expect(await Version.count({ where: { scoreId: id } })).toBe(0);
 
-  expect((await createVersion(id, sized(MAX_VERSION_BYTES), "interval"))?.created).toBe(true);
+  expect((await createVersion(id, () => sized(MAX_VERSION_BYTES), "interval"))?.created).toBe(true);
   const [version] = await versionsOf(id);
   expect(version!.byteSize).toBe(MAX_VERSION_BYTES);
 });

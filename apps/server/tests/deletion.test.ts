@@ -14,6 +14,7 @@ import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
+import { FILL_DEBOUNCE_MS, STORE_MAX_DEBOUNCE_MS } from "../src/collab";
 import { Score, ScoreMember, Version } from "../src/db/models";
 import { PURGE_INTERVAL_MS, purgeDeletedScores } from "../src/deletion";
 import { createVersion, VERSION_INTERVAL_MS } from "../src/versions";
@@ -245,8 +246,8 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
     const doc = new Y.Doc();
     Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
     const score = docToJson(doc);
-    expect((await createVersion(scoreId, score, "last_disconnect"))?.created).toBe(true);
-    expect((await createVersion(scoreId, { ...score, title: "後來的標題" }, "interval"))?.created).toBe(true);
+    expect((await createVersion(scoreId, () => score, "last_disconnect"))?.created).toBe(true);
+    expect((await createVersion(scoreId, () => ({ ...score, title: "後來的標題" }), "interval"))?.created).toBe(true);
   }
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
   const destroy = vi.spyOn(Score, "destroy");
@@ -397,6 +398,9 @@ test("a restoration clears whatever link the deleted row holds", async () => {
 });
 
 test("what a member typed just before the deletion is stored as the connections close, without a new updated_at; nothing is written after that", async () => {
+  // Every timeout of the app is one of the test's: it runs in real time, and the test moves it on
+  // at once past any store or fill that could still come. Faked before the app makes any.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true });
   const { app, url } = await startApp();
   const { id, anna } = await annasScore(app, "刪除前的標題");
   const unloaded = () => vi.waitFor(() => expect(app.collab.loadedScores()).not.toContain(id), { timeout: 5000 });
@@ -420,9 +424,10 @@ test("what a member typed just before the deletion is stored as the connections 
   expect(stored.deletedAt).toBeInstanceOf(Date);
   expect(stored.updatedAt).toEqual(before.updatedAt);
 
-  // Longer than the debounce of a store and the one of a fill: no write comes after the last one.
+  // Past the longest a store waits and the debounce of a fill: no write comes after the last one.
+  // Only the writes a timer would make late: what a promise still under way would write is not looked for here.
   const update = vi.spyOn(Score, "update");
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  await vi.advanceTimersByTimeAsync(STORE_MAX_DEBOUNCE_MS + FILL_DEBOUNCE_MS);
   expect(update).not.toHaveBeenCalled();
   expect((await Score.findByPk(id))?.docState.equals(stored.docState)).toBe(true);
   update.mockRestore();
