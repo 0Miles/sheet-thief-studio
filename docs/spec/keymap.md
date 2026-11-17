@@ -5,7 +5,7 @@
 ## 1. 總規則
 
 - **不帶修飾鍵的字母和數字是「輸入音符」**，意義依聲部種類而定。
-- **`Shift`＋字母是技巧與拍點旗標**，三種聲部共用同一個字母；不適用於目前聲部種類的鍵，不動。
+- **`Shift`＋字母是技巧與拍點記號**，三種聲部共用同一個字母；不適用於目前聲部種類的鍵，不動。
 - **`Mod` 是結構、剪貼簿、復原**：Windows、Linux 是 `Ctrl`，macOS 是 `Cmd`（第 1.3 節）。
 - owner 在 2026-11-13 確認了這三條總規則（[`README.md`](README.md) 的「owner 的裁定」）。
 
@@ -36,6 +36,7 @@
 - 作業系統先拿走、瀏覽器收不到：`Ctrl`＋方向鍵（Mission Control、App Exposé、切換桌面）、`Ctrl+Space` 與 `Ctrl+Option+Space`（切換輸入法；成員切換注音時常用）、`Cmd+Space`（Spotlight）、`Cmd+Tab`、`` Cmd+` ``、`Cmd+H`、`Cmd+Option+H`、`Cmd+M`、`Cmd+Q`、`Cmd+Option+Esc`、`Cmd+Shift+3`、`Cmd+Shift+4`、`Cmd+Shift+5`（截圖）、`Ctrl+Cmd+Q`（鎖定螢幕）、`Ctrl+Cmd+Space`（表情符號）、`Cmd+Option+D`（Dock）。
 - 瀏覽器保留或會搶走焦點：`Cmd+T`、`Cmd+W`、`Cmd+N`、`Cmd+Shift+T`、`Cmd+Shift+N`、`Cmd+Shift+W`；切換分頁的 `Cmd+1`–`Cmd+9`、`Cmd+Option+←`、`Cmd+Option+→`、`Cmd+Shift+[`、`Cmd+Shift+]`、`Ctrl+Tab`；`Cmd+L`（網址列）；`Cmd+R`、`Cmd+Shift+R`（重新整理）；`Cmd+[`、`Cmd+]`、`Cmd+←`、`Cmd+→`（上一頁、下一頁）；`Cmd+F`、`Cmd+G`、`Cmd+E`（尋找）；`Cmd+P`、`Cmd+S`、`Cmd+D`；`Cmd+Y`（歷史記錄）；`Cmd+I`（Safari 用郵件寄送網頁）；`Cmd+Shift+B`、`Cmd+Option+B`（書籤）；`Cmd+,`（設定）；`Cmd+=`、`Cmd+-`、`Cmd+0`（縮放）；`Cmd+Option+I`、`Cmd+Option+J`、`Cmd+Option+C`、`Cmd+Option+U`（開發者工具、原始碼）；`Ctrl+Cmd+F`（全螢幕）。
 - 不帶 `Fn` 的 `F1`–`F12`：macOS 預設是亮度、Mission Control、Spotlight、聽寫、媒體與音量鍵。用到功能鍵的地方，Mac 寫成 `Fn`＋功能鍵，而且介面上要有同功能的按鈕（第 5、7 節）。
+  - **補充**：頁面分不出「不帶 `Fn` 的 `F1`–`F12`」和「`Fn`＋功能鍵」：兩者送出同一個 `code`（例如 `F8`）。所以這一項不寫進平台層的禁用資料（`packages/score-editor/src/bindings.ts` 的 `FORBIDDEN_KEYS.mac`），測試也擋不了；用到功能鍵的功能，靠介面上同功能的按鈕保住（第 5、7 節）。
 - `Option`＋字母、`Option`＋數字會打出字元：例如 `Option+1` 是「¡」；`Option+E`、`Option+I`、`Option+N`、`Option+U`、`` Option+` `` 是組合重音符號用的 dead key。焦點在譜面時，因為用 `code` 比對，不會打出字；焦點在文字輸入框時，按鍵屬於輸入框（第 1.1 節）。Mac 只用 `Option+1`、`Option+2`、`Option`＋方向鍵與 `Option+Return`，不綁 `Option`＋字母，避免和 dead key 互相干擾。
 
 ### 1.3 平台層
@@ -56,6 +57,9 @@
   - `userAgentData.platform` 是 `"macOS"`，或 `platform` 以 `Mac`、`iPhone`、`iPad`、`iPod` 開頭時，結果是 `"mac"`；其他情況（Windows、Linux、ChromeOS、兩者都讀不到）是 `"other"`。iPadOS 的 Safari 回報 `MacIntel`；iPad 接實體鍵盤時也是用 `Cmd`，所以照 Mac 的鍵位。
   - Vue 殼在載入頁面時用 `navigator` 呼叫一次，把結果交給 `EditorSession`。其他地方不判斷平台，也不解析 `userAgent` 字串。
 - 介面上顯示的鍵名（工具列的提示、說明文字）由同一張表與 `formatChord(chord, platform)` 產生，例如復原在 Windows 顯示 `Ctrl+Z`，在 Mac 顯示 `⌘Z`。`strings.ts` 裡不寫死任何鍵名。
+  - **補充**（#20）：要某個動作的鍵名時用 `keyNameOf(effect, platform, fret?)`：取那個綁定的第一個組合，交給 `formatChord`。格號鍵用 `fret` 指定是哪一個數字。
+  - **補充**（#20）：`+` 是 `Shift` 加 `=` 那個鍵；`Shift+Equal` 顯示成 `+`，不是 `Shift++` 或 `⇧+`。平台層的測試檢查表上每個組合的鍵名都沒有這種重複的 `+`。
+  - **補充**（#20）：提示句子裡怎麼把鍵名接在文字上（分隔符號、順序），由 `strings.ts` 的格式化函式負責；等第一個帶鍵名的提示（第 7 節工具列按鈕的提示）出現時再加，現在還沒有這種句子。**補充**（#36）：第一句是「下一個標記」按鈕的提示，`strings.score.flags.nextKey(key)`，鍵名接在全形括號裡，例如「跳到下一個標記（F8）」；鍵名由 `keyNameOf("nextFlag", platform)` 產生。
 - 平台層的測試（vitest）對表上每一個綁定、兩個平台都檢查：
   - 解析出的組合和這份文件的表相同；
   - 不在第 1.2 節的禁用清單裡；
@@ -81,7 +85,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Ctrl+Insert` | `Cmd+Return` | `Insert` 加 `Mod`；Mac：`Enter` 加 `metaKey` | 在游標小節之前插入小節（結構操作） |
 | `Ctrl+Shift+Insert`（補充） | `Cmd+Shift+Return` | 同上，加 `shiftKey` | 在游標小節之後插入小節（結構操作） |
 | `Ctrl+Delete` | `Cmd+delete`、`Cmd+Fn+delete` | `Delete` 加 `Mod`；Mac：`Backspace` 或 `Delete` 加 `metaKey` | 刪除小節範圍，或游標小節（結構操作） |
-| `+` | 同左 | `Equal`（有沒有 `Shift` 都可以）、`NumpadAdd` | 時值變短，沿用 spike 的方向（`commands.ts:215`） |
+| `+` | 同左 | `Equal`（有沒有 `Shift` 都可以）、`NumpadAdd` | 時值變短，沿用 spike 的方向（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用） |
 | `-` | 同左 | `Minus`、`NumpadSubtract` | 時值變長 |
 | `.` | 同左 | `Period`、`NumpadDecimal` | 附點 0 → 1 → 2 → 0 |
 | `Shift+←` `Shift+→` | 同左 | 加 `shiftKey` | 延伸拍點範圍 |
@@ -90,17 +94,17 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Ctrl+Z` | `Cmd+Z` | `KeyZ` 加 `Mod` | 復原 |
 | `Ctrl+Y`、`Ctrl+Shift+Z` | `Cmd+Shift+Z`（不用 `Cmd+Y`：那是 Safari 與 Chrome 的歷史記錄） | `KeyZ` 加 `Mod`、`shiftKey`；Windows、Linux 另有 `KeyY` 加 `ctrlKey` | 重做 |
 | `Alt+1` `Alt+2` | `Option+1` `Option+2` | `Digit1` `Digit2` 加 `altKey` | 切換到第 1／第 2 條聲線 |
-| `F8` | `Fn+F8` | `F8` | 跳到下一個 Flag；工具列另有同功能的按鈕 |
-| `Space`（補充） | 同左 | `Space` | 播放／暫停（編輯視圖從游標所在小節開始，有選取時循環選取範圍，見 [`playback.md`](playback.md)） |
+| `F8` | `Fn+F8` | `F8` | 跳到下一個 Flag；工具列另有同功能的按鈕。補充（#36）：和 `Space` 一樣是 page 綁定（`pageEffectOf` 回傳 `nextFlag`），由殼從它畫的 `ScoreJSON` 算出下一個（`flags.ts` 的 `nextFlag`，[`flags.md`](flags.md) 第 4 節） |
+| `Space`（補充） | 同左 | `Space` | 播放／暫停（編輯視圖從游標所在小節開始，有選取時循環選取範圍，見 [`playback.md`](playback.md)）。補充（#31）：`EditorSession` 不處理這個鍵，由殼處理（綁定表上的 page 綁定，`pageEffectOf`） |
 | `Esc`（補充） | 同左 | `Escape` | 取消選取；關閉 popover 或面板，焦點回到譜面 |
 
-## 3. `Shift`＋字母：技巧與拍點旗標
+## 3. `Shift`＋字母：技巧與拍點記號
 
 這一節的鍵在 macOS 相同：只帶 `Shift`，平台層不換，也沒有作業系統或瀏覽器的衝突。
 
 | 鍵 | `code` | 動作 | 適用的聲部 |
 |---|---|---|---|
-| `Shift+L` | `KeyL` | tie | fretted、pitched |
+| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#36：目前只綁 fretted，見本節最後的補充） |
 | `Shift+H` | `KeyH` | legato（搥弦、勾弦） | fretted |
 | `Shift+S` | `KeyS` | slideOut：legato → shift → outUp → outDown → 沒有 | fretted |
 | `Shift+E`（補充） | `KeyE` | slideIn：inBelow → inAbove → 沒有 | fretted |
@@ -122,6 +126,16 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Shift+T` | `KeyT` | 三連音 | 全部 |
 
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
+
+**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
+
+**補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
+
+**補充**（#27）：`Shift+H`（legato）是 `bindings.ts` 的 `TECHNIQUE_KEYS` 裡的一項；`Shift+S`（slideOut）、`Shift+E`（slideIn）是 `slideOut`、`slideIn` 綁定。三者都只綁在 fretted 聲部（這些欄位只有 fretted 有）；有選取時作用在整個範圍，循環型的走到同一個狀態（[`commands.md`](commands.md) 5.4 的補充）。
+
+**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）跟著 M3 加上，綁在 pitched 情境，和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
+
+**補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
 
 ## 4. 各聲部種類的輸入鍵
 
@@ -194,6 +208,8 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 - `Esc`：不存，關閉。
 - 64 字元以內。
 - 段落名稱（`section`）從小節屬性面板編輯，不在這裡。
+- **補充**（#30）：輸入框的鍵也在綁定表上，情境是 `textEntry`（`bindings.ts` 的 `saveEntry`：`Enter`、`NumpadEnter`；`cancelEntry`：`Escape`），由 `textEntryEffectOf(key, platform)` 判斷；這個情境裡譜面的鍵都不作用，其餘的鍵是輸入框自己的（打字、`Backspace`、方向鍵），不傳到譜面。比對照第 1.1 節：`isComposing` 為真、或 `keyCode` 是 229 的鍵都不算，所以用注音選字的 `Enter` 不會存入。
+- **補充**（#30）：輸入框開在游標下方（`apps/web/src/overlay.ts` 的 `entryRect`），照 [`views.md`](views.md) 第 9 節避開保留區域：會伸進保留區域時整個移到它下方，高度不變（不像 `clearOf` 那樣切掉）；開啟時選取現有的文字，所以直接打字就是取代、按 `Backspace` 就是清空。焦點離開輸入框（例如點譜面）時當成 `Esc`：不存。關閉後焦點回到譜面。輸入框是 `apps/web/src/components/InlineTextEntry.vue`。
 
 ### 6.2 歌詞模式（只有 pitched 聲部）
 

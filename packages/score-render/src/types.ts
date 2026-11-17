@@ -1,6 +1,6 @@
 // What the rest of the app knows about drawing and playing a score. Nothing here names the
 // engine behind it (docs/adr/0003): everything is addressed by the ids of the score.
-import type { Cursor, ScoreJSON } from "@studio/score-model";
+import type { Cursor, ScoreJSON, Selection } from "@studio/score-model";
 
 /** A rectangle in CSS pixels, relative to the top-left corner of the element the score is drawn in. */
 export interface Rect {
@@ -10,7 +10,7 @@ export interface Rect {
   height: number;
 }
 
-/** How long each step of the last drawing took, in milliseconds. Diagnostic: the spike reads it. */
+/** How long each step of the last drawing took, in milliseconds. Diagnostic: the measurements read it. */
 export interface RenderTimings {
   /** Building the engine's model from the score (the projection). */
   project: number;
@@ -18,6 +18,12 @@ export interface RenderTimings {
   finish: number;
   /** From handing the model to the engine to its layout being ready. */
   render: number;
+}
+
+/** A note head as the engine drew it (a fret number, in tablature), under the key the score gives its note ("s2", "p38", "n61"). */
+export interface NoteHead {
+  key: string;
+  rect: Rect;
 }
 
 export interface RenderedEvent {
@@ -38,10 +44,35 @@ export interface ScoreRenderer {
   patchBars(score: ScoreJSON, barIds: readonly string[]): void;
   /** Change which parts are shown, without changing the score. */
   showParts(partIds: readonly string[]): void;
+  /** Draw the score bigger or smaller: 1 is its own size. */
+  setScale(scale: number): void;
   /** Where the cursor is on the page, or null when its place is not drawn (yet). */
   boundsOf(cursor: Cursor): Rect | null;
+  /**
+   * Where a selection is on the page: one rectangle for a beat range, one for each system a bar
+   * range is on. None when its place is not drawn (yet).
+   */
+  boundsOfSelection(selection: Selection): Rect[];
+  /**
+   * Where the note heads of the cursor's beat are drawn, as the engine reports them; none in an
+   * append slot, or when the beat is not drawn. Diagnostic: the measurements compare them with
+   * `boundsOf`.
+   */
+  noteHeadsOf(cursor: Cursor): NoteHead[];
+  /**
+   * Where playback is on the page at a tick (`ScorePlayer.position`): the beat played then, as
+   * tall as its system, so that the page can keep it on screen. At the start of a bar it is
+   * where the cursor stands in that bar's empty voice. Null before the sound is made, or when
+   * that place is not drawn.
+   */
+  boundsAtTick(tick: number): Rect | null;
   /** The cursor nearest to a point of the page, or null outside any bar. */
   hitTest(x: number, y: number): Cursor | null;
+  /**
+   * Areas of the page that no overlay may cover (cursors, name tags, selections, notices...):
+   * an overlay that would reach into one moves away from it. Empty before a drawing is laid out.
+   */
+  reservedRects(): Rect[];
   /** Called every time a drawing is laid out and `boundsOf` answers for it. */
   onRendered(listener: (event: RenderedEvent) => void): Unsubscribe;
   /**
@@ -54,6 +85,12 @@ export interface ScoreRenderer {
 
 /** "loading" until the soundfont and the sound of the score are in place. */
 export type PlayerState = "loading" | "paused" | "playing";
+
+/** A bar as playback finds it: its id, and its index in the score as the sound has it. */
+export interface PlayedBar {
+  barId: string;
+  index: number;
+}
 
 export interface PlayerPosition {
   /** 960 ticks in a quarter note, from the start of the score. */
@@ -85,6 +122,10 @@ export interface ScorePlayer {
   readonly state: PlayerState;
   readonly position: PlayerPosition;
   seek(tick: number): void;
+  /** The tick a bar starts at, the first time it is played; null for a bar not in the score drawn. */
+  tickOf(barId: string): number | null;
+  /** The bar played at a tick; null before the sound is made. */
+  barAt(tick: number): PlayedBar | null;
   setMute(partId: string, mute: boolean): void;
   setSolo(partId: string, solo: boolean): void;
   /** 0 is silent, 1 the volume written in the score. */
@@ -95,4 +136,6 @@ export interface ScorePlayer {
   setLoop(range: PlayRange | null): void;
   onState(listener: (state: PlayerState) => void): Unsubscribe;
   onPosition(listener: (position: PlayerPosition) => void): Unsubscribe;
+  /** Called when playback reaches the end of the score and stops there; not at the end of a loop. */
+  onFinished(listener: () => void): Unsubscribe;
 }

@@ -1,42 +1,280 @@
-// Co-editing: Hocuspocus inside the API process, on the WebSocket path /collab (docs/adr/0001).
-// M0 only: every document is open to anyone who can reach the server and lives in memory.
-import type { IncomingMessage } from "node:http";
+// Co-editing: Hocuspocus inside the API process, on the WebSocket path /collab (docs/adr/0001,
+// docs/spec/collab.md). One Hocuspocus document per score, its name the score id, its Yjs state
+// in Postgres. A connection gets in with a collab ticket (ADR 0005), and the server keeps a
+// register of its connections to close only the ones an event concerns.
+import type { IncomingMessage as HttpRequest } from "node:http";
 import type { Duplex } from "node:stream";
 
-import { Hocuspocus } from "@hocuspocus/server";
+import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
+import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 
+import type { CollabTickets, Guest, Member } from "./collabTickets";
+import { Score } from "./db/models";
+import { scoreOfLink } from "./links";
+import { liveScore, membership } from "./scores";
+import type { Sessions } from "./sessions";
+
 export const COLLAB_PATH = "/collab";
 
-type Connection = ReturnType<Hocuspocus["handleConnection"]>;
+/**
+ * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
+ * member's role is the one the database gave when the connection was let in.
+ */
+export type CollabContext = Member | Guest;
 
-export function attachCollab(app: FastifyInstance): Hocuspocus {
-  // Hocuspocus forgets a document when its last member leaves: keep its state for the next one.
-  const states = new Map<string, Uint8Array>();
-  const hocuspocus = new Hocuspocus({
+/** The connections to close: those that match every field given. */
+export interface ConnectionsToClose {
+  scoreId?: string;
+  accountId?: string;
+  sessionId?: string;
+  linkToken?: string;
+}
+
+export interface Collab {
+  /**
+   * Change a score's document as the server, a participant like any other (docs/adr/0001): the
+   * change reaches the members who have it open and is stored before this resolves.
+   */
+  change(scoreId: string, transaction: (doc: Y.Doc) => void): Promise<void>;
+  /**
+   * Close the connections that match, and only those (never `closeConnections(documentName)`,
+   * which closes everyone's). Their providers reconnect, each with a new ticket of its own. A
+   * connection that matches while its document is still loading has its socket closed at once,
+   * before it is sent the document. Returns how many were closed.
+   */
+  closeConnections(which: ConnectionsToClose, event: CloseEvent): number;
+  /** The ids of the scores whose documents are in memory now. For diagnostics and tests only. */
+  loadedScores(): string[];
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    collab: Collab;
+  }
+}
+
+/** A connection of the register: whom it belongs to, and which score it opened. */
+type Holder = CollabContext & { scoreId: string };
+
+/** One WebSocket: the scores it opened as a guest, whose presence it is never sent, and whether it has closed. */
+interface Socket {
+  websocket: WebSocket;
+  guestOf: Set<string>;
+  closed: boolean;
+}
+
+/**
+ * A connection let in whose document is loading, not in the register yet (it gets there in the
+ * `connected` hook): the event that closed it meanwhile, if one did.
+ */
+interface Loading {
+  holder: Holder;
+  socket: Socket;
+  closeWith: CloseEvent | null;
+}
+
+/** Whether the connection is one of those to close: a field given that a member or a guest does not have never matches. */
+function matches(holder: Holder, which: ConnectionsToClose): boolean {
+  if (which.scoreId !== undefined && holder.scoreId !== which.scoreId) return false;
+  if (holder.kind === "guest") return which.accountId === undefined && which.sessionId === undefined && (which.linkToken === undefined || holder.linkToken === which.linkToken);
+  return (
+    which.linkToken === undefined &&
+    (which.accountId === undefined || holder.accountId === which.accountId) &&
+    (which.sessionId === undefined || holder.sessionId === which.sessionId)
+  );
+}
+
+/**
+ * Whether the message is awareness about one of these documents. A message starts with the name
+ * of its document (followed by `\0` and an id for providers with session awareness), then its type.
+ */
+function isAwarenessOf(message: Uint8Array, documents: Set<string>): boolean {
+  if (documents.size === 0) return false;
+  try {
+    const incoming = new IncomingMessage(message);
+    return documents.has(incoming.readVarString().split("\0")[0]!) && incoming.readVarUint() === MessageType.Awareness;
+  } catch {
+    // Not a message of the protocol: no awareness either.
+    return false;
+  }
+}
+
+/**
+ * The WebSocket as Hocuspocus sees it: the same, except that it is never sent the awareness of a
+ * score it opened as a guest (docs/spec/collab.md, section 5). Hocuspocus sends a document's
+ * awareness to every connection of it, and its current state to each new one, with no hook to
+ * leave one out.
+ */
+function withoutGuestPresence(socket: Socket): WebSocket {
+  const send = (message: Uint8Array) => {
+    if (!isAwarenessOf(message, socket.guestOf)) socket.websocket.send(message);
+  };
+  return new Proxy(socket.websocket, {
+    get(target, key) {
+      if (key === "send") return send;
+      const value: unknown = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+export function attachCollab(app: FastifyInstance, { tickets, sessions }: { tickets: CollabTickets; sessions: Sessions }): Collab {
+  const register = new Map<Connection<CollabContext>, Holder>();
+  // By the connection configuration Hocuspocus hands both `onAuthenticate` and `connected`: the
+  // same object for one connection.
+  const loading = new Map<ConnectionConfiguration, Loading>();
+  // By the upgrade request each socket was opened with, which the hooks are handed too.
+  const socketByRequest = new WeakMap<object, Socket>();
+
+  /**
+   * Out of the document first, so that nothing more it sends is applied; then the socket, so that
+   * the provider reconnects and has to show a new ticket. Our providers open one document per
+   * socket: closing the socket closes only this connection. A client that opened several
+   * documents on one socket loses them all, and gets them back the same way.
+   */
+  function close(connection: Connection<CollabContext>, event: CloseEvent): void {
+    connection.close(event);
+    connection.webSocket.close(event.code, event.reason);
+  }
+
+  /**
+   * Check that the ticket's holder may still open the score, as the database says now and not as
+   * it said when the ticket was given, and give a member the role they have now; `Forbidden` when
+   * they may no longer open it.
+   */
+  async function confirm(holder: Holder): Promise<void> {
+    if (holder.kind === "guest") {
+      if ((await scoreOfLink(holder.linkToken))?.id !== holder.scoreId) throw Forbidden;
+      return;
+    }
+    const member = await membership(holder.scoreId, holder.accountId);
+    if (member === null || !(await sessions.isActive(holder.sessionId))) throw Forbidden;
+    holder.role = member.role;
+  }
+
+  const hocuspocus = new Hocuspocus<CollabContext>({
     quiet: true,
+    // docs/spec/collab.md, section 1. The last connection leaving stores at once.
+    debounce: 2000,
+    maxDebounce: 10_000,
+    async onAuthenticate({ token, documentName, connectionConfig, request }): Promise<CollabContext> {
+      const ticket = await tickets.redeem(token);
+      // Refused with a code and a reason only: an error with a message would be logged as a fault.
+      if (ticket === null || ticket.scoreId !== documentName) throw Forbidden;
+      // A socket that closed while the ticket was redeemed would never take the entry below out.
+      const socket = socketByRequest.get(request);
+      if (socket === undefined || socket.closed) throw Forbidden;
+      const holder: Holder = { ...ticket, scoreId: documentName };
+      // Closable from here on, before the checks: an event that comes after a check has read
+      // the database still finds the connection.
+      const entry: Loading = { holder, socket, closeWith: null };
+      loading.set(connectionConfig, entry);
+      try {
+        // The rights now, not those of the ticket: they may have changed in the last 60 seconds.
+        // No member, no link, no score (or a deleted one): refused before any document is made.
+        await confirm(holder);
+      } catch (error) {
+        loading.delete(connectionConfig);
+        throw error;
+      }
+      // Hocuspocus drops the changes a read-only connection sends.
+      connectionConfig.readOnly = holder.kind === "guest" || holder.role === "viewer";
+      // Before the connection is made: it is sent the current awareness as it is made.
+      if (holder.kind === "guest") socket.guestOf.add(documentName);
+      return holder;
+    },
+    async connected({ connection, connectionConfig }) {
+      const entry = loading.get(connectionConfig);
+      loading.delete(connectionConfig);
+      if (entry === undefined || entry.closeWith !== null) {
+        // Its socket closed while the document was loading: by itself, or because an event
+        // concerned it (a session that ended, a member removed, a link revoked).
+        close(connection, entry?.closeWith ?? ResetConnection);
+        return;
+      }
+      register.set(connection, entry.holder);
+      connection.onClose(() => register.delete(connection));
+    },
+    async beforeHandleAwareness({ context, states, removedClients }) {
+      // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
+      // itself or anyone else is applied.
+      if (context?.kind !== "guest") return;
+      states.clear();
+      removedClients.clear();
+    },
     async onLoadDocument({ documentName, document }) {
-      const state = states.get(documentName);
-      if (state) Y.applyUpdate(document, state);
+      // Authentication has found the score; a direct connection only ever opens one that exists.
+      const score = await liveScore(documentName);
+      if (score === null) throw new Error(`no score ${documentName} to load`);
+      Y.applyUpdate(document, score.docState);
     },
     async onStoreDocument({ documentName, document }) {
-      states.set(documentName, Y.encodeStateAsUpdate(document));
+      // The whole state every time, never increments (docs/spec/collab.md, section 1). Only
+      // updates: storing never makes a score.
+      const [count] = await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(document)) }, { where: { id: documentName } });
+      if (count === 0) throw new Error(`no score ${documentName} to store`);
     },
   });
 
-  const connections = new WeakMap<object, Connection>();
-  const sockets = crossws({
+  const collab: Collab = {
+    async change(scoreId, transaction) {
+      const direct = await hocuspocus.openDirectConnection(scoreId);
+      try {
+        await direct.transact(transaction);
+      } finally {
+        await direct.disconnect();
+      }
+    },
+    closeConnections(which, event) {
+      let closed = 0;
+      for (const [connection, holder] of register) {
+        if (!matches(holder, which)) continue;
+        close(connection, event);
+        closed += 1;
+      }
+      // Not in the register yet: the socket is closed now, before the document is sent on it.
+      // Hocuspocus then never makes the connection, or closes it as it makes it.
+      for (const entry of loading.values()) {
+        if (entry.closeWith !== null || !matches(entry.holder, which)) continue;
+        entry.closeWith = event;
+        entry.socket.websocket.close(event.code, event.reason);
+        closed += 1;
+      }
+      return closed;
+    },
+    loadedScores() {
+      return [...hocuspocus.documents.keys()];
+    },
+  };
+
+  // A session that ends takes its connections along: one session's when it logs out, all the
+  // account's otherwise (docs/spec/accounts.md, section 9).
+  sessions.onEnd(({ accountId, sessionId }) => {
+    collab.closeConnections(sessionId === null ? { accountId } : { sessionId }, Unauthorized);
+  });
+
+  type ClientConnection = ReturnType<Hocuspocus["handleConnection"]>;
+  const clients = new WeakMap<object, ClientConnection>();
+  const server = crossws({
     hooks: {
       open(peer) {
-        connections.set(peer, hocuspocus.handleConnection(peer.websocket as unknown as WebSocket, peer.request as Request));
+        const socket: Socket = { websocket: peer.websocket as unknown as WebSocket, guestOf: new Set(), closed: false };
+        // The same object for the socket's whole life; Hocuspocus hands it to the hooks.
+        socketByRequest.set(peer.request, socket);
+        clients.set(peer, hocuspocus.handleConnection(withoutGuestPresence(socket), peer.request as Request));
       },
       message(peer, message) {
-        connections.get(peer)?.handleMessage(message.uint8Array());
+        clients.get(peer)?.handleMessage(message.uint8Array());
       },
       close(peer, event) {
-        connections.get(peer)?.handleClose({ code: event.code ?? 1000, reason: event.reason ?? "" });
+        clients.get(peer)?.handleClose({ code: event.code ?? 1000, reason: event.reason ?? "" });
+        // What it was still loading will not be connected.
+        const socket = socketByRequest.get(peer.request);
+        if (socket !== undefined) socket.closed = true;
+        for (const [config, entry] of loading) if (entry.socket === socket) loading.delete(config);
       },
       error(peer, error) {
         app.log.error({ peer: peer.id, error }, "collab socket error");
@@ -44,10 +282,10 @@ export function attachCollab(app: FastifyInstance): Hocuspocus {
     },
   });
 
-  app.server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+  app.server.on("upgrade", (request: HttpRequest, socket: Duplex, head: Buffer) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     if (path === COLLAB_PATH || path.startsWith(`${COLLAB_PATH}/`)) {
-      sockets.handleUpgrade(request, socket, head).catch((error: unknown) => {
+      server.handleUpgrade(request, socket, head).catch((error: unknown) => {
         app.log.error(error);
         socket.destroy();
       });
@@ -55,8 +293,19 @@ export function attachCollab(app: FastifyInstance): Hocuspocus {
       socket.destroy();
     }
   });
-  app.addHook("onClose", async () => {
-    hocuspocus.closeConnections();
+  // Shutting down: close every connection before the server waits for them to end, then store
+  // every document still open, while the database is there. `storeDocumentHooks` with
+  // `immediately` is awaited and runs after a store already under way; `flushPendingStores()`
+  // would only start the debounced stores, without a promise to wait for. The payload is the one
+  // Hocuspocus builds for a store that no connection made.
+  app.addHook("preClose", async () => {
+    collab.closeConnections({}, ResetConnection);
+    await Promise.all(
+      [...hocuspocus.documents.values()].map((document) =>
+        hocuspocus.storeDocumentHooks(document, { clientsCount: 0, document, documentName: document.name, instance: hocuspocus, lastContext: {}, lastTransactionOrigin: null }, true),
+      ),
+    );
   });
-  return hocuspocus;
+  app.decorate("collab", collab);
+  return collab;
 }

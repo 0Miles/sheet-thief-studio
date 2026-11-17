@@ -18,13 +18,14 @@
     "@karyl-chan/ui": "0.5.0",
     "@popperjs/core": "^2.11.8",
     "@studio/contracts": "workspace:*",
+    "@studio/score-editor": "workspace:*",
     "@studio/score-model": "workspace:*",
     "@studio/score-render": "workspace:*",
     "nanoid": "^6.0.2",
     "pinia": "^4.1.0",
     "vue": "^3.5.45",
     "vue-router": "^5.5.0",
-    "yjs": "^13.6.33"
+    "yjs": "~13.6.33"
   },
   "devDependencies": {
     "@coderline/alphatab-vite": "1.9.0",

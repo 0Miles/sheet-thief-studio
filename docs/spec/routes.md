@@ -20,7 +20,7 @@
 | `/admin` | 後台，只有 admin 能進 | M1a |
 | 找不到頁面 | 404 頁 | M1a |
 
-- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。
+- 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/<團譜 id>` 與 `/local` 已在 #37 移除。
 - `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。
 - `/admin`：非 admin 看到 404 頁（補充）。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
@@ -50,13 +50,14 @@
 - 錯誤回應的形狀是 `{ code: string, params?: object }`。`code` 是穩定的英文代碼，介面依 `code` 顯示 `apps/web/src/strings.ts` 裡的繁中文字；伺服器不回傳給人看的句子。
 - 成功但沒有內容時回 204。
 - 所有非 GET 請求都檢查 `Origin`（[`security.md`](security.md)）。
+- **補充**：`/api/*` 的 route 預設都要 session，沒有就回 401 `unauthenticated`；不需要登入的 route（登入、登出、訪客取 ticket）要在 route 設定上明確標成 public，忘了標就是要登入（#5）。
 - 資料形狀用 zod 定義在 `packages/contracts`；團譜文件的 schema 從 `score-model` re-export。
 
 ### 3.1 登入與自己的帳號
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`；密碼正確但帳號停用時 403 `account_disabled`（補充：只在密碼正確時才透露停用）；429 `rate_limited` |
+| `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
 | `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
 | `POST /api/auth/logout-all` | 刪除這個帳號所有的 session，關閉它的所有連線 |
 | `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401 |
@@ -80,9 +81,9 @@
 
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
-| `GET /api/scores` | 我是成員的團譜：`id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
+| `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
 | `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜 | 任何帳號 |
-| `POST /api/scores` | `{ title, parts: [{ preset, count }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節） | 任何帳號 |
+| `POST /api/scores` | `{ title, parts: [{ preset, count, tuning? }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。**補充**（#11）：`preset` 是 `PART_PRESETS` 的 id；`tuning` 只給 fretted，弦數要和預設相同，不給就是預設的調弦；`title` 以外都可以省略，省略時是一個「吉他 6 弦」、4/4、120、8 小節（`NEW_SCORE`）；第一小節一定寫上 `tempo`。驗證在 contracts 的 `createScoreRequest` | 任何帳號 |
 | `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |
@@ -127,7 +128,7 @@
 | `GET /api/phrases/:id` | `{ id, name, fragment, revision, updatedAt }` |
 | `PUT /api/phrases/:id` | `{ fragment, baseRevision }` → `{ revision }`；409 `revision_conflict`、413 `phrase_too_large`（[`phrases.md`](phrases.md)） |
 | `PATCH /api/phrases/:id` | `{ name, baseRevision }` → `{ revision }`：改名，同樣檢查 revision（補充） |
-| `POST /api/phrases/:id/duplicate` | 複製一份 → 201 `{ id }`；名稱加上「（副本）」（補充） |
+| `POST /api/phrases/:id/duplicate` | 複製一份 → 201 `{ id }`；名稱加上「（副本）」（補充）；加上之後超過 100 字元時，先截短原名稱（補充，#53） |
 | `DELETE /api/phrases/:id` | 刪除 |
 
 ### 3.8 辨識（M4）
@@ -143,6 +144,7 @@
 
 細節見 [`recognizer.md`](recognizer.md) 與 [`phrases.md`](phrases.md)。
 
+- **補充**（#53）：`?q=` 是名稱的子字串、不分大小寫，最多 100 字元；`?kind=` 不是三種之一時回 400。`POST` 與 `PUT` 的 body 上限是 1 MB 加 64 KB；片段本身（UTF-8 序列化後）超過 1 MB 回 413 `phrase_too_large`，整個 body 超過上限回 413 `payload_too_large`。別人的樂句、不存在的樂句、不是 UUID 的 id，一律 404 `not_found`。`PUT` 的片段和樂句的 `kind` 不同時回 400 `invalid_request`（`params.issues` 的路徑是 `fragment.kind`），不論 `baseRevision` 對不對：樂句的種類不能改（[`phrases.md`](phrases.md) 第 5 節）。
 - 樂句與辨識的 API 不分裝置。手機與平板上「只能看」是介面上的限制（[`views.md`](views.md) 第 7 節），伺服器不分辨裝置。
 
 ## 4. 錯誤代碼一覽（補充）
@@ -150,8 +152,7 @@
 | code | HTTP | 意思 |
 |---|---|---|
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
-| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤 |
-| `account_disabled` | 403 | 帳號已停用 |
+| `invalid_credentials` | 401 | 帳號名稱或密碼錯誤，或帳號已停用（三者不區分） |
 | `password_change_required` | 403 | 要先改密碼 |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
@@ -166,3 +167,4 @@
 | `limit_exceeded` | 422 | 超過聲部、小節等數量上限；`params` 帶上限名稱 |
 | `rate_limited` | 429 | |
 | `recognizer_busy` | 503 | 辨識服務忙碌中 |
+| `internal_error` | 500 | 伺服器內部錯誤（細節只進 log） |

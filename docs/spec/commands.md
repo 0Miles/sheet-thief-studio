@@ -37,17 +37,19 @@ interface Cursor {
 - `at: "on"`：游標在 `beatId` 那個拍點上。
 - `at: "after"`：**附加位置（Append slot）**。錨點 `beatId` 是進入附加位置時那條聲線的最後一個拍點。
 - 空聲線的附加位置是 `{ beatId: null, at: "after" }`，新拍點插在 index 0。
-- 「第一個拍點之前」這個位置取消（現在的 `beatId: null` 表示「第一個拍點之前」，要改）。
+- 沒有「第一個拍點之前」這個位置。
 - `line`：
   - fretted：弦，1 到弦數，1 是最高音的弦。
-  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts:34-37`、`geometry.ts:42-49`）。
+  - percussion、pitched：譜表位置，範圍 −4..12；0 是最上面那條線，8 是最下面那條，一格是半個間距（`navigation.ts` 的 `lineRange`、`geometry.ts` 的 `lineOffset`）。
 
-**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8，`coediting.test.ts:46-64,138-166`）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
+**為什麼一定要有錨點**：新拍點插在「自己的上一個拍點之後」，Yjs 以左鄰項目當錨，所以兩個人同時在同一小節輸入時，各自的拍點保持成段（ADR 0002:8；`packages/score-model/tests/coediting.test.ts` 的「beats typed by two members in the same bar at the same time are all kept, each run together」、「two members typing six beats each in the append slot of the same bar keep each their beats together, in the order typed」與「whatever three members do, in whatever order their changes arrive, they end with the same score」）。如果附加位置只是「聲線尾端」，兩人的拍點會交錯。
 
 - 錨點之後被別人附加了拍點：附加位置畫在錨點之後、他人拍點之前；在附加位置輸入，新拍點也插在那裡。
-- 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts:47-59`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
-- 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。
+- 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts` 的 `settleCursor`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
+- **補充**：游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
+- 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。**補充**：看的人這邊沒有那位成員的拍點位置，所以不帶位置解析：那位成員所在的拍點被刪除時，在看的人這邊先落在那條聲線的最後一個拍點，直到那位成員自己的 session 送出新的 presence。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
+  - **補充**（#20）：起始的 `line` 由 `schema.ts` 的 `startLine(kind)` 給出（旁邊是 `lineRange`、`voicesOffered`；讀不懂種類的聲部都當成譜表），`cursorAt` 沒給 `line` 時用它（Vue 殼放第一個游標時也是）。`Ctrl+↑/↓` 換到另一個聲部時，`moveByStaff` 取 `EditorSession` 記下的那個聲部的 `line`，沒有記錄就用 `startLine`，再夾在範圍內。
 
 ## 3. 移動
 
@@ -69,7 +71,10 @@ interface Cursor {
 - 「下一小節的第一個位置」：它的第一個拍點；空聲線則是附加位置。
 - 新增小節一律要明確操作（`Ctrl+Insert` 一類的鍵，或譜尾的「＋小節」按鈕）。
 - **補充**：`Ctrl+↑/↓` 與 `Alt+1/2` 換到另一條聲線時，留在同一個小節，落在「包含目前拍點起點 tick」的那個拍點上；那條聲線沒有拍點涵蓋這個 tick 時，落在它用 `End` 會到的位置。
-- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。
+  - **補充**（#20）：在附加位置上，「目前的 tick」是錨點拍點的結尾；空聲線是小節的開頭。時值讀不懂的拍點長度算 0（讀取時被略過）。
+  - **補充**（#20）：`Ctrl+↑/↓` 依 `staves` 的順序經過聲部的各個譜表；過了最後一個（或第一個）譜表，到下一個聲部的第一個譜表（或上一個聲部的最後一個譜表）。聲線的編號不變（第二聲線到下一個譜表的第二聲線），目標聲部不提供時（fretted）落在第一聲線。讀不懂種類的聲部不畫出來，跳過。在第一個聲部的第一個譜表按 `Ctrl+↑`、最後一個聲部的最後一個譜表按 `Ctrl+↓`：不動。寫法是 `navigation.ts` 的 `moveByStaff`、`moveToVoice`；`Home`、`End` 是 `moveToBarStart`、`moveToBarEnd`。
+  - **補充**（#20）：`Ctrl+←/→`、`Home`、`End`、`Ctrl+↑/↓`、`Alt+1/2` 都先用 `settleCursor` 解析游標，和 `←`、`→` 一樣；游標的聲部或小節不在了就不動（不會跳到第一小節）。
+- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `schema.ts` 的 `voicesOffered` 決定；`navigation.ts` 的 `moveToVoice` 對不提供的聲線回傳 `"notOffered"`。
 
 ## 4. Selection
 
@@ -90,6 +95,19 @@ interface Cursor {
     | { kind: "bars"; partId: string; anchorBarId: string; focusBarId: string };
   ```
 
+- **補充**（#21）：延伸的細節。規則寫在 `packages/score-model` 的 `selection.ts`（`extendSelection`），`EditorSession` 照它更新選取；測試在 `packages/score-editor/tests/selection.test.ts`。
+  - 沒有選取時，從游標所在的拍點（`Shift+←/→`）或小節（`Shift+Ctrl+←/→`）開始。游標在附加位置時，它的拍點是錨點，也就是那條聲線的最後一個拍點；空聲線沒有拍點可選，`Shift+←/→` 不建立拍點範圍。
+    - **補充**（#20）：空聲線的 `Shift+←/→` 照升級規則處理：游標照 `←`、`→` 離開這個小節時（樂譜中段），建立從這個小節到游標小節的小節範圍；游標留在同一個小節時（譜的開頭按 `Shift+←`、譜的結尾按 `Shift+→`），不建立選取。測試在 `selection.test.ts` 的「in an empty voice in the middle of the score」。
+  - `Shift+←/→` 的游標照 `←`、`→` 移動（第 3 節，包括 5.1 剛輸入的拍點）。游標進入附加位置時，終點是它的錨點。
+  - `Shift+Ctrl+←/→` 的游標照 `Ctrl+←/→` 移到上一個／下一個小節的第一個位置（`navigation.ts` 的 `moveByBar`）；在譜的兩端不動，範圍保留。拍點範圍用它延伸時，從拍點範圍的小節起。
+  - 升級成小節範圍之後就一直是小節範圍：`Shift+←/→` 照樣移動游標，終點是游標的小節；回到起點的小節時是那一個小節的範圍。
+  - 結束選取的動作：不帶 `Shift` 的移動（含 `↑`、`↓`、`Home`、`End`、`Ctrl+←/→`、`Ctrl+↑/↓`、`Alt+1/2`；fretted 聲部的 `Alt+2` 什麼都不做，選取也不變）、`Esc`、點譜面、復原與重做，以及其他不作用在選取上的 Command（輸入音符、`Insert`）。被唯讀拒絕的 Command 沒有執行，選取不變。
+  - 選取作用的 Command 目前有 `Delete`（5.6）、#26 的開關型技巧：dead、ghost、accent、staccato、vibrato、palmMute、letRing、tap（5.4），#20 的時值（`+`、`-`、`.`、`Shift+T`，5.3）與 `Shift+R`（5.6），以及 #30 的拍點記號：stroke、slap／pop、dynamic（5.4）；選取在它們之後保留。`text`（5.5）只作用在游標拍點，存入後選取結束。其餘技巧作用在選取範圍的規則還沒做，在那之前它們只作用在游標拍點，並結束選取。
+  - `Delete` 之後，選取的拍點或小節還在時選取保留（所以拍點範圍再按一次 `Delete` 就刪除那些休止）；拍點被刪除時選取結束，游標落在接替它們位置的拍點上，沒有時落在附加位置（同 5.2 的 `deleteBeat`）。小節範圍清空後，游標所在的聲線變空，游標落在空聲線的附加位置。
+  - 起點或終點的拍點、小節或聲部不在了（別人刪除、自己復原），選取結束（`settleSelection`）。
+  - 唯讀編輯視圖也可以選取（[`views.md`](views.md) 第 4 節）；`Delete` 被拒絕。
+  - 選取框：拍點範圍是一個框，從第一個拍點到最後一個拍點、蓋住那條聲線的譜表；小節範圍在每一行譜（system）各一個框，從那一行的第一個選取小節到最後一個、蓋住這個聲部的所有譜表。上下延伸到外側的線（弦或譜線）上的游標所及之處。位置由 `ScoreRenderer.boundsOfSelection` 給出（`geometry.ts` 的 `selectionRects`），殼照 [`views.md`](views.md) 第 9 節避開保留區域。
+
 ## 5. 內容操作
 
 ### 5.1 輸入音符
@@ -100,8 +118,10 @@ interface Cursor {
 | percussion | 鼓件字母、`1`–`4` | 切換：拍點上沒有這個鼓件就加上，有就移除 |
 | pitched | `A`–`G` | 在最靠近游標位置的那個八度輸入該音名的音，依調號套用升降；拍點上已經有音時，加入和弦音 |
 
-- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`typing.ts:6-9,33-58`，`typing.test.ts:44`）。現在的做法（暫時調大 `captureTimeout`）可以換掉。
+- **兩位數格號**：600 ms 內在同一個拍點、同一條弦上輸入的兩個數字，合成一個格號、一個復原步驟；合起來超過 36 時，第二個數字當成新的一次輸入（`packages/score-editor/src/session.ts` 的 `TWO_DIGIT_WINDOW`、`MAX_FRET` 與 `typeDigit`；測試在 `packages/score-editor/tests/typing.test.ts`）。
+  - **補充**（#20）：復原步驟在哪裡分開由 `EditorSession` 決定，不靠時鐘：`UndoManager` 的 `captureTimeout` 是無限大，這個成員的每一筆交易之前呼叫 `stopCapturing()`，只有第二個數字那一筆不呼叫，所以併進第一個數字的步驟。別人的修改夾在兩個數字之間，不影響合併；這個成員不經按鍵的修改（例如之後的面板）或點譜面夾在中間時，結束等待，第二個數字當成新的一次輸入。
 - **在附加位置輸入**：建立一個新拍點並寫入音符，是一個 Command。新拍點的時值取錨點拍點的時值（`value`、`dots`、`tuplet`）；沒有錨點時是四分音符。輸入後游標移到新拍點（`at: "on"`），下一次 `→` 以它為新的錨點。
+  - **補充**：別人的拍點已經接在新拍點之後時也一樣。游標還停在新拍點上（只換弦、換線不算離開）時，`→` 把它當成聲線的最後一個拍點：小節未滿就進它的附加位置，已滿或超過就到下一小節（`navigation.ts` 的 `moveFromAppendedBeat`）。否則 `→` 會走到別人的拍點上，同時打譜的兩人的拍點就不再成段。游標離開新拍點之後，`→` 照第 3 節。`Insert` 在附加位置建立的拍點也一樣。
 - 在既有拍點上輸入：游標留在原拍點（這樣才能疊和弦），fretted 與 pitched 可以接著換弦、換線再輸入。
 - **補充**：percussion 切換之後，`line` 移到該鼓件的譜表位置（[`schema.md`](schema.md) 7.1）。
 - **pitched 的音高**：`score-model` 有一個純函式，由「clef 加譜表位置」得出自然音的音高；`A`–`G` 在所有同名的音裡，取和游標位置的自然音相差最少音級的那一個（7 個音名不會等距，所以沒有平手）。再依該小節生效的 `keySig` 套用升降（例如 G 大調的 F 變成 F♯），寫入 `spell`。**補充**：輸入後 `line` 移到新音所在的譜表位置。
@@ -111,9 +131,9 @@ interface Cursor {
 
 | Command | 鍵 | 語意 |
 |---|---|---|
-| `insertBeat` | `Insert` | 在游標拍點**之前**插入一個休止拍點，時值和游標拍點相同；在附加位置上就是附加（時值規則同 5.1）。游標移到新拍點。現在的 `insertBeat` 插在之後（`commands.ts:155-171`），要改 |
-| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充）；percussion 是畫在那條線上的**所有**鼓件 |
-| `deleteBeat` | `Delete`（空拍點） | 刪掉拍點（新增；現在的 `Delete` 只會清格號，`typing.ts:88`） |
+| `insertBeat` | `Insert` | 在游標拍點**之前**插入一個休止拍點，時值和游標拍點相同；在附加位置上就是附加（時值規則同 5.1）。游標移到新拍點 |
+| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充）；percussion 是畫在那條線上的**所有**鼓件。現在只做了 fretted；percussion、pitched 跟著它們的音符鍵在 M2、M3 做，在那之前不動 |
+| `deleteBeat` | `Delete`（空拍點） | 刪掉拍點 |
 
 - percussion 的 `Delete` 刪整條線，理由：好幾個鼓件畫在同一條線上（`spike-report.md:287-301`），只刪一個會有歧義。
 - **補充**：拍點上有音、但游標那條線上沒有音時，`Delete` 不動。
@@ -123,13 +143,19 @@ interface Cursor {
 
 | Command | 鍵 | 語意 |
 |---|---|---|
-| `stepDuration` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts:213-225`）；到 64 分或全音符就不動 |
+| `stepDuration` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用）；到 64 分或全音符就不動 |
 | `cycleDots` | `.` | 附點 0 → 1 → 2 → 0（補充） |
 | `toggleTriplet` | `Shift+T` | 沒有連音時設成 `{ actual: 3, normal: 2 }`，有任何連音時移除（補充） |
 
 有選取時，套用到選取範圍內的每個拍點（補充，規則同 5.4）。
 
-### 5.4 技巧與拍點旗標
+- **補充**（#20）：和 5.4 一樣「一次決定、逐一套用」，寫法是 `commands.ts` 的 `BeatChange<D>`（`decide(seen)`、`turn(beat, decided)`），由 `changeBeatAt`（游標拍點）與 `changeBeatsOnSelection`（選取，沿用 `runsOf` 的走訪）套用，都是一個 Command，只寫入有改變的拍點。讀取時被略過的拍點不算、也不改。游標在附加位置時沒有拍點，不動。
+  - `+`、`-`（`durationStep`）：每個拍點各自變短、變長一級；已經到 64 分或全音符的拍點不動。
+  - `.`（`dotCycle`）：所有拍點都設成「範圍裡第一個拍點的附點」的下一個（0 → 1 → 2 → 0）。
+  - `Shift+T`（`tripletToggle`）：所有拍點都已經有連音（任何一種）時，全部移除；否則全部設成三連音，原本是別種連音的拍點也一樣。
+  - `Shift+R`（`clearNotes`）：見 5.6。
+
+### 5.4 技巧與拍點記號
 
 鍵見 [`keymap.md`](keymap.md)。每一次切換是一個 Command。
 
@@ -145,15 +171,36 @@ interface Cursor {
   - `dynamic`：沒有 → `pp` → `p` → `mp` → `mf` → `f` → `ff` → 沒有。
 - **bend 的半音數**（補充）：fretted 聲部按 `Shift+↑`／`Shift+↓`，把游標那條弦上的音符的 `bend.semitones` 加減 1，夾在 1–4；音符沒有 bend 時不動。
 - **dead note**（`Shift+X`）：在有音的弦上切換 `dead`，保留格號。**補充**：在沒有音的弦上，建立一個沒有格號的 dead note `{ dead: true }`。
+  - **補充**（#26）：在附加位置上，`Shift+X` 和輸入格號一樣建立新拍點，放上 dead note，游標移到新拍點；其他技巧鍵在附加位置不動（那裡沒有音）。
+  - **補充**（#26）：在沒有格號的 dead note 上關掉 `dead`，移除這個音符，回到原本沒有音的弦。理由：fretted 音符要有 `fret` 或 `dead`（[`schema.md`](schema.md) 第 8 節），只拿掉 `dead` 會留下讀不懂的音符；這樣在既有的拍點上，`Shift+X` 按兩次也回到原狀。在附加位置上，第一次建立的拍點留下來，第二次只移除音符，留下一個休止拍點；要整個回到原狀用復原。
 - **tie**（`Shift+L`）：「加上 tie」會把格號設成前一個音的格號。這是指令本身的效果，不是自動修復。
-  - fretted：同一條聲線的前一個拍點（可以在上一小節）在同一條弦上有音時，把游標那條弦的音設成 `{ ...原值, fret: 前一個音的格號, tie: true }`；那條弦原本沒有音也一樣建立。前一個拍點那條弦沒有音時：游標那條弦有音就只設 `tie: true`（之後會被標成 `danglingTie`），沒有音就不動（補充）。
+  - fretted：同一條聲線的前一個拍點（可以在上一小節）在同一條弦上有音時，把游標那條弦的音設成 `{ ...原值, fret: 前一個音的格號, tie: true }`；那條弦原本沒有音也一樣建立（只在游標上：有選取時不建立音符，見下面「有選取時」）。前一個拍點那條弦沒有音時：游標那條弦有音就只設 `tie: true`（之後會被標成 `danglingTie`），沒有音就不動（補充）。
   - pitched（補充）：游標那條線上有音時設 `tie: true`；那條線上沒有音、而前一個拍點同一條線上有音時，建立同一個音高與拼寫的音並設 `tie: true`。
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
+  - **補充**（#36）：寫法是 `commands.ts` 的 `tieToggle`（`NoteToggle<boolean>`）。`decide`：游標那條線上沒有音時是「加上」（才能建立音），否則「不是全部都有 tie 就加上，否則移除」，選取時一樣。`turn` 用 `place.before`：前一個音有格號時設成 `{ ...原值, fret: 前一個音的格號, tie: true }`（已經是同一個格號的 tie 就不寫入）；前一個音沒有格號（沒有音，或沒有格號的 dead note）時，有音就只設 `tie: true`，沒有音就不動，不會建立既沒有格號、也不是 dead 的音。pitched 的建立只帶前一個音的 `spell`；`noteKeyAt` 在 pitched 是 `null`，所以目前只有直接呼叫 `toggleAt` 才會走到（見 [`keymap.md`](keymap.md) 第 3 節的補充）。在附加位置上和 dead note 一樣建立新拍點，游標移到新拍點。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
+  - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
+  - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
+    - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
+    - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值，沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著聲部種類（`kind`，補充，#36：tie 在 pitched 才建立同音高的音）、音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
+    - `toggleAt(doc, cursor, key, toggle)` 作用在游標拍點上 `key` 的音，鍵由 `noteKeyAt` 給出（目前只有 fretted 有：那條弦；鼓與五線譜是 `null`，按鍵不動）。在附加位置上，`toggle` 建立的音放在新拍點上，`place.before` 是錨點拍點的音。`toggleOnSelection` 作用在選取，不建立音符。兩者都是一個 Command，只寫入有改變的音。
+    - 開關型的技巧（`ON_OFF_TECHNIQUES`）由 `techniqueToggle` 給出：`onOffToggle` 的 `decide` 是「不是全部都有」，只改已經有的音；dead 是 `deadToggle`（上面兩條補充）。
+    - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。
+    - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
+    - 拍點層級的欄位（stroke、slap／pop、dynamic、text）不是音符，不用 `NoteToggle`。
+  - **補充**（#27）：legato（`Shift+H`）是開關型的技巧，在 `ON_OFF_TECHNIQUES` 裡，只改已經有的音。`slideOut`（`Shift+S`）與 `slideIn`（`Shift+E`）是 `slideOutCycle`、`slideInCycle`（`NoteToggle`，順序是 `schema.ts` 的 `SLIDE_OUTS`、`SLIDE_INS`）：`decide` 是「看到的第一個音的值」的下一個，和拍點記號的 `markingCycle`、`.` 的附點同一個規則，所以選取上全部走到同一個狀態；`turn` 只改已經有的音，不建立音符，其他欄位保留，已經是那個值時不寫入。三者都不檢查有沒有「下一個音」：沒有時照樣寫入，之後被標成 `danglingLink`（[`flags.md`](flags.md)）。
+  - **補充**（#28）：`Shift+B` 是 `bendCycle`（`NoteToggle`，順序是 `schema.ts` 的 `BEND_TYPES`）：`decide` 和 slide 一樣是「看到的第一個音的型」的下一個；`turn` 只改已經有的音，不建立音符，其他欄位保留。從沒有切到一個型時是 2 個半音（`BEND_SEMITONES.initial`）；已經有 bend 的音換型時保留它自己的 `semitones`，所以選取上全部走到同一個型，半音數各自保留。`Shift+↑`／`Shift+↓` 是 `bendStep(1)`、`bendStep(-1)`（`NoteToggle<void>`，和 `durationStep` 一樣每個音各自加減）：沒有 bend 的音、已經到 1 或 4 的音不寫入，所以也沒有復原步驟。有選取時兩者都作用在範圍裡每一個音。
+  - **補充**（#27，#26 留下的）：游標停在讀取時被略過的拍點上時，`toggleAt` 不動，即使那個拍點的音符本身讀得懂。拍點範圍的選取，聲線不是那個聲部有的（`isVoiceKey`）時，和小節範圍一樣不算也不改。
+  - **補充**（#30）：拍點記號沿用 5.3 的 `BeatChange<D>`（`changeBeatAt`、`changeBeatsOnSelection`，選取時走 `runsOf` 與 `selectedBeatsOf`），不另開一條選取的路。`decide` 看到的拍點（`SeenBeat`）多了 `markings`（`BeatMarkings`，`CONTEXT.md` 的 Beat marking；不叫 flag，因為 Flag 不存在團譜裡）：讀取時讀出的 stroke、slap、pop、dynamic、text（`read.ts` 的 `readBeatFields`，同時有 slap 與 pop 時讀成只有 slap）；`turn` 回傳的 `BeatWrite` 多了 `set`：值是寫入，`null` 是移除。
+    - 三個循環型的記號，選取時全部設成「範圍裡第一個拍點的值」的下一個，和 `.` 的附點一樣：`strokeCycle`（down → up → 沒有）、`slapPopCycle`（slap → pop → 沒有；切到 pop 時同一筆交易移除 slap，所以兩人同時寫成兩者都有的拍點，按一次就只剩 pop）、`dynamicCycle`（沒有 → pp → … → ff → 沒有）。
+    - 休止拍點也照樣設上（拍點層級的切換作用在每一個拍點）；讀不懂的拍點不算、也不改；寫入時以儲存的原值為底，不認得的欄位保留。
+    - 寫入不適用於該聲部種類的欄位（stroke、slap、pop 在鼓與五線譜）時整個不動，不寫入：寫了，讀取時整個拍點會被略過（`schema.ts` 的 `beatFieldFits`）。鍵本身也只綁在 fretted（[`keymap.md`](keymap.md) 第 3 節的補充）。
 
 ### 5.5 文字與歌詞
 
 - `setText`：在游標拍點開內嵌輸入框，`Enter` 存入；空字串表示移除。一次存入是一個 Command。
+  - **補充**（#30）：`commands.ts` 的 `setText(doc, cursor, text)`，以 `beatText` 這個 `BeatChange` 套用在游標拍點；超過 64 字元（`MAX_BEAT_TEXT`）時回傳 false、不寫入；和原本相同時不寫入。附加位置沒有拍點，不動。不修剪空白，照原樣存。
+  - **補充**（#30）：開框與存入分在兩邊。`EditorSession` 處理 `Enter`：游標在讀得懂的拍點上時，以 `onEditText` 送出 `{ cursor, text }`（`textAt`：現有的文字，沒有時是空字串）；附加位置不送。唯讀時 `Enter` 和其他會改動文件的鍵一樣被拒絕。殼開框，`Enter` 時呼叫 `EditorSession.setText(cursor, text)`：存在開框時的 `cursor` 那個拍點上（拍點已被刪除就不動），選取結束。開框本身不改動文件，選取不變；`Esc` 或焦點離開輸入框時不存，選取也不變。
 - `setLyric`（只有 pitched）：歌詞模式，見 [`keymap.md`](keymap.md)。每存一個音節是一個 Command。空字串表示延長；音節結尾的 `-` 表示字還沒結束。
 - 段落名稱（`section`）從小節屬性面板編輯，是結構操作（第 6 節）。
 
@@ -161,8 +208,8 @@ interface Cursor {
 
 | Command | 沒有選取 | 拍點範圍 | 小節範圍 |
 |---|---|---|---|
-| `Delete` | 見 5.2 | **補充**：範圍內的拍點變成休止（移除音符，保留時值）；範圍內全部已經是休止時，刪除這些拍點 | 清空目前聲部在這些小節裡的所有聲線（變成空的聲線，也就是整小節休止） |
-| `Shift+R` | 清空游標拍點的音符，成為休止（補充：只移除 `notes`，其他拍點欄位保留） | 同左，作用在範圍內每個拍點 | 同左 |
+| `Delete` | 見 5.2 | **補充**：範圍內的拍點變成休止（移除音符，保留時值與其他拍點欄位）；範圍內全部已經是休止時，刪除這些拍點 | 清空目前聲部在這些小節裡的所有聲線（變成空的聲線，也就是整小節休止）；補充（#21）：在原本的聲線上刪除，不換掉聲線，同 5.7 第 3 點 |
+| `Shift+R` | 清空游標拍點的音符，成為休止（補充：只移除 `notes`，其他拍點欄位保留） | 同左，作用在範圍內每個拍點；和 `Delete` 不同，全部是休止時也不刪除拍點（補充，#20） | 同左，目前聲部在這些小節裡所有聲線的拍點（補充，#20：`clearNotes`，見 5.3） |
 | 複製 | 不動 | 拍點段 | 小節段 |
 | 剪下 | 不動 | 複製加上「清空」 | 複製加上「清空」 |
 | 貼上 | 依剪貼簿的片段種類 | 同左 | 同左 |
@@ -200,7 +247,7 @@ interface Cursor {
 
 | Command | 鍵或介面 | 語意 |
 |---|---|---|
-| `insertBars` | `Ctrl+Insert`：在游標小節**之前**插入 1 個空小節。`Ctrl+Shift+Insert`（補充）：在游標小節**之後**插入。譜尾的「＋小節」按鈕：附加 1 個 | 新小節沿用前一個小節的拍號；插在最前面時沿用後一個小節的拍號（現在就是這樣，`commands.ts:90,105`）。只寫 `timeSig`，不複製速度、調號等變化點。同一筆交易裡替所有聲部建好容器。游標移到新小節的第一個位置（補充） |
+| `insertBars` | `Ctrl+Insert`：在游標小節**之前**插入 1 個空小節。`Ctrl+Shift+Insert`（補充）：在游標小節**之後**插入。譜尾的「＋小節」按鈕：附加 1 個 | 新小節沿用前一個小節的拍號；插在最前面時沿用後一個小節的拍號（現在就是這樣，`commands.ts` 的 `insertBars`）。只寫 `timeSig`，不複製速度、調號等變化點。同一筆交易裡替所有聲部建好容器。游標移到新小節的第一個位置（補充） |
 | `deleteBars` | `Ctrl+Delete`：有小節範圍時刪除範圍，否則刪除游標小節 | 不跳確認對話框，可以復原。至少留下 1 個小節（補充）。同時送到的輸入會消失，見第 9 節 |
 | `setTimeSig` | 小節屬性面板 | 有小節範圍時，作用在那個範圍；沒有時，從游標所在小節起，到下一個拍號和原值不同的小節為止 |
 | `setTempo` | 小節屬性面板 | 只寫在游標所在的小節；「清除」就是移除這個變化點 |
@@ -221,7 +268,7 @@ interface Cursor {
 
 Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
-- **新增**（`addPart`）：從預設表（第 10 節）選一項。必須在同一筆交易裡替所有小節建好內容容器（ADR 0002:21，`commands.ts:78-80`）。名稱自動編號，例如已有「吉他 1」時，新的是「吉他 2」。超過上限（總共 16 個、非鼓 15 個）時拒絕並提示。
+- **新增**（`addPart`）：從預設表（第 10 節）選一項。必須在同一筆交易裡替所有小節建好內容容器（ADR 0002:21，`commands.ts` 的 `addPart`）。名稱自動編號，例如已有「吉他 1」時，新的是「吉他 2」。超過上限（總共 16 個、非鼓 15 個）時拒絕並提示。
 - **刪除**（`deletePart`）：先跳確認對話框，列出有內容的小節數；可以復原。最後一個聲部不能刪（補充）。
 - **排序**（`movePart`）：新增；修改 fractional index 排序鍵。
 - 刪除聲部要確認、刪除小節不要確認，這個不對稱是刻意的：刪小節是常見的小動作，刪聲部會清掉整件樂器。
@@ -246,14 +293,15 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
 - `UndoManager` 以分頁為單位，重新整理後清空。
 - `trackedOrigins` 是 `LOCAL`：只復原自己的動作（ADR 0001）。
-- 追蹤範圍是 `bars`、`parts`，**加上 `meta`**；現在只追蹤 `bars`、`parts`（`typing.ts:30`），要改。
+- 追蹤範圍是 `bars`、`parts`，**加上 `meta`**（`packages/score-editor/src/session.ts` 的 `createEditorSession`，#20）。改標題的 Command 是 `commands.ts` 的 `setTitle`。
 - 所有 Command 都可以復原，包含結構操作、設定類與 `replaceScore`。
 - `Ctrl+Z` 復原；`Ctrl+Y` 或 `Ctrl+Shift+Z` 重做。復原之後，游標用 `settleCursor` 重新解析。
+- **補充**（#20）：每個 Command 一個步驟，由 `EditorSession` 在這個成員的每一筆交易之前呼叫 `stopCapturing()` 分開（唯一的例外是兩位數格號的第二個數字，見 5.1）；所以不經按鍵執行的 Command 也各是一個步驟。測試在 `packages/score-editor/tests/undo.test.ts`：每一個 Command、兩個平台的每一個組合。
 - 樂句編輯器的復原堆疊也在本機，重新整理後清空（[`phrases.md`](phrases.md)）。
 
 ## 9. 同時修改時的規定
 
-- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `coediting.test.ts:90-106`。
+- **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」。
 - **放置與貼上小節段**：在既有的 `Y.Array` 上先刪再插，同時輸入的內容保留（5.7）。
 - **內容容器**：客戶端不補缺少的容器，只有伺服器補（[`collab.md`](collab.md)）。
 - **新團譜的初始內容**由伺服器建立。
@@ -272,9 +320,11 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 | 鍵盤 | pitched | `[]` | `[{ clef: "treble" }, { clef: "bass" }]` | 0 |
 | 人聲 | pitched | `[]` | `[{ clef: "treble" }]` | 53 |
 
-- program 的依據：吉他沿用 `commands.ts:66` 的預設 25；人聲沿用前身的 `VOICE_PROGRAM`（前身 `converter.py:506`）。
+- **補充**（#53）：這張表在 `score-model` 的 `PART_PRESETS`（`src/presets.ts`），名稱在 `apps/web/src/strings.ts` 的 `presets`；樂句庫的「新增樂句」先用它。
+- program 的依據：吉他沿用 spike 的預設 25（`schema.ts` 的 `KIND_DEFAULTS`）；人聲沿用前身的 `VOICE_PROGRAM`（前身 `converter.py:506`）。
 - 新聲部的 `capo` 是 0。
 - 名稱用預設的名稱加編號：「吉他 1」「吉他 2」「貝斯 1」「鼓 1」……（補充：7 弦吉他與 6 弦吉他共用「吉他」這個名稱的編號，4 弦與 5 弦貝斯共用「貝斯」）。
+  - **補充**（#11）：只有一個也編號（「鼓 1」）。聲部的名稱是團譜的內容、由伺服器寫入，所以基本名稱放在 `score-model` 的 `PRESET_BASE_NAMES`，編號是 `partNames`：接在團譜裡同一個基本名稱的最大編號之後（已有「吉他 1」「吉他 3」時，新的是「吉他 4」）。選單裡的預設名稱仍在 `strings.ts` 的 `presets`。
 
 Fretted 的調弦選項，依弦數套用：
 
@@ -286,9 +336,12 @@ Fretted 的調弦選項，依弦數套用：
 | 降全音 | 每條弦 −2 |
 | 逐弦自訂 | 每條弦各自設定 MIDI 音高（介面顯示音名，例如 E2） |
 
+- **補充**（#11）：標準、Drop、降半音、降全音是 `score-model` 的 `tuningFor(option, strings)`；「依弦數套用」是以那個弦數的預設為標準：4 弦是貝斯 4 弦、5 弦是貝斯 5 弦、6 弦是吉他 6 弦、7 弦是吉他 7 弦。音名是 `pitchName`，中央 C（60）是 C4，黑鍵寫成升。
+
 建立團譜的對話框：
 
 - 欄位：標題、聲部（預設表加上數量，同一種預設可以加好幾次）、拍號、速度。
+  - **補充**（#11）：聲部一行一種預設，各有數量與（fretted 的）調弦；同一行的聲部調弦相同，要不同的調弦就再加一行。介面在 `apps/web/src/components/NewScoreDialog.vue`；超過上限時顯示提示、停用「建立」。
 - 預設值：4/4、120、8 小節。
 - **補充**：至少要選 1 個聲部；聲部上限同第 7.1 節；拍號與速度的範圍同 [`schema.md`](schema.md) 第 3 節。
 - 建立由伺服器做：伺服器以參與者身分建立文件與初始內容（[`collab.md`](collab.md)）。

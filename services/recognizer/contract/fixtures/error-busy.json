@@ -1,0 +1,9 @@
+{
+  "contract": "sheet-thief-studio/recognition",
+  "version": 1,
+  "error": {
+    "code": "busy",
+    "params": {},
+    "pages": []
+  }
+}

@@ -11,7 +11,7 @@ export interface DrumPiece {
   name: string;
 }
 
-/** The pieces the spike uses and checks (S6); alphaTab knows about ninety more. */
+/** The pieces the measurements and the tests use and check (S6); alphaTab knows about ninety more. */
 export const DRUM_PIECES = {
   kick: { id: 36, midi: 36, name: "Kick" },
   snare: { id: 38, midi: 38, name: "Snare" },

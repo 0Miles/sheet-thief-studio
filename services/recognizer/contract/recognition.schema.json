@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sheet-thief-studio:recognition:1",
+  "title": "辨識服務的中間模型，契約版本 1",
+  "description": "POST /recognize 回傳的 JSON：成功時是辨識出的 TAB（result），失敗時是錯誤（failure）。形狀改了就升 version，並同時更新 fixtures/、packages/contracts 的 zod 形狀與 server 的轉換（docs/spec/recognizer.md 第 5 節、ADR 0006）。",
+  "oneOf": [{ "$ref": "#/$defs/result" }, { "$ref": "#/$defs/failure" }],
+  "$defs": {
+    "contract": {
+      "description": "契約的名稱，固定不變。",
+      "const": "sheet-thief-studio/recognition"
+    },
+    "version": {
+      "description": "契約的版本號，從 1 開始；形狀改了就加 1。",
+      "const": 1
+    },
+    "result": {
+      "description": "辨識成功：一個聲部的 TAB，停在前身 _build_track 之後、_unify_bars 之前，超出拍號的音照樣保留。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "version", "strings", "tuning", "capo", "timeSignature", "bars", "warnings"],
+      "properties": {
+        "contract": { "$ref": "#/$defs/contract" },
+        "version": { "$ref": "#/$defs/version" },
+        "strings": {
+          "description": "TAB 的弦數，4–7。",
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 7
+        },
+        "tuning": { "$ref": "#/$defs/tuning" },
+        "capo": { "$ref": "#/$defs/capo" },
+        "timeSignature": {
+          "description": "整首（第一小節）的拍號：偵測到的，否則 4/4。",
+          "$ref": "#/$defs/songTimeSignature"
+        },
+        "bars": {
+          "description": "依頁序排好的小節，至少一個。",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/bar" }
+        },
+        "warnings": {
+          "description": "辨識時的提醒與略過的項目，只有 code 與參數；給人看的原文只寫進 log。",
+          "type": "array",
+          "items": { "$ref": "#/$defs/warning" }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "strings": { "const": 4 } } }, "then": { "$ref": "#/$defs/fourStrings" } },
+        { "if": { "properties": { "strings": { "const": 5 } } }, "then": { "$ref": "#/$defs/fiveStrings" } },
+        { "if": { "properties": { "strings": { "const": 6 } } }, "then": { "$ref": "#/$defs/sixStrings" } },
+        { "if": { "properties": { "strings": { "const": 7 } } }, "then": { "$ref": "#/$defs/sevenStrings" } }
+      ]
+    },
+    "fourStrings": {
+      "description": "四弦：調弦有 4 個音，音符只在第 1–4 弦。",
+      "properties": {
+        "tuning": { "properties": { "midi": { "minItems": 4, "maxItems": 4 } } },
+        "bars": { "items": { "properties": { "beats": { "items": { "properties": { "notes": { "items": { "properties": { "string": { "maximum": 4 } } } } } } } } } }
+      }
+    },
+    "fiveStrings": {
+      "description": "五弦：調弦有 5 個音，音符只在第 1–5 弦。",
+      "properties": {
+        "tuning": { "properties": { "midi": { "minItems": 5, "maxItems": 5 } } },
+        "bars": { "items": { "properties": { "beats": { "items": { "properties": { "notes": { "items": { "properties": { "string": { "maximum": 5 } } } } } } } } } }
+      }
+    },
+    "sixStrings": {
+      "description": "六弦：調弦有 6 個音，音符只在第 1–6 弦。",
+      "properties": {
+        "tuning": { "properties": { "midi": { "minItems": 6, "maxItems": 6 } } },
+        "bars": { "items": { "properties": { "beats": { "items": { "properties": { "notes": { "items": { "properties": { "string": { "maximum": 6 } } } } } } } } } }
+      }
+    },
+    "sevenStrings": {
+      "description": "七弦：調弦有 7 個音，音符在第 1–7 弦。",
+      "properties": {
+        "tuning": { "properties": { "midi": { "minItems": 7, "maxItems": 7 } } }
+      }
+    },
+    "tuning": {
+      "description": "這個聲部用的調弦，以及它從哪裡來（前身 tunings.py 的 TuningChoice）。",
+      "oneOf": [
+        {
+          "description": "譜面或標題區印的調弦讀得懂。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["midi", "source", "reason", "raw"],
+          "properties": {
+            "midi": { "$ref": "#/$defs/tuningMidi" },
+            "source": { "description": "\"detected\"：照譜上印的調弦。", "const": "detected" },
+            "reason": { "description": "讀得到時沒有原因。", "type": "null" },
+            "raw": { "description": "讀得到時不保留原文。", "type": "null" }
+          }
+        },
+        {
+          "description": "譜上沒有印調弦：用該弦數的標準調弦。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["midi", "source", "reason", "raw"],
+          "properties": {
+            "midi": { "$ref": "#/$defs/tuningMidi" },
+            "source": { "description": "\"default\"：該弦數的標準調弦。", "const": "default" },
+            "reason": { "description": "\"not_found\"：譜上沒有調弦。", "const": "not_found" },
+            "raw": { "description": "沒有原文可以保留。", "type": "null" }
+          }
+        },
+        {
+          "description": "譜上印了調弦但讀不懂（docs/spec/recognizer.md 第 6 節）：用該弦數的標準調弦，保留原文。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["midi", "source", "reason", "raw"],
+          "properties": {
+            "midi": { "$ref": "#/$defs/tuningMidi" },
+            "source": { "description": "\"default\"：該弦數的標準調弦。", "const": "default" },
+            "reason": { "description": "\"unrecognized\"：印了調弦但讀不懂。", "const": "unrecognized" },
+            "raw": { "description": "讀不懂的原文：標題區的調弦行，或譜表左邊的音名（由低音弦寫起）。", "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "tuningMidi": {
+      "description": "每條弦空弦的 MIDI 音高，第 1 弦（最高）在前；個數等於 strings。",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0, "maximum": 127 }
+    },
+    "capo": {
+      "description": "這個聲部的 capo，以及它從哪裡來。",
+      "oneOf": [
+        {
+          "description": "標題區印了範圍內的 capo。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fret", "source"],
+          "properties": {
+            "fret": { "description": "capo 夾在第幾格，0–24（0 是印了「No capo」）。", "type": "integer", "minimum": 0, "maximum": 24 },
+            "source": { "description": "\"detected\"：照譜上印的。", "const": "detected" }
+          }
+        },
+        {
+          "description": "沒有讀到 capo：當成沒有夾。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fret", "source"],
+          "properties": {
+            "fret": { "description": "沒有讀到時一律 0。", "const": 0 },
+            "source": { "description": "\"default\"：沒有讀到。", "const": "default" }
+          }
+        }
+      ]
+    },
+    "songTimeSignature": {
+      "description": "整首的拍號，在前身 music_settings 的範圍內（範圍外的讀數，前身改用 4/4）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "description": "每小節幾拍，1–16。", "type": "integer", "minimum": 1, "maximum": 16 },
+        "denominator": { "description": "以幾分音符為一拍：2、4、8 或 16。", "enum": [2, 4, 8, 16] }
+      }
+    },
+    "timeSignature": {
+      "description": "曲中印的拍號，在前身讀譜面拍號的範圍內（extract/bar_signs.py、raster_tab.py）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "description": "每小節幾拍，1–32。", "type": "integer", "minimum": 1, "maximum": 32 },
+        "denominator": { "description": "以幾分音符為一拍：1、2、4、8、16 或 32。", "enum": [1, 2, 4, 8, 16, 32] }
+      }
+    },
+    "bar": {
+      "description": "一個小節（前身 model.py 的 ScoreMeasure）。小節層級的記號 Studio 不放進片段，只列成略過的項目。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeSignature", "marker", "tempo", "repeatOpen", "repeatTimes", "endings", "sign", "jump", "rhythmEstimated", "beats"],
+      "properties": {
+        "timeSignature": {
+          "description": "從這個小節起的拍號；null 時沿用前一個小節的（第一小節沿用整首的 timeSignature）。",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/timeSignature" }]
+        },
+        "marker": { "description": "從這個小節開始的段落名稱，例如 \"Chorus\"；沒有時是 null。", "type": ["string", "null"], "minLength": 1 },
+        "tempo": { "description": "從這個小節開始的速度（BPM），20–400；譜上沒有印時是 null。", "type": ["integer", "null"], "minimum": 20, "maximum": 400 },
+        "repeatOpen": { "description": "反覆從這個小節開始（\"|:\"）。", "type": "boolean" },
+        "repeatTimes": {
+          "description": "反覆在這個小節結束（\":|\"）時，總共演奏幾次（2–32）；沒有反覆結束時是 0。",
+          "type": "integer",
+          "anyOf": [{ "const": 0 }, { "minimum": 2, "maximum": 32 }]
+        },
+        "endings": {
+          "description": "跳房子（\"1.\"、\"2.\"）：這個小節只在反覆的這幾次演奏，每次最多出現一次；不在跳房子裡時是空陣列。",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 9 }
+        },
+        "sign": {
+          "description": "這個小節上的導航記號：\"segno\"、\"coda\"（從這裡開始）或 \"fine\"（樂曲在這個小節之後結束）；沒有時是 null。",
+          "enum": ["segno", "coda", "fine", null]
+        },
+        "jump": {
+          "description": "這個小節之後的跳躍：D.C.、D.C. al Coda、D.C. al Fine、D.S.、D.S. al Coda、D.S. al Fine 或 To Coda；沒有時是 null。",
+          "enum": ["da_capo", "da_capo_al_coda", "da_capo_al_fine", "da_segno", "da_segno_al_coda", "da_segno_al_fine", "to_coda", null]
+        },
+        "rhythmEstimated": { "description": "這個小節的時值是從音符的間距估出來的（沒有讀到印出的節奏）。", "type": "boolean" },
+        "beats": {
+          "description": "小節裡依序的拍點；時值總和可以和拍號不合（只標記、不改寫）。",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/beat" }
+        }
+      }
+    },
+    "beat": {
+      "description": "一個拍點（前身 model.py 的 ScoreBeat）；沒有音符就是休止。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["units", "tuplet", "notes"],
+      "properties": {
+        "units": {
+          "description": "寫出來的長度，以 32 分音符為單位，一定能寫成一個音符加 0–2 個附點：1、2、3、4、6、7、8、12、14、16、24、28、32、48。",
+          "enum": [1, 2, 3, 4, 6, 7, 8, 12, 14, 16, 24, 28, 32, 48]
+        },
+        "tuplet": { "description": "三連音：三個拍點佔兩個的時間，實際長度是 units 的 2/3。", "type": "boolean" },
+        "notes": {
+          "description": "同時發聲的音符，每條弦最多一個。",
+          "type": "array",
+          "items": { "$ref": "#/$defs/note" },
+          "allOf": [
+            { "contains": { "type": "object", "properties": { "string": { "const": 1 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 2 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 3 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 4 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 5 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 6 } } }, "minContains": 0, "maxContains": 1 },
+            { "contains": { "type": "object", "properties": { "string": { "const": 7 } } }, "minContains": 0, "maxContains": 1 }
+          ]
+        }
+      }
+    },
+    "note": {
+      "description": "一個音符（前身 model.py 的 ScoreNote，parenthesized、tie_arc、link 已經解析成 tie、ghost、hammer、slide、slideShift；前身悶音的格號 0 寫成 null）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "string", "fret", "dead", "ghost", "tie", "vibrato", "hammer", "slide", "slideShift", "slideIn", "slideOut",
+        "harmonic", "tapped", "graceFret", "graceHammer", "staccato", "bendSemitones", "bendRelease", "bendPre",
+        "letRing", "palmMute", "stroke", "velocity"
+      ],
+      "properties": {
+        "string": { "description": "第幾弦，1 是最高的弦，不超過 strings。", "type": "integer", "minimum": 1, "maximum": 7 },
+        "fret": { "description": "格號 0–29；dead 時是 null，其他時候一定有。", "type": ["integer", "null"], "minimum": 0, "maximum": 29 },
+        "dead": { "description": "悶音（x），沒有格號。", "type": "boolean" },
+        "ghost": { "description": "ghost note：印在括號裡、不是延續前一個音的格號。", "type": "boolean" },
+        "tie": { "description": "延續同一條弦上前一個相同格號的音，不重新撥弦。", "type": "boolean" },
+        "vibrato": { "description": "顫音。", "type": "boolean" },
+        "hammer": { "description": "搥弦或勾弦，連到這條弦上的下一個音。", "type": "boolean" },
+        "slide": { "description": "連奏滑音，滑到這條弦上的下一個音（下一個音不重新撥弦）。", "type": "boolean" },
+        "slideShift": { "description": "shift slide，滑到這條弦上的下一個音並重新撥弦。", "type": "boolean" },
+        "slideIn": { "description": "從沒有音高的起點滑進這個音：\"below\"（從下方）或 \"above\"（從上方）；沒有時是 null。", "enum": ["below", "above", null] },
+        "slideOut": { "description": "從這個音滑出、沒有目標音：\"down\" 或 \"up\"；沒有時是 null。", "enum": ["down", "up", null] },
+        "harmonic": { "description": "泛音：\"natural\"、\"pinch\"（PH）或 \"artificial\"（AH）；沒有時是 null。", "enum": ["natural", "pinch", "artificial", null] },
+        "tapped": { "description": "右手點弦。", "type": "boolean" },
+        "graceFret": { "description": "在這個音之前、同一條弦上的裝飾音格號 0–29；沒有裝飾音時是 null。", "type": ["integer", "null"], "minimum": 0, "maximum": 29 },
+        "graceHammer": { "description": "裝飾音以搥弦或勾弦連進這個音；只有 graceFret 不是 null 時才可能是 true。", "type": "boolean" },
+        "staccato": { "description": "斷奏。", "type": "boolean" },
+        "bendSemitones": { "description": "推弦的幅度（半音），0 是沒有推弦。", "type": "integer", "minimum": 0 },
+        "bendRelease": { "description": "推弦之後放回。", "type": "boolean" },
+        "bendPre": { "description": "撥弦之前就先推好（pre-bend），或在延續的音上保持推弦。", "type": "boolean" },
+        "letRing": { "description": "讓弦持續響（let ring）。", "type": "boolean" },
+        "palmMute": { "description": "手掌悶音（P.M.）。", "type": "boolean" },
+        "stroke": { "description": "刷弦的方向：\"down\"（由低音弦往高音弦）或 \"up\"；沒有刷弦箭頭時是 null。", "enum": ["down", "up", null] },
+        "velocity": { "description": "當時力度記號對應的 MIDI velocity，1–127（前身 annotations.py 的對照，漸強漸弱在兩者之間）；沒有力度記號時是 null。", "type": ["integer", "null"], "minimum": 1, "maximum": 127 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "dead": { "const": true } } },
+          "then": { "properties": { "fret": { "type": "null" } } },
+          "else": { "properties": { "fret": { "type": "integer" } } }
+        },
+        {
+          "if": { "properties": { "graceFret": { "type": "null" } } },
+          "then": { "properties": { "graceHammer": { "const": false } } }
+        }
+      ]
+    },
+    "warning": {
+      "description": "一則提醒：穩定的 code 加上參數。還沒有對應 code 的提醒回報 \"other\"，原文寫進 log。",
+      "oneOf": [
+        {
+          "description": "這些小節的時值是從音符的間距估出來的。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "rhythm_estimated" },
+            "params": {
+              "description": "哪些小節。",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["bars"],
+              "properties": {
+                "bars": { "description": "估出時值的小節，從 1 數起，每個最多出現一次。", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } }
+              }
+            }
+          }
+        },
+        {
+          "description": "同一條弦上重疊的音符被略過。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "overlapping_notes" },
+            "params": {
+              "description": "在哪一頁、略過幾個。",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["page", "count"],
+              "properties": {
+                "page": { "description": "第幾頁（第幾張圖片），從 1 數起。", "type": "integer", "minimum": 1 },
+                "count": { "description": "略過幾個音符。", "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        {
+          "description": "弦數和多數不同的譜表被略過。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "staves_ignored" },
+            "params": {
+              "description": "略過幾行。",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count"],
+              "properties": {
+                "count": { "description": "略過幾行譜表。", "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        {
+          "description": "一個小節的音符多到超出拍號，這個小節的音都當成 32 分音符。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "bar_too_dense" },
+            "params": {
+              "description": "在哪一頁、讀到幾個音。",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["page", "notes"],
+              "properties": {
+                "page": { "description": "第幾頁（第幾張圖片），從 1 數起。", "type": "integer", "minimum": 1 },
+                "notes": { "description": "那個小節讀到幾個音。", "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        {
+          "description": "不是每一行都有小節線：時值用固定長度。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "fixed_durations" },
+            "params": { "description": "沒有參數。", "type": "object", "additionalProperties": false }
+          }
+        },
+        {
+          "description": "還沒有對應 code 的提醒；原文只寫進 log。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params"],
+          "properties": {
+            "code": { "description": "提醒的 code。", "const": "other" },
+            "params": { "description": "沒有參數。", "type": "object", "additionalProperties": false }
+          }
+        }
+      ]
+    },
+    "failure": {
+      "description": "辨識失敗：HTTP 422（busy 是 503）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "version", "error"],
+      "properties": {
+        "contract": { "$ref": "#/$defs/contract" },
+        "version": { "$ref": "#/$defs/version" },
+        "error": {
+          "description": "整件的錯誤 code、參數，以及頁層級的原因（docs/spec/recognizer.md 5.2）。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "params", "pages"],
+          "properties": {
+            "code": {
+              "description": "\"recognition_failed\"：其他辨識失敗；\"timeout\"：超過 120 秒沒有進度或整體超過 900 秒；\"unavailable\"：子行程無法啟動；\"busy\"：已經有一件在跑。",
+              "enum": ["recognition_failed", "timeout", "unavailable", "busy"]
+            },
+            "params": { "description": "這個版本的每個 code 都沒有參數。", "type": "object", "additionalProperties": false },
+            "pages": {
+              "description": "頁層級的原因；只有 recognition_failed 會有。",
+              "type": "array",
+              "items": { "$ref": "#/$defs/pageError" }
+            }
+          },
+          "if": { "properties": { "code": { "not": { "const": "recognition_failed" } } } },
+          "then": { "properties": { "pages": { "maxItems": 0 } } }
+        }
+      }
+    },
+    "pageError": {
+      "description": "某一頁（某一張圖片）讀不出來的原因。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page", "code"],
+      "properties": {
+        "page": { "description": "第幾頁，依上傳的順序從 1 數起。", "type": "integer", "minimum": 1 },
+        "code": {
+          "description": "\"no_staff\"：找不到譜表的線；\"no_notes\"：找到線但讀不到格號；\"invalid_image\"：圖片無法解碼或檔案損壞；\"image_too_large\"：圖片超過像素上限。",
+          "enum": ["no_staff", "no_notes", "invalid_image", "image_too_large"]
+        }
+      }
+    }
+  }
+}
