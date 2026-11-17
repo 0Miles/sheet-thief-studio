@@ -1013,7 +1013,11 @@ onMounted(async () => {
     onSynced: () => {
       updateSync();
       start();
+      // After a reconnection: the others see this tab again now, not when its state is renewed.
+      presenceLink?.reconnected();
     },
+    // The others' clocks go with their states, so that the ones the server sends again apply at once.
+    onClose: () => presenceLink?.disconnected(),
     onUnsyncedChanges: updateSync,
     onStatus: ({ status }) => {
       if (status === "disconnected") sync.value = "offline";

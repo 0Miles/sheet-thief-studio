@@ -147,13 +147,22 @@ export function selectionBoxes(renderer: Pick<ScoreRenderer, "boundsOfSelection"
   return selection.kind === "bars" ? boxes.flatMap((box) => clearPieces(box, reserved)) : boxes.map((box) => clearOf(box, reserved));
 }
 
+/** The clients whose state an awareness change added, changed or removed. */
+export interface AwarenessChange {
+  added: number[];
+  updated: number[];
+  removed: number[];
+}
+
 /** As much of the provider's awareness (y-protocols') as the page uses. */
 export interface PresenceAwareness {
   readonly clientID: number;
+  /** Each client's clock, as last heard: an update with a clock no later than it is not applied. */
+  readonly meta: Map<number, unknown>;
   getStates(): Map<number, unknown>;
   setLocalState(state: object | null): void;
-  on(event: "change", listener: () => void): void;
-  off(event: "change", listener: () => void): void;
+  on(event: "change", listener: (change: AwarenessChange, origin: unknown) => void): void;
+  off(event: "change", listener: (change: AwarenessChange, origin: unknown) => void): void;
 }
 
 /** This tab in the presence of a score. */
@@ -162,25 +171,59 @@ export interface PresenceLink {
   tell(state: LocalPresenceState): void;
   /** The other tabs, as of the last change of the awareness. */
   peers(): Peer[];
+  /**
+   * The connection closed. The provider drops the others' states then, but keeps their clocks:
+   * when it is back, the server sends their states again with the same clocks, which would not be
+   * applied until each of them renews its state, up to 15 seconds later. The clocks go too.
+   */
+  disconnected(): void;
+  /**
+   * The connection is back and in sync. The provider sent this tab's state again with the clock
+   * it had, which the server, having removed the state as the connection closed, does not apply:
+   * told once more, it has a later clock, and the others see this tab again at once.
+   */
+  reconnected(): void;
   /** This tab leaves: its state goes from everyone's awareness, and it no longer hears theirs. */
   leave(): void;
 }
 
-/** Join the presence: `onPeers` hears the other tabs every time the awareness changes. */
+/**
+ * Join the presence: `onPeers` hears the other tabs every time one of them changes. A change of
+ * this tab's own state alone (every move of its cursor) is not one: nothing is read again for it.
+ */
 export function joinPresence(awareness: PresenceAwareness, onPeers: (peers: Peer[]) => void): PresenceLink {
-  let peers: Peer[] = [];
+  const self = awareness.clientID;
+  const byClient = new Map<number, Peer>(peersOf(awareness.getStates(), self).map((peer) => [peer.clientId, peer]));
+  let peers: Peer[] = [...byClient.values()];
+  let told: LocalPresenceState | null = null;
   let left = false;
-  const changed = () => {
-    peers = peersOf(awareness.getStates(), awareness.clientID);
+  const changed = ({ added, updated, removed }: AwarenessChange) => {
+    const others = [...added, ...updated, ...removed].filter((client) => client !== self);
+    if (others.length === 0) return;
+    const states = awareness.getStates();
+    for (const client of others) {
+      const [peer] = peersOf(new Map([[client, states.get(client)]]), self);
+      if (peer === undefined) byClient.delete(client);
+      else byClient.set(client, peer);
+    }
+    peers = [...byClient.values()].sort((a, b) => a.clientId - b.clientId);
     onPeers(peers);
   };
   awareness.on("change", changed);
-  changed();
+  onPeers(peers);
   return {
     tell(state) {
-      if (!left) awareness.setLocalState(state);
+      if (left) return;
+      told = state;
+      awareness.setLocalState(state);
     },
     peers: () => peers,
+    disconnected() {
+      for (const client of [...awareness.meta.keys()]) if (client !== self) awareness.meta.delete(client);
+    },
+    reconnected() {
+      if (!left && told !== null) awareness.setLocalState({ ...told });
+    },
     leave() {
       if (left) return;
       left = true;

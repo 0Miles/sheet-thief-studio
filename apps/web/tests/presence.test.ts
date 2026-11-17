@@ -20,7 +20,57 @@ const awarenessProtocol = createRequire(createRequire(import.meta.url).resolve("
   Awareness: new (doc: Y.Doc) => Awareness;
   encodeAwarenessUpdate(awareness: Awareness, clients: number[]): Uint8Array;
   applyAwarenessUpdate(awareness: Awareness, update: Uint8Array, origin: unknown): void;
+  removeAwarenessStates(awareness: Awareness, clients: number[], origin: unknown): void;
 };
+
+type Change = { added: number[]; updated: number[]; removed: number[] };
+const changed = ({ added, updated, removed }: Change) => [...added, ...updated, ...removed];
+
+/**
+ * A server's awareness and tabs connected to it, as Hocuspocus and its provider handle them: a
+ * tab's changes reach the server (its identity written in, as the server does) while it is
+ * connected, and the server's reach every tab connected. A tab whose connection closes has its
+ * state removed by the server, and drops the others' as the provider does; connected again, it
+ * sends its own state as it has it and is sent the server's (the provider's `startSync`, the
+ * server's `sendCurrentAwareness`).
+ */
+function served(...owners: (typeof ANNA)[]) {
+  const server = new awarenessProtocol.Awareness(new Y.Doc());
+  server.setLocalState(null);
+  const tabs = owners.map((owner) => ({ owner, awareness: new awarenessProtocol.Awareness(new Y.Doc()), connected: true }));
+  const receive = (tab: (typeof tabs)[number], clients: number[]) => {
+    const scratch = new awarenessProtocol.Awareness(new Y.Doc());
+    scratch.setLocalState(null);
+    awarenessProtocol.applyAwarenessUpdate(scratch, awarenessProtocol.encodeAwarenessUpdate(tab.awareness, clients), null);
+    for (const [client, state] of scratch.getStates()) scratch.getStates().set(client, { ...state, ...tab.owner });
+    awarenessProtocol.applyAwarenessUpdate(server, awarenessProtocol.encodeAwarenessUpdate(scratch, clients), tab);
+  };
+  for (const tab of tabs) {
+    tab.awareness.on("update", (change: Change, origin: unknown) => {
+      if (origin !== "server" && tab.connected) receive(tab, changed(change));
+    });
+  }
+  server.on("update", (change: Change, origin: unknown) => {
+    const update = awarenessProtocol.encodeAwarenessUpdate(server, changed(change));
+    for (const tab of tabs) if (tab !== origin && tab.connected) awarenessProtocol.applyAwarenessUpdate(tab.awareness, update, "server");
+  });
+  return {
+    tabs: tabs.map((tab) => tab.awareness),
+    disconnect(index: number) {
+      const tab = tabs[index]!;
+      tab.connected = false;
+      awarenessProtocol.removeAwarenessStates(server, [tab.awareness.clientID], null);
+      const others = [...tab.awareness.getStates().keys()].filter((client) => client !== tab.awareness.clientID);
+      awarenessProtocol.removeAwarenessStates(tab.awareness, others, "provider");
+    },
+    connect(index: number) {
+      const tab = tabs[index]!;
+      tab.connected = true;
+      if (tab.awareness.getLocalState() !== null) receive(tab, [tab.awareness.clientID]);
+      awarenessProtocol.applyAwarenessUpdate(tab.awareness, awarenessProtocol.encodeAwarenessUpdate(server, [...server.getStates().keys()]), "server");
+    },
+  };
+}
 
 const ANNA = { accountId: "anna", displayName: "安娜", color: "#d73a49" };
 const BEN = { accountId: "ben", displayName: "班", color: "#005cc5" };
@@ -135,6 +185,55 @@ test("another tab's cursor whose beat is gone lands on the last beat of its voic
   expect(peerCursorOf(doc, on(beatIds[0]!))).toBeNull();
   partsOf(doc).delete(partId);
   expect(peerCursorOf(doc, on(beatIds[0]!))).toBeNull();
+});
+
+test("another tab's cursor in a part whose content cannot be read is not placed, and nothing is thrown", () => {
+  const { doc, partId, beatIds, on } = score();
+  // Written by a client that does not keep to the schema: settling the cursor there throws.
+  partsOf(doc).get(partId)!.set("content", 5);
+  expect(() => peerCursorOf(doc, on(beatIds[0]!))).not.toThrow();
+  expect(peerCursorOf(doc, on(beatIds[0]!))).toBeNull();
+  const renderer = { boundsOf: () => ({ x: 0, y: 0, width: 10, height: 10 }), boundsOfSelection: () => [] };
+  expect(peerMarksOf(renderer, doc, [peer(1, ANNA, { cursor: on(beatIds[0]!) })], [])).toMatchObject([{ cursor: null, tag: null }]);
+});
+
+test("a tab whose connection closed and came back sees the others, and is seen, at once again", () => {
+  const { tabs: [annaTab, benTab], disconnect, connect } = served(ANNA, BEN);
+  const anna = joinPresence(annaTab!, () => undefined);
+  const ben = joinPresence(benTab!, () => undefined);
+  const cursor: Cursor = { partId: "p", barId: "b1", voice: "0:0", beatId: null, at: "after", line: 1 };
+  anna.tell({ mode: "edit", cursor, selection: null });
+  ben.tell({ mode: "edit", cursor, selection: null });
+  expect(anna.peers().map((each) => each.accountId)).toEqual(["ben"]);
+  expect(ben.peers().map((each) => each.accountId)).toEqual(["anna"]);
+
+  // Anna's connection closes: each loses the other, as the server and her provider drop the states.
+  disconnect(0);
+  anna.disconnected();
+  expect(anna.peers()).toEqual([]);
+  expect(ben.peers()).toEqual([]);
+
+  // Back and in sync, with nothing new told: each sees the other again straight away.
+  connect(0);
+  anna.reconnected();
+  expect(anna.peers()).toMatchObject([{ accountId: "ben", cursor }]);
+  expect(ben.peers()).toMatchObject([{ accountId: "anna", cursor }]);
+});
+
+test("a change of this tab's own state alone reads nobody again", () => {
+  const [annaTab, benTab] = tabs(ANNA, BEN);
+  const heard: Peer[][] = [];
+  const anna = joinPresence(annaTab!, (peers) => heard.push(peers));
+  const ben = joinPresence(benTab!, () => undefined);
+  ben.tell({ mode: "read", cursor: null, selection: null });
+  const before = heard.length;
+  const cursor: Cursor = { partId: "p", barId: "b1", voice: "0:0", beatId: null, at: "after", line: 1 };
+  for (const barId of ["b1", "b2", "b3"]) anna.tell({ mode: "edit", cursor: { ...cursor, barId }, selection: null });
+  expect(heard).toHaveLength(before);
+  // Ben's move is heard, and his peer is the one read last.
+  ben.tell({ mode: "read", cursor: { ...cursor, barId: "b4" }, selection: null });
+  expect(heard).toHaveLength(before + 1);
+  expect(anna.peers()).toMatchObject([{ accountId: "ben", cursor: { barId: "b4" } }]);
 });
 
 /** A reserved area above the staff of the last bar of the first system. */

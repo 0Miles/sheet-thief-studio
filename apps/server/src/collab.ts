@@ -18,7 +18,7 @@ import type { CollabTickets, Guest, Member } from "./collabTickets";
 import { Account, Score, type VersionReason } from "./db/models";
 import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
 import { scoreOfLink } from "./links";
-import { clientsAllowed, presenceOf } from "./presence";
+import { screenAwareness } from "./presence";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
 import { createVersion, VERSION_INTERVAL_MS } from "./versions";
@@ -337,28 +337,16 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
     },
     async beforeHandleAwareness({ context, connection, document, states, removedClients }) {
       // Not from a connection: the server's own, which says nothing.
-      if (context === undefined || connection === undefined) return;
-      // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
-      // itself or anyone else is applied.
-      if (context.kind === "guest") {
-        states.clear();
-        removedClients.clear();
-        return;
-      }
-      // A member speaks for their own tab only: never another's state, never its removal.
+      if (connection === undefined) return;
+      // A member speaks for their own tab only, never for another's; a guest, or a connection
+      // the server cannot tell, for nobody (docs/spec/collab.md, section 5).
       const others = new Set<number>();
       for (const other of document.getConnections()) if (other !== connection) for (const client of document.getClients(other)) others.add(client);
-      const allowed = clientsAllowed(document.getClients(connection), others, [...states.keys(), ...removedClients]);
-      for (const client of removedClients) if (!allowed.has(client)) removedClients.delete(client);
-      // Who it is, the server's, its name as of now (the register's holder is the one `renamed`
-      // updates; Hocuspocus keeps a copy of it as the context); the rest, of a presence's shape
-      // (docs/spec/views.md, section 8).
+      // Who it is, as of now: the register's holder is the one `renamed` updates; Hocuspocus
+      // keeps a copy of it as the context.
       const holder = register.get(connection);
       const who = holder?.kind === "member" ? holder : context;
-      for (const [client, state] of states) {
-        if (allowed.has(client)) states.set(client, presenceOf(state, who, connection.readOnly));
-        else states.delete(client);
-      }
+      screenAwareness({ who, readOnly: connection.readOnly, own: document.getClients(connection), others }, states, removedClients);
     },
     async onLoadDocument({ documentName, document }) {
       // Authentication has found the score; a direct connection only ever opens one that exists.

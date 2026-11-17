@@ -70,3 +70,38 @@ export function clientsAllowed(own: ReadonlySet<number>, others: ReadonlySet<num
   }
   return allowed;
 }
+
+/** A connection whose awareness update the server is about to apply. */
+export interface AwarenessSource {
+  /**
+   * Who it belongs to, as the server knows it now: a member, with their display name of now; a
+   * guest; or undefined when the server does not know (never the case of a connection let in).
+   */
+  who: ({ kind: "member" } & PresenceIdentity) | { kind: "guest" } | undefined;
+  /** It cannot change the score: a Viewer's, or any on a frozen document. */
+  readOnly: boolean;
+  /** The clients it announced so far, and those of the document's other connections. */
+  own: ReadonlySet<number>;
+  others: ReadonlySet<number>;
+}
+
+/**
+ * The awareness update as the server applies it, `states` and `removedClients` changed in place
+ * (Hocuspocus's `beforeHandleAwareness`): from a member, only their own client, its state rebuilt
+ * (`presenceOf`); from a guest, or from a connection the server cannot tell, nothing at all
+ * (docs/spec/collab.md, section 5): a guest is not in the presence, and what is not known to be a
+ * member's is not let in either.
+ */
+export function screenAwareness({ who, readOnly, own, others }: AwarenessSource, states: Map<number, unknown>, removedClients: Set<number>): void {
+  if (who?.kind !== "member") {
+    states.clear();
+    removedClients.clear();
+    return;
+  }
+  const allowed = clientsAllowed(own, others, [...states.keys(), ...removedClients]);
+  for (const client of removedClients) if (!allowed.has(client)) removedClients.delete(client);
+  for (const [client, state] of states) {
+    if (allowed.has(client)) states.set(client, presenceOf(state, who, readOnly));
+    else states.delete(client);
+  }
+}

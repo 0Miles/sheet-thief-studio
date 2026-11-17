@@ -5,7 +5,7 @@
 import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 import { overlaps } from "../src/overlay";
-import { ADMIN, EDITOR } from "./environment";
+import { ADMIN, EDITOR, VIEWER } from "./environment";
 import { beatsIn, cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
 
 /** A phone held upright: the Read view. */
@@ -102,6 +102,28 @@ test("when one member deletes the beat, then the bar, another's cursor is on, it
   await expect.poll(async () => (await scoreOf(anna)).bars.map((bar) => bar.id)).toEqual(barIds.slice(1));
   await expect(peerCursors(anna)).toHaveAttribute("data-bar", barIds[1]!);
   await expect.poll(() => cursorOf(ben)).toMatchObject({ barId: barIds[1] });
+  for (const each of errors) expect(each).toEqual([]);
+});
+
+test("a Viewer's cursor is pale on their own page, and in read mode, pale, on the others'", async ({ browser }) => {
+  const id = seedScore({ title: "在場與檢視者", owner: ADMIN.username, members: [{ username: VIEWER.username, role: "viewer" }] });
+  const ben = await loggedIn(browser, ADMIN);
+  const dan = await loggedIn(browser, VIEWER);
+  const errors = [pageErrors(ben), pageErrors(dan)];
+  await openScore(ben, id);
+  await openScore(dan, id);
+  await expect(dan.locator("main")).toHaveAttribute("data-view", "readOnlyEdit");
+  // Their own cursor: the read-only edit view's pale one (#19).
+  await expect(dan.locator("[data-cursor]")).toHaveClass(/score__cursor--read/);
+  // The Owner's own cursor is not.
+  await expect(ben.locator("[data-cursor]")).not.toHaveClass(/score__cursor--read/);
+
+  await expect(peerCursors(ben)).toHaveCount(1);
+  await expect(peerCursors(ben)).toHaveAttribute("data-mode", "read");
+  await expect(peerCursors(ben)).toHaveClass(/score__peer-cursor--read/);
+  await expect(members(ben)).toHaveAttribute("data-mode", "read");
+  // The Viewer sees the Owner, typing.
+  await expect(peerCursors(dan)).toHaveAttribute("data-mode", "edit");
   for (const each of errors) expect(each).toEqual([]);
 });
 

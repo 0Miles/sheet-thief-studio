@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "vitest";
 
-import { clientsAllowed, colorOf, fnv1a, PRESENCE_PALETTE, presenceOf } from "../src/presence";
+import { clientsAllowed, colorOf, fnv1a, PRESENCE_PALETTE, presenceOf, screenAwareness } from "../src/presence";
 
 test("FNV-1a is the 32-bit one, over the UTF-8 bytes", () => {
   expect(fnv1a("")).toBe(0x811c9dc5);
@@ -52,4 +52,38 @@ test("a connection speaks for the first client it names and for no other, never 
   expect(clientsAllowed(new Set([7]), none, [8, 7])).toEqual(new Set([7]));
   expect(clientsAllowed(none, new Set([7]), [7, 8])).toEqual(new Set([8]));
   expect(clientsAllowed(new Set([7]), new Set([8]), [8])).toEqual(new Set());
+});
+
+/** An update naming these clients' states and removals, as `beforeHandleAwareness` is handed it. */
+function update(states: [number, unknown][], removed: number[]) {
+  return { states: new Map<number, unknown>(states), removedClients: new Set(removed) };
+}
+
+test("from a member, only their own client is applied, its state rebuilt; another's state and removal are dropped", () => {
+  const sent = update(
+    [
+      [7, { accountId: "someone-else", mode: "edit", cursor: CURSOR }],
+      [8, { mode: "edit" }],
+    ],
+    [9],
+  );
+  screenAwareness({ who: { kind: "member", ...ANNA }, readOnly: false, own: new Set([7]), others: new Set([8, 9]) }, sent.states, sent.removedClients);
+  expect([...sent.states]).toEqual([[7, { ...ANNA, color: colorOf(ANNA.accountId), mode: "edit", cursor: CURSOR, selection: null }]]);
+  expect([...sent.removedClients]).toEqual([]);
+  // Its own removal goes through; a read-only connection is in read mode.
+  const own = update([], [7]);
+  screenAwareness({ who: { kind: "member", ...ANNA }, readOnly: true, own: new Set([7]), others: new Set() }, own.states, own.removedClients);
+  expect([...own.removedClients]).toEqual([7]);
+  const reading = update([[7, { mode: "edit" }]], []);
+  screenAwareness({ who: { kind: "member", ...ANNA }, readOnly: true, own: new Set([7]), others: new Set() }, reading.states, reading.removedClients);
+  expect(reading.states.get(7)).toMatchObject({ mode: "read" });
+});
+
+test("from a guest, or from a connection the server cannot tell, nothing is applied", () => {
+  for (const who of [{ kind: "guest" } as const, undefined]) {
+    const sent = update([[7, { ...ANNA, color: "#d73a49", mode: "edit", cursor: CURSOR, selection: null }]], [8]);
+    screenAwareness({ who, readOnly: false, own: new Set(), others: new Set([8]) }, sent.states, sent.removedClients);
+    expect(sent.states.size).toBe(0);
+    expect(sent.removedClients.size).toBe(0);
+  }
 });
