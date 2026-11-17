@@ -255,3 +255,41 @@ test("with a selection, Shift+B takes every note of it to one bend shape, Shift+
   expect(beats().map((beat) => beat.notes.s6!.bend!.semitones)).toEqual([3, 4]);
   expect(session.selection).toEqual(selection);
 });
+
+test("on Windows and on a Mac, Shift+N steps the note of the cursor's string through natural, pinch and artificial harmonics, back to none, one undo step each", () => {
+  for (const platform of ["other", "mac"] as const) {
+    const { press, beats } = sessionOn("fretted", 2, platform);
+    press("1");
+    // Within 600 ms, the two digits are fret 12: one undo step.
+    press("2", 100);
+    const harmonics = [1, 2, 3, 4].map(() => {
+      expect(press("n", 1000, shift)).toBe(true);
+      return beats()[0]!.notes.s6!.harmonic ?? null;
+    });
+    expect(harmonics).toEqual(["natural", "pinch", "artificial", null]);
+    undoEach(press, platform, () => beats()[0]!.notes.s6, [
+      { fret: 12, harmonic: "artificial" },
+      { fret: 12, harmonic: "pinch" },
+      { fret: 12, harmonic: "natural" },
+      { fret: 12 },
+    ]);
+  }
+});
+
+test("with a selection, Shift+N takes every note of it to one harmonic, and the selection stays; on an empty string it makes no note", () => {
+  const { press, beats, session } = sessionOn();
+  press("1");
+  press("ArrowRight");
+  press("2");
+  press("n", 1000, shift);
+  press("ArrowLeft");
+  press("ArrowRight", 1000, shift);
+  const selection = session.selection;
+  press("n", 1000, shift);
+  expect(beats().map((beat) => beat.notes.s6!.harmonic)).toEqual(["natural", "natural"]);
+  expect(session.selection).toEqual(selection);
+  press("Escape");
+  press("ArrowUp");
+  press("n", 1000, shift);
+  expect(beats().map((beat) => Object.keys(beat.notes))).toEqual([["s6"], ["s6"]]);
+});

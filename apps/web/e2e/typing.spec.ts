@@ -131,6 +131,33 @@ test("an Editor bends a note with Shift+B, 2 semitones, takes it a semitone up a
   expect(errors).toEqual([]);
 });
 
+test("an Editor steps a note through the harmonics with Shift+N, each drawn without an error; after reloading the score holds the harmonic", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+
+  await page.keyboard.press("1");
+  await page.keyboard.press("2");
+  const noteOf = async () => beatsIn(await scoreOf(page), 0)[0]!.notes.s1;
+  expect(await noteOf()).toEqual({ fret: 12 });
+  for (const harmonic of ["natural", "pinch", "artificial"] as const) {
+    await page.keyboard.press("Shift+N");
+    expect(await noteOf()).toEqual({ fret: 12, harmonic });
+    await drawn(page);
+  }
+  await page.keyboard.press("Shift+N");
+  expect(await noteOf()).toEqual({ fret: 12 });
+  await page.keyboard.press("Shift+N");
+  expect(await noteOf()).toEqual({ fret: 12, harmonic: "natural" });
+  await synced(page);
+
+  await page.reload();
+  await drawn(page);
+  expect(await noteOf()).toEqual({ fret: 12, harmonic: "natural" });
+  expect(errors).toEqual([]);
+});
+
 test("a Viewer moves the cursor but changes nothing; the notice that a Viewer cannot edit shows only the first time", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, VIEWER);

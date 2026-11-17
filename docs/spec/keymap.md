@@ -138,6 +138,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）跟著 M3 加上，綁在 pitched 情境，和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
 
+**補充**（#29）：`Shift+N` 是 `bindings.ts` 的 `harmonic` 綁定，只綁在 fretted 聲部（這個欄位只有 fretted 有），兩個平台相同；有選取時作用在整個範圍，走到同一個泛音（[`commands.md`](commands.md) 5.4 的補充）。
+
 **補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
 
 ## 4. 各聲部種類的輸入鍵

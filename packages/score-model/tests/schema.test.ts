@@ -166,6 +166,8 @@ const broken: [string, (json: ScoreJSON) => void][] = [
   ["a bend of an unknown shape", (json) => void (beatOf(guitar(json)).notes.s6 = { fret: 5, bend: { type: "release" as "bend", semitones: 2 } })],
   ["a bend on a pitched note", (json) => void (beatOf(keys(json)).notes.n61 = { bend: { type: "bend", semitones: 2 } })],
   ["a slide of an unknown kind", (json) => void (beatOf(guitar(json)).notes.s6 = { fret: 5, slideOut: "down" as "shift" })],
+  ["a harmonic of an unknown kind", (json) => void (beatOf(guitar(json)).notes.s6 = { fret: 12, harmonic: "tap" as "natural" })],
+  ["a harmonic on a pitched note", (json) => void (beatOf(keys(json)).notes.n61 = { harmonic: "natural" })],
   ["a dead note marked false", (json) => void (beatOf(guitar(json)).notes.s6 = { fret: 5, dead: false as true })],
   ["a fret on a drum", (json) => void (beatOf(drums(json)).notes.p36 = { fret: 1 })],
   ["a tie on a drum", (json) => void (beatOf(drums(json)).notes.p36 = { tie: true })],

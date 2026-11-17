@@ -25,6 +25,7 @@ import {
   durationStep,
   dynamicCycle,
   extendSelection,
+  harmonicCycle,
   insertBarAt,
   insertBeat,
   isRestAt,
@@ -618,6 +619,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return toggleNotes(bendStep(1));
       case "bendDown":
         return toggleNotes(bendStep(-1));
+      case "harmonic":
+        return toggleNotes(harmonicCycle);
       case "stroke":
         return changeBeats(strokeCycle);
       case "slapPop":

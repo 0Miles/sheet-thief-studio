@@ -49,6 +49,10 @@ export type SlideIn = (typeof SLIDE_INS)[number];
 export const BEND_TYPES = ["bend", "bendRelease", "preBend", "preBendRelease"] as const;
 export type BendType = (typeof BEND_TYPES)[number];
 
+/** The harmonics of a note, in the order Shift+N steps through them (docs/spec/commands.md, 5.4). */
+export const HARMONICS = ["natural", "pinch", "artificial"] as const;
+export type Harmonic = (typeof HARMONICS)[number];
+
 /** How far a bend goes, in semitones: 1 to 4, a new one 2 (docs/spec/schema.md, section 8). */
 export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
 
@@ -199,7 +203,8 @@ export const noteSchema = z.object({
   palmMute: z.literal(true).optional(),
   letRing: z.literal(true).optional(),
   tap: z.literal(true).optional(),
-  harmonic: z.enum(["natural", "pinch", "artificial"]).optional(),
+  /** A natural harmonic sounds the node of its fret on the open string; pinch and artificial an octave over the fret. */
+  harmonic: z.enum(HARMONICS).optional(),
   /** Pitched parts: how the pitch of the key is spelled ("C#", "Db", "F##" or "Fx", "Bbb"). */
   spell: z
     .string()
