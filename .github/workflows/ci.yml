@@ -63,10 +63,21 @@ jobs:
             exit 1
           fi
 
-  # The pages through a real browser, against the real server, Postgres and Redis.
+  # The pages through a real browser, against the real server, Postgres and Redis: the whole suite
+  # in Chromium, smoke tests in Firefox and WebKit (docs/spec/testing.md, section 3). WebKit's
+  # Playwright project logs in to a server of its own with the development cookie
+  # (INSECURE_COOKIES=1, apps/web/playwright.config.ts); Chromium and Firefox keep `__Host-`.
   e2e:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: e2e, browser: chromium, projects: --project=chromium --project=served }
+          - { name: e2e-firefox, browser: firefox, projects: --project=firefox }
+          - { name: e2e-webkit, browser: webkit, projects: --project=webkit }
     services:
       postgres:
         image: postgres:16-alpine
@@ -88,14 +99,23 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --filter @studio/web exec playwright install --with-deps chromium
+      - id: playwright
+        name: Playwright's version
+        run: echo "version=$(pnpm --filter @studio/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      # Only the browser of this job, kept between runs of the same Playwright version; the
+      # system libraries it needs are installed each time (--with-deps), the browser only if missing.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ steps.playwright.outputs.version }}
+      - name: Install ${{ matrix.browser }}
+        run: pnpm --filter @studio/web exec playwright install --with-deps ${{ matrix.browser }}
       - name: End-to-end tests
-        run: pnpm --filter @studio/web test:e2e
+        run: pnpm --filter @studio/web test:e2e ${{ matrix.projects }}
       - name: Keep the Playwright report of a failed run
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: apps/web/playwright-report/
           retention-days: 7
