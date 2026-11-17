@@ -2,8 +2,10 @@
 // starts as, and the tuning options of a fretted part. The names of the presets in menus are texts
 // of the interface, kept in the web app's strings by preset id; the names parts get are content of
 // the score, written by the server, so they are here.
-import { STANDARD_GUITAR } from "./commands";
-import { COMMON_TIME, type PartJSON, type TimeSignature } from "./schema";
+import type * as Y from "yjs";
+
+import { addPartWithin, type PartRefusal, STANDARD_GUITAR } from "./commands";
+import { COMMON_TIME, ordered, parsePlain, type PartJSON, partSchemas, partsOf, type TimeSignature } from "./schema";
 
 export type PartPreset = Pick<PartJSON, "kind" | "tuning" | "staves" | "program">;
 
@@ -96,4 +98,31 @@ const PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#
 /** The name of a MIDI pitch, middle C (60) being C4: how a string of a custom tuning is shown. */
 export function pitchName(pitch: number): string {
   return `${PITCH_CLASSES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+}
+
+/** Which tuning option a fretted part's tuning is: one of `TUNING_OPTIONS` for its number of strings, else custom. */
+export function tuningOptionOf(tuning: readonly number[]): TuningOption | "custom" {
+  if (!STANDARD_OF_STRINGS.has(tuning.length)) return "custom";
+  return TUNING_OPTIONS.find((option) => tuningFor(option, tuning.length).join() === tuning.join()) ?? "custom";
+}
+
+/**
+ * Add a part of a preset after the last one, one command (docs/spec/commands.md, 7.1): named and
+ * numbered after the parts the score has (`partNames`), a fretted one with `tuning` (as many
+ * strings as the preset) when given, else the preset's own. `"tooManyParts"` past the limits
+ * (`canAddPart`); null, and nothing added, for a tuning that does not fit the preset.
+ */
+export function addPresetPart(doc: Y.Doc, preset: PartPresetId, tuning?: readonly number[]): string | PartRefusal | null {
+  const { kind, tuning: standard, staves, program } = PART_PRESETS[preset];
+  if (tuning !== undefined) {
+    const valid = parsePlain(partSchemas.fretted.shape.tuning, [...tuning]);
+    if (kind !== "fretted" || !valid.success || valid.data.length !== standard.length) return null;
+  }
+  const parts = partsOf(doc);
+  const taken = ordered(parts).flatMap((id) => {
+    const name: unknown = parts.get(id)?.get("name");
+    return typeof name === "string" ? [name] : [];
+  });
+  const [name] = partNames([preset], taken);
+  return addPartWithin(doc, { name: name as string, kind, tuning: [...(tuning ?? standard)], staves: staves.map((staff) => ({ ...staff })), program });
 }

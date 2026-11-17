@@ -12,10 +12,12 @@
 // finds the member's rights changed closes the score, for ScorePage to open it anew or leave it
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { AppButton } from "@karyl-chan/ui";
+import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
 import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
+  barsWithContent,
+  canAddPart,
   type Cursor,
   cursorAt,
   DEFAULT_KEY_SIG,
@@ -28,6 +30,9 @@ import {
   MAX_BEAT_TEXT,
   nextFlag,
   observeScore,
+  type PartKind,
+  type PartPresetId,
+  type PitchedClef,
   readScore,
   type RepeatChange,
   type ScoreChange,
@@ -49,7 +54,9 @@ import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
+import PartPanel from "../components/PartPanel.vue";
 import PlayerControls from "../components/PlayerControls.vue";
+import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
@@ -284,9 +291,109 @@ function togglePanel(): void {
   if (view.value !== "editable") return;
   if (panelOpen.value) closePanel();
   else {
+    // One panel at the side of the score at a time.
+    partsOpen.value = false;
     panelOpen.value = true;
     placeCursor();
   }
+}
+
+/** The panel of the parts is open (docs/spec/commands.md, 7.1 and 7.2): the editable view only. */
+const partsOpen = ref(false);
+/** The part the member asked to delete, while the page asks them first; null otherwise. */
+const deleting = ref<string | null>(null);
+/** The title bar is being changed. */
+const editingTitle = ref(false);
+
+/** The title as shown: 「未命名」 for one read as empty (docs/spec/schema.md, section 2). */
+const shownTitle = computed(() => {
+  const title = score.value?.title ?? opening.value?.title;
+  if (title === undefined) return loadError.value ? text.unavailable : strings.loading;
+  return title === "" ? text.untitled : title;
+});
+
+/** Whether a part of each kind may still be added (docs/spec/commands.md, 7.1), as of the score drawn last. */
+const canAdd = computed<Record<PartKind, boolean>>(() => {
+  // Read again whenever the score changes.
+  void score.value;
+  return { fretted: canAddPart(doc, "fretted"), percussion: canAddPart(doc, "percussion"), pitched: canAddPart(doc, "pitched") };
+});
+
+/** What the page asks before a part is deleted: its name and how many bars it holds something in. */
+const deletion = computed(() => {
+  const json = score.value;
+  const part = json?.parts.find((each) => each.id === deleting.value);
+  return json && part ? { name: part.name || text.untitled, bars: barsWithContent(json, part.id) } : null;
+});
+
+/** The toolbar's button: the panel of the parts opens or closes, the keyboard back on the score when it does. */
+function toggleParts(): void {
+  if (view.value !== "editable") return;
+  if (partsOpen.value) closeParts();
+  else {
+    panelOpen.value = false;
+    placeCursor();
+    partsOpen.value = true;
+  }
+}
+
+function closeParts(): void {
+  partsOpen.value = false;
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function onAddPart(preset: PartPresetId, tuning: number[] | undefined): void {
+  session?.addPart(preset, tuning);
+}
+
+function onMovePart(partId: string, after: string | null): void {
+  session?.movePart(partId, after);
+}
+
+/** Deleting a part asks first, deleting bars does not: a part takes a whole instrument with it (docs/spec/commands.md, 7.1). */
+function confirmDelete(): void {
+  const partId = deleting.value;
+  closeDeletion();
+  if (partId !== null) session?.deletePart(partId);
+}
+
+/** The question is answered, either way: the score has the keyboard again. */
+function closeDeletion(): void {
+  deleting.value = null;
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function onPartName(partId: string, name: string): void {
+  session?.setPartName(partId, name);
+}
+
+function onTuning(partId: string, tuning: number[]): void {
+  session?.setTuning(partId, tuning);
+}
+
+function onCapo(partId: string, capo: number): void {
+  session?.setCapo(partId, capo);
+}
+
+function onProgram(partId: string, program: number): void {
+  session?.setProgram(partId, program);
+}
+
+function onClef(partId: string, staff: number, clef: PitchedClef): void {
+  session?.setClef(partId, staff, clef);
+}
+
+/** The title bar's form: each of the title and the artist that changed is one command. */
+function applyTitle(title: string, artist: string): void {
+  editingTitle.value = false;
+  if (title !== score.value?.title) session?.setTitle(title);
+  if (artist !== (score.value?.artist ?? "")) session?.setArtist(artist);
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function cancelTitle(): void {
+  editingTitle.value = false;
+  scroller.value?.focus({ preventScroll: true });
 }
 
 function closePanel(): void {
@@ -805,7 +912,14 @@ onBeforeUnmount(() => {
     <AppHeader />
     <main class="score" :data-view="view" :data-layout="view && (narrow ? 'narrow' : 'wide')">
       <header class="score__toolbar">
-        <h1 class="score__title">{{ score?.title ?? opening?.title ?? (loadError ? text.unavailable : strings.loading) }}</h1>
+        <TitleEditor v-if="editingTitle && score && view === 'editable'" :platform="keyPlatform()" :title="score.title" :artist="score.artist" @apply="applyTitle" @cancel="cancelTitle" />
+        <template v-else>
+          <h1 class="score__title" data-title>{{ shownTitle }}</h1>
+          <span v-if="score?.artist" class="score__artist" data-artist>{{ score.artist }}</span>
+          <AppButton v-if="view === 'editable' && score" variant="ghost" size="sm" data-edit-title :title="text.heading.editTitle" @click="editingTitle = true">
+            {{ text.heading.edit }}
+          </AppButton>
+        </template>
         <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
         <template v-if="view && !narrow">
           <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
@@ -820,6 +934,9 @@ onBeforeUnmount(() => {
           </AppButton>
           <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="togglePanel">
             {{ text.bars.panel }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleParts">
+            {{ text.parts.panel }}
           </AppButton>
         </div>
         <FlagControls
@@ -940,7 +1057,35 @@ onBeforeUnmount(() => {
         @anacrusis="onAnacrusis"
         @close="closePanel"
       />
+      <PartPanel
+        v-if="partsOpen && view === 'editable' && score"
+        :platform="keyPlatform()"
+        :parts="score.parts"
+        :can-add="canAdd"
+        :current="presence.cursor?.partId ?? null"
+        @add="onAddPart"
+        @remove="deleting = $event"
+        @move="onMovePart"
+        @name="onPartName"
+        @tuning="onTuning"
+        @capo="onCapo"
+        @program="onProgram"
+        @clef="onClef"
+        @close="closeParts"
+      />
       </div>
+      <AppConfirmDialog
+        :visible="deletion !== null"
+        :title="text.parts.confirmDelete.title"
+        :message="deletion ? text.parts.confirmDelete.message(deletion.name, deletion.bars) : ''"
+        :confirm-label="text.parts.confirmDelete.confirm"
+        :cancel-label="text.parts.confirmDelete.cancel"
+        :loading-label="strings.loading"
+        confirm-variant="danger"
+        data-confirm-delete-part
+        @close="closeDeletion"
+        @confirm="confirmDelete"
+      />
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
@@ -995,6 +1140,9 @@ onBeforeUnmount(() => {
 .score__title {
   margin: 0;
   font-size: 1.25rem;
+}
+.score__artist {
+  color: var(--text-muted);
 }
 .score__sync {
   color: var(--text-muted);

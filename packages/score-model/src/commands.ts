@@ -25,6 +25,7 @@ import {
   MAIN_VOICE,
   MAX_BARS,
   metaOf,
+  metaSchema,
   NOTE_VALUES,
   type NoteJSON,
   type NoteValue,
@@ -32,10 +33,12 @@ import {
   parsePlain,
   type PartKind,
   partKindOf,
+  partSchemas,
   partsOf,
   readNote,
   readableVoicesOf,
   SCHEMA_VERSION,
+  type ScoreJSON,
   SLIDE_INS,
   SLIDE_OUTS,
   type Staff,
@@ -57,6 +60,7 @@ import {
   voiceIn,
   type YVoice,
   voiceKeys,
+  withinPartLimits,
 } from "./schema";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -366,16 +370,22 @@ function storedAs<Schema extends z.ZodType>(schema: Schema, stored: unknown, val
   return read.success && JSON.stringify(read.data) === JSON.stringify(value);
 }
 
+/** A copy of a value of the document, down to the plain objects in a list (the staves of a part). */
+function copyOf(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(copyOf);
+  return typeof value === "object" && value !== null ? { ...value } : value;
+}
+
 /**
- * Write a field of one bar that holds from it on, or take it away (undefined), one command: none
- * when the bar already reads so. The value is copied, so that no two bars share it.
+ * Write a field of a bar, a part or the meta, or take it away (undefined), one command: none when
+ * it already reads so. The value is copied, so that no two of them share it.
  */
-function writeBarField<Schema extends z.ZodType>(bar: YBar, name: string, schema: Schema, value: z.output<Schema> | undefined): void {
-  if (value === undefined ? !bar.has(name) : storedAs(schema, bar.get(name), value)) return;
-  (bar.doc as Y.Doc).transact(() => {
-    if (value === undefined) bar.delete(name);
-    // Every value of a bar is flat: a list of numbers, or an object of plain fields.
-    else bar.set(name, Array.isArray(value) ? [...value] : typeof value === "object" && value !== null ? { ...value } : value);
+function writeField<Schema extends z.ZodType>(map: Y.Map<unknown>, name: string, schema: Schema, value: z.output<Schema> | undefined): void {
+  if (value === undefined ? !map.has(name) : storedAs(schema, map.get(name), value)) return;
+  (map.doc as Y.Doc).transact(() => {
+    if (value === undefined) map.delete(name);
+    // Every value of a bar or a part is a number, a string, a list or an object of plain fields, or a list of such objects.
+    else map.set(name, copyOf(value));
   }, LOCAL);
 }
 
@@ -388,7 +398,7 @@ export function setKeySig(doc: Y.Doc, cursor: Cursor, keySig: KeySignature | nul
   const bar = barsOf(doc).get(cursor.barId);
   const valid = keySig === null ? null : parsePlain(keySigSchema, keySig);
   if (bar === undefined || (valid !== null && !valid.success)) return false;
-  writeBarField(bar, "keySig", keySigSchema, valid?.data);
+  writeField(bar, "keySig", keySigSchema, valid?.data);
   return true;
 }
 
@@ -402,7 +412,7 @@ const sectionSchema = barSchema.shape.section.unwrap();
 export function setSection(doc: Y.Doc, cursor: Cursor, section: string | null): boolean {
   const bar = barsOf(doc).get(cursor.barId);
   if (bar === undefined || (section !== null && !sectionSchema.safeParse(section).success)) return false;
-  writeBarField(bar, "section", sectionSchema, section ?? undefined);
+  writeField(bar, "section", sectionSchema, section ?? undefined);
   return true;
 }
 
@@ -435,15 +445,15 @@ export function setRepeat(doc: Y.Doc, cursor: Cursor, selection: Selection | nul
   const last = bars.get(range.at(-1) as string);
   if (first === undefined || last === undefined) return false;
   if ("clear" in change) {
-    if (change.clear === "start") writeBarField(first, "repeatStart", repeatStartSchema, undefined);
-    else writeBarField(last, "repeatEnd", repeatEndSchema, undefined);
+    if (change.clear === "start") writeField(first, "repeatStart", repeatStartSchema, undefined);
+    else writeField(last, "repeatEnd", repeatEndSchema, undefined);
     return true;
   }
   if (!repeatEndSchema.safeParse(change.times).success) return false;
   // One transaction: the two writes, when both are needed, are one undo step.
   doc.transact(() => {
-    writeBarField(first, "repeatStart", repeatStartSchema, true);
-    writeBarField(last, "repeatEnd", repeatEndSchema, change.times);
+    writeField(first, "repeatStart", repeatStartSchema, true);
+    writeField(last, "repeatEnd", repeatEndSchema, change.times);
   }, LOCAL);
   return true;
 }
@@ -462,7 +472,7 @@ export function setVoltas(doc: Y.Doc, cursor: Cursor, selection: Selection | nul
   if (range.length === 0 || (valid !== null && !valid.success)) return false;
   const bars = barsOf(doc);
   doc.transact(() => {
-    for (const barId of range) writeBarField(bars.get(barId) as YBar, "voltas", voltasSchema, valid?.data);
+    for (const barId of range) writeField(bars.get(barId) as YBar, "voltas", voltasSchema, valid?.data);
   }, LOCAL);
   return true;
 }
@@ -478,7 +488,7 @@ export function toggleAnacrusis(doc: Y.Doc, cursor: Cursor): boolean {
   const bar = first === cursor.barId ? bars.get(first) : undefined;
   if (bar === undefined) return false;
   const schema = barSchema.shape.anacrusis.unwrap();
-  writeBarField(bar, "anacrusis", schema, storedAs(schema, bar.get("anacrusis"), true) ? undefined : true);
+  writeField(bar, "anacrusis", schema, storedAs(schema, bar.get("anacrusis"), true) ? undefined : true);
   return true;
 }
 
@@ -1232,11 +1242,184 @@ export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
   return read ? (read.markings.text ?? "") : null;
 }
 
-/** Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false, and nothing set, for any other length. */
+/**
+ * Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false,
+ * and nothing set, for any other length. The same title writes nothing.
+ */
 export function setTitle(doc: Y.Doc, title: string): boolean {
   if (title.length < 1 || title.length > MAX_TITLE) return false;
-  doc.transact(() => metaOf(doc).set("title", title), LOCAL);
+  writeField(metaOf(doc), "title", metaSchema.shape.title, title);
   return true;
+}
+
+const artistSchema = metaSchema.shape.artist.unwrap();
+
+/**
+ * Name who plays the score, one command (docs/spec/commands.md, 7.3): up to 100 characters, an
+ * empty name taking it away. False, and nothing set, for a longer one. The same name writes nothing.
+ */
+export function setArtist(doc: Y.Doc, artist: string): boolean {
+  if (artist.length > MAX_TITLE) return false;
+  writeField(metaOf(doc), "artist", artistSchema, artist === "" ? undefined : artist);
+  return true;
+}
+
+// Parts (docs/spec/commands.md, 7.1 and 7.2) ------------------------------------------------------
+
+/**
+ * Why a command on parts did nothing: the score has as many parts as it may (`MAX_PARTS`, or
+ * `MAX_NON_PERCUSSION_PARTS` but drums), or the part is the last one, which cannot be deleted.
+ */
+export type PartRefusal = "tooManyParts" | "lastPart";
+
+/**
+ * Whether a part of `kind` may be added (docs/spec/commands.md, 7.1): the parts of the score, in
+ * score order, with it, stay within both limits (`withinPartLimits`). A part whose kind cannot be
+ * read counts as one that is not drums: never fewer parts than the document holds.
+ */
+export function canAddPart(doc: Y.Doc, kind: PartKind): boolean {
+  const parts = partsOf(doc);
+  const kinds = ordered(parts).map((id) => partKindOf(parts.get(id)) ?? "fretted");
+  return withinPartLimits([...kinds, kind]);
+}
+
+/**
+ * Add a part after the last one, as `addPart` does, one command: refused when the score would
+ * have more parts than it may (`canAddPart`). Two members adding parts at once can still pass the
+ * limits; such a score reads as usual (docs/spec/commands.md, 7.1).
+ */
+export function addPartWithin(doc: Y.Doc, part: NewPart): string | PartRefusal {
+  return canAddPart(doc, part.kind) ? addPart(doc, part) : "tooManyParts";
+}
+
+/**
+ * Delete a part, with all it holds, one command: an undo brings it back as it was
+ * (docs/spec/commands.md, 7.1). The member is asked first (`barsWithContent`), not here. False
+ * when the part is gone; `"lastPart"` for the only part of the score, which is kept.
+ */
+export function deletePart(doc: Y.Doc, partId: string): boolean | PartRefusal {
+  const parts = partsOf(doc);
+  if (!parts.has(partId)) return false;
+  if (ordered(parts).every((id) => id === partId)) return "lastPart";
+  doc.transact(() => parts.delete(partId), LOCAL);
+  return true;
+}
+
+/**
+ * Move a part right after another (`after`; null puts it first), one command: only its own
+ * ordering key changes, a new one from `keysAfter`, so that two members moving parts at once each
+ * keep theirs where they put it (docs/spec/schema.md, section 1). False, and nothing changed, when
+ * either part is gone or they are the same; true, writing nothing, when it is already there.
+ */
+export function movePart(doc: Y.Doc, partId: string, after: string | null): boolean {
+  const parts = partsOf(doc);
+  const part = parts.get(partId);
+  const order = ordered(parts);
+  if (part === undefined || !order.includes(partId) || after === partId) return false;
+  const rest = order.filter((id) => id !== partId);
+  const index = after === null ? -1 : rest.indexOf(after);
+  if (after !== null && index < 0) return false;
+  if (order[index + 1] === partId) return true;
+  doc.transact(() => part.set("order", keysAfter(parts, rest, index, 1)[0]), LOCAL);
+  return true;
+}
+
+const partNameSchema = partSchemas.fretted.shape.name;
+
+/** Rename a part, one command: 1 to 64 characters, else false and nothing set; false when the part is gone. The same name writes nothing. */
+export function setPartName(doc: Y.Doc, partId: string, name: string): boolean {
+  const part = partsOf(doc).get(partId);
+  if (part === undefined || name.length < 1 || !partNameSchema.safeParse(name).success) return false;
+  writeField(part, "name", partNameSchema, name);
+  return true;
+}
+
+/** A part whose kind reads as one of `kinds`; undefined when it is gone or of another kind. */
+function partOfKind(doc: Y.Doc, partId: string, kinds: readonly PartKind[]): YPart | undefined {
+  const part = partsOf(doc).get(partId);
+  const kind = partKindOf(part);
+  return kind !== undefined && kinds.includes(kind) ? part : undefined;
+}
+
+const tuningSchema = partSchemas.fretted.shape.tuning;
+
+/**
+ * Tune a fretted part, one command (docs/spec/commands.md, 7.2): the whole tuning replaced, from
+ * the first string, as many strings as it has. Frets stay, so the notes sound at new pitches.
+ * False, and nothing set, for another number of strings or a pitch out of 0 to 127, or for a part
+ * that is not fretted, is gone, or whose tuning cannot be read. The same tuning writes nothing.
+ */
+export function setTuning(doc: Y.Doc, partId: string, tuning: readonly number[]): boolean {
+  const part = partOfKind(doc, partId, ["fretted"]);
+  const valid = parsePlain(tuningSchema, [...tuning]);
+  if (part === undefined || !valid.success || valid.data.length !== stringCountOf(part)) return false;
+  writeField(part, "tuning", tuningSchema, valid.data);
+  return true;
+}
+
+const capoSchema = partSchemas.fretted.shape.capo;
+
+/** Put the capo of a fretted part on a fret, 0 (none) to 24, one command; false, and nothing set, otherwise or for any other part. The same fret writes nothing. */
+export function setCapo(doc: Y.Doc, partId: string, capo: number): boolean {
+  const part = partOfKind(doc, partId, ["fretted"]);
+  if (part === undefined || !capoSchema.safeParse(capo).success) return false;
+  writeField(part, "capo", capoSchema, capo);
+  return true;
+}
+
+const programSchema = partSchemas.fretted.shape.program;
+
+/**
+ * Give a part the General MIDI program, 0 to 127, it is played with, one command; false, and
+ * nothing set, otherwise or for drums, which play on the percussion channel. The same program
+ * writes nothing.
+ */
+export function setProgram(doc: Y.Doc, partId: string, program: number): boolean {
+  const part = partOfKind(doc, partId, ["fretted", "pitched"]);
+  if (part === undefined || !programSchema.safeParse(program).success) return false;
+  writeField(part, "program", programSchema, program);
+  return true;
+}
+
+const pitchedStavesSchema = partSchemas.pitched.shape.staves;
+
+/** A clef a staff of a pitched part can have. */
+export type PitchedClef = z.output<typeof pitchedStavesSchema>[number]["clef"];
+
+/** The clefs a staff of a pitched part can have, in the order the panel offers them. */
+export const PITCHED_CLEFS: readonly PitchedClef[] = pitchedStavesSchema.element.shape.clef.options;
+
+/**
+ * Give a staff of a pitched part (0 is the first) a clef, one command (docs/spec/commands.md,
+ * 7.2): the staves are replaced whole, as many as before. It only changes how the staff is drawn:
+ * notes are keyed by pitch. False, and nothing set, for a staff it has not or a clef it cannot
+ * have, or for a part that is not pitched: neither a fretted part's tablature nor the drum staff
+ * changes. Staves that cannot be read are read as the default (one treble staff) and written over
+ * from that. The same clef writes nothing.
+ */
+export function setClef(doc: Y.Doc, partId: string, staff: number, clef: PitchedClef): boolean {
+  const part = partOfKind(doc, partId, ["pitched"]);
+  if (part === undefined) return false;
+  const read = parsePlain(pitchedStavesSchema, part.get("staves"));
+  const staves = read.success ? read.data : KIND_DEFAULTS.pitched.staves;
+  if (!Number.isInteger(staff) || staff < 0 || staff >= staves.length) return false;
+  const next = parsePlain(
+    pitchedStavesSchema,
+    staves.map((each, index) => ({ clef: index === staff ? clef : each.clef })),
+  );
+  if (!next.success) return false;
+  writeField(part, "staves", pitchedStavesSchema, next.data);
+  return true;
+}
+
+/**
+ * How many bars of the score a part holds something in: a beat, a rest too, in any voice it has
+ * (docs/spec/commands.md, 7.1). What the member is told before deleting it.
+ */
+export function barsWithContent(score: ScoreJSON, partId: string): number {
+  const part = score.parts.find((each) => each.id === partId);
+  if (part === undefined) return 0;
+  return score.bars.filter((bar) => Object.values(part.content[bar.id] ?? {}).some((beats) => beats.length > 0)).length;
 }
 
 /**

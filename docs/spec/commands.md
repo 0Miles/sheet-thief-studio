@@ -308,6 +308,12 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 ### 7.3 團譜
 
 - `setTitle`：1–100 字元。`setArtist`：0–100 字元，空字串表示移除。都可以共編、可以復原。
+- **補充**（#24）：寫法與介面。
+  - 指令在 `packages/score-model` 的 `commands.ts`：`addPartWithin`（`addPart` 加上限檢查；上限判定是 `canAddPart(doc, kind)`，讀不懂種類的聲部算成非鼓，所以不會比文件裡的聲部少算）、`deletePart`、`movePart(doc, partId, after)`（`after` 是 null 時放到最前面；只改這個聲部自己的 `order`，鍵由 `keysAfter` 產生；已經在那裡時不寫入）、`setPartName`、`setTuning`、`setCapo`、`setProgram`、`setClef(doc, partId, staff, clef)`、`setTitle`、`setArtist`。從預設表新增是 `presets.ts` 的 `addPresetPart(doc, preset, tuning?)`（名稱用 `partNames` 接在團譜既有名稱之後；`tuning` 的弦數要和預設相同，否則回傳 null）。拒絕的理由是 `PartRefusal`：`"tooManyParts"`、`"lastPart"`。值超出範圍、聲部不在、種類不合時回傳 false、不寫入；讀到的值和要寫的相同時不寫入。沒有改 `kind`、弦數、譜表數的指令；`setTuning` 拒絕不同的弦數，`setClef` 只接受 pitched 聲部（fretted 的 TAB 與鼓的譜表都不改）。`staves` 讀不懂時當成預設（一個高音譜表）再改。
+  - 刪除確認對話框列出的「有內容的小節數」是 `barsWithContent(score, partId)`：那個聲部任一聲線有拍點（休止也算）的小節數。
+  - `EditorSession` 的 `addPart(preset, tuning?)`、`deletePart`、`movePart`、`setPartName`、`setTuning`、`setCapo`、`setProgram`、`setClef`、`setTitle`、`setArtist` 不經按鍵、不需要游標（沒有游標時也能執行），各是一個復原步驟；唯讀時拒絕並提示一次；成功後選取結束。上限與最後一個聲部以 `onHint` 告訴成員（`strings.ts` 的 `score.hints.tooManyParts`、`lastPart`）。刪掉游標所在的聲部（自己或別人刪的）時，游標照第 2 節用 `startOfScore` 回到第一個聲部第一小節，`line` 用那個聲部上次的 `line`。
+  - 介面：可編輯視圖的工具列有「聲部」按鈕，開關側邊的聲部面板（`apps/web/src/components/PartPanel.vue`，和小節屬性面板一次只開一個；`Esc` 以 `textEntryEffectOf` 的 `cancelEntry` 關閉）。面板列出聲部（拖動或「上移」「下移」排序）、新增聲部（預設表與 fretted 的調弦選項；到上限時停用並提示）、刪除（`AppConfirmDialog` 確認）、所選聲部的屬性（名稱、調弦含逐弦自訂、capo、program、pitched 各譜表的譜號）。標題列在可編輯視圖有「修改標題」按鈕，開一個表單同時改標題與演出者（`TitleEditor.vue`；`Enter` 套用、`Esc` 取消），有改動的欄位各自是一個 Command。讀到空的標題時顯示「未命名」（`strings.score.untitled`）。沒有新的快捷鍵。e2e 掛點：`data-toggle-parts`、`data-part-panel`、`data-part-row`（`data-part-id`）、`data-part-edit`、`data-part-delete`、`data-add-part`、`data-part-properties`、`data-part-tuning`、`data-edit-title`、`data-title-form`。
+  - **共編**（#24）：兩人同時刪除同一個聲部，合併後聲部不在，兩份文件一致，其中一人復原就帶回聲部與刪除當下的內容。一人刪除聲部時另一人正在那個聲部打字或改屬性：那些修改跟著聲部消失（和刪除小節相同），復原帶回的是刪除當下的樣子；另一人的游標回到譜首。兩人同時改同一個屬性或標題：Yjs 的 last-writer-wins，結果是其中一個值，兩邊相同。兩人同時移動聲部：各自的 `order` 帶隨機後綴，順序兩邊一致。測試：`packages/score-model/tests/parts.test.ts`、`packages/score-editor/tests/parts.test.ts`。
 - `replaceScore(json)`：還原版本用。在一筆交易裡以版本的內容取代 `meta` 的 `title`、`artist`，以及所有小節與聲部；保留版本裡的 id；是一個復原步驟。流程見 [`collab.md`](collab.md)。
 
 ## 8. 復原
