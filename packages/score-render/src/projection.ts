@@ -24,6 +24,8 @@ import {
   WHOLE,
 } from "@studio/score-model";
 
+import { channelsOf, type PartChannels } from "./channels";
+
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
 type AtStaff = alphaTab.model.Staff;
@@ -33,9 +35,6 @@ type AtNote = alphaTab.model.Note;
 type AtDynamic = alphaTab.model.DynamicValue;
 
 const { model } = alphaTab;
-
-/** The MIDI channel every percussion part plays on. */
-const PERCUSSION_CHANNEL = 9;
 
 const NOTE_VALUES: readonly NoteValue[] = [1, 2, 4, 8, 16, 32, 64];
 
@@ -361,25 +360,15 @@ function placesOf(json: ScoreJSON): BarPlace[] {
   });
 }
 
-function projectTrack(part: PartJSON, channels: { next: number }): AtTrack {
+function projectTrack(part: PartJSON, channels: PartChannels): AtTrack {
   const track = new model.Track();
   track.name = part.name;
   track.shortName = part.name;
   const info = track.playbackInfo;
-  if (part.kind === "percussion") {
-    info.program = 0;
-    info.primaryChannel = PERCUSSION_CHANNEL;
-    info.secondaryChannel = PERCUSSION_CHANNEL;
-  } else {
-    const take = (): number => {
-      if (channels.next === PERCUSSION_CHANNEL) channels.next++;
-      // Out of channels (more than seven pitched parts): share the last one rather than fail.
-      return Math.min(channels.next++, 15);
-    };
-    info.program = part.program;
-    info.primaryChannel = take();
-    info.secondaryChannel = take();
-  }
+  // Drums play program 0 on the percussion channel (docs/spec/playback.md, section 5).
+  info.program = part.kind === "percussion" ? 0 : part.program;
+  info.primaryChannel = channels.primary;
+  info.secondaryChannel = channels.secondary;
   return track;
 }
 
@@ -450,9 +439,9 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
     score.addMasterBar(masterBar);
   });
 
-  const channels = { next: 0 };
+  const channels = channelsOf(json.parts.map((part) => part.kind));
   json.parts.forEach((part, trackIndex) => {
-    const track = projectTrack(part, channels);
+    const track = projectTrack(part, channels[trackIndex] as PartChannels);
     const voiceCounts = staffVoiceCounts(part);
     track.ensureStaveCount(voiceCounts.length);
     score.addTrack(track);

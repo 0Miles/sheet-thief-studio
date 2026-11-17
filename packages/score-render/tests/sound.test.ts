@@ -428,3 +428,107 @@ test("a pickup bar sounds only as long as what is in it: the bar after comes rig
   expect(barsPlayed()).toEqual([1, 2, 3, 4]);
   expect(notesPlayed(doc).map((note) => note.tick)).toEqual([0, 960, 960 + 3840, 960 + 2 * 3840]);
 });
+
+/**
+ * The channels each part sounds on, in score order (docs/spec/playback.md, section 5): every part
+ * gets a bar with a plain note and a bent one, so that both its channels sound.
+ */
+function channelsHeard(doc: Y.Doc): { notes: number[]; bent: number[]; programs: Map<number, number[]> }[] {
+  const json = docToJson(doc);
+  const { score } = projectScore(json, settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  const programs = new Map<number, number[]>();
+  for (const event of file.events) {
+    if (event instanceof alphaTab.midi.ProgramChangeEvent) programs.set(event.channel, [...(programs.get(event.channel) ?? []), event.program]);
+  }
+  const ons = file.events.filter((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent);
+  return json.parts.map((_, track) => {
+    const own = ons.filter((event) => event.track === track);
+    return {
+      notes: [...new Set(own.filter((event) => event.tick === 0).map((event) => event.channel))],
+      bent: [...new Set(own.filter((event) => event.tick > 0).map((event) => event.channel))],
+      programs,
+    };
+  });
+}
+
+/** A score of one bar with parts of these kinds, each with a plain note, then a bent one but in the drums. */
+function partsOfKinds(kinds: ("fretted" | "pitched" | "percussion")[], doc = new Y.Doc()): { doc: Y.Doc; partIds: string[] } {
+  createScore(doc, "Band");
+  const [barId] = insertBars(doc, { after: null, count: 1, timeSig: { numerator: 2, denominator: 4 } });
+  const partIds = kinds.map((kind, index) => {
+    const partId = addPart(doc, { name: `Part ${index + 1}`, kind, ...(kind === "percussion" ? {} : { program: 20 + index }) });
+    writeChannelBar(doc, partId, barId!, kind);
+    return partId;
+  });
+  return { doc, partIds };
+}
+
+function writeChannelBar(doc: Y.Doc, partId: string, barId: string, kind: "fretted" | "pitched" | "percussion"): void {
+  const key = kind === "fretted" ? "s3" : kind === "pitched" ? "n60" : "p38";
+  const plain: NoteJSON = kind === "fretted" ? { fret: 5 } : {};
+  let cursor = insertBeat(doc, cursorAt(doc, partId, barId), { value: 4 });
+  setNote(doc, cursor, key, plain);
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 4 });
+  setNote(doc, cursor, key, kind === "fretted" ? { fret: 5, bend: { type: "bend", semitones: 2 } } : plain);
+}
+
+test("sixteen parts, fifteen not drums: each sounds on a primary channel of its own, none 9; the drums on 9", () => {
+  const kinds = [...Array.from({ length: 8 }, () => "fretted" as const), "percussion" as const, ...Array.from({ length: 7 }, () => "pitched" as const)];
+  const heard = channelsHeard(partsOfKinds(kinds).doc);
+  const own = heard.filter((_, index) => kinds[index] !== "percussion").map((part) => part.notes);
+  expect(own).toEqual([[0], [1], [2], [3], [4], [5], [6], [7], [8], [10], [11], [12], [13], [14], [15]]);
+  expect(heard[8]?.notes).toEqual([9]);
+  expect(heard[8]?.bent).toEqual([9]);
+});
+
+test("three parts that are not drums each bend on a secondary channel of their own; fifteen bend on their primary", () => {
+  const three = channelsHeard(partsOfKinds(["fretted", "fretted", "percussion", "fretted"]).doc);
+  expect(three.map((part) => [part.notes, part.bent])).toEqual([
+    [[0], [3]],
+    [[1], [4]],
+    [[9], [9]],
+    [[2], [5]],
+  ]);
+  const fifteen = channelsHeard(partsOfKinds(Array.from({ length: 15 }, () => "fretted")).doc);
+  expect(fifteen.every((part) => part.bent.length === 1 && part.bent[0] === part.notes[0])).toBe(true);
+});
+
+test("the program on each channel is the program of the part that plays on it", () => {
+  const kinds = [...Array.from({ length: 3 }, () => "fretted" as const), "percussion" as const, ...Array.from({ length: 12 }, () => "pitched" as const)];
+  const { doc } = partsOfKinds(kinds);
+  const heard = channelsHeard(doc);
+  const { parts } = docToJson(doc);
+  parts.forEach((part, index) => {
+    for (const channel of [...(heard[index]?.notes ?? []), ...(heard[index]?.bent ?? [])]) expect(heard[index]?.programs.get(channel)).toEqual([part.program]);
+  });
+  expect(heard[3]?.programs.get(9)).toEqual([0]);
+  // And with secondaries: every program change on a channel is the one of its part.
+  const few = channelsHeard(partsOfKinds(["fretted", "pitched"]).doc);
+  expect(few[0]?.programs.get(0)).toEqual([20]);
+  expect(few[0]?.programs.get(2)).toEqual([20]);
+  expect(few[1]?.programs.get(1)).toEqual([21]);
+  expect(few[1]?.programs.get(3)).toEqual([21]);
+});
+
+test("parts added at once past the limit share the channels of the fifteenth, the same on both sides", () => {
+  // Two members each add parts to a score of fourteen at once: seventeen, sixteen not drums.
+  const one = partsOfKinds(Array.from({ length: 14 }, () => "pitched")).doc;
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(one));
+  const [barId] = docToJson(one).bars.map((bar) => bar.id);
+  writeChannelBar(one, addPart(one, { name: "Mine", kind: "fretted", program: 40 }), barId!, "fretted");
+  writeChannelBar(other, addPart(other, { name: "Theirs", kind: "fretted", program: 41 }), barId!, "fretted");
+  writeChannelBar(other, addPart(other, { name: "Drums", kind: "percussion" }), barId!, "percussion");
+  Y.applyUpdate(one, Y.encodeStateAsUpdate(other));
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(one));
+  expect(docToJson(one).parts.map((part) => part.id)).toEqual(docToJson(other).parts.map((part) => part.id));
+  const heard = channelsHeard(one);
+  expect(channelsHeard(other).map((part) => [part.notes, part.bent])).toEqual(heard.map((part) => [part.notes, part.bent]));
+  const kinds = docToJson(one).parts.map((part) => part.kind);
+  const own = heard.filter((_, index) => kinds[index] !== "percussion");
+  expect(own.map((part) => part.notes)).toEqual([[0], [1], [2], [3], [4], [5], [6], [7], [8], [10], [11], [12], [13], [14], [15], [15]]);
+  expect(own.every((part) => part.bent[0] === part.notes[0])).toBe(true);
+  expect(heard.filter((_, index) => kinds[index] === "percussion").map((part) => part.notes)).toEqual([[9]]);
+});
