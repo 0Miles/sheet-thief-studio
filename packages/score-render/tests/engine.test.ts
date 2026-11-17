@@ -47,13 +47,17 @@ class StandIn {
   readonly playerPositionChanged = new Event<Position>();
   readonly midiLoaded = new Event();
   readonly beatMouseUp = new Event<alphaTab.model.Beat | null>();
-  /** The player behind the API: a sound the worker could not take is reported by it alone. */
-  readonly player = { midiLoadFailed: new Event<Error>() };
+  /** The player behind the API: a sound the worker could not take is reported by it alone; the channels' mix is set on it. */
+  readonly player = new StandInPlayer();
   score: alphaTab.model.Score | null = null;
   tickCache: alphaTab.midi.MidiTickLookup | null = null;
   readonly boundsLookup = null;
   isLooping = false;
-  playbackRange: alphaTab.synth.PlaybackRange | null = null;
+  metronomeVolume = 0;
+  countInVolume = 0;
+  private range: alphaTab.synth.PlaybackRange | null = null;
+  /** Every loop the engine gave alphaTab, in order: `start-end`, or `none`. */
+  readonly ranges: string[] = [];
   /** The sound font is in: alphaTab makes a new model's sound as it gets the model. */
   ready = false;
   /** What the engine asked of alphaTab, in order; `seek:<tick>` for a position set. */
@@ -67,6 +71,15 @@ class StandIn {
   constructor(_element: unknown, settings: alphaTab.Settings) {
     this.settings = settings;
     standIns.push(this);
+  }
+
+  get playbackRange(): alphaTab.synth.PlaybackRange | null {
+    return this.range;
+  }
+
+  set playbackRange(range: alphaTab.synth.PlaybackRange | null) {
+    this.range = range;
+    this.ranges.push(range ? `${range.startTick}-${range.endTick}` : "none");
   }
 
   get playerState(): alphaTab.synth.PlayerState {
@@ -126,6 +139,36 @@ class StandIn {
   }
 
   destroy(): void {}
+}
+
+/**
+ * The mix of alphaTab's synthesizer, by MIDI channel, as its worker keeps it: a new sound changes
+ * none of it, and clearing it (`resetChannelStates`) clears the mutes and the solos, not the volumes.
+ */
+class StandInPlayer {
+  readonly midiLoadFailed = new Event<Error>();
+  readonly muted = new Set<number>();
+  readonly soloed = new Set<number>();
+  readonly volumes = new Map<number, number>();
+
+  resetChannelStates(): void {
+    this.muted.clear();
+    this.soloed.clear();
+  }
+
+  setChannelMute(channel: number, mute: boolean): void {
+    if (mute) this.muted.add(channel);
+    else this.muted.delete(channel);
+  }
+
+  setChannelSolo(channel: number, solo: boolean): void {
+    if (solo) this.soloed.add(channel);
+    else this.soloed.delete(channel);
+  }
+
+  setChannelVolume(channel: number, volume: number): void {
+    this.volumes.set(channel, volume);
+  }
 }
 
 const standIns: StandIn[] = [];
@@ -452,6 +495,8 @@ test("with seekOnClick, a click on a beat sends playback to it; while a new soun
 test("with seekOnClick and a loop, a click outside the loop sends playback to its nearer end", () => {
   start({ seekOnClick: true });
   engine.player.setLoop({ startTick: 2 * BAR, endTick: 4 * BAR });
+  // Playback, at the start, goes into the loop.
+  expect(asked()).toEqual([`seek:${2 * BAR}`]);
   api.beatMouseUp.emit(beatIn(0));
   api.beatMouseUp.emit(beatIn(6));
   api.beatMouseUp.emit(beatIn(3));
@@ -486,4 +531,169 @@ test("a score of drums only is drawn and heard as any other", () => {
   engine.renderer.setScore(scoreOf(4, "percussion"));
   expect(asked()).toEqual(["renderScore", "loadMidi"]);
   expect(api.score!.tracks.map((track) => track.staves[0]!.isPercussion)).toEqual([true]);
+});
+
+/** A score of `bars` empty bars of 4/4 and a part of each kind given, in that order. */
+function partsScore(kinds: PartKind[], bars = 4): ScoreJSON {
+  const doc = new Y.Doc();
+  createScore(doc, "Mixer");
+  insertBars(doc, { after: null, count: bars });
+  for (const kind of kinds) addPart(doc, { name: kind, kind });
+  return docToJson(doc);
+}
+
+/** The engine draws a new score, a new model, and the worker takes its sound. */
+function newModel(json: ScoreJSON): void {
+  engine.renderer.setScore(json);
+  api.postRenderFinished.emit();
+  newSound();
+}
+
+test("mute, solo and volume stay with their part when a part added before it moves it to other channels", () => {
+  const two = partsScore(["fretted", "fretted"]);
+  newModel(two);
+  const [guitar, bass] = two.parts;
+  engine.player.setVolume(guitar!.id, 0.5);
+  engine.player.setMute(bass!.id, true);
+  // Channels: the guitar 0 and 2, the bass 1 and 3.
+  expect([...api.player.muted]).toEqual([1, 3]);
+  expect(Object.fromEntries(api.player.volumes)).toEqual({ 0: 0.5, 1: 1, 2: 0.5, 3: 1 });
+
+  // A part added between them: the guitar 0 and 3, the new part 1 and 4, the bass 2 and 5.
+  const added = partsScore(["fretted"]).parts[0]!;
+  newModel({ ...two, parts: [guitar!, added, bass!] });
+  expect([...api.player.muted].sort()).toEqual([2, 5]);
+  expect(Object.fromEntries(api.player.volumes)).toEqual({ 0: 0.5, 1: 1, 2: 1, 3: 0.5, 4: 1, 5: 1 });
+
+  // Solo too, and moved again.
+  engine.player.setMute(bass!.id, false);
+  engine.player.setSolo(bass!.id, true);
+  expect([...api.player.soloed].sort()).toEqual([2, 5]);
+  newModel({ ...two, parts: [bass!, guitar!, added] });
+  expect([...api.player.soloed].sort()).toEqual([0, 3]);
+  expect(api.player.muted.size).toBe(0);
+});
+
+test("parts sharing a channel cannot be told apart: two drum parts, either muted, mute channel 9", () => {
+  const drums = partsScore(["percussion", "percussion"]);
+  newModel(drums);
+  engine.player.setMute(drums.parts[1]!.id, true);
+  expect([...api.player.muted]).toEqual([9]);
+  engine.player.setVolume(drums.parts[0]!.id, 0.25);
+  expect(api.player.volumes.get(9)).toBe(0.25);
+});
+
+test("a mix set before the first sound, or for a part not drawn yet, is given once there is one", () => {
+  const two = partsScore(["fretted", "fretted"]);
+  engine.player.setMute(two.parts[1]!.id, true);
+  expect(api.player.muted.size).toBe(0);
+  newModel(two);
+  expect([...api.player.muted]).toEqual([1, 3]);
+});
+
+test("the metronome and the count-in are on at full volume, off at none", () => {
+  expect([api.metronomeVolume, api.countInVolume]).toEqual([0, 0]);
+  engine.player.setMetronome(true);
+  engine.player.setCountIn(true);
+  expect([api.metronomeVolume, api.countInVolume]).toEqual([1, 1]);
+  engine.player.setMetronome(false);
+  expect([api.metronomeVolume, api.countInVolume]).toEqual([0, 1]);
+});
+
+test("a selection of bars loops from the start of its first bar to the end of its last, whichever end it was made from", () => {
+  const [, second, third] = score.bars;
+  expect(engine.player.loopOf({ kind: "bars", partId: score.parts[0]!.id, anchorBarId: third!.id, focusBarId: second!.id })).toEqual({ startTick: BAR, endTick: 3 * BAR });
+  expect(engine.player.loopOf({ kind: "bars", partId: score.parts[0]!.id, anchorBarId: "gone", focusBarId: second!.id })).toBeNull();
+});
+
+test("a selection of beats loops from the start of its first beat to the end of its last", () => {
+  const barId = score.bars[1]!.id;
+  const quarter = (id: string) => ({ id, value: 4, dots: 0, notes: { s1: { fret: 0 } } });
+  const json = { ...score, parts: score.parts.map((part) => ({ ...part, content: { [barId]: { "0:0": [quarter("q1"), quarter("q2"), quarter("q3")] } } })) } as ScoreJSON;
+  newModel(json);
+  const selection = { kind: "beats", partId: json.parts[0]!.id, barId, voice: "0:0", anchorBeatId: "q3", focusBeatId: "q2" } as const;
+  expect(engine.player.loopOf(selection)).toEqual({ startTick: BAR + 960, endTick: BAR + 3 * 960 });
+});
+
+test("a loop keeps playback where it is inside it, else sends it to the nearer end; alphaTab is given it again with every new sound", () => {
+  at(5000);
+  engine.player.setLoop({ startTick: BAR, endTick: 3 * BAR });
+  expect(api.ranges.at(-1)).toBe(`${BAR}-${3 * BAR}`);
+  expect(asked()).toEqual(["seek:5000"]);
+  // The same loop again: nothing to do.
+  const given = api.ranges.length;
+  engine.player.setLoop({ startTick: BAR, endTick: 3 * BAR });
+  expect(api.ranges.length).toBe(given);
+  expect(asked()).toEqual([]);
+  // A seek outside it goes to its nearer end; a stop to its start.
+  engine.player.seek(7 * BAR);
+  expect(asked()).toEqual([`seek:${3 * BAR}`]);
+  engine.player.setLoop({ startTick: 4 * BAR, endTick: 6 * BAR });
+  expect(asked()).toEqual([`seek:${4 * BAR}`]);
+
+  // A new sound: the worker forgot the loop, and is given it again.
+  engine.renderer.setScore(scoreOf(9));
+  api.ranges.length = 0;
+  newSound();
+  expect(api.ranges).toEqual([`${4 * BAR}-${6 * BAR}`]);
+  expect(api.isLooping).toBe(true);
+
+  engine.player.setLoop(null);
+  expect(api.ranges.at(-1)).toBe("none");
+  expect(api.isLooping).toBe(false);
+  engine.player.seek(7 * BAR);
+  expect(asked().at(-1)).toBe(`seek:${7 * BAR}`);
+});
+
+test("a repeat set while it plays: once the new sound is in, playback goes on in the same bar, at the ticks of the new sound", () => {
+  playingAt(4 * BAR + 100);
+  // Bars 1 and 2 are now played twice: bar 5 is first played two bars later.
+  const repeated = { ...score, bars: score.bars.map((bar, index) => (index === 1 ? { ...bar, repeatEnd: 2 } : bar)) } as ScoreJSON;
+  engine.renderer.setScore(repeated);
+  expect(asked()).toEqual(["renderScore", "loadMidi"]);
+  newSound();
+  expect(asked()).toEqual([`seek:${6 * BAR + 100}`, "play"]);
+  expect(engine.player.barAt(6 * BAR + 100)).toEqual({ barId: score.bars[4]!.id, index: 4 });
+});
+
+test("in the second time through a repeat, a change made: playback goes on in that second time", async () => {
+  const repeated = { ...score, bars: score.bars.map((bar, index) => (index === 1 ? { ...bar, repeatEnd: 2 } : bar)) } as ScoreJSON;
+  newModel(repeated);
+  score = repeated;
+  asked();
+  // Bar 2, the second time.
+  playingAt(3 * BAR + 100);
+  changeInPlace();
+  const loaded = engine.player.load();
+  newSound();
+  await loaded;
+  expect(asked()).toEqual(["loadMidi", `seek:${3 * BAR + 100}`, "play"]);
+});
+
+test("sent elsewhere while the new sound is made: playback goes there, not back to where it was", () => {
+  playingAt(4 * BAR + 100);
+  const repeated = { ...score, bars: score.bars.map((bar, index) => (index === 1 ? { ...bar, repeatEnd: 2 } : bar)) } as ScoreJSON;
+  engine.renderer.setScore(repeated);
+  engine.player.seek(BAR);
+  // A loop set meanwhile does not send it anywhere either.
+  engine.player.setLoop({ startTick: 0, endTick: 8 * BAR });
+  newSound();
+  expect(asked()).toEqual(["renderScore", "loadMidi", `seek:${BAR}`, `seek:${BAR}`, "play"]);
+});
+
+test("at the end of a loop, alphaTab's report from its end is told as the loop's last tick: playback never shows the bar after it", () => {
+  engine.player.setLoop({ startTick: BAR, endTick: 3 * BAR });
+  at(3 * BAR - 10);
+  at(3 * BAR + 20);
+  at(BAR);
+  expect(positions).toEqual([3 * BAR - 10, 3 * BAR - 1, BAR]);
+});
+
+test("while the sound of a repeat set is made, where playback is reads in the new sound's ticks", () => {
+  playingAt(4 * BAR + 100);
+  const repeated = { ...score, bars: score.bars.map((bar, index) => (index === 1 ? { ...bar, repeatEnd: 2 } : bar)) } as ScoreJSON;
+  engine.renderer.setScore(repeated);
+  // The page asks, once drawn, with the new tick lookup already made.
+  expect(engine.player.position.tick).toBe(6 * BAR + 100);
+  expect(engine.player.barAt(engine.player.position.tick)).toEqual({ barId: score.bars[4]!.id, index: 4 });
 });

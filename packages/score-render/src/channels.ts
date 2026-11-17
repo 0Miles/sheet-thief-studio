@@ -39,3 +39,46 @@ export function channelsOf(kinds: readonly PartKind[]): PartChannels[] {
     return { primary, secondary };
   });
 }
+
+/** A member's mix of one part (docs/spec/playback.md, section 1): 0 is silent, 1 the volume written in the score. */
+export interface PartMix {
+  mute: boolean;
+  solo: boolean;
+  volume: number;
+}
+
+/** A part the member did not touch: heard, not alone, at the volume of the score. */
+export const NEUTRAL_MIX: Readonly<PartMix> = { mute: false, solo: false, volume: 1 };
+
+/**
+ * The mix each channel in use plays with, from the mixes of the parts on it (`channels` and
+ * `mixes` in the same order). Parts sharing a channel cannot be told apart there: it is muted
+ * when any of them is, played alone when any of them is, and as loud as the quietest of them.
+ * Order does not matter, so that it is the same whichever part was changed last.
+ */
+export function channelMixOf(channels: readonly PartChannels[], mixes: readonly PartMix[]): Map<number, PartMix> {
+  const byChannel = new Map<number, PartMix>();
+  channels.forEach((part, index) => {
+    const mix = mixes[index] ?? NEUTRAL_MIX;
+    for (const channel of new Set([part.primary, part.secondary])) {
+      const before = byChannel.get(channel);
+      byChannel.set(
+        channel,
+        before === undefined ? { ...mix } : { mute: before.mute || mix.mute, solo: before.solo || mix.solo, volume: Math.min(before.volume, mix.volume) },
+      );
+    }
+  });
+  return byChannel;
+}
+
+/**
+ * Whether each part shares a channel with another part, in the order given: its mute, solo and
+ * volume reach that part too. Always so for two drum parts (both on 9), and for parts past the
+ * fifteenth that is not drums.
+ */
+export function sharesChannels(kinds: readonly PartKind[]): boolean[] {
+  const channels = channelsOf(kinds);
+  const users = new Map<number, number>();
+  for (const part of channels) for (const channel of new Set([part.primary, part.secondary])) users.set(channel, (users.get(channel) ?? 0) + 1);
+  return channels.map((part) => (users.get(part.primary) ?? 0) > 1 || (users.get(part.secondary) ?? 0) > 1);
+}

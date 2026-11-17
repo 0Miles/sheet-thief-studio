@@ -28,6 +28,10 @@ test("served by the server, a score opens, is drawn and gets its sound, and so d
   await page.locator("[data-edit-title]").click();
   await expect(page.locator("[data-title-form]")).toBeVisible();
   await page.locator("[data-title-form]").getByRole("button", { name: strings.score.heading.cancel }).click();
+  // The mixer at the side of the score.
+  await page.locator("[data-toggle-mixer]").click();
+  await expect(page.locator("[data-mixer-panel]")).toBeVisible();
+  await page.locator("[data-mixer-panel]").getByLabel(strings.score.mixer.metronome).check();
 
   const answer = await page.request.get(`/scores/${id}`);
   expect(answer.headers()["content-type"]).toContain("text/html");

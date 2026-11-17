@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import * as Y from "yjs";
 
 import { projectScore } from "../src/projection";
-import { barAtTick } from "../src/ticks";
+import { barAtTick, placeAtTick, tickAtPlace } from "../src/ticks";
 
 const settings = new alphaTab.Settings();
 /** A bar of 4/4, in ticks: 960 to a quarter note. */
@@ -41,4 +41,13 @@ test("the bar played at a tick, and how far into it", () => {
 test("past the end, the last bar", () => {
   const lookup = lookupOf([4, 4]);
   expect(barAtTick(lookup, 3 * FOUR_FOUR)).toEqual({ index: 1, offset: 2 * FOUR_FOUR });
+});
+
+test("a place is a bar, which time it is played, and how far into it; found again by the same pass, or the last one there is", () => {
+  const lookup = lookupOf([4, 4, 4, 4]);
+  expect(placeAtTick(lookup, 2 * FOUR_FOUR + 100)).toEqual({ index: 2, pass: 0, offset: 100 });
+  expect(tickAtPlace(lookup, { index: 2, pass: 0, offset: 100 })).toBe(2 * FOUR_FOUR + 100);
+  // Played fewer times now: its last pass. Shorter now: no further than its end.
+  expect(tickAtPlace(lookup, { index: 1, pass: 1, offset: 5000 })).toBe(2 * FOUR_FOUR - 1);
+  expect(tickAtPlace(lookup, { index: 9, pass: 0, offset: 0 })).toBeNull();
 });

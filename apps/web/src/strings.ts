@@ -4,6 +4,7 @@ import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
+import type { WhilePlaying } from "./mixer";
 
 /** The tonic of each key, by the number of sharps (positive) or flats (negative) plus 7. */
 const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
@@ -200,6 +201,35 @@ export const strings = {
       pause: "暫停",
       stop: "停止",
       bar: (bar: number) => `第 ${bar} 小節`,
+    },
+    // Each member's own playback settings (docs/spec/playback.md, sections 1 and 3).
+    mixer: {
+      open: "混音",
+      openTitle: "各聲部的靜音、獨奏、音量，播放速度、節拍器與預備拍",
+      title: "混音",
+      close: "關閉",
+      mute: "靜音",
+      solo: "獨奏",
+      volume: "音量",
+      muteOf: (part: string) => `${part}：靜音`,
+      soloOf: (part: string) => `${part}：獨奏`,
+      volumeOf: (part: string) => `${part}：音量`,
+      percent: (value: number) => `${Math.round(value * 100)}%`,
+      shared: "和其他聲部共用聲道：靜音、獨奏與音量會一起作用在那些聲部上",
+      speed: "播放速度",
+      loop: "循環",
+      loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
+      loopBars: (first: number, last: number) => (first === last ? `第 ${first} 小節` : `第 ${first}–${last} 小節`),
+      loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
+      metronome: "節拍器",
+      countIn: "預備拍（一小節）",
+      whilePlaying: "播放中修改",
+      modes: {
+        a: "停止輸入後重新產生聲音",
+        b: "暫停、停止或循環回頭時才更新",
+      } satisfies Record<WhilePlaying, string>,
+      // Behaviour (b), while what plays is the score before a change (docs/spec/views.md, section 10).
+      behind: "播放的是修改前的內容",
     },
     // What is wrong in the score, pointed out only (docs/spec/flags.md): how many, the next one, and what each kind is.
     flags: {

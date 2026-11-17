@@ -18,6 +18,9 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 - owner 在 2026-11-13 確認保留節拍器與預備拍（[`README.md`](README.md) 的「owner 的裁定」）。
 - 窄螢幕的 Read view，混音面板收在抽屜裡（[`views.md`](views.md)）。
 - 訪客也可以用 Mixer（本機設定，不影響任何人）。
+- **補充**（#33）：實作在 `apps/web/src/mixer.ts`。`studio.mixer.<scoreId>` 的值是 `{ parts: { [partId]: { mute, solo, volume } }, speed }`；和團譜寫的一樣（不靜音、不獨奏、音量 1）的聲部不寫進去；被刪掉的聲部保留它的紀錄，復原刪除時混音跟著回來。`studio.playback` 的值是 `{ metronome, countIn, whilePlaying: "a" | "b" }`。讀不懂的值當成預設（聲部照團譜、速度 1、節拍器與預備拍關、(a)）。
+- **補充**（#33）：介面：編輯視圖與寬版 Read view 是工具列的「混音」按鈕打開的側邊面板（和小節屬性、聲部面板一樣，一次只開一個）；窄螢幕 Read view 在抽屜裡（縮放的下面）。面板列出各聲部的靜音、獨奏、音量（0–100%，間隔 5%）、播放速度、循環（編輯視圖顯示目前選取的小節；Read view 沒有這一列）、節拍器、預備拍、播放中修改的行為。
+- **補充**（#33）：和其他聲部共用聲道的聲部（兩個以上的鼓聲部；超過 15 個非鼓聲部時第 15 個以後的）在名稱旁標 `*`，面板下方說明「靜音、獨奏與音量會一起作用在那些聲部上」。共用與否由 score-render 的 `sharesChannels`（用 `channelsOf`）決定，殼不自己算聲道。
 
 ## 2. `ScorePlayer` 的增補
 
@@ -31,9 +34,15 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 
 | 模式 | 行為 |
 |---|---|
-| **(a)**（預設） | 停止輸入 400 ms 後重新產生聲音（`ScoreView.vue` 的 `SOUND_DELAY`）；播放會中斷約 75–117 ms（`spike-report.md:258`），然後從原位置接著播 |
+| **(a)**（預設） | 停止輸入 400 ms 後重新產生聲音（`apps/web/src/sound.ts` 的 `SOUND_DELAY`）；播放會中斷約 75–117 ms（`spike-report.md:258`），然後從原位置接著播 |
 | **(b)** | 播放中不呼叫 `player.load()`；在暫停、停止、或循環回頭（播放位置倒退）時才呼叫，並顯示「播放的是修改前的內容」 |
 
+- **補充**（#33）：「何時呼叫 `load()`」是 `apps/web/src/sound.ts` 的 `soundUpdates`（`SOUND_DELAY` 也在那裡），用假的 `ScorePlayer` 與假時鐘在 `apps/web/tests/sound.test.ts` 測試。細節：
+  - (b) 在暫停中的修改，和 (a) 一樣 400 ms 後產生聲音；400 ms 到時已經在播放，就改成等暫停、停止或倒退。
+  - 「倒退」是播放中回報的位置比上一次小（循環回頭、往回跳）。停止在播放器看來也是 paused，一樣算一次。
+  - 結構操作是新模型，alphaTab 自己重新產生整份聲音，(a)、(b) 都一樣；之前等著的內容修改也包含在裡面，提示跟著消失。
+  - 播放中從 (b) 換成 (a)：等著的修改 400 ms 後產生；從 (a) 換成 (b)：播放中就改成等。
+- **補充**（#33）：聲音換好之後，播放回到的是**音樂上的同一個位置**（小節 id、第幾次播到、小節內的 tick），不是同一個 tick：設反覆、改拍號、在前面插入小節都會讓之後的小節換到別的 tick。這段期間殼讀到的 `position` 也已經換成新聲音的 tick（新模型的 tick lookup 在拿到模型時就建好了）。那個小節不在了，才退回原來的 tick。產生期間成員跳到別處（`seek`、停止），就以那裡為準。
 - 預設 (a)。是否改成 (b)，由人工試聽判定，不擋其他票。試聽步驟見人工判定票 #41（`docs/spike-report.md` S5 一節的「請你聽一次」是 M0 當時在 `/local` 上的做法，#37 已移除那一頁）。
 - **補充**：「修改」包含自己的與其他成員送來的修改，規則相同。
 - 編輯視圖用「就地換小節」：alphaTab 看到的是同一份 `Score`，不會每次按鍵都自己重新產生聲音並停止播放（ADR 0003，`spike-report.md` S5）。
@@ -48,6 +57,9 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 | Read view | 移動播放位置（補充：不自動開始播放） | 目前的播放位置 | 沒有選取，所以沒有循環（補充） | 一直跟隨 |
 
 - 循環區間（補充）：拍點範圍是「第一個拍點的起點 tick」到「最後一個拍點的結束 tick」；小節範圍是第一個小節的開頭到最後一個小節的結尾。
+  - **補充**（#33）：`ScorePlayer.loopOf(selection)` 依目前的聲音算出這個區間（有反覆時取第一次播到的位置；第一次聲音產生前是 null）。殼在選取改變、每次排版完成、每次 `load()` 完成後重新算，交給 `setLoop`；沒有選取就是 `setLoop(null)`。一樣的區間再設一次什麼都不做。
+  - **補充**（#33）：設了新的循環，原本在區間內的播放位置不動，在區間外的移到較近的一端（alphaTab 自己會跳到起點，引擎再跳回來）；`seek` 一律夾在區間內，停止回到區間的起點。播放的起點仍是游標所在小節的開頭，夾在區間內；游標通常是選取的 focus，也就是區間的一端。
+  - **補充**（#33）：alphaTab 在循環結尾先回報到達（或超過）結尾的位置才跳回起點；引擎把這種位置當成區間的最後一個 tick，工具列不會閃過區間後面的小節。alphaTab 的 worker 每次換新聲音都會忘掉循環（`MidiFileSequencer.loadMidi` 換掉整個狀態），引擎在每次 midiLoaded 時重新給一次。
 - 跟隨由殼自己做：`ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（alphaTab 的捲動已經關掉，`alphaTabEngine.ts` 的 `ScrollMode.Off`；見 4.1）。
 - **補充**：`Space` 是播放／暫停（[`keymap.md`](keymap.md)）。
 - iOS 第一次播放要在使用者的手勢裡啟動音訊；實機確認是人工項目。
@@ -85,6 +97,7 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 - **補充**（#25）：「超出的聲部共用第 15 個非鼓聲部的聲道」是主、副聲道都用 15（此時第 15 個非鼓聲部的副聲道已經等於主聲道）。共用聲道的聲部，program 以 alphaTab 送出的最後一個為準，靜音、獨奏也互相影響；這是超過上限的代價，「新增聲部」在超過上限時停用，成員刪掉多的聲部就恢復。
 - **補充**（#25）：分配只看聲部依 `order`（同鍵再依 id）排好的種類序列，不看本機狀態，所以共編的每一方從同一份文件算出同樣的聲道。鼓聲部不論排在哪裡都不佔非鼓聲部的聲道。0 個聲部時沒有聲道（引擎本來就不產生 MIDI，`drawNothing`）。
 - **補充**（#25）：alphaTab 只在副聲道上播需要推弦、搖桿或抖音的音（`MidiFileGenerator` 的 `_needsSecondaryChannel`），program 在主、副聲道各送一次；聲道在投影時寫進 `Track.playbackInfo`，alphaTab 的 `ModelUtils.consolidate` 只在匯入時跑，不會改寫它們。新增、刪除、移動聲部都是結構操作，整份重投影，聲道跟著重算。
+- **補充**（#33）：混音（靜音、獨奏、音量）在引擎裡以聲部 id 為鍵保存，殼也以聲部 id 存在本機；alphaTab 的是以聲道為鍵，而且 worker 在 `loadMidiFile` 時不清掉。所以每次 midiLoaded（新模型或 `load()`）與每次修改混音時，引擎先 `resetChannelStates`，再依**現在**各聲部的聲道一個一個聲道設定（`channels.ts` 的 `channelMixOf`）：共用一個聲道的聲部，任何一個靜音就靜音、任何一個獨奏就獨奏、音量取最小的。結果和設定的先後無關。`resetChannelStates` 也會清掉各聲道的移調，投影沒有寫移調，所以沒有影響。混音在聲部還沒畫出來、或 0 個小節／0 個聲部時照樣記著，有了再套用；`resetChannelStates` 不清音量，所以每個用到的聲道都重設音量（沒設定的是 1）。測試在 `engine.test.ts`：新增一個聲部讓其他聲部的聲道移位後，靜音、獨奏、音量仍在原來的聲部上。
 - 這條規則用 `packages/score-render/tests/sound.test.ts` 同一種寫法測試：16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道；副聲道、各聲道的 program、兩份 `Y.Doc` 同時新增到超過上限也在那裡。分配函式本身在 `packages/score-render/tests/channels.test.ts`。
 
 ## 6. 上限

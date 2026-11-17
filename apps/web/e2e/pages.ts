@@ -166,3 +166,33 @@ export async function typeBeats(page: Page, frets: number[]): Promise<void> {
     await page.waitForTimeout(20);
   }
 }
+
+/**
+ * From now on, write down every bar the toolbar shows as playing, in the order it shows them
+ * (each once, as it changes); `barsShown` reads them back.
+ */
+export async function recordBarsShown(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const shown: number[] = [];
+    (window as unknown as { barsShown: number[] }).barsShown = shown;
+    const toolbar = document.querySelector("[data-player]")!;
+    new MutationObserver(() => {
+      const bar = document.querySelector("[data-playing-bar]")?.getAttribute("data-bar");
+      if (bar != null && shown.at(-1) !== Number(bar)) shown.push(Number(bar));
+    }).observe(toolbar, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+}
+
+export function barsShown(page: Page): Promise<number[]> {
+  return page.evaluate(() => (window as unknown as { barsShown: number[] }).barsShown);
+}
+
+/** Each bar shown is the one after the bar shown before it: playback went on, it never jumped. */
+export function oneAfterAnother(bars: number[]): boolean {
+  return bars.every((bar, index) => index === 0 || bar === bars[index - 1]! + 1);
+}
+
+/** Wait until the toolbar has shown this bar playing (a 4/4 bar lasts 2 seconds at 120). */
+export async function untilShown(page: Page, bar: number): Promise<void> {
+  await expect.poll(() => barsShown(page), { timeout: 15_000 }).toContain(bar);
+}
