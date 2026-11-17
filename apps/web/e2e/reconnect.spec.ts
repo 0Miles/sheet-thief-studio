@@ -6,7 +6,7 @@
 import { expect, type Page, test, type TestInfo } from "./test";
 
 import { strings } from "../src/strings";
-import { beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, type Refusal, scoreOf, seedAccount, seedScore, typeBeats } from "./pages";
+import { beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, type Refusal, scoreOf, seedAccount, seedScore, soundReady, typeBeats } from "./pages";
 
 const text = strings.score;
 
@@ -31,6 +31,16 @@ async function goToBar(page: Page): Promise<void> {
 /** The frets typed on the first string of the fourth bar, as the page holds the score. */
 async function fretsOf(page: Page): Promise<number[]> {
   return beatsIn(await scoreOf(page), 0, BAR).map((beat) => beat.notes.s1?.fret ?? -1);
+}
+
+/**
+ * The network goes, once the page has everything it loads: the score drawn and its sound in. The
+ * sound is the last thing a page fetches, and a fetch cut short is an error the page logs; these
+ * tests are about a page that is open, not one still loading.
+ */
+async function goOffline(page: Page): Promise<void> {
+  await soundReady(page);
+  await page.context().setOffline(true);
 }
 
 /** Call the API as the account logged in on the page, as its own pages do (the Origin is checked). */
@@ -60,7 +70,7 @@ test("offline, a member keeps typing under a banner; back online, another member
   await openScore(editor, id);
   await expect(owner.locator("[data-offline]")).toHaveCount(0);
 
-  await owner.context().setOffline(true);
+  await goOffline(owner);
   await expect(owner.locator("[data-offline]")).toHaveText(text.offline.editing);
   await expect(owner.locator('[data-sync="offline"]')).toBeVisible();
   await goToBar(owner);
@@ -102,7 +112,7 @@ test("closing a page with changes the server has not confirmed asks first", asyn
     asked.push(dialog.type());
     void dialog.dismiss();
   });
-  await owner.context().setOffline(true);
+  await goOffline(owner);
   await expect(owner.locator("[data-offline]")).toBeVisible();
   await typeBeats(owner, [4]);
   await owner.close({ runBeforeUnload: true });
@@ -125,7 +135,7 @@ test("an Editor made a Viewer while the score is open gets it anew, read-only, w
   await expect(editor.locator('[data-view="editable"]')).toBeVisible();
 
   // Typed once the Owner has made it a Viewer, before the page hears of it: offline meanwhile.
-  await editor.context().setOffline(true);
+  await goOffline(editor);
   await expect(editor.locator("[data-offline]")).toBeVisible();
   await api(owner, "PATCH", `/api/scores/${id}/members/${await accountIdOf(owner, id, editing.username)}`, { role: "viewer" });
   await goToBar(editor);
@@ -143,7 +153,7 @@ test("an Editor made a Viewer while the score is open gets it anew, read-only, w
   await expect(editor.getByRole("status").filter({ hasText: text.viewerCannotEdit })).toBeVisible();
   expect(await fretsOf(editor)).toEqual([]);
   // Offline in the read-only view, the banner does not offer to keep editing.
-  await editor.context().setOffline(true);
+  await goOffline(editor);
   await expect(editor.locator("[data-offline]")).toHaveText(text.offline.reading);
   await editor.context().setOffline(false);
   await expect(editor.locator("[data-offline]")).toHaveCount(0);
