@@ -89,9 +89,10 @@ test("bars and parts become master bars and tracks, in score order, each kind on
   expect([tab!.showTablature, tab!.showStandardNotation, tab!.tuning]).toEqual([true, false, [64, 59, 55, 50, 45, 40]]);
   expect([kit!.isPercussion, kit!.showTablature, kit!.showStandardNotation]).toEqual([true, false, true]);
   expect([piano!.isPercussion, piano!.showTablature, piano!.showStandardNotation]).toEqual([false, false, true]);
-  // Each pitched or fretted part has channels of its own; drums play on the percussion channel.
+  // Each pitched or fretted part has a primary channel of its own, then a secondary from those left
+  // over; drums play on the percussion channel (docs/spec/playback.md, section 5).
   const channels = score.tracks.map((track) => [track.playbackInfo.primaryChannel, track.playbackInfo.secondaryChannel]);
-  expect(channels).toEqual([[0, 1], [9, 9], [2, 3]]);
+  expect(channels).toEqual([[0, 2], [9, 9], [1, 3]]);
   expect(score.tracks.map((track) => track.playbackInfo.program)).toEqual([29, 0, 4]);
 });
 
