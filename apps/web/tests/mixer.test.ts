@@ -1,7 +1,7 @@
 // Each member's own playback settings, kept in this browser (docs/spec/playback.md, section 1).
 import { beforeEach, expect, test } from "vitest";
 
-import { loadMix, loadPlayback, mixerKey, PLAYBACK_KEY, saveMix, savePlayback, SPEEDS } from "../src/mixer";
+import { loadMix, loadPlayback, type MixedPlayer, mixerKey, PLAYBACK_KEY, saveMix, savePlayback, SPEEDS, startPlayback } from "../src/mixer";
 
 beforeEach(() => localStorage.clear());
 
@@ -58,4 +58,32 @@ test("a part id named __proto__ is a part like any other", () => {
 test("the settings of every score are stored once, for all of them", () => {
   savePlayback({ metronome: true, countIn: true, whilePlaying: "b" });
   expect(loadPlayback()).toEqual({ metronome: true, countIn: true, whilePlaying: "b" });
+});
+
+/** A player that writes down every setting it is given, in order. */
+function recordingPlayer(): MixedPlayer & { given: string[] } {
+  const given: string[] = [];
+  return {
+    given,
+    setSpeed: (speed) => given.push(`speed ${speed}`),
+    setMetronome: (on) => given.push(`metronome ${on}`),
+    setCountIn: (on) => given.push(`countIn ${on}`),
+    setMute: (partId, mute) => given.push(`mute ${partId} ${mute}`),
+    setSolo: (partId, solo) => given.push(`solo ${partId} ${solo}`),
+    setVolume: (partId, volume) => given.push(`volume ${partId} ${volume}`),
+  };
+}
+
+test("a score opened: its player gets the settings stored, and the page what to show of them", () => {
+  saveMix("s1", { parts: new Map([["p2", { mute: true, solo: false, volume: 0.5 }]]), speed: 0.75 });
+  savePlayback({ metronome: true, countIn: false, whilePlaying: "b" });
+  const player = recordingPlayer();
+  const started = startPlayback("s1", player);
+  expect(player.given).toEqual(["speed 0.75", "metronome true", "countIn false", "mute p2 true", "solo p2 false", "volume p2 0.5"]);
+  expect(started).toEqual({ mix: loadMix("s1"), playback: loadPlayback() });
+
+  // Nothing stored for another score: its own speed and no mix, the same metronome.
+  const other = recordingPlayer();
+  startPlayback("s2", other);
+  expect(other.given).toEqual(["speed 1", "metronome true", "countIn false"]);
 });

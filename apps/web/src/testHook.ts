@@ -1,7 +1,8 @@
 // `window.__studioTest`: what the end-to-end tests read from the page (docs/spec/testing.md,
-// section 2). Three read-only functions, only in a build made with VITE_E2E=1: in any other build
-// the code below is dead, and the bundle does not even hold the name.
+// section 2). Read-only functions, only in a build made with VITE_E2E=1: in any other build the
+// code below is dead, and the bundle does not even hold the name.
 import type { Cursor, Flag, ScoreJSON } from "@studio/score-model";
+import type { PlayerSettings } from "@studio/score-render";
 
 export interface StudioTestHook {
   /** The open score as plain data; null before one is open. */
@@ -9,6 +10,8 @@ export interface StudioTestHook {
   /** The member's cursor; null where there is none (outside the edit views). */
   cursor(): Cursor | null;
   flags(): Flag[];
+  /** The settings the player plays with (#33); null before there is one. */
+  player(): PlayerSettings | null;
 }
 
 declare global {

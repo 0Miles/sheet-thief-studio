@@ -20,6 +20,11 @@ async function openToPlay(page: Page, id: string): Promise<void> {
   await soundReady(page);
 }
 
+/** The settings the player plays with, as it holds them. */
+function playerSettings(page: Page) {
+  return page.evaluate(() => window.__studioTest!.player());
+}
+
 /** The mixer at the side of the score, opened from the toolbar. */
 async function openMixer(page: Page) {
   await page.locator("[data-toggle-mixer]").click();
@@ -56,6 +61,14 @@ test("every setting is kept after a reload; the mix and the speed for this score
   await expect(mixer.getByLabel(text.mixer.metronome)).toBeChecked();
   await expect(mixer.getByLabel(text.mixer.countIn)).toBeChecked();
   await expect(mixer.getByLabel(text.mixer.whilePlaying)).toHaveValue("b");
+  // And the player plays with them, not only the panel showing them.
+  expect(await playerSettings(page)).toEqual({
+    speed: 0.75,
+    metronome: true,
+    countIn: true,
+    loop: null,
+    parts: { [guitar!.id]: { mute: false, solo: true, volume: 0.5 }, [bass!.id]: { mute: true, solo: false, volume: 1 } },
+  });
 
   // Another score: its own mix, as the score has it; the same metronome, count-in and behaviour.
   await openToPlay(page, other);
@@ -67,6 +80,7 @@ test("every setting is kept after a reload; the mix and the speed for this score
   await expect(mixer.getByLabel(text.mixer.speed)).toHaveValue("1");
   await expect(mixer.getByLabel(text.mixer.metronome)).toBeChecked();
   await expect(mixer.getByLabel(text.mixer.whilePlaying)).toHaveValue("b");
+  expect(await playerSettings(page)).toEqual({ speed: 1, metronome: true, countIn: true, loop: null, parts: {} });
   expect(errors).toEqual([]);
 });
 
@@ -79,6 +93,8 @@ test("with bars 2-3 selected, playback at the end of bar 3 goes back to bar 2", 
   await page.keyboard.press("Control+Shift+ArrowRight");
   const mixer = await openMixer(page);
   await expect(mixer.locator("[data-loop]")).toContainText(text.mixer.loopBars(2, 3));
+  // From the start of bar 2 to the end of bar 3: 960 ticks to a quarter note, 4/4.
+  expect((await playerSettings(page))!.loop).toEqual({ startTick: 3840, endTick: 3 * 3840 });
   await mixer.getByRole("button", { name: text.mixer.close }).click();
 
   await recordBarsShown(page);

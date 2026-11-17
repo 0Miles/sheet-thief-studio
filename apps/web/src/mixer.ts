@@ -2,7 +2,7 @@
 // only (localStorage), never in the score: the mix and the speed of each score under its id, the
 // metronome, the count-in and what a change does while playing for every score at once. The loop
 // comes from the selection and is not stored.
-import { NEUTRAL_MIX, type PartMix } from "@studio/score-render";
+import { NEUTRAL_MIX, type PartMix, type ScorePlayer } from "@studio/score-render";
 
 /** The speeds offered, 1 being the tempo of the score: 0.25 to 1.5, every 0.05. */
 export const SPEEDS: readonly number[] = Array.from({ length: 26 }, (_, step) => Math.round((0.25 + step * 0.05) * 100) / 100);
@@ -104,4 +104,25 @@ export function loadPlayback(): PlaybackOptions {
 
 export function savePlayback(options: PlaybackOptions): void {
   write(PLAYBACK_KEY, options);
+}
+
+/** What `startPlayback` gives the settings to. */
+export type MixedPlayer = Pick<ScorePlayer, "setSpeed" | "setMetronome" | "setCountIn" | "setMute" | "setSolo" | "setVolume">;
+
+/**
+ * A score is opened: its player starts with the member's settings as stored, which the page then
+ * shows. The player keeps the mix of a part not drawn yet for when it is.
+ */
+export function startPlayback(scoreId: string, player: MixedPlayer): { mix: ScoreMix; playback: PlaybackOptions } {
+  const mix = loadMix(scoreId);
+  const playback = loadPlayback();
+  player.setSpeed(mix.speed);
+  player.setMetronome(playback.metronome);
+  player.setCountIn(playback.countIn);
+  for (const [partId, part] of mix.parts) {
+    player.setMute(partId, part.mute);
+    player.setSolo(partId, part.solo);
+    player.setVolume(partId, part.volume);
+  }
+  return { mix, playback };
 }

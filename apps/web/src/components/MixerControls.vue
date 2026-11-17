@@ -3,9 +3,9 @@
 // volume of each part, the speed, the loop the selection makes, the metronome, the count-in, and
 // what a change does while playing. In a panel at the side of the score, or in the narrow Read
 // view's drawer. Each change is the page's to store and to hand to the player.
-import { NEUTRAL_MIX, type PartMix } from "@studio/score-render";
+import type { PartMix } from "@studio/score-render";
 
-import { type PlaybackOptions, type ScoreMix, SPEEDS, VOLUME_STEP, type WhilePlaying } from "../mixer";
+import { partMix, type PlaybackOptions, type ScoreMix, SPEEDS, VOLUME_STEP, type WhilePlaying } from "../mixer";
 import { strings } from "../strings";
 
 defineProps<{
@@ -37,11 +37,11 @@ const numberOf = (event: Event) => Number((event.target as HTMLInputElement | HT
           <span v-if="part.shared" class="mixer__shared" data-shared :title="text.shared">*</span>
         </span>
         <label class="mixer__toggle">
-          <input type="checkbox" data-mute :aria-label="text.muteOf(part.name)" :checked="(mix.parts.get(part.id) ?? NEUTRAL_MIX).mute" @change="emit('part', part.id, { mute: checked($event) })" />
+          <input type="checkbox" data-mute :aria-label="text.muteOf(part.name)" :checked="partMix(mix, part.id).mute" @change="emit('part', part.id, { mute: checked($event) })" />
           {{ text.mute }}
         </label>
         <label class="mixer__toggle">
-          <input type="checkbox" data-solo :aria-label="text.soloOf(part.name)" :checked="(mix.parts.get(part.id) ?? NEUTRAL_MIX).solo" @change="emit('part', part.id, { solo: checked($event) })" />
+          <input type="checkbox" data-solo :aria-label="text.soloOf(part.name)" :checked="partMix(mix, part.id).solo" @change="emit('part', part.id, { solo: checked($event) })" />
           {{ text.solo }}
         </label>
         <input
@@ -52,10 +52,10 @@ const numberOf = (event: Event) => Number((event.target as HTMLInputElement | HT
           max="1"
           :step="VOLUME_STEP"
           :aria-label="text.volumeOf(part.name)"
-          :value="(mix.parts.get(part.id) ?? NEUTRAL_MIX).volume"
+          :value="partMix(mix, part.id).volume"
           @change="emit('part', part.id, { volume: numberOf($event) })"
         />
-        <span class="mixer__value">{{ text.percent((mix.parts.get(part.id) ?? NEUTRAL_MIX).volume) }}</span>
+        <span class="mixer__value">{{ text.percent(partMix(mix, part.id).volume) }}</span>
       </li>
     </ul>
     <p v-if="parts.some((part) => part.shared)" class="mixer__note">* {{ text.shared }}</p>

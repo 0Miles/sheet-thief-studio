@@ -61,7 +61,7 @@ import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { loadMix, loadPlayback, partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix } from "../mixer";
+import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { errorText, strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
@@ -224,7 +224,7 @@ const isFollowing = () => (keepInSight || reading.value) && playerState.value ==
 /** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
 let ownScrollTop: number | null = null;
 /** The member's settings of every score, kept in this browser (docs/spec/playback.md, section 1). */
-const playback = ref<PlaybackOptions>(loadPlayback());
+const playback = ref<PlaybackOptions>({ metronome: false, countIn: false, whilePlaying: "a" });
 /** The member's mix and speed of this score, kept in this browser under its id. */
 const mix = shallowRef<ScoreMix>({ parts: new Map(), speed: 1 });
 /** The panel of the mixer is open, at the side of the score (in the narrow Read view, the drawer has it). */
@@ -244,6 +244,7 @@ const hideFromTests = exposeForTests({
   scoreJson: () => (stopObserving !== undefined ? docToJson(doc) : null),
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
+  player: () => engine?.player.settings() ?? null,
 });
 const measurement = measureEditView({
   doc,
@@ -335,19 +336,6 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
   if (change.whilePlaying !== undefined) sound?.setMode(change.whilePlaying);
 }
 
-/** The player starts with the member's settings of this score; it keeps the mix of parts not drawn yet for when they are. */
-function applySettings(): void {
-  const player = engine?.player;
-  if (player === undefined) return;
-  player.setSpeed(mix.value.speed);
-  player.setMetronome(playback.value.metronome);
-  player.setCountIn(playback.value.countIn);
-  for (const [partId, part] of mix.value.parts) {
-    player.setMute(partId, part.mute);
-    player.setSolo(partId, part.solo);
-    player.setVolume(partId, part.volume);
-  }
-}
 
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
 const panel = computed(() => {
@@ -936,7 +924,6 @@ onMounted(async () => {
   view.value = openedView(decideView({ role: opened.role, isGuest, canType: canType() }), readOnlyBecause);
   scoreId = opened.scoreId;
   display.value = loadDisplay(scoreId);
-  mix.value = loadMix(scoreId);
   if (reading.value) stopped.value = false;
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
   // Read view in a worker, and a click on it sends playback there.
@@ -947,7 +934,10 @@ onMounted(async () => {
     seekOnClick: reading.value,
     scale: display.value.scale,
   });
-  applySettings();
+  // The player starts with the member's settings of this score, and the mixer shows them.
+  const started = startPlayback(scoreId, engine.player);
+  mix.value = started.mix;
+  playback.value = started.playback;
   // The sound of a change is in place: so are the ticks the loop is set in.
   sound = soundUpdates(engine.player, playback.value.whilePlaying, updateLoop);
   sound.onBehind((now) => {

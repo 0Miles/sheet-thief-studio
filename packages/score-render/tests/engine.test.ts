@@ -55,6 +55,7 @@ class StandIn {
   isLooping = false;
   metronomeVolume = 0;
   countInVolume = 0;
+  playbackSpeed = 1;
   private range: alphaTab.synth.PlaybackRange | null = null;
   /** Every loop the engine gave alphaTab, in order: `start-end`, or `none`. */
   readonly ranges: string[] = [];
@@ -696,4 +697,81 @@ test("while the sound of a repeat set is made, where playback is reads in the ne
   // The page asks, once drawn, with the new tick lookup already made.
   expect(engine.player.position.tick).toBe(6 * BAR + 100);
   expect(engine.player.barAt(engine.player.position.tick)).toEqual({ barId: score.bars[4]!.id, index: 4 });
+});
+
+/** The score with two empty bars inserted before its first. */
+function twoBarsBefore(json: ScoreJSON): ScoreJSON {
+  const first = json.bars[0]!;
+  return { ...json, bars: [{ ...first, id: "before-1" }, { ...first, id: "before-2", tempo: undefined }, { ...first, tempo: undefined }, ...json.bars.slice(1)] } as ScoreJSON;
+}
+
+test("two bars inserted before it while it plays: once the new sound is in, where playback is stays in the new sound's ticks until alphaTab reports", () => {
+  playingAt(4 * BAR + 100);
+  engine.renderer.setScore(twoBarsBefore(score));
+  expect(engine.player.position.tick).toBe(6 * BAR + 100);
+  newSound();
+  expect(asked()).toEqual(["renderScore", "loadMidi", `seek:${6 * BAR + 100}`, "play"]);
+  // alphaTab has not reported from there yet.
+  expect(engine.player.position.tick).toBe(6 * BAR + 100);
+  expect(engine.player.barAt(engine.player.position.tick)).toEqual({ barId: score.bars[4]!.id, index: 6 });
+});
+
+test("stopped with a loop, playback is at the loop's start at once", () => {
+  engine.player.setLoop({ startTick: 2 * BAR, endTick: 4 * BAR });
+  asked();
+  playingAt(3 * BAR + 100);
+  engine.player.stop();
+  expect(asked()).toEqual(["stop"]);
+  expect(engine.player.position.tick).toBe(2 * BAR);
+  // Without one, at the start of the score.
+  engine.player.setLoop(null);
+  playingAt(3 * BAR);
+  engine.player.stop();
+  expect(engine.player.position.tick).toBe(0);
+});
+
+/**
+ * Bars 4-5 looped, near the end of bar 5, when a repeat is set on bar 2: the music of the loop is
+ * two bars later in the new sound.
+ */
+function loopThenRepeat(): void {
+  engine.player.setLoop({ startTick: 3 * BAR, endTick: 5 * BAR });
+  asked();
+  playingAt(5 * BAR - 100);
+  engine.renderer.setScore({ ...score, bars: score.bars.map((bar, index) => (index === 1 ? { ...bar, repeatEnd: 2 } : bar)) } as ScoreJSON);
+  expect(asked()).toEqual(["renderScore", "loadMidi"]);
+}
+
+test("a loop, then a repeat set before it while it plays; the page sets the loop again before the sound is in: the same music plays on", () => {
+  loopThenRepeat();
+  engine.player.setLoop({ startTick: 5 * BAR, endTick: 7 * BAR });
+  newSound();
+  expect(asked()).toEqual([`seek:${7 * BAR - 100}`, "play"]);
+  expect(api.ranges.at(-1)).toBe(`${5 * BAR}-${7 * BAR}`);
+});
+
+test("a loop, then a repeat set before it while it plays; the sound is in before the page sets the loop again: the same music plays on", () => {
+  loopThenRepeat();
+  newSound();
+  expect(asked()).toEqual([`seek:${7 * BAR - 100}`, "play"]);
+  expect(api.ranges.at(-1)).toBe(`${5 * BAR}-${7 * BAR}`);
+  expect(engine.player.settings().loop).toEqual({ startTick: 5 * BAR, endTick: 7 * BAR });
+  // The page's loop, set again, is that one: nothing moves.
+  engine.player.setLoop({ startTick: 5 * BAR, endTick: 7 * BAR });
+  expect(asked()).toEqual([]);
+});
+
+test("the settings tell the speed, the metronome, the count-in, the loop and the mix of each part given one", () => {
+  const partId = score.parts[0]!.id;
+  engine.player.setSpeed(0.75);
+  engine.player.setMetronome(true);
+  engine.player.setMute(partId, true);
+  engine.player.setLoop({ startTick: BAR, endTick: 2 * BAR });
+  expect(engine.player.settings()).toEqual({
+    speed: 0.75,
+    metronome: true,
+    countIn: false,
+    loop: { startTick: BAR, endTick: 2 * BAR },
+    parts: { [partId]: { mute: true, solo: false, volume: 1 } },
+  });
 });

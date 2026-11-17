@@ -2,6 +2,8 @@
 // engine behind it (docs/adr/0003): everything is addressed by the ids of the score.
 import type { Cursor, ScoreJSON, Selection } from "@studio/score-model";
 
+import type { PartMix } from "./channels";
+
 /** A rectangle in CSS pixels, relative to the top-left corner of the element the score is drawn in. */
 export interface Rect {
   x: number;
@@ -106,6 +108,15 @@ export interface PlayerPosition {
   endMilliseconds: number;
 }
 
+/** What `ScorePlayer.settings` tells: the mix by part id, of the parts given one only. */
+export interface PlayerSettings {
+  speed: number;
+  metronome: boolean;
+  countIn: boolean;
+  loop: PlayRange | null;
+  parts: Record<string, PartMix>;
+}
+
 /** A stretch of the score to play, in ticks. */
 export interface PlayRange {
   startTick: number;
@@ -160,6 +171,8 @@ export interface ScorePlayer {
   setMetronome(on: boolean): void;
   /** One bar of clicks before playing starts; off at first. */
   setCountIn(on: boolean): void;
+  /** The settings it plays with now, as the engine holds them. Diagnostic: the e2e tests read it. */
+  settings(): PlayerSettings;
   onState(listener: (state: PlayerState) => void): Unsubscribe;
   onPosition(listener: (position: PlayerPosition) => void): Unsubscribe;
   /** Called when playback reaches the end of the score and stops there; not at the end of a loop. */
