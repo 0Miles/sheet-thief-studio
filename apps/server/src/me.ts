@@ -33,6 +33,8 @@ export function registerMe(app: FastifyInstance, { limiter }: { limiter: RateLim
     const body = updateMeRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
     await request.account!.update({ displayName: body.data.displayName });
+    // Their open scores show the new name from their next presence (docs/spec/collab.md, section 5).
+    app.collab.renamed(request.account!.id, request.account!.displayName);
     return meOf(request);
   });
 

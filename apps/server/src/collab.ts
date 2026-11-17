@@ -15,9 +15,10 @@ import { literal } from "sequelize";
 import * as Y from "yjs";
 
 import type { CollabTickets, Guest, Member } from "./collabTickets";
-import { Score, type VersionReason } from "./db/models";
+import { Account, Score, type VersionReason } from "./db/models";
 import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
 import { scoreOfLink } from "./links";
+import { clientsAllowed, presenceOf } from "./presence";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
 import { createVersion, VERSION_INTERVAL_MS } from "./versions";
@@ -42,9 +43,10 @@ type FrozenReason = CollabNotice["reason"];
 
 /**
  * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
- * member's role is the one the database gave when the connection was let in.
+ * member's role is the one the database gave when the connection was let in; their display name
+ * the one they have now, kept up to date as they change it (`renamed`): their presence shows it.
  */
-export type CollabContext = Member | Guest;
+export type CollabContext = (Member & { displayName: string }) | Guest;
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -68,6 +70,11 @@ export interface Collab {
    * before it is sent the document. Returns how many were closed.
    */
   closeConnections(which: ConnectionsToClose, event: CloseEvent): number;
+  /**
+   * The account's display name changed: its connections show the new one from the next presence
+   * their tabs send (docs/spec/collab.md, section 5).
+   */
+  renamed(accountId: string, displayName: string): void;
   /** The ids of the scores whose documents are in memory now. For diagnostics and tests only. */
   loadedScores(): string[];
 }
@@ -269,7 +276,10 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
     }
     const member = await membership(holder.scoreId, holder.accountId);
     if (member === null || !(await sessions.isActive(holder.sessionId))) throw Forbidden;
+    const account = await Account.findByPk(holder.accountId, { attributes: ["displayName"] });
+    if (account === null) throw Forbidden;
     holder.role = member.role;
+    holder.displayName = account.displayName;
   }
 
   const hocuspocus = new Hocuspocus<CollabContext>({
@@ -284,7 +294,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       // A socket that closed while the ticket was redeemed would never take the entry below out.
       const socket = socketByRequest.get(request);
       if (socket === undefined || socket.closed) throw Forbidden;
-      const holder: Holder = { ...ticket, scoreId: documentName };
+      // A member's display name is read with their rights, below.
+      const holder: Holder = ticket.kind === "member" ? { ...ticket, scoreId: documentName, displayName: "" } : { ...ticket, scoreId: documentName };
       // Closable from here on, before the checks: an event that comes after a check has read
       // the database still finds the connection.
       const entry: Loading = { holder, socket, closeWith: null };
@@ -324,12 +335,30 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       // is loaded, and each message, the ones queued meanwhile too, passes here before it is applied.
       if (frozen.has(documentName)) connection.readOnly = true;
     },
-    async beforeHandleAwareness({ context, states, removedClients }) {
+    async beforeHandleAwareness({ context, connection, document, states, removedClients }) {
+      // Not from a connection: the server's own, which says nothing.
+      if (context === undefined || connection === undefined) return;
       // A guest is not in the presence (docs/spec/collab.md, section 5): nothing it says about
       // itself or anyone else is applied.
-      if (context?.kind !== "guest") return;
-      states.clear();
-      removedClients.clear();
+      if (context.kind === "guest") {
+        states.clear();
+        removedClients.clear();
+        return;
+      }
+      // A member speaks for their own tab only: never another's state, never its removal.
+      const others = new Set<number>();
+      for (const other of document.getConnections()) if (other !== connection) for (const client of document.getClients(other)) others.add(client);
+      const allowed = clientsAllowed(document.getClients(connection), others, [...states.keys(), ...removedClients]);
+      for (const client of removedClients) if (!allowed.has(client)) removedClients.delete(client);
+      // Who it is, the server's, its name as of now (the register's holder is the one `renamed`
+      // updates; Hocuspocus keeps a copy of it as the context); the rest, of a presence's shape
+      // (docs/spec/views.md, section 8).
+      const holder = register.get(connection);
+      const who = holder?.kind === "member" ? holder : context;
+      for (const [client, state] of states) {
+        if (allowed.has(client)) states.set(client, presenceOf(state, who, connection.readOnly));
+        else states.delete(client);
+      }
     },
     async onLoadDocument({ documentName, document }) {
       // Authentication has found the score; a direct connection only ever opens one that exists.
@@ -451,6 +480,10 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
         closed += 1;
       }
       return closed;
+    },
+    renamed(accountId, displayName) {
+      const holders = [...register.values(), ...[...loading.values()].map((entry) => entry.holder)];
+      for (const holder of holders) if (holder.kind === "member" && holder.accountId === accountId) holder.displayName = displayName;
     },
     loadedScores() {
       return [...hocuspocus.documents.keys()];

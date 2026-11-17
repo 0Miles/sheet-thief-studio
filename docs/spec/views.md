@@ -137,6 +137,12 @@ interface PresenceState {
 - 其他人的游標在遠端修改後，用 `settleCursor` 重新解析位置（`navigation.ts` 的 `settleCursor`）。
 - 名牌貼在游標旁，遵守 `reservedRects`。
 - 停用的帳號在成員列表上，名稱旁顯示「已停用」（[`accounts.md`](accounts.md)）。
+- **補充**（#34）：客戶端的寫法在 `apps/web/src/presence.ts`。
+  - 寫入：`joinPresence` 包住 provider 的 awareness，殼在每次 `onPresence`、視圖改變時以 `localStateOf(view, presence)` 整份寫入本機狀態（Read view 一律 `cursor: null`、`selection: null`）。`ScoreView` 被關掉（#35 換新的 `ScoreView`）或卸載時先 `leave()`（本機狀態設為 null），新的 `ScoreView` 是新的 `Y.Doc`、新的 client，不留幽靈游標；伺服器在連線關閉時也會移除那條連線的狀態。
+  - 讀取：其他分頁的狀態用 `packages/contracts` 的 `presenceState` 解析，形狀不對的略過；成員列表（`membersOf`）每個帳號一列，不列自己的帳號（自己的其他分頁仍畫出游標），任一分頁是 `edit` 就算 `edit`，`read` 的成員標「（檢視中）」。成員也看得到其他人的游標，三種視圖都畫；訪客的 provider 沒有 awareness，什麼都不畫。
+  - 其他人的游標每次排版後與 awareness 改變時重新放置（`peerMarksOf`）：`settleCursor` 不帶位置，聲部、小節或聲線不在時不畫（含 0 小節、0 聲部），`line` 夾在聲部的範圍內。選取照畫，指到的拍點或小節不在時不畫。編輯中的游標用成員的顏色，`read` 的淡色；選取框更淡。
+  - 名牌是 HTML 文字（只當文字渲染），大小由 `tagWidth` 估算並以這個大小畫出（名字太長就截斷），放在游標上方、左緣對齊；上方會碰到保留區域或超出頁面頂端時改放游標下方，仍碰到就移到保留區域下方（`tagRect`）。
+  - 小節範圍的選取框（自己的與其他人的）只在保留區域底下的那一段切掉（`overlay.ts` 的 `clearPieces`），同一行的其他小節保持原高度（#21 審查）；拍點範圍仍照 `clearOf`。
 
 ## 9. 疊層與 alphaTab 的標記
 

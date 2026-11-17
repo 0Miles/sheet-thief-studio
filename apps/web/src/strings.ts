@@ -63,6 +63,12 @@ export const strings = {
       reading: "離線中，恢復連線後會繼續更新。",
     },
     viewerCannotEdit: "檢視者無法修改",
+    // The members on the score now (docs/spec/views.md, section 8): each once, a member who only
+    // reads marked so; their names are those they chose.
+    presence: {
+      members: "正在看這份團譜的成員",
+      reading: "（檢視中）",
+    },
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
     // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).

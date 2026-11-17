@@ -77,6 +77,12 @@ test("at the top of a score of more than 10 bars, a selection never covers an ar
   const systems = await selection.count();
   expect(systems).toBeGreaterThan(1);
   await clear("all the bars");
+  // Cut only under the mark (#21 review): the first system's box beside the area keeps its top,
+  // higher than the area's bottom edge, where the piece under the area starts.
+  const areas = await Promise.all((await reserved.all()).map(async (area) => (await area.boundingBox())!));
+  const boxes = await Promise.all((await selection.all()).map(async (box) => (await box.boundingBox())!));
+  const beside = (box: { x: number; width: number }, area: { x: number; width: number }) => box.x + box.width <= area.x || area.x + area.width <= box.x;
+  expect(boxes.some((box) => areas.every((area) => beside(box, area)) && areas.some((area) => box.y < area.y + area.height))).toBe(true);
 
   // Back to the first bar; the bars of the first system share the top of their cursor.
   await page.keyboard.press("Escape");
@@ -98,5 +104,9 @@ test("at the top of a score of more than 10 bars, a selection never covers an ar
   await expect(selection).toHaveCount(1);
   expect(beatsIn(await scoreOf(page), 0, lastOfFirstSystem)).toHaveLength(3);
   await clear("a beat range under the mark");
+  // It reached into the area, by a pixel or so: it was cut at the area's bottom edge, not drawn clear of it anyway.
+  const cut = (await selection.boundingBox())!;
+  const under = areas.filter((area) => !beside(cut, area));
+  expect(under.some((area) => Math.abs(cut.y - (area.y + area.height)) < 0.5)).toBe(true);
   expect(errors).toEqual([]);
 });
