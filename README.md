@@ -75,7 +75,7 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
-端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium`）。它自己啟動 server 與網頁，用 `compose.dev.yaml` 裡獨立的 `studio_e2e` 資料庫，每次重建；先停掉開發中的 server（port 8031、5183，以及由 server 自己提供網頁的那個測試用的 8032 都要空著）：
+端對端測試（第一次要先 `pnpm --filter @studio/web exec playwright install chromium firefox webkit`；完整的測試只在 Chromium 跑，Firefox 與 WebKit 只跑 `e2e/smoke/` 的 smoke test，見 [`docs/spec/testing.md`](docs/spec/testing.md) 第 3 節）。它自己啟動 server 與網頁，用 `compose.dev.yaml` 裡獨立的 `studio_e2e` 資料庫，每次重建；先停掉開發中的 server（port 8031、5183，以及由 server 自己提供網頁的那兩個測試用的 8032、8033 都要空著）。只跑某個瀏覽器時在後面加 `--project`，例如 `--project=chromium --project=served`：
 
 ```bash
 pnpm --filter @studio/web test:e2e
