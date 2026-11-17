@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 
@@ -75,7 +75,64 @@ export const strings = {
     // The box Enter opens for the text over a beat, such as a chord name.
     beatText: "拍點文字",
     // What a key that did nothing tells the member (`SessionHint`).
-    hints: { oneVoice: "弦樂聲部只有一條聲線", tooManyBars: `小節最多 ${MAX_BARS} 個`, lastBar: "至少要留下一個小節" } satisfies Record<SessionHint, string>,
+    hints: {
+      oneVoice: "弦樂聲部只有一條聲線",
+      tooManyBars: `小節最多 ${MAX_BARS} 個`,
+      lastBar: "至少要留下一個小節",
+      tooManyParts: `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`,
+      lastPart: "至少要留下一個聲部",
+    } satisfies Record<SessionHint, string>,
+    // A title read as empty (co-editing can empty it; docs/spec/schema.md, section 2).
+    untitled: "未命名",
+    // The title and the artist, changed in the title bar of the editable view (docs/spec/commands.md, 7.3).
+    heading: {
+      edit: "修改標題",
+      editTitle: "修改標題與演出者",
+      title: "標題",
+      artist: "演出者",
+      artistHelp: "留空表示不寫演出者",
+      apply: "套用",
+      cancel: "取消",
+    },
+    // The panel of the parts (docs/spec/commands.md, 7.1 and 7.2): the editable view only.
+    parts: {
+      panel: "聲部",
+      panelTitle: "新增、刪除、排序聲部，修改聲部屬性",
+      close: "關閉",
+      list: "聲部（拖動可以排序）",
+      kinds: { fretted: "弦樂", percussion: "鼓", pitched: "五線譜" } satisfies Record<PartKind, string>,
+      strings: (count: number) => `${count} 弦`,
+      drag: (name: string) => `拖動「${name}」排序`,
+      edit: (name: string) => `修改「${name}」的屬性`,
+      moveUp: (name: string) => `把「${name}」往上移`,
+      moveDown: (name: string) => `把「${name}」往下移`,
+      up: "上移",
+      down: "下移",
+      remove: "刪除",
+      removeOf: (name: string) => `刪除「${name}」`,
+      add: "新增聲部",
+      preset: "聲部種類",
+      tuning: "調弦",
+      atLimit: `聲部已經到上限：最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`,
+      properties: (name: string) => `「${name}」的屬性`,
+      fixed: "聲部種類、弦數與譜表數建立後不能改。",
+      name: "名稱",
+      tuningHelp: "格號不變，所以音高會跟著調弦改變。",
+      capo: "移調夾（第幾格，0 是沒有）",
+      program: "音色（General MIDI 編號 0–127）",
+      clef: (staff: number) => `第 ${staff} 個譜表的譜號`,
+      clefs: { treble: "高音譜號", bass: "低音譜號", "treble-8vb": "高音譜號（低八度）" } satisfies Record<PitchedClef, string>,
+      clefHelp: "譜號只影響顯示，音高不變。",
+      apply: "套用",
+      // Asked before a part goes with all it holds: deleting bars asks nothing, deleting a part does (commands.md, 7.1).
+      confirmDelete: {
+        title: "刪除聲部",
+        message: (name: string, bars: number) =>
+          `${bars === 0 ? `要刪除「${name}」嗎？它沒有任何內容。` : `要刪除「${name}」嗎？它有 ${bars} 個小節有內容，會一起刪除。`}刪除之後可以用復原找回來。`,
+        confirm: "刪除",
+        cancel: "取消",
+      },
+    },
     // Bars inserted and deleted, and the panel of the cursor's bar (docs/spec/commands.md, section 6):
     // the toolbar's buttons say the key of this platform, the panel works on every part.
     bars: {

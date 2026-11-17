@@ -5,7 +5,7 @@
 // position change only with them, as alphaTab's do. Everything else is alphaTab's own: the
 // settings, the model, the projection, and the tick lookup made with the sound.
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, docToJson, insertBars, type ScoreJSON } from "@studio/score-model";
+import { addPart, createScore, docToJson, insertBars, type PartKind, type ScoreJSON } from "@studio/score-model";
 import { beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
@@ -141,12 +141,12 @@ vi.mock("@coderline/alphatab", async (importOriginal) => {
   };
 });
 
-/** A score of `bars` empty bars of 4/4 and one guitar. */
-function scoreOf(bars: number): ScoreJSON {
+/** A score of `bars` empty bars of 4/4 and one guitar, or one part of another kind. */
+function scoreOf(bars: number, kind: PartKind = "fretted"): ScoreJSON {
   const doc = new Y.Doc();
   createScore(doc, "Engine");
   insertBars(doc, { after: null, count: bars });
-  addPart(doc, { name: "Guitar", kind: "fretted" });
+  addPart(doc, { name: "Part", kind });
   return docToJson(doc);
 }
 
@@ -218,7 +218,8 @@ function asked(): string[] {
 /** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
 function start(options: { seekOnClick?: boolean } = {}): void {
   standIns.length = 0;
-  engine = createAlphaTabEngine({} as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false, ...options });
+  // An element with nothing drawn in it: what the engine clears when it draws nothing.
+  engine = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false, ...options });
   api = standIns[0]!;
   score = scoreOf(8);
   engine.renderer.setScore(score);
@@ -460,4 +461,29 @@ test("with seekOnClick and a loop, a click outside the loop sends playback to it
 test("without seekOnClick, a click on a beat leaves playback where it is", () => {
   api.beatMouseUp.emit(beatIn(2));
   expect(asked()).toEqual([]);
+});
+
+test("a score with no parts, or no bars, is not given to alphaTab: told drawn, playback stopped, no sound made and nothing played until it has both again", async () => {
+  const drawn: boolean[] = [];
+  engine.renderer.onRendered(({ partial }) => drawn.push(partial));
+  for (const empty of [{ ...score, parts: [] }, { ...score, bars: [], parts: [] }, { ...score, bars: [], parts: score.parts.map((part) => ({ ...part, content: {} })) }]) {
+    engine.renderer.setScore(empty);
+    expect(asked()).toEqual(["stop"]);
+    // A change of content arriving for it is not given either.
+    engine.renderer.patchBars(empty, []);
+    expect(asked()).toEqual(["stop"]);
+    await engine.player.load();
+    engine.player.play();
+    expect(asked()).toEqual([]);
+  }
+  expect(drawn).toEqual([false, false, false, false, false, false]);
+  // Parts again: a new model, drawn and heard anew.
+  engine.renderer.setScore(scoreOf(4));
+  expect(asked()).toEqual(["renderScore", "loadMidi"]);
+});
+
+test("a score of drums only is drawn and heard as any other", () => {
+  engine.renderer.setScore(scoreOf(4, "percussion"));
+  expect(asked()).toEqual(["renderScore", "loadMidi"]);
+  expect(api.score!.tracks.map((track) => track.staves[0]!.isPercussion)).toEqual([true]);
 });

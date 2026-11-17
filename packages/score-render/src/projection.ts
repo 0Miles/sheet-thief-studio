@@ -417,6 +417,10 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
   const started = performance.now();
   const score = new model.Score();
   score.title = json.title;
+  // The tuning of each fretted part is written beside its own tablature on the first system, not
+  // as one list above the score, where those of several parts were drawn over each other
+  // (docs/spike-report.md, 其他意外).
+  score.stylesheet.tuningDisplayMode = model.TuningDisplayMode.Staff;
   const projection: Projection = {
     score,
     barIds: json.bars.map((bar) => bar.id),

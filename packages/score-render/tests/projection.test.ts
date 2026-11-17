@@ -95,6 +95,14 @@ test("bars and parts become master bars and tracks, in score order, each kind on
   expect(score.tracks.map((track) => track.playbackInfo.program)).toEqual([29, 0, 4]);
 });
 
+test("the tuning of each fretted part is written beside its own tablature, not listed above the score where those of several parts overlap", () => {
+  const { doc } = band();
+  addPart(doc, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
+  const { score } = projectScore(docToJson(doc), settings);
+  expect(score.stylesheet.tuningDisplayMode).toBe(alphaTab.model.TuningDisplayMode.Staff);
+  expect(score.stylesheet.globalDisplayTuning).toBe(true);
+});
+
 test("strings count from the highest, drum pieces are articulation ids, pitches keep the spelling of the score", () => {
   const { doc } = band();
   const projection = projectScore(docToJson(doc), settings);

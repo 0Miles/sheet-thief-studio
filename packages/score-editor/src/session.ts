@@ -2,6 +2,7 @@
 // key that changes the score is one command, one undo step. Nothing here touches the DOM, the
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
+  addPresetPart,
   appendBar,
   type BarRefusal,
   type BarSide,
@@ -18,6 +19,7 @@ import {
   deleteBarsAt,
   deleteBeat,
   deleteNote,
+  deletePart,
   deleteSelection,
   dotCycle,
   durationStep,
@@ -33,23 +35,34 @@ import {
   moveByLine,
   moveByStaff,
   moveFromAppendedBeat,
+  movePart,
   moveToBarEnd,
   moveToBarStart,
   moveToVoice,
   noteKeyAt,
   type NoteToggle,
   type RepeatChange,
+  type PartPresetId,
+  type PartRefusal,
   partKindOf,
   partsOf,
   type Selection,
   type SelectionStep,
+  setArtist,
+  setCapo,
+  setClef,
   setFret,
   setKeySig,
+  setPartName,
+  type PitchedClef,
+  setProgram,
   setRepeat,
   setSection,
   setTempo,
   setText,
   setTimeSig,
+  setTitle,
+  setTuning,
   setVoltas,
   settleCursor,
   settleSelection,
@@ -89,11 +102,12 @@ export interface LocalPresence {
 }
 
 /**
- * What the shell tells the member about a key that did nothing: on a fretted part, Alt+2, as
- * such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3); a bar
- * inserted past `MAX_BARS` bars, or every bar deleted (`BarRefusal`, section 6).
+ * What the shell tells the member about a key or a command that did nothing: on a fretted part,
+ * Alt+2, as such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3);
+ * a bar inserted past `MAX_BARS` bars, or every bar deleted (`BarRefusal`, section 6); a part added
+ * past the limits, or the last part deleted (`PartRefusal`, section 7).
  */
-export type SessionHint = "oneVoice" | BarRefusal;
+export type SessionHint = "oneVoice" | BarRefusal | PartRefusal;
 
 /**
  * Enter on a beat (docs/spec/keymap.md, 6.1): the shell opens a box there for its text, filled
@@ -183,6 +197,31 @@ export interface EditorSession {
   setVoltas(passes: readonly number[]): boolean;
   /** Make the first bar a pickup bar, or a full one again: false on any other bar. The selection stays. */
   toggleAnacrusis(): boolean;
+  /*
+   * The settings of the parts and of the score (docs/spec/commands.md, section 7), run from the
+   * panel of the parts and the title bar, never by a key: each one command, one undo step,
+   * refused while read-only (the member is told, as for a key). They need no cursor. The
+   * selection ends, as after any command that does not work on it. False when nothing was done:
+   * read-only, a part gone, a value out of range, or a refusal the member is told of (`onHint`).
+   * There is no command that changes the kind of a part, its number of strings or staves.
+   */
+  /** Add a part of a preset after the last, a fretted one with `tuning` when given; refused past the limits (`"tooManyParts"`). */
+  addPart(preset: PartPresetId, tuning?: readonly number[]): boolean;
+  /** Delete a part with what it holds (the shell asks first); refused for the last (`"lastPart"`). A cursor in it goes to the start of the score. */
+  deletePart(partId: string): boolean;
+  /** Move a part right after another; null puts it first. */
+  movePart(partId: string, after: string | null): boolean;
+  setPartName(partId: string, name: string): boolean;
+  /** A fretted part's tuning, as many strings as it has: frets stay. */
+  setTuning(partId: string, tuning: readonly number[]): boolean;
+  setCapo(partId: string, capo: number): boolean;
+  /** Any part's but drums'. */
+  setProgram(partId: string, program: number): boolean;
+  /** The clef of a staff of a pitched part. */
+  setClef(partId: string, staff: number, clef: PitchedClef): boolean;
+  setTitle(title: string): boolean;
+  /** An empty artist takes it away. */
+  setArtist(artist: string): boolean;
   destroy(): void;
 }
 
@@ -270,9 +309,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   /**
    * The cursor was lost: its part or bar went, and the score had no place left to put it (no
    * bars, or no part that can be drawn). It comes back at the start of the score as soon as the
-   * score has one again.
+   * score has one again. So it is for a session started with no cursor on a score that has no
+   * such place (no bars, or no parts, as two members deleting the last two at once leave it):
+   * the cursor comes once a bar or a part does (docs/spec/commands.md, sections 7.3 and 9).
    */
-  let stranded = false;
+  let stranded = start === null && startOfScore(doc) === null;
 
   /** Put the cursor and the selection there, and tell the presence when either moved. */
   function putAt({ cursor: next, selection: selected }: LocalPresence): void {
@@ -419,6 +460,25 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     changes: true,
     run: (at) => (run(at, selection) ? { cursor: at, selection } : { cursor: at, selection, done: false }),
   });
+
+  /**
+   * A setting of a part or of the score (docs/spec/commands.md, section 7): it needs no cursor.
+   * The cursor settles where it is, at the start of the score once its part is deleted; the
+   * selection ends. Refused, the member is told why when there is something to tell.
+   */
+  const setting = (run: () => boolean | string | null): KeyCommand => {
+    const outcome = (at: Cursor | null): Outcome => {
+      const result = run();
+      if (result === "tooManyParts" || result === "lastPart") hint(result);
+      const cursorNow = at === null ? (stranded ? startOfScore(doc, lines) : null) : settled(at);
+      // Anything but a refusal or a value out of range is done: `addPresetPart` gives the new part's id.
+      if (result === false || result === null || result === "tooManyParts" || result === "lastPart") {
+        return { cursor: cursorNow, selection: selection && settleSelection(doc, selection), done: false };
+      }
+      return { cursor: cursorNow, selection: null };
+    };
+    return { changes: true, run: (at) => outcome(at), runWithoutCursor: () => outcome(null) };
+  };
 
   /** Undo or redo this member's last step; the cursor, if it was lost, comes back at the start of the score. */
   const history = (effect: "undo" | "redo"): KeyCommand => {
@@ -686,6 +746,36 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
     toggleAnacrusis() {
       return runWithoutKey(onBars((at) => toggleAnacrusis(doc, at)));
+    },
+    addPart(preset, tuning) {
+      return runWithoutKey(setting(() => addPresetPart(doc, preset, tuning)));
+    },
+    deletePart(partId) {
+      return runWithoutKey(setting(() => deletePart(doc, partId)));
+    },
+    movePart(partId, after) {
+      return runWithoutKey(setting(() => movePart(doc, partId, after)));
+    },
+    setPartName(partId, name) {
+      return runWithoutKey(setting(() => setPartName(doc, partId, name)));
+    },
+    setTuning(partId, tuning) {
+      return runWithoutKey(setting(() => setTuning(doc, partId, tuning)));
+    },
+    setCapo(partId, capo) {
+      return runWithoutKey(setting(() => setCapo(doc, partId, capo)));
+    },
+    setProgram(partId, program) {
+      return runWithoutKey(setting(() => setProgram(doc, partId, program)));
+    },
+    setClef(partId, staff, clef) {
+      return runWithoutKey(setting(() => setClef(doc, partId, staff, clef)));
+    },
+    setTitle(title) {
+      return runWithoutKey(setting(() => setTitle(doc, title)));
+    },
+    setArtist(artist) {
+      return runWithoutKey(setting(() => setArtist(doc, artist)));
     },
     destroy() {
       doc.off("afterTransaction", settle);

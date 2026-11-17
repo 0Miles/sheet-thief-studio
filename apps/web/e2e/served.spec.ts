@@ -14,6 +14,21 @@ test("served by the server, a score opens, is drawn and gets its sound, and so d
   // alphaTab's workers, font and soundfont have all loaded by now.
   await soundReady(page);
 
+  // The panel of the parts, the question asked before a part is deleted, and the title bar's form.
+  await page.locator("[data-toggle-parts]").click();
+  const parts = page.locator("[data-part-panel]");
+  await parts.locator("[data-add-part]").getByLabel(strings.score.parts.preset).selectOption("drums");
+  await parts.locator("[data-add-part]").getByRole("button", { name: strings.score.parts.add }).click();
+  await expect(parts.locator("[data-part-row]")).toHaveCount(2);
+  await parts.locator("[data-part-delete]").last().click();
+  const question = page.getByRole("dialog", { name: strings.score.parts.confirmDelete.title });
+  await expect(question).toBeVisible();
+  await question.getByRole("button", { name: strings.score.parts.confirmDelete.cancel }).click();
+  await expect(question).toBeHidden();
+  await page.locator("[data-edit-title]").click();
+  await expect(page.locator("[data-title-form]")).toBeVisible();
+  await page.locator("[data-title-form]").getByRole("button", { name: strings.score.heading.cancel }).click();
+
   const answer = await page.request.get(`/scores/${id}`);
   expect(answer.headers()["content-type"]).toContain("text/html");
   expect(answer.headers()["content-security-policy"]).toContain("script-src 'self'");
