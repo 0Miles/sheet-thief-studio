@@ -361,8 +361,10 @@ test("a natural harmonic at the 12th fret sounds an octave over the open string;
   expect(keyOf({ fret: 12, harmonic: "natural" })).toBe(open + 12);
   expect(keyOf({ fret: 7, harmonic: "natural" })).toBe(open + 19);
   expect(keyOf({ fret: 5, harmonic: "natural" })).toBe(open + 24);
-  // A fret with no node in alphaTab's table sounds the open string, as the spec says (schema.md, section 8).
-  expect(keyOf({ fret: 2, harmonic: "natural" })).toBe(open);
+  // A whole fret alphaTab's table gives no interval sounds the open string, as the spec says
+  // (schema.md, section 8). Fret 2 is one: the table's node near it is at 2.4, between frets, and
+  // a natural harmonic is given its own fret, 2.
+  for (const fret of [0, 1, 2, 11, 13, 25]) expect(keyOf({ fret, harmonic: "natural" })).toBe(open);
 });
 
 test("a pinch or an artificial harmonic sounds otherwise than the note plain: an octave over its fret", () => {

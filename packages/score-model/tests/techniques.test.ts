@@ -208,16 +208,17 @@ test("the key of the note on the cursor's line is its string on a fretted part, 
 
 test("over a selection, a cycling technique takes every note to the one state decided for them all: the one after the first note's", () => {
   const { doc, cursor, notes, range } = selected();
-  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, harmonic: "pinch" });
+  setNote(doc, cursor, "s3", { fret: 5, harmonic: "pinch" });
+  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, harmonic: "natural" });
   const harmonics = () => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note.harmonic ?? null));
-  // The first note has none and one note is pinch: all go to natural, not each to its own next.
+  // The first note is pinch, the others natural and none: all go to artificial, the one after
+  // pinch; not each to its own next, nor to natural for not sharing one.
   toggleOnSelection(doc, range, cursor, harmonicCycle);
-  expect(harmonics()).toEqual(["natural", "natural", "natural"]);
-  toggleOnSelection(doc, range, cursor, harmonicCycle);
-  expect(harmonics()).toEqual(["pinch", "pinch", "pinch"]);
-  toggleOnSelection(doc, range, cursor, harmonicCycle);
+  expect(harmonics()).toEqual(["artificial", "artificial", "artificial"]);
   toggleOnSelection(doc, range, cursor, harmonicCycle);
   expect(harmonics()).toEqual([null, null, null]);
+  toggleOnSelection(doc, range, cursor, harmonicCycle);
+  expect(harmonics()).toEqual(["natural", "natural", "natural"]);
   expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });
 
@@ -449,14 +450,22 @@ test("a slide in steps through in from below and in from above, back to none, on
 
 test("over a selection, a slide takes every note to the kind after the first note's, as the beat markings do", () => {
   const { doc, cursor, notes, range } = selected();
-  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, slideOut: "outUp" });
-  const slides = () => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note.slideOut ?? null));
+  setNote(doc, cursor, "s3", { fret: 5, slideOut: "shift", slideIn: "inAbove" });
+  setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, slideOut: "legato", slideIn: "inBelow" });
+  const slides = (field: "slideOut" | "slideIn") => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note[field] ?? null));
+  // The first note slides out shift, the others legato and none: all go to out up, the one after
+  // shift; not each to its own next, nor to legato for not sharing one.
   toggleOnSelection(doc, range, cursor, slideOutCycle);
-  expect(slides()).toEqual(["legato", "legato", "legato"]);
+  expect(slides("slideOut")).toEqual(["outUp", "outUp", "outUp"]);
   toggleOnSelection(doc, range, cursor, slideOutCycle);
-  expect(slides()).toEqual(["shift", "shift", "shift"]);
-  for (let step = 0; step < 3; step++) toggleOnSelection(doc, range, cursor, slideOutCycle);
-  expect(slides()).toEqual([null, null, null]);
+  expect(slides("slideOut")).toEqual(["outDown", "outDown", "outDown"]);
+  toggleOnSelection(doc, range, cursor, slideOutCycle);
+  expect(slides("slideOut")).toEqual([null, null, null]);
+  toggleOnSelection(doc, range, cursor, slideOutCycle);
+  expect(slides("slideOut")).toEqual(["legato", "legato", "legato"]);
+  // The first note slides in from above, the last of the kinds: all go to none, not to from below.
+  toggleOnSelection(doc, range, cursor, slideInCycle);
+  expect(slides("slideIn")).toEqual([null, null, null]);
   expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });
 
@@ -521,18 +530,26 @@ test("the semitones of a note with no bend, or of no note, stay as they are: not
 
 test("over a selection, a bend takes every note to the shape after the first note's, each keeping its semitones, and the semitones of each go a step", () => {
   const { doc, cursor, notes, range } = selected();
+  setNote(doc, cursor, "s3", { fret: 5, bend: { type: "preBend", semitones: 3 } });
   setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, bend: { type: "bend", semitones: 4 } });
   /** The bend of each note of the two beats selected, by its string. */
   const bends = <T>(of: (bend: NonNullable<NoteJSON["bend"]>) => T) => notes().slice(0, 2).map((beat) => Object.fromEntries(Object.entries(beat).map(([key, note]) => [key, note.bend && of(note.bend)])));
+  // The first note is a pre-bend, the others a bend and none: all go to pre-bend and release, the
+  // one after pre-bend; not each to its own next, nor to bend for not sharing one.
+  toggleOnSelection(doc, range, cursor, bendCycle);
+  expect(bends((bend) => bend)).toEqual([
+    { s3: { type: "preBendRelease", semitones: 3 } },
+    { s1: { type: "preBendRelease", semitones: 4 }, s2: { type: "preBendRelease", semitones: 2 } },
+  ]);
+  toggleOnSelection(doc, range, cursor, bendStep(1));
+  expect(bends((bend) => bend.semitones)).toEqual([{ s3: 4 }, { s1: 4, s2: 3 }]);
+  toggleOnSelection(doc, range, cursor, bendCycle);
+  expect(bends((bend) => bend.type)).toEqual([{ s3: undefined }, { s1: undefined, s2: undefined }]);
   toggleOnSelection(doc, range, cursor, bendCycle);
   expect(bends((bend) => bend)).toEqual([
     { s3: { type: "bend", semitones: 2 } },
-    { s1: { type: "bend", semitones: 4 }, s2: { type: "bend", semitones: 2 } },
+    { s1: { type: "bend", semitones: 2 }, s2: { type: "bend", semitones: 2 } },
   ]);
-  toggleOnSelection(doc, range, cursor, bendStep(1));
-  expect(bends((bend) => bend.semitones)).toEqual([{ s3: 3 }, { s1: 4, s2: 3 }]);
-  toggleOnSelection(doc, range, cursor, bendCycle);
-  expect(bends((bend) => bend.type)).toEqual([{ s3: "bendRelease" }, { s1: "bendRelease", s2: "bendRelease" }]);
   expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });
 
