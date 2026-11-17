@@ -355,12 +355,14 @@ function keyOf(note: NoteJSON): number {
   return file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.tick === 0)!.noteKey;
 }
 
-test("a natural harmonic at the 12th fret sounds an octave over the open string; at the 7th and 5th, the nodes' octave and a fifth, and two octaves", () => {
+test("a natural harmonic at the 12th fret sounds an octave over the open string; at the 7th and 5th, an octave and a fifth, and two octaves; at a fret with no node, the open string", () => {
   const open = keyOf({ fret: 0 });
   expect(open).toBe(55);
   expect(keyOf({ fret: 12, harmonic: "natural" })).toBe(open + 12);
   expect(keyOf({ fret: 7, harmonic: "natural" })).toBe(open + 19);
   expect(keyOf({ fret: 5, harmonic: "natural" })).toBe(open + 24);
+  // A fret with no node in alphaTab's table sounds the open string, as the spec says (schema.md, section 8).
+  expect(keyOf({ fret: 2, harmonic: "natural" })).toBe(open);
 });
 
 test("a pinch or an artificial harmonic sounds otherwise than the note plain: an octave over its fret", () => {

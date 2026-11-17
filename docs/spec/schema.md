@@ -188,7 +188,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 | `palmMute?` | `true` | fretted | `isPalmMute` |
 | `letRing?` | `true` | fretted | `isLetRing` |
 | `tap?` | `true` | fretted | 拍點上任一音符有 `tap` 時，`Beat.tap = true` |
-| `harmonic?` | `"natural" \| "pinch" \| "artificial"` | fretted | `harmonicType`：`Natural`、`Pinch`、`Artificial`；`artificial` 的 `harmonicValue` 是 12（補充） |
+| `harmonic?` | `"natural" \| "pinch" \| "artificial"` | fretted | `harmonicType`：`Natural`、`Pinch`、`Artificial`；`artificial` 的 `harmonicValue` 是 12（補充）；`natural` 的 `harmonicValue` 是自己的格號、`pinch` 是 12（補充，#29） |
 | `spell?` | 見 8.1 | pitched | `accidentalMode`（`projection.ts:100-117`） |
 
 - 欄位出現在不適用的聲部種類，或值超出範圍：讀取時略過整個音符並標 `invalidContent`。
@@ -205,6 +205,10 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
     - `preBendRelease` → `BendType.PrebendRelease`：`(0, q)`、`(15, 0)`：先推好再撥，在前四分之一放回來。
     - 點數照 alphaTab 1.9 畫推弦的方式：除了 `BendRelease` 讀四個點裡的第 1、2、4 個，其他型只讀前兩個點（`TabBendGlyph` 的 `_createRenderingPoints`）；多給的點會畫錯。點先加，型後設：沒有型的音加上點時，alphaTab 會把它當成自訂（`Custom`）。
     - 聲音（`MidiFileGenerator`，GuitarPro 記譜模式）照這些點送出音符自己的 pitch bend（MIDI 2.0 的 per-note pitch bend，32 位元，`2^31` 是不推）；聲道的 pitch bend range 是 alphaTab 設的 16 個半音。最高點就是 `semitones` 個半音。測試：`packages/score-render/tests/sound.test.ts`。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
+- **補充**（#29）：`harmonic` 的值在 `schema.ts` 的 `HARMONICS`，投影是 `projection.ts` 的 `HARMONIC_TYPES`。`harmonicValue` 是「在弦上哪一格碰出泛音」（alphaTab 的格數）：
+  - `natural` → `HarmonicType.Natural`，`harmonicValue` 是音符自己的格號。alphaTab 1.9 的自然泛音發出「那一格的節點」在空弦上的音（`Note.calculateRealValue` 與 `ModelUtils.harmonicValueToPitch`）：12 格高一個八度、7 格高一個八度加五度（19 個半音）、5 格高兩個八度（24 個半音），其他格照它的表；表裡沒有節點的格（例如 0、1、2、11、13）發出空弦的音。TAB 上把這個值畫成 `<格號>`，所以給的是格號本身；不給（0）時發出空弦的音。沒有節點的格不標 Flag。
+  - `pinch` → `HarmonicType.Pinch`、`artificial` → `HarmonicType.Artificial`，`harmonicValue` 都是 12（`HARMONIC_OCTAVE`）：發出比按的音高一個八度的音，和 alphaTab 匯入 Guitar Pro 檔時一樣。`pinch` 不給值時，alphaTab 發出和沒有泛音相同的音。
+  - 測試：`packages/score-render/tests/projection.test.ts` 比對型與值；`sound.test.ts` 比對 MIDI 音高（12 格的自然泛音比空弦高 12 個半音，pinch、artificial 和沒有泛音的音不同）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
   - **補充**（#30）：`stroke` 另外設 `Beat.brushDuration` 為 60 tick（`projection.ts` 的 `STROKE_TICKS`，64 分音符，120 BPM 時約 30 ms），短的拍點最多是拍點長度的四分之一：alphaTab 在 `brushDuration` 是 0 時所有弦同時發聲。down 從最低的弦開始，up 從最高的弦開始（alphaTab 的 `_fillBrushInfo`）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
   - **補充**（#30，host 在 2026-11-14 的兩次裁定）：`dynamic` 表示「從這個拍點起」，和樂譜的寫法一樣：在同一個聲部、同一條聲線（`"譜表:聲線"`）裡往後延續，跨小節也延續，直到下一個寫著 `dynamic` 的拍點；在那之前沒有任何 `dynamic` 時是 alphaTab 的 `F`。投影時每個 alphaTab 拍點（包括補滿小節的休止）的 `Beat.dynamics` 都是當時生效的力度，所以後面沒寫的拍點聲音一樣小（`projection.ts` 的 `projectBar`：每條聲線以前一小節同一條聲線最後一個拍點的力度開始）。`replaceBars` 重建一個小節之後，若它留給下一小節的力度和原本不同，就連下一小節一起重建，直到某個小節的每條聲線都和原本接得上，也就是下一個寫著力度的地方。
