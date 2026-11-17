@@ -14,8 +14,11 @@ import {
   insertBeat,
   type NoteJSON,
   setNote,
+  setRepeat,
+  setVoltas,
   slapPopCycle,
   strokeCycle,
+  toggleAnacrusis,
 } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
@@ -344,4 +347,51 @@ test("each shape of bend goes its own way: up and held, up and down, struck bent
 
 test("a note with no bend is sent only the pitch bend that sets it to none", () => {
   expect(bendOf(undefined)).toEqual([0]);
+});
+
+/** Four bars of 4/4 for a guitar, a quarter on its first string in each, fret 1 to 4: which bar sounds is the key less 64. */
+function fourBars() {
+  const doc = new Y.Doc();
+  createScore(doc, "Repeats");
+  const barIds = insertBars(doc, { after: null, count: 4 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  barIds.forEach((barId, index) => setNote(doc, insertBeat(doc, cursorAt(doc, guitar, barId), { value: 4 }), "s1", { fret: index + 1 }));
+  const at = (bar: number) => cursorAt(doc, guitar, barIds[bar]!);
+  const range = (first: number, last: number) => ({ kind: "bars" as const, partId: guitar, anchorBarId: barIds[first]!, focusBarId: barIds[last]! });
+  const barsPlayed = () => notesPlayed(doc).map((note) => note.key - 64);
+  return { doc, at, range, barsPlayed };
+}
+
+test("bars 2 to 3 repeated, played twice, bar 3 the first ending and bar 4 the second: the bars sound 1, 2, 3, 2, 4", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+  setRepeat(doc, at(1), range(1, 2), { times: 2 });
+  setVoltas(doc, at(2), null, [1]);
+  setVoltas(doc, at(3), null, [2]);
+  expect(barsPlayed()).toEqual([1, 2, 3, 2, 4]);
+  // One after another, a bar of 4/4 each.
+  expect(notesPlayed(doc).map((note) => note.tick)).toEqual([0, 1, 2, 3, 4].map((bar) => bar * 3840));
+});
+
+test("a repeat played three times in all plays its bars three times", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  setRepeat(doc, at(1), range(1, 2), { times: 3 });
+  expect(barsPlayed()).toEqual([1, 2, 3, 2, 3, 2, 3, 4]);
+});
+
+test("repeats two members left unpaired or overlapping still play, and throw nothing", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  // An end with no start goes back to the start of the score; a second start inside a repeat begins another.
+  setRepeat(doc, at(0), range(0, 2), { times: 2 });
+  setRepeat(doc, at(1), range(1, 3), { times: 2 });
+  setRepeat(doc, at(3), null, { clear: "start" });
+  expect(() => barsPlayed()).not.toThrow();
+  expect(barsPlayed().length).toBeGreaterThan(4);
+});
+
+test("a pickup bar sounds only as long as what is in it: the bar after comes right after", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  toggleAnacrusis(doc, at(0));
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+  expect(notesPlayed(doc).map((note) => note.tick)).toEqual([0, 960, 960 + 3840, 960 + 2 * 3840]);
 });

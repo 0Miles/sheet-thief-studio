@@ -170,6 +170,9 @@ export type BarJSON = z.infer<typeof barSchema>;
 /** Quarter notes per minute of a score whose first bar gives no tempo (docs/spec/schema.md, section 3). */
 export const DEFAULT_TEMPO = 120;
 
+/** The key of a score whose bars give none: C major, no sharps or flats. */
+export const DEFAULT_KEY_SIG: KeySignature = { fifths: 0, mode: "major" };
+
 // Notes and beats -------------------------------------------------------------------------------
 
 /** Every field a note can have, whatever its part; `kindSchemas` says which ones each kind has. */
@@ -453,6 +456,19 @@ export const scoreSchema = metaSchema
     });
   });
 export type ScoreJSON = z.infer<typeof scoreSchema>;
+
+/** The key in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_KEY_SIG`; none for a bar not in the score. */
+export function keySigAt(score: ScoreJSON, barId: string): KeySignature | undefined {
+  const index = score.bars.findIndex((bar) => bar.id === barId);
+  if (index < 0) return undefined;
+  return keySigsOf(score.bars)[index];
+}
+
+/** The key in force in each bar, in order: from the bar that changes it on, `DEFAULT_KEY_SIG` before any does. */
+export function keySigsOf(bars: readonly BarJSON[]): KeySignature[] {
+  let key = DEFAULT_KEY_SIG;
+  return bars.map((bar) => (key = bar.keySig ?? key));
+}
 
 /** The tempo in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_TEMPO`; none for a bar not in the score. */
 export function tempoAt(score: ScoreJSON, barId: string): number | undefined {

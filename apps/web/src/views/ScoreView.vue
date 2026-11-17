@@ -18,14 +18,18 @@ import { createEditorSession, decideView, type EditorSession, keyNameOf, type Lo
 import {
   type Cursor,
   cursorAt,
+  DEFAULT_KEY_SIG,
   docToJson,
   type Flag,
   flagsOf,
   type FlagStop,
+  type KeySignature,
+  keySigAt,
   MAX_BEAT_TEXT,
   nextFlag,
   observeScore,
   readScore,
+  type RepeatChange,
   type ScoreChange,
   type ScoreJSON,
   stillAt,
@@ -252,7 +256,24 @@ const panel = computed(() => {
   const ends = selection === null ? null : selection.kind === "beats" ? [selection.barId, selection.barId] : [selection.anchorBarId, selection.focusBarId];
   const numbers = ends?.map(numberOf);
   const range = numbers && numbers.every((number) => number > 0) ? { first: Math.min(...numbers), last: Math.max(...numbers) } : null;
-  return { bar: index + 1, range, timeSig: bar.timeSig, tempo: bar.tempo, tempoInForce: tempoAt(json, bar.id) ?? 0 };
+  // A repeat set here starts on the first bar of the selection and ends on its last (docs/spec/commands.md, section 6).
+  const repeatFirst = json.bars[(range?.first ?? index + 1) - 1];
+  const repeatLast = json.bars[(range?.last ?? index + 1) - 1];
+  return {
+    bar: index + 1,
+    range,
+    timeSig: bar.timeSig,
+    tempo: bar.tempo,
+    tempoInForce: tempoAt(json, bar.id) ?? 0,
+    keySig: bar.keySig,
+    keySigInForce: keySigAt(json, bar.id) ?? DEFAULT_KEY_SIG,
+    section: bar.section,
+    repeatStart: repeatFirst?.repeatStart === true,
+    repeatEnd: repeatLast?.repeatEnd,
+    voltas: bar.voltas ?? [],
+    firstBar: index === 0,
+    anacrusis: bar.anacrusis === true,
+  };
 });
 
 /** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
@@ -277,6 +298,26 @@ function onTimeSig(timeSig: TimeSignature): void {
 
 function onTempo(tempo: number | null): void {
   session?.setTempo(tempo);
+}
+
+function onKeySig(keySig: KeySignature | null): void {
+  session?.setKeySig(keySig);
+}
+
+function onSection(section: string | null): void {
+  session?.setSection(section);
+}
+
+function onRepeat(change: RepeatChange): void {
+  session?.setRepeat(change);
+}
+
+function onVoltas(passes: number[]): void {
+  session?.setVoltas(passes);
+}
+
+function onAnacrusis(): void {
+  session?.toggleAnacrusis();
 }
 
 /** Draw the overlay again after a drawing: the reserved areas, and where the flags are, change only then. */
@@ -878,8 +919,21 @@ onBeforeUnmount(() => {
         :time-sig="panel.timeSig"
         :tempo="panel.tempo"
         :tempo-in-force="panel.tempoInForce"
+        :key-sig="panel.keySig"
+        :key-sig-in-force="panel.keySigInForce"
+        :section="panel.section"
+        :repeat-start="panel.repeatStart"
+        :repeat-end="panel.repeatEnd"
+        :voltas="panel.voltas"
+        :first-bar="panel.firstBar"
+        :anacrusis="panel.anacrusis"
         @time-sig="onTimeSig"
         @tempo="onTempo"
+        @key-sig="onKeySig"
+        @section="onSection"
+        @repeat="onRepeat"
+        @voltas="onVoltas"
+        @anacrusis="onAnacrusis"
         @close="closePanel"
       />
       </div>

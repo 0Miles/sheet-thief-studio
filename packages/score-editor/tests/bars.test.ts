@@ -122,6 +122,11 @@ test("read-only, the structural keys and commands are refused, and the member is
   expect(session.deleteBars()).toBe(false);
   expect(session.setTimeSig({ numerator: 3, denominator: 4 })).toBe(false);
   expect(session.setTempo(90)).toBe(false);
+  expect(session.setKeySig({ fifths: 2, mode: "major" })).toBe(false);
+  expect(session.setSection("A")).toBe(false);
+  expect(session.setRepeat({ times: 2 })).toBe(false);
+  expect(session.setVoltas([1])).toBe(false);
+  expect(session.toggleAnacrusis()).toBe(false);
   expect(docToJson(doc)).toEqual(before);
   expect(refused).toBe(1);
 });
@@ -159,6 +164,37 @@ test("the panel sets the time signature of a bar range, which stays selected, an
   expect(docToJson(doc).bars.map((bar) => bar.tempo)).toEqual([undefined, undefined, undefined]);
   session.press(UNDO.other);
   expect(signatures()).toEqual(["4/4", "4/4", "4/4"]);
+});
+
+test("the panel sets the key, the section, a repeat and voltas over a bar range, which stays selected, and the pickup of the first bar, each one undo step", () => {
+  const { doc, session, press, goTo, mods } = score();
+  const marks = () =>
+    docToJson(doc).bars.map(({ keySig, section, repeatStart, repeatEnd, voltas, anacrusis }) => ({ keySig, section, repeatStart, repeatEnd, voltas, anacrusis }));
+  // From the second bar back to the first: the cursor on the first.
+  goTo("guitar", 1, "0:0", -1);
+  press("ArrowLeft", { ...mods.nav, shiftKey: true });
+  expect(session.cursor!.barId).toBe(docToJson(doc).bars[0]!.id);
+  const selection = session.selection;
+  expect(session.setKeySig({ fifths: -2, mode: "major" })).toBe(true);
+  expect(session.setSection("前奏")).toBe(true);
+  expect(session.setRepeat({ times: 3 })).toBe(true);
+  expect(session.setVoltas([2])).toBe(true);
+  expect(session.toggleAnacrusis()).toBe(true);
+  expect(session.selection).toEqual(selection);
+  expect(marks()).toEqual([
+    { keySig: { fifths: -2, mode: "major" }, section: "前奏", repeatStart: true, voltas: [2], anacrusis: true },
+    { repeatEnd: 3, voltas: [2] },
+    {},
+  ]);
+  // Out of range, or not on the first bar: refused, nothing written.
+  expect(session.setKeySig({ fifths: 9, mode: "major" })).toBe(false);
+  expect(session.setSection("")).toBe(false);
+  expect(session.setRepeat({ times: 40 })).toBe(false);
+  expect(session.setVoltas([0])).toBe(false);
+  goTo("guitar", 1, "0:0", -1);
+  expect(session.toggleAnacrusis()).toBe(false);
+  for (let step = 0; step < 5; step++) session.press(UNDO.other);
+  expect(marks()).toEqual([{}, {}, {}]);
 });
 
 test("a change of the panel between two digits ends the wait for the second", () => {

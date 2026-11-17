@@ -268,7 +268,16 @@ interface Cursor {
   - `setTempo(doc, cursor, tempo | null)`：20–400 以外（含 `NaN`、無限大）回傳 false；和原值相同、或清除一個沒有的變化點時不寫入。選取在之後保留。
   - 一個小節「生效的速度」是 `schema.ts` 的 `tempoAt(score, barId)`：到它為止最後一個寫著 `tempo` 的小節的值，沒有時是 `DEFAULT_TEMPO`（120，`score-render` 的投影也用它）。
   - `EditorSession` 的按鍵是 `insertBarBefore`、`insertBarAfter`、`deleteBars`（[`keymap.md`](keymap.md) 第 2 節）；工具列與面板不經按鍵，呼叫 `insertBar(side)`、`appendBar()`、`deleteBars()`、`setTimeSig(timeSig)`、`setTempo(tempo)`。它們和按鍵走同一條路：唯讀時拒絕並提示一次，各是一個復原步驟（第 8 節），也結束兩位數格號的等待。
-  - 小節屬性面板（#22 先做拍號與速度，其餘欄位是 #23）：`apps/web/src/components/BarPanel.vue`，只在可編輯視圖。標題是游標小節，有選取時是選取的小節；拍號與速度各有「套用」，`Enter` 在欄位裡就是套用；速度欄留空並套用、或按「清除速度」，就是移除這個變化點。開關的鍵與焦點見 [`keymap.md`](keymap.md) 第 5 節。
+  - 小節屬性面板（#22 先做拍號與速度，其餘欄位在 #23 加上）：`apps/web/src/components/BarPanel.vue`，只在可編輯視圖。標題是游標小節，有選取時是選取的小節；拍號與速度各有「套用」，`Enter` 在欄位裡就是套用；速度欄留空並套用、或按「清除速度」，就是移除這個變化點。開關的鍵與焦點見 [`keymap.md`](keymap.md) 第 5 節。
+  - **補充**（#23）：其餘欄位的指令也在 `commands.ts`，測試在同兩個 `bars.test.ts`。每一個是一筆交易、一個復原步驟；讀到的值和要寫的相同（經 `parsePlain`）時不寫入，讀不懂的值照樣覆寫；游標的小節不在時回傳 false、不寫入。選取在之後保留。
+    - `setKeySig(doc, cursor, keySig | null)`：只寫在游標小節，`null` 移除；不合 `keySigSchema` 時回傳 false。一個小節「生效的調號」是 `schema.ts` 的 `keySigAt(score, barId)`（逐小節是 `keySigsOf(bars)`），沒有時是 `DEFAULT_KEY_SIG`（C 大調）。
+    - `setSection(doc, cursor, section | null)`：只寫在游標小節，`null` 移除；不是 1–64 字元（含空字串）時回傳 false。面板先去掉前後空白，留空並套用就是清除。
+    - `setRepeat(doc, cursor, selection, change)`：`change` 是 `{ times }` 或 `{ clear: "start" | "end" }`（`RepeatChange`）。範圍是 `structuralRange` 裡還在的小節，沒有選取時是游標小節。`{ times }`（2–32 的整數，否則回傳 false）在同一筆交易裡把 `repeatStart` 寫在範圍的第一個小節、`repeatEnd` 寫在最後一個小節；`clear: "start"` 從第一個小節移除 `repeatStart`，`clear: "end"` 從最後一個小節移除 `repeatEnd`。範圍內外其他小節的反覆記號都不動。
+    - `setVoltas(doc, cursor, selection, passes)`：同一個範圍裡每個小節都寫成 `passes`（各自一份陣列），空陣列移除；不是 1–8、遞增、不重複時回傳 false。
+    - `toggleAnacrusis(doc, cursor)`：游標小節是 `ordered` 的第一個小節時切換，否則回傳 false、不寫入；讀不懂的 `anacrusis` 當成沒有，切換後是 `true`。
+    - `EditorSession` 的 `setKeySig`、`setSection`、`setRepeat`、`setVoltas`、`toggleAnacrusis`，和 `setTempo` 走同一條路。
+    - 面板：調號是「大小調」與「調」兩個下拉選單（15 個調，以 `strings.score.bars.keyName` 顯示，例如「B♭ 大調（2 個降記號）」），沒有變化時顯示沿用的調；段落名稱一個欄位；反覆是「總共演奏幾次」與「設定反覆」「清除反覆開始」「清除反覆結束」，並顯示反覆會寫在哪些小節、範圍兩端現有的反覆記號；跳房子是 1–8 的勾選框，寫在選取的每個小節或游標小節；弱起只在游標是第一小節時出現，是一個勾選框。e2e 掛點：各組 `data-panel-key-sig`、`data-panel-section`、`data-panel-repeat`、`data-panel-voltas`、`data-panel-anacrusis`。
+    - **共編**（#23）：這些欄位各自是小節 `Y.Map` 的一個值，兩位成員同時寫同一個小節的同一個欄位時，結果是其中一個值（Yjs 的 last-writer-wins），兩邊相同而且合法，不標 Flag。兩人同時在不同小節設反覆，可能留下不成對、重疊或巢狀的反覆開始與結束：每個欄位本身都合法，所以不拒絕也不標 Flag（[`flags.md`](flags.md) 沒有這一類），照常顯示，聲音照 alphaTab 的反覆規則播放、不丟例外；成員從面板自行清除。一人把第一小節設成弱起、另一人同時在它前面插入小節時，`anacrusis` 留在已經不是第一的小節上，讀取時忽略（[`schema.md`](schema.md) 第 3 節），新的第一小節可以再設。測試：`packages/score-model/tests/bars.test.ts` 的兩份 `Y.Doc` 測試、`packages/score-render/tests/sound.test.ts`。
   - 「看得出影響所有聲部」：小節範圍、以及面板開著時的游標小節（有拍點範圍時是它的小節），在疊層上畫虛線框，每一行譜一個，橫跨所有顯示中的聲部（`ScoreRenderer.boundsOfBars`、`geometry.ts` 的 `barRangeRects`；選哪些小節是 `apps/web/src/overlay.ts` 的 `structuralEnds`，框是 `structureBoxesOf`，避開保留區域，線畫在框內）。小節範圍原本只蓋住自己聲部的選取框（第 4 節）照樣畫，因為 `Delete` 這類內容操作只作用在那個聲部。疊層裡每個虛線框是 `<rect data-structure>`。
 - **小節屬性面板**：側邊面板，顯示並編輯游標所在小節的拍號、速度、調號、段落名稱、反覆開始、反覆次數、volta、弱起（只有第一小節顯示）。開啟的鍵見 [`keymap.md`](keymap.md)。
 - 新增小節後總數不得超過 1000（補充）。

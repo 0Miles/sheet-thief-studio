@@ -10,6 +10,8 @@ import {
   type BendType,
   beatTicks,
   DYNAMICS,
+  type KeySignature,
+  keySigsOf,
   linkReaches,
   linksOn,
   type NoteJSON,
@@ -280,17 +282,36 @@ function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined
   return beat;
 }
 
+/** Where a bar sits in the score: what it takes from the bars around it. */
+interface BarPlace {
+  /** The bar after it, where the links of its last beats go (none for the last). */
+  next: BarJSON | undefined;
+  /** The key in force in it (docs/spec/schema.md, section 3). */
+  key: KeySignature;
+  /**
+   * How long a pickup bar is, in ticks: what its voices are filled to with rests; null for a
+   * full bar, filled to its time signature.
+   */
+  pickup: number | null;
+}
+
+const KEY_SIGNATURE_TYPES = { major: model.KeySignatureType.Major, minor: model.KeySignatureType.Minor } as const;
+
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
  * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
- * the end of the same voice in `previous`, the bar before (none for the first). The links of its
- * last beats go on to the first beats of `next`, the bar after (none for the last). Returns the ids
+ * the end of the same voice in `previous`, the bar before (none for the first). Returns the ids
  * of its beats by voice.
  */
-function projectBar(part: PartJSON, bar: BarJSON, next: BarJSON | undefined, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
+function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }: BarPlace, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
   const entering = dynamicsLeaving(previous, voiceCount);
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
+  // A drum staff has no key: it would only draw sharps and flats on it.
+  if (part.kind !== "percussion") {
+    atBar.keySignature = keySig.fifths as alphaTab.model.KeySignature;
+    atBar.keySignatureType = KEY_SIGNATURE_TYPES[keySig.mode];
+  }
   const beatIds: string[][] = [];
   const content = part.content[bar.id] ?? {};
   for (let voice = 0; voice < voiceCount; voice++) {
@@ -306,18 +327,38 @@ function projectBar(part: PartJSON, bar: BarJSON, next: BarJSON | undefined, sta
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
       atVoice.addBeat(projectBeat(part, beat, beatAfter(beats, index, following), dynamic));
     }
-    if (beats.length === 0) {
-      // An empty first voice is a whole-bar rest; other voices stay invisible.
+    if (beats.length === 0 && (pickup === null || voice > 0)) {
+      // An empty first voice is a whole-bar rest; other voices stay invisible, and take no time.
       const filler = rest(1, dynamic);
       filler.isEmpty = voice > 0;
       atVoice.addBeat(filler);
       continue;
     }
-    // A voice that does not fill its bar is completed with rests, here only (it stays flagged).
+    // A voice that does not fill its bar is completed with rests, here only (it stays flagged); in
+    // a pickup bar, up to the longest voice of the bar in any part, which alphaTab takes as its length.
     const held = beats.reduce((sum, beat) => sum + beatTicks(beat), 0);
-    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
+    for (const value of restsFilling(held, pickup ?? barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
   }
   return { bar: atBar, beatIds };
+}
+
+/**
+ * Where each bar of a score sits: the bar after it, the key in force, and for the first bar when
+ * it is a pickup (docs/spec/schema.md, section 3), its length: that of its longest voice in any
+ * part, up to its time signature. A pickup bar with nothing in it is as long as its time signature.
+ */
+function placesOf(json: ScoreJSON): BarPlace[] {
+  const keys = keySigsOf(json.bars);
+  return json.bars.map((bar, index) => {
+    let pickup: number | null = null;
+    if (index === 0 && bar.anacrusis) {
+      const full = barTicks(bar.timeSig);
+      const held = json.parts.flatMap((part) => Object.values(part.content[bar.id] ?? {}).map((beats) => beats.reduce((sum, beat) => sum + beatTicks(beat), 0)));
+      const longest = Math.max(0, ...held);
+      pickup = longest > 0 ? Math.min(longest, full) : full;
+    }
+    return { next: json.bars[index + 1], key: keys[index] as KeySignature, pickup };
+  });
 }
 
 function projectTrack(part: PartJSON, channels: { next: number }): AtTrack {
@@ -386,12 +427,22 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
     voiceBeatIds: new Map(),
   };
 
+  const places = placesOf(json);
   json.bars.forEach((bar, index) => {
     const masterBar = new model.MasterBar();
     masterBar.timeSignatureNumerator = bar.timeSig.numerator;
     masterBar.timeSignatureDenominator = bar.timeSig.denominator;
     const tempo = bar.tempo ?? (index === 0 ? DEFAULT_TEMPO : undefined);
     if (tempo !== undefined) masterBar.tempoAutomations.push(model.Automation.buildTempoAutomation(false, 0, tempo, 2));
+    if (bar.repeatStart) masterBar.isRepeatStart = true;
+    if (bar.repeatEnd !== undefined) masterBar.repeatCount = bar.repeatEnd;
+    // One bit a pass, the first pass the lowest bit.
+    for (const pass of bar.voltas ?? []) masterBar.alternateEndings |= 1 << (pass - 1);
+    if (bar.section !== undefined) {
+      masterBar.section = new model.Section();
+      masterBar.section.text = bar.section;
+    }
+    masterBar.isAnacrusis = places[index]?.pickup !== null;
     score.addMasterBar(masterBar);
   });
 
@@ -405,7 +456,7 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
       setUpStaff(staff, part);
       const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, places[barIndex] as BarPlace, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -473,6 +524,10 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
   if (json.bars.length !== projection.barIds.length || json.parts.length !== projection.partIds.length) return null;
   const indexes = barIds.map((id) => projection.barIndex.get(id));
   if (indexes.some((index) => index === undefined)) return null;
+  // How long a pickup bar is depends on its content, and where every bar after it starts on that:
+  // alphaTab works those out only when the whole score is finished.
+  if (indexes.includes(0) && projection.score.masterBars[0]?.isAnacrusis) return null;
+  const places = placesOf(json);
   const voiceCounts = json.parts.map(staffVoiceCounts);
   const tracks = projection.score.tracks;
   const sameShape = json.parts.every((part, trackIndex) => {
@@ -524,7 +579,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
         const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
-        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, places[barIndex] as BarPlace, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;
