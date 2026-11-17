@@ -1,18 +1,21 @@
 import * as alphaTab from "@coderline/alphatab";
 import {
   addPart,
+  type BeatJSON,
   changeBeatAt,
   createScore,
   type Cursor,
   cursorAt,
   docToJson,
   durationStep,
+  DYNAMICS,
   dynamicCycle,
   flagsOf,
   insertBars,
   insertBeat,
   type NoteJSON,
   type NoteValue,
+  setFret,
   setKeySig,
   setNote,
   setRepeat,
@@ -323,6 +326,120 @@ test("replacing a bar whose dynamic changed rebuilds the bars after it up to the
   expect(bars()[3]).toBe(fourth);
   const whole = projectScore(json, settings);
   expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
+});
+
+/** Whether each beat of the first voice of the first part's first staff is drawn with a dynamic, by bar (null: a rest). */
+const drawnDynamics = (score: alphaTab.model.Score) => score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => (beat.isRest ? null : beat.showDynamics)));
+
+test("replacing a bar that leaves a dynamic on a rest to draw, or no longer, rebuilds the bar after it, where it is drawn, though the dynamic in force is the same (#97)", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dynamics");
+  const barIds = insertBars(doc, { after: null, count: 3 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const fret = { s1: { fret: 0 } };
+  const marked = write(doc, guitar, barIds[0]!, [[2, fret], [2, {}]]);
+  write(doc, guitar, barIds[1]!, [[2, {}], [2, fret]]);
+  write(doc, guitar, barIds[2]!, [[1, fret]]);
+  const projection = projectScore(docToJson(doc), settings);
+  const bars = () => projection.score.tracks[0]!.staves[0]!.bars;
+  const drawn = drawnDynamics;
+  const third = bars()[2];
+  // Whether each beat that is not a rest is drawn with a dynamic (null: a rest).
+  expect(drawn(projection.score)).toEqual([[false, null], [null, false], [false]]);
+
+  // An f on the rest: the dynamic in force is f before and after, but the second bar draws it now.
+  for (let step = 0; step < 5; step++) changeBeatAt(doc, marked, dynamicCycle);
+  let json = docToJson(doc);
+  expect(json.parts[0]!.content[barIds[0]!]!["0:0"]![1]!.dynamic).toBe("f");
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(drawn(projection.score)).toEqual([[false, null], [null, true], [false]]);
+  expect(bars()[2]).toBe(third);
+  expect(drawn(projectScore(json, settings).score)).toEqual(drawn(projection.score));
+
+  // Taken off again (ff, then none): the second bar draws nothing.
+  for (let step = 0; step < 2; step++) changeBeatAt(doc, marked, dynamicCycle);
+  json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(drawn(projection.score)).toEqual([[false, null], [null, false], [false]]);
+  expect(drawn(projectScore(json, settings).score)).toEqual(drawn(projection.score));
+});
+
+test("a dynamic on a rest to draw goes on past bars of rests only, and back, as a note in one of them is written and taken off (#97)", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dynamics");
+  const barIds = insertBars(doc, { after: null, count: 5 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const marked = write(doc, guitar, barIds[0]!, [[2, { s1: { fret: 0 } }], [2, {}]]);
+  write(doc, guitar, barIds[4]!, [[1, { s1: { fret: 0 } }]]);
+  const projection = projectScore(docToJson(doc), settings);
+  /** Rebuild `barId` in the projection: drawn as the whole score projected again is. */
+  const replace = (barId: string) => {
+    const json = docToJson(doc);
+    expect(replaceBars(projection, json, [barId], settings)).not.toBeNull();
+    expect(drawnDynamics(projection.score)).toEqual(drawnDynamics(projectScore(json, settings).score));
+    return drawnDynamics(projection.score);
+  };
+
+  // A pp on the rest of the first bar: three bars of rests, then the note of the fifth draws it.
+  changeBeatAt(doc, marked, dynamicCycle);
+  expect(replace(barIds[0]!)).toEqual([[false, null], [null], [null], [null], [true]]);
+  // A note in the third bar draws it there, and the fifth no longer.
+  const third = write(doc, guitar, barIds[2]!, [[2, {}], [2, { s1: { fret: 2 } }]]);
+  expect(replace(barIds[2]!)).toEqual([[false, null], [null], [null, true], [null], [false]]);
+  // Taken off again, the fifth draws it.
+  setFret(doc, { ...third, line: 1 }, null);
+  expect(replace(barIds[2]!)).toEqual([[false, null], [null], [null, null], [null], [true]]);
+  // An ff over it, then no dynamic at all.
+  for (let step = 0; step < 5; step++) changeBeatAt(doc, marked, dynamicCycle);
+  expect(replace(barIds[0]!)).toEqual([[false, null], [null], [null, null], [null], [true]]);
+  changeBeatAt(doc, marked, dynamicCycle);
+  expect(replace(barIds[0]!)).toEqual([[false, null], [null], [null, null], [null], [false]]);
+});
+
+test("rebuilding bars one change at a time draws the dynamics, and plays them, as projecting the whole score again: many random changes (#97)", () => {
+  // A fixed seed: the same changes every run.
+  let seed = 7919;
+  const random = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const pick = <T>(items: readonly T[]) => items[Math.floor(random() * items.length)]!;
+  let ids = 0;
+  /** Up to four quarters, most of them rests, some with a dynamic. */
+  const beats = (): BeatJSON[] =>
+    Array.from({ length: Math.floor(random() * 5) }, () => {
+      const beat: BeatJSON = { id: `b${ids++}`, value: 4, dots: 0, notes: random() < 0.8 ? {} : { s3: { fret: 3 } } };
+      if (random() < 0.3) beat.dynamic = pick(DYNAMICS);
+      return beat;
+    });
+  const doc = new Y.Doc();
+  createScore(doc, "Random");
+  const barIds = insertBars(doc, { after: null, count: 6 });
+  addPart(doc, { name: "Guitar", kind: "fretted" });
+  addPart(doc, { name: "Bass", kind: "fretted" });
+  // Every voice in every bar from the start, though empty: a change never adds one (that projects the whole score again).
+  const voices = [["0:0", "0:1"], ["0:0"]] as const;
+  let json = docToJson(doc);
+  json.parts.forEach((part, index) => {
+    for (const barId of barIds) part.content[barId] = Object.fromEntries(voices[index]!.map((voice) => [voice, beats()]));
+  });
+  const projection = projectScore(json, settings);
+  /** What each beat of every voice is drawn and played with: rest or not, a dynamic drawn, the dynamic in force. */
+  const seen = (score: alphaTab.model.Score) =>
+    score.tracks.map((track) => track.staves[0]!.bars.map((bar) => bar.voices.map((voice) => voice.beats.map((beat) => `${beat.isRest ? "-" : "x"}${beat.showDynamics ? "!" : ""}${beat.dynamics}`))));
+  for (let step = 0; step < 120; step++) {
+    json = structuredClone(json);
+    const part = Math.floor(random() * 2);
+    const barId = pick(barIds);
+    const voice = pick(voices[part]!);
+    const content = json.parts[part]!.content[barId]!;
+    const written = content[voice]!;
+    const beat = written.length > 0 && random() < 0.6 ? pick(written) : undefined;
+    if (beat === undefined) content[voice] = beats();
+    else if (random() < 0.5) {
+      if (beat.dynamic) delete beat.dynamic;
+      else beat.dynamic = pick(DYNAMICS);
+    } else beat.notes = Object.keys(beat.notes).length > 0 ? {} : { s3: { fret: 5 } };
+    expect(replaceBars(projection, json, [barId], settings), `step ${step}`).not.toBeNull();
+    expect(seen(projection.score), `step ${step}`).toEqual(seen(projectScore(json, settings).score));
+  }
 });
 
 /** A guitar of bars of 4/4, one for each entry of `bars`, each bar's beats given as frets on string 3 (null: a rest), with these fields on its notes. */

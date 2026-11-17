@@ -267,6 +267,18 @@ function dynamicsLeaving(bar: AtBar | null | undefined, voiceCount: number): AtD
   return Array.from({ length: voiceCount }, (_, voice) => bar?.voices[voice]?.beats.at(-1)?.dynamics ?? START_DYNAMIC);
 }
 
+/**
+ * By projected bar, for each of its voices: whether a dynamic written on a rest is still to be
+ * drawn where the bar ends, on the next beat of that voice that is not a rest (#97).
+ */
+const undrawnLeaving = new WeakMap<AtBar, boolean[]>();
+
+/** Whether each voice of a projected bar leaves a dynamic to draw, for the bar after it (none: the start of the score). */
+function dynamicsUndrawn(bar: AtBar | null | undefined, voiceCount: number): boolean[] {
+  const undrawn = bar ? undrawnLeaving.get(bar) : undefined;
+  return Array.from({ length: voiceCount }, (_, voice) => undrawn?.[voice] ?? false);
+}
+
 function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   const beat = new model.Beat();
   beat.duration = value as alphaTab.model.Duration;
@@ -282,6 +294,7 @@ function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined
   const beat = rest(json.value, dynamic);
   // A dynamic is drawn where it is written only: alphaTab would draw one where the dynamic in force
   // changes, and its own f on the first note of a voice that has none (`shouldCreateDynamicsGlyph`).
+  // One written on a rest, which alphaTab never draws, is drawn on a later beat (`projectBar`).
   beat.showDynamics = json.dynamic !== undefined;
   beat.dots = json.dots;
   if (json.tuplet) {
@@ -323,11 +336,15 @@ const KEY_SIGNATURE_TYPES = { major: model.KeySignatureType.Major, minor: model.
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
  * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
- * the end of the same voice in `previous`, the bar before (none for the first). Returns the ids
- * of its beats by voice.
+ * the end of the same voice in `previous`, the bar before (none for the first). A dynamic written
+ * on a rest is drawn on the next beat of its voice that is not a rest, in this bar or a later one,
+ * unless one is written on that beat or a rest before it: alphaTab draws none on a rest (#97).
+ * Returns the ids of its beats by voice.
  */
 function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }: BarPlace, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
   const entering = dynamicsLeaving(previous, voiceCount);
+  const undrawnEntering = dynamicsUndrawn(previous, voiceCount);
+  const undrawnLeavingBar: boolean[] = [];
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
   // A drum staff has no key: it would only draw sharps and flats on it.
@@ -346,10 +363,20 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
     beatIds.push(beats.map((beat) => beat.id));
     // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
     let dynamic = entering[voice];
+    // Whether a dynamic is written that no beat has been drawn with yet: the beat that draws it
+    // draws the one in force there, the last written.
+    let undrawn = undrawnEntering[voice] as boolean;
     for (const [index, beat] of beats.entries()) {
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
-      atVoice.addBeat(projectBeat(part, beat, beatAfter(beats, index, following), dynamic));
+      const atBeat = projectBeat(part, beat, beatAfter(beats, index, following), dynamic);
+      if (beat.dynamic) undrawn = true;
+      if (undrawn && !atBeat.isRest) {
+        atBeat.showDynamics = true;
+        undrawn = false;
+      }
+      atVoice.addBeat(atBeat);
     }
+    undrawnLeavingBar.push(undrawn);
     if (beats.length === 0 && (pickup === null || voice > 0)) {
       // An empty first voice is a whole-bar rest; other voices stay invisible, and take no time.
       const filler = rest(1, dynamic);
@@ -362,6 +389,7 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
     const held = beats.reduce((sum, beat) => sum + beatTicks(beat), 0);
     for (const value of restsFilling(held, pickup ?? barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
   }
+  undrawnLeaving.set(atBar, undrawnLeavingBar);
   return { bar: atBar, beatIds };
 }
 
@@ -529,8 +557,10 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
 /**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
  * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
- * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
- * next written dynamic in each voice that changed. A bar line that a link crosses, before the
+ * did, or another dynamic written on a rest still to draw (#97), has the bar after it rebuilt too,
+ * and so on up to a bar whose voices go on as before: the next written dynamic in each voice that
+ * changed, or, for one still to draw, the next beat that is not a rest, past any bars of rests
+ * only in between. A bar line that a link crosses, before the
  * change or after it, has the bars on both sides of it rebuilt: both notes of a link hold it, and
  * alphaTab sets it up when it finishes the bar of the note it starts from. Returns the index of
  * the first rebuilt bar, or null when the change is not one this can do (a bar, a part or a voice
@@ -610,9 +640,12 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         staff.bars[barIndex] = atBar;
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
         replaced.push({ old, atBar });
-        // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
+        // The bar after starts at the dynamic this one leaves, and draws one this one leaves undrawn:
+        // when either changed, it is rebuilt as well.
         const before = dynamicsLeaving(old, voiceCount);
-        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
+        const undrawnBefore = dynamicsUndrawn(old, voiceCount);
+        const undrawnAfter = dynamicsUndrawn(atBar, voiceCount);
+        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice] || undrawnAfter[voice] !== undrawnBefore[voice])) rebuilt.add(barIndex + 1);
       });
     });
   }
