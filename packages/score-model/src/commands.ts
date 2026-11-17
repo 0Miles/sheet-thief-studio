@@ -1,7 +1,7 @@
 // Editing commands: each changes the document in one transaction (one undo step) and returns
 // where the cursor is afterwards. They never touch the DOM or the renderer.
-import { generateNKeysBetween } from "fractional-indexing";
-import { nanoid } from "nanoid";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
+import { customAlphabet, nanoid } from "nanoid";
 import * as Y from "yjs";
 
 import {
@@ -122,7 +122,7 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KI
     const parts = partsOf(doc);
     const order = ordered(parts);
     const part: YPart = new Y.Map();
-    part.set("order", keysAfter(parts, order, order.length - 1, 1).keys[0]);
+    part.set("order", keysAfter(parts, order, order.length - 1, 1)[0]);
     part.set("name", name);
     part.set("kind", kind);
     part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
@@ -145,22 +145,43 @@ export interface NewBars {
   timeSig?: TimeSignature;
 }
 
+/** The digits of an ordering key (fractional-indexing's base 62). */
+const KEY_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const keySuffix = customAlphabet(KEY_DIGITS, 5);
+
+/**
+ * A key above `key` and below `upper`, ending in a random suffix: the keys fractional-indexing
+ * makes between two keys are the same for everyone, so two members inserting at the same place
+ * at once would make the same key, and no key lies between two equal keys. A suffix of five
+ * base-62 digits makes that all but impossible. The fractional part of a key must not end in 0.
+ * When `key` is a prefix of `upper` (`a1` below `a1Yx3pQ`, which is common: keys made between
+ * suffixed keys often are), `key` and a suffix may reach past `upper`: a key between `key` and
+ * `upper` is taken first, until the suffix fits.
+ */
+function withSuffix(key: string, upper: string | null): string {
+  const suffix = keySuffix().replace(/0$/, "1");
+  let base = key;
+  // Each step at least one digit closer to `upper`, which has finitely many: a few at most.
+  while (upper !== null && base + suffix >= upper) base = generateKeyBetween(base, upper);
+  return base + suffix;
+}
+
 /**
  * Ordering keys for `count` items put right after the one at `index` of `order` (-1: first), the
- * ids of `map` in score order (`ordered`). Two members who insert at the same place at once give
- * their items the same key; `ordered` then sorts them by id. No key lies strictly between two
- * equal keys, so the items after `index` that share its key (`moved`) get new keys after the new
- * ones, in the order they had: the new items land right after the one at `index`, and the next
- * insertion there finds keys that differ (docs/spec/schema.md, section 1).
+ * ids of `map` in score order (`ordered`), each with a random suffix (`withSuffix`) so that no
+ * two members make the same key (docs/spec/schema.md, section 1). No other item's key is
+ * changed. Equal keys sort by id; none lies strictly between them, so after an item whose key the
+ * next items share (left by members who inserted before the suffix), the new ones go after all
+ * of those.
  */
-function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): { keys: string[]; moved: [string, string][] } {
+function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
   const keyAt = (at: number) => orderOf(map.get(order[at] as string));
   const lower = index < 0 ? null : keyAt(index);
   let end = index + 1;
   while (lower !== null && end < order.length && keyAt(end) === lower) end++;
-  const tied = order.slice(index + 1, end);
-  const keys = generateNKeysBetween(lower, end < order.length ? keyAt(end) : null, count + tied.length);
-  return { keys: keys.slice(0, count), moved: tied.map((id, i) => [id, keys[count + i] as string]) };
+  const upper = end < order.length ? keyAt(end) : null;
+  const keys = generateNKeysBetween(lower, upper, count);
+  return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -186,9 +207,8 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const { keys, moved } = keysAfter(bars, order, index, count);
+    const keys = keysAfter(bars, order, index, count);
     const signature = timeSig ?? timeSigOf(before ?? next);
-    moved.forEach(([barId, key]) => bars.get(barId)?.set("order", key));
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);

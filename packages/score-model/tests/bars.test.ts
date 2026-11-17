@@ -330,47 +330,128 @@ function twoCopies(count = 3) {
   return { ...first, other, sync };
 }
 
-test("bars two members insert at the same place at once share an ordering key; a bar inserted between or after them still lands where it was put", () => {
+/** Hand every member's changes to every other member. */
+function syncAll(...docs: Y.Doc[]): void {
+  for (const from of docs) for (const to of docs) if (from !== to) Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+}
+
+/** The ordering keys of the bars of a document, in score order. */
+const barKeys = (doc: Y.Doc) => ordered(barsOf(doc)).map((barId) => barsOf(doc).get(barId)!.get("order") as string);
+
+/** Every key differs, and sorting them gives score order: no two items left to sort by id. */
+function keysApart(doc: Y.Doc): void {
+  const keys = barKeys(doc);
+  expect(new Set(keys).size).toBe(keys.length);
+  expect([...keys].sort()).toEqual(keys);
+}
+
+/** A bar inserted after every bar in turn, and before the first: none of them throws. */
+function insertEverywhere(doc: Y.Doc, partId: string): void {
+  for (const barId of ordered(barsOf(doc))) expect(typeof insertBarAt(doc, cursorAt(doc, partId, barId), "after")).toBe("object");
+  expect(typeof insertBarAt(doc, cursorAt(doc, partId, ordered(barsOf(doc))[0]!), "before")).toBe("object");
+}
+
+test("bars two members insert at the same place at once get keys of their own, both right after that bar, the same for both", () => {
   const { doc: a, other: b, sync, barIds, guitar } = twoCopies(2);
   const anna = cursorOf(insertBarAt(a, cursorAt(a, guitar, barIds[0]!), "after"));
   const ben = cursorOf(insertBarAt(b, cursorAt(b, guitar, barIds[0]!), "after"));
   sync();
-  const key = (barId: string) => barsOf(a).get(barId)!.get("order");
-  expect(key(anna.barId)).toBe(key(ben.barId));
-  // Equal keys sort by id, the same for everyone.
-  const [x, y] = [anna.barId, ben.barId].sort();
-  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, y, barIds[1]]);
-
-  // Before the second of the two: between them, where no key lay before.
-  const between = cursorOf(insertBarAt(a, cursorAt(a, guitar, y!), "before"));
-  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, between.barId, y, barIds[1]]);
-  sync();
-  expect(docToJson(b)).toEqual(docToJson(a));
-  // Every key differs now.
-  const keys = ordered(barsOf(b)).map((barId) => barsOf(b).get(barId)!.get("order"));
-  expect(new Set(keys).size).toBe(keys.length);
-  expect([...keys].sort()).toEqual(keys);
-
-  // Two at the same place again, then one right after the first of them, and one before the first.
-  const [p] = insertBars(a, { after: between.barId, count: 1 });
-  const [q] = insertBars(b, { after: between.barId, count: 1 });
-  sync();
-  const [first, second] = [p!, q!].sort();
-  const [right] = insertBars(b, { after: first!, count: 1 });
-  const [front] = insertBars(b, { after: x!, count: 1 });
-  sync();
-  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, front, between.barId, first, right, second, y, barIds[1]]);
   expect(docToJson(a)).toEqual(docToJson(b));
+  const order = ordered(barsOf(a));
+  expect(order[0]).toBe(barIds[0]);
+  expect(order.slice(1, 3).sort()).toEqual([anna.barId, ben.barId].sort());
+  expect(order[3]).toBe(barIds[1]);
+  keysApart(a);
+  // Between the two, before the first, after the second: each lands where it was put.
+  const [first, second] = order.slice(1, 3) as [string, string];
+  const between = cursorOf(insertBarAt(b, cursorAt(b, guitar, second), "before"));
+  const front = cursorOf(insertBarAt(b, cursorAt(b, guitar, first), "before"));
+  const back = cursorOf(insertBarAt(a, cursorAt(a, guitar, second), "after"));
+  sync();
+  expect(ordered(barsOf(a))).toEqual([barIds[0], front.barId, first, between.barId, second, back.barId, barIds[1]]);
+  expect(docToJson(a)).toEqual(docToJson(b));
+  keysApart(b);
+  insertEverywhere(a, guitar);
 });
 
-test("parts two members add at once share an ordering key, sort the same for both, and a part added after them comes last", () => {
+test("one member inserting after a bar while another inserts after the next, at once, both land where they were put: 200 times", () => {
+  for (let run = 0; run < 200; run++) {
+    const { doc: a, other: b, sync, barIds, guitar } = twoCopies(3);
+    const [x, y] = barIds as [string, string, string];
+    const anna = cursorOf(insertBarAt(a, cursorAt(a, guitar, x), "after"));
+    const ben = cursorOf(insertBarAt(b, cursorAt(b, guitar, y), "after"));
+    sync();
+    expect(ordered(barsOf(a))).toEqual([x, anna.barId, y, ben.barId, barIds[2]]);
+    expect(ordered(barsOf(b))).toEqual(ordered(barsOf(a)));
+    keysApart(a);
+  }
+});
+
+test("three members inserting at the same place at once, in either order of arrival, all land right after that bar, the same for all, and any insertion after goes where it is put", () => {
+  const { doc: a, barIds, guitar } = band(2);
+  const b = new Y.Doc();
+  const c = new Y.Doc();
+  syncAll(a, b, c);
+  const made = [a, b, c].map((doc) => cursorOf(insertBarAt(doc, cursorAt(doc, guitar, barIds[0]!), "after")).barId);
+  // Each hears of the others in another order.
+  syncAll(c, b, a);
+  for (const doc of [a, b, c]) {
+    const order = ordered(barsOf(doc));
+    expect(order[0]).toBe(barIds[0]);
+    expect(order.slice(1, 4).sort()).toEqual([...made].sort());
+    expect(order[4]).toBe(barIds[1]);
+    expect(docToJson(doc)).toEqual(docToJson(a));
+  }
+  keysApart(a);
+  // After each of them, by another member each time.
+  const order = ordered(barsOf(a));
+  const after = order.slice(1, 4).map((barId, i) => {
+    const doc = [b, c, a][i]!;
+    return cursorOf(insertBarAt(doc, cursorAt(doc, guitar, barId), "after")).barId;
+  });
+  syncAll(a, b, c);
+  expect(ordered(barsOf(c))).toEqual([order[0], order[1], after[0], order[2], after[1], order[3], after[2], order[4]]);
+  for (const doc of [a, b]) expect(docToJson(doc)).toEqual(docToJson(c));
+  insertEverywhere(c, guitar);
+});
+
+test("where the key made between two bars is a prefix of the next bar's key (a1 below a1Y), two members inserting there at once still get keys of their own, below it: 50 times", () => {
+  for (let run = 0; run < 50; run++) {
+    const { doc: a, other: b, sync, barIds, guitar } = twoCopies(2);
+    barsOf(a).get(barIds[0]!)!.set("order", "a0");
+    barsOf(a).get(barIds[1]!)!.set("order", "a1Y");
+    sync();
+    const made = [a, b].map((doc) => cursorOf(insertBarAt(doc, cursorAt(doc, guitar, barIds[0]!), "after")).barId);
+    sync();
+    expect(ordered(barsOf(a))[0]).toBe(barIds[0]);
+    expect(ordered(barsOf(a)).slice(1, 3).sort()).toEqual(made.sort());
+    expect(ordered(barsOf(a))[3]).toBe(barIds[1]);
+    keysApart(a);
+  }
+});
+
+test("bars that share a key, as members inserted them before keys had a suffix, are left as they are: a bar inserted after the first goes after all of them, and nothing throws", () => {
+  const { doc, barIds, guitar } = band(4);
+  const [x, y] = [barIds[1]!, barIds[2]!];
+  barsOf(doc).get(y)!.set("order", barsOf(doc).get(x)!.get("order"));
+  const tied = ordered(barsOf(doc)).slice(1, 3);
+  const keys = barKeys(doc);
+  const added = cursorOf(insertBarAt(doc, cursorAt(doc, guitar, tied[0]!), "after"));
+  expect(ordered(barsOf(doc))).toEqual([barIds[0], ...tied, added.barId, barIds[3]]);
+  // No other bar's key was changed.
+  expect(barKeys(doc).filter((key) => key !== barsOf(doc).get(added.barId)!.get("order"))).toEqual(keys);
+  insertEverywhere(doc, guitar);
+});
+
+test("parts two members add at once get keys of their own, sort the same for both, and a part added after them comes last", () => {
   const { doc: a, other: b, sync, guitar, keys } = twoCopies(1);
   const bass = addPart(a, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
   const drums = addPart(b, { name: "Drums", kind: "percussion" });
   sync();
-  expect(partsOf(a).get(bass)!.get("order")).toBe(partsOf(a).get(drums)!.get("order"));
-  const order = [guitar, keys, ...[bass, drums].sort()];
-  expect(docToJson(a).parts.map((part) => part.id)).toEqual(order);
+  expect(partsOf(a).get(bass)!.get("order")).not.toBe(partsOf(a).get(drums)!.get("order"));
+  const order = docToJson(a).parts.map((part) => part.id);
+  expect(order.slice(0, 2)).toEqual([guitar, keys]);
+  expect(order.slice(2).sort()).toEqual([bass, drums].sort());
   expect(docToJson(b).parts.map((part) => part.id)).toEqual(order);
   const vocals = addPart(b, { name: "Vocals", kind: "pitched" });
   sync();
