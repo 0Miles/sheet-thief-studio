@@ -35,6 +35,7 @@ import {
   stillAt,
   tempoAt,
   type TimeSignature,
+  voltaRepeatTimes,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
@@ -271,6 +272,8 @@ const panel = computed(() => {
     repeatStart: repeatFirst?.repeatStart === true,
     repeatEnd: repeatLast?.repeatEnd,
     voltas: bar.voltas ?? [],
+    // Voltas go on every bar of the selection, else on the cursor's.
+    voltaRepeatTimes: voltaRepeatTimes(json, range ? json.bars.slice(range.first - 1, range.last).map((each) => each.id) : [bar.id]),
     firstBar: index === 0,
     anacrusis: bar.anacrusis === true,
   };
@@ -925,6 +928,7 @@ onBeforeUnmount(() => {
         :repeat-start="panel.repeatStart"
         :repeat-end="panel.repeatEnd"
         :voltas="panel.voltas"
+        :volta-repeat-times="panel.voltaRepeatTimes"
         :first-bar="panel.firstBar"
         :anacrusis="panel.anacrusis"
         @time-sig="onTimeSig"

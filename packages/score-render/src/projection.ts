@@ -517,17 +517,20 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
  * change or after it, has the bars on both sides of it rebuilt: both notes of a link hold it, and
  * alphaTab sets it up when it finishes the bar of the note it starts from. Returns the index of
  * the first rebuilt bar, or null when the change is not one this can do (a bar, a part or a voice
- * count changed): the caller then projects the whole score again.
+ * count changed, or the length of a pickup bar): the caller then projects the whole score again.
  */
 export function replaceBars(projection: Projection, json: ScoreJSON, barIds: readonly string[], settings: alphaTab.Settings, timings?: ProjectionTimings): number | null {
   const started = performance.now();
   if (json.bars.length !== projection.barIds.length || json.parts.length !== projection.partIds.length) return null;
   const indexes = barIds.map((id) => projection.barIndex.get(id));
   if (indexes.some((index) => index === undefined)) return null;
-  // How long a pickup bar is depends on its content, and where every bar after it starts on that:
-  // alphaTab works those out only when the whole score is finished.
-  if (indexes.includes(0) && projection.score.masterBars[0]?.isAnacrusis) return null;
   const places = placesOf(json);
+  // A pickup bar is as long as its longest voice, and every bar after it starts where it ends:
+  // alphaTab works those out only when the whole score is finished. While its length stays (a
+  // change in a voice shorter than the longest), its bars are replaced like any other; the model
+  // still has the old bars here, so the master bar measures the old length.
+  const pickup = places[0]?.pickup ?? null;
+  if (pickup !== null && pickup !== projection.score.masterBars[0]?.calculateDuration()) return null;
   const voiceCounts = json.parts.map(staffVoiceCounts);
   const tracks = projection.score.tracks;
   const sameShape = json.parts.every((part, trackIndex) => {

@@ -126,6 +126,9 @@ export const strings = {
       voltaPass: (pass: number) => `第 ${pass} 遍`,
       voltasOnBar: "寫在這個小節",
       voltasOnRange: "寫在選取的每一個小節",
+      // Told only, not refused: a repeat set or changed later can make the pass sound (docs/spec/commands.md, section 6).
+      voltasUnplayed: (passes: readonly number[], times: number) =>
+        `${times === 1 ? "這裡沒有反覆" : `對應的反覆總共只演奏 ${times} 次`}，第 ${passes.join("、")} 遍不會演奏`,
       clearVoltas: "清除跳房子",
       anacrusis: "弱起小節",
       anacrusisHelp: "只有第一小節可以是弱起小節。它的長度是裡面最長的聲線，不標時值不足。",

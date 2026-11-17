@@ -19,6 +19,7 @@ import {
   insertBarAt,
   insertBars,
   keySigAt,
+  keySigsOf,
   LOCAL,
   MAX_BARS,
   ordered,
@@ -37,6 +38,7 @@ import {
   tempoAt,
   type TimeSignature,
   toggleAnacrusis,
+  voltaRepeatTimes,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
 
@@ -532,6 +534,20 @@ test("a key is written on the cursor's bar only and holds from there on; clearin
   expect(keySigAt(docToJson(doc), "gone")).toBeUndefined();
 });
 
+test("the key in force is a copy for each bar: changing one changes neither the default, nor the score, nor another bar", () => {
+  const { doc, at } = band(3);
+  setKeySig(doc, at(1), G_MAJOR);
+  const score = docToJson(doc);
+  const keys = keySigsOf(score.bars);
+  expect(Object.isFrozen(DEFAULT_KEY_SIG)).toBe(true);
+  keys[0]!.fifths = 5;
+  keys[1]!.fifths = 6;
+  expect(DEFAULT_KEY_SIG).toEqual({ fifths: 0, mode: "major" });
+  expect(score.bars[1]!.keySig).toEqual(G_MAJOR);
+  expect(keys[2]).toEqual(G_MAJOR);
+  expect(keySigsOf(score.bars)[0]).toEqual(DEFAULT_KEY_SIG);
+});
+
 test("a key out of range is refused; a key that cannot be read is written over", () => {
   const { doc, barIds, at, bars } = band(1);
   for (const wrong of [
@@ -651,6 +667,24 @@ test("voltas not of 1 to 8 in increasing order are refused", () => {
   expect(bars()[0]!.voltas).toBeUndefined();
   expect(setVoltas(doc, at(0), null, [1, 3, 8])).toBe(true);
   expect(bars()[0]!.voltas).toEqual([1, 3, 8]);
+});
+
+test("voltas belong to the repeat that ends among the bars with voltas around them, else just before them; without one, the score is played once", () => {
+  const { doc, barIds, keys, at } = band(6);
+  const times = (...bars: number[]) => voltaRepeatTimes(docToJson(doc), bars.map((bar) => barIds[bar]!));
+  expect(times(2)).toBe(1);
+  // Bars 2 to 3 played three times; bar 3 the first ending, bar 4 the second.
+  setRepeat(doc, at(1), barRange(keys, barIds[1]!, barIds[2]!), { times: 3 });
+  expect(times(2)).toBe(3);
+  setVoltas(doc, at(2), null, [1]);
+  expect(times(3)).toBe(3);
+  // Another end on bar 4, after the first ending: the first end in the run of voltas still counts.
+  setRepeat(doc, at(3), null, { times: 4 });
+  setRepeat(doc, at(3), null, { clear: "start" });
+  expect(times(3)).toBe(3);
+  // Bar 6, far from any ending, with no voltas between: played once.
+  expect(times(5)).toBe(1);
+  expect(times()).toBe(1);
 });
 
 test("the pickup bar is toggled on the first bar only, one undo step each, and is refused on the second", () => {

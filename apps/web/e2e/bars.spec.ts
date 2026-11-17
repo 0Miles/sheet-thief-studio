@@ -243,6 +243,13 @@ test("the panel sets a repeat over the selected bars, voltas, a key, a section a
   await page.keyboard.press("F2");
   await expect(page.locator("[data-panel-bar]")).toHaveAttribute("data-bar", "4");
   await voltas.locator('input[name="volta"][value="2"]').check();
+  // A third pass of a repeat played twice never sounds: the panel says so as it is ticked.
+  const unplayed = voltas.locator("[data-voltas-unplayed]");
+  await expect(unplayed).toHaveCount(0);
+  await voltas.locator('input[name="volta"][value="3"]').check();
+  await expect(unplayed).toContainText("第 3 遍");
+  await voltas.locator('input[name="volta"][value="3"]').uncheck();
+  await expect(unplayed).toHaveCount(0);
   await voltas.getByRole("button", { name: "套用" }).click();
   await expect.poll(async () => (await marks()).map((bar) => bar.voltas)).toEqual([undefined, undefined, [1], [2]]);
   // The pickup is the first bar's only.

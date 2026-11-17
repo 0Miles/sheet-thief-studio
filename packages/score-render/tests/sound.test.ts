@@ -379,14 +379,47 @@ test("a repeat played three times in all plays its bars three times", () => {
   expect(barsPlayed()).toEqual([1, 2, 3, 2, 3, 2, 3, 4]);
 });
 
-test("repeats two members left unpaired or overlapping still play, and throw nothing", () => {
+// Repeats two members can leave by setting them at once (docs/spec/commands.md, section 6): legal,
+// not flagged, played by alphaTab's rules. The orders are alphaTab 1.9.0's: an upgrade that plays
+// them otherwise shows here.
+test("repeats over 1-4 and 2-3 set at once, or over 1-3 and 2-4 (the same marks), play the inner one twice inside each pass of the outer", () => {
+  const pairs: [[number, number], [number, number]][] = [
+    [
+      [0, 3],
+      [1, 2],
+    ],
+    [
+      [0, 2],
+      [1, 3],
+    ],
+  ];
+  for (const [outer, inner] of pairs) {
+    const { doc, at, range, barsPlayed } = fourBars();
+    setRepeat(doc, at(outer[0]), range(...outer), { times: 2 });
+    setRepeat(doc, at(inner[0]), range(...inner), { times: 2 });
+    expect(barsPlayed()).toEqual([1, 2, 3, 2, 3, 4, 1, 2, 3, 2, 3, 4]);
+  }
+});
+
+test("the end of a repeat whose start was taken away goes back to the start of the score", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  setRepeat(doc, at(2), null, { times: 2 });
+  setRepeat(doc, at(2), null, { clear: "start" });
+  expect(barsPlayed()).toEqual([1, 2, 3, 1, 2, 3, 4]);
+});
+
+test("the start of a repeat whose end was taken away repeats nothing", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  setRepeat(doc, at(1), null, { times: 2 });
+  setRepeat(doc, at(1), null, { clear: "end" });
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+});
+
+test("a bar whose voltas are all past the count of its repeat never sounds", () => {
   const { doc, at, range, barsPlayed } = fourBars();
-  // An end with no start goes back to the start of the score; a second start inside a repeat begins another.
-  setRepeat(doc, at(0), range(0, 2), { times: 2 });
-  setRepeat(doc, at(1), range(1, 3), { times: 2 });
-  setRepeat(doc, at(3), null, { clear: "start" });
-  expect(() => barsPlayed()).not.toThrow();
-  expect(barsPlayed().length).toBeGreaterThan(4);
+  setRepeat(doc, at(1), range(1, 2), { times: 2 });
+  setVoltas(doc, at(2), null, [3]);
+  expect(barsPlayed()).toEqual([1, 2, 2, 4]);
 });
 
 test("a pickup bar sounds only as long as what is in it: the bar after comes right after", () => {

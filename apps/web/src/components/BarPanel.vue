@@ -8,7 +8,7 @@
 import { AppButton } from "@karyl-chan/ui";
 import { type KeyPlatform, pageEffectOf, textEntryEffectOf } from "@studio/score-editor";
 import { barSchema, type KeySignature, keySigSchema, type RepeatChange, type TimeSignature, timeSigSchema } from "@studio/score-model";
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import { strings } from "../strings";
 
@@ -35,6 +35,8 @@ const props = defineProps<{
   repeatEnd: number | undefined;
   /** The passes this bar is played on; empty on every pass. */
   voltas: readonly number[];
+  /** How many times in all the repeat voltas set here belong to is played (`voltaRepeatTimes`): a pass past it never sounds. */
+  voltaRepeatTimes: number;
   /** This bar is the first: only it can be a pickup bar. */
   firstBar: boolean;
   anacrusis: boolean;
@@ -73,6 +75,8 @@ const section = ref(props.section ?? "");
 const repeatTimes = ref<number | "">(props.repeatEnd ?? REPEAT.min);
 const passes = ref<number[]>([...props.voltas]);
 const first = ref<HTMLInputElement>();
+/** The passes ticked that the repeat is not played that many times for: they never sound. Told, not refused. */
+const unplayedPasses = computed(() => [...passes.value].sort((a, b) => a - b).filter((pass) => pass > props.voltaRepeatTimes));
 
 // The bar's values as they are now: after the cursor moved, or someone changed them.
 watch(
@@ -247,6 +251,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
         </label>
       </fieldset>
       <p class="bar-panel__note">{{ range ? text.voltasOnRange : text.voltasOnBar }}</p>
+      <p v-if="unplayedPasses.length > 0" class="bar-panel__warning" role="status" data-voltas-unplayed>{{ text.voltasUnplayed(unplayedPasses, voltaRepeatTimes) }}</p>
       <div class="bar-panel__row">
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
         <AppButton type="button" variant="ghost" size="sm" data-clear-voltas :disabled="voltas.length === 0" @click="emit('voltas', [])">{{ text.clearVoltas }}</AppButton>
@@ -310,6 +315,11 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 }
 .bar-panel__number {
   width: 6rem;
+}
+.bar-panel__warning {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.75rem;
 }
 .bar-panel__passes {
   display: grid;

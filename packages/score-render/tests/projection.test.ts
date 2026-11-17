@@ -543,13 +543,32 @@ test("a pickup bar with nothing in it is as long as its time signature", () => {
   ]);
 });
 
-test("a change inside a pickup bar is not a replacement: how long it is, and where the bars after it start, change with it", () => {
+test("a change that keeps the length of a pickup bar replaces its bars like any other: the same model as projecting the whole score again", () => {
+  const { doc, barIds, guitar, keys } = band();
+  toggleAnacrusis(doc, cursorAt(doc, keys, barIds[0]!));
+  const projection = projectScore(docToJson(doc), settings);
+  const score = projection.score;
+  // The keys fill the bar; the guitar's quarter and eighth get one more eighth, still shorter.
+  write(doc, guitar, barIds[0]!, [[8, { s2: { fret: 5 } }]]);
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(projection.score).toBe(score);
+  const whole = projectScore(json, settings);
+  for (const track of [0, 1, 2]) expect(voiceOf(projection, track, 0)).toEqual(voiceOf(whole, track, 0));
+  const lengths = (bars: alphaTab.model.MasterBar[]) => bars.map((bar) => [bar.calculateDuration(), bar.start]);
+  expect(lengths(score.masterBars)).toEqual(lengths(whole.score.masterBars));
+});
+
+test("a change of the length of a pickup bar is not a replacement: where the bars after it start changes with it", () => {
   const { doc, barIds, keys } = band();
   toggleAnacrusis(doc, cursorAt(doc, keys, barIds[0]!));
   const projection = projectScore(docToJson(doc), settings);
+  // The keys' first half becomes a quarter: the longest voice, and the bar, a quarter shorter.
   changeBeatAt(doc, cursorAt(doc, keys, barIds[0]!), durationStep(1));
   expect(replaceBars(projection, docToJson(doc), [barIds[0]!], settings)).toBeNull();
-  // Any other bar is replaced as before.
+  // Projected again, any bar after it is replaced as before.
   write(doc, keys, barIds[1]!, [[4, { n60: {} }]]);
-  expect(replaceBars(projection, docToJson(doc), [barIds[1]!], settings)).toBe(1);
+  const fresh = projectScore(docToJson(doc), settings);
+  write(doc, keys, barIds[2]!, [[4, { n62: {} }]]);
+  expect(replaceBars(fresh, docToJson(doc), [barIds[2]!], settings)).toBe(2);
 });
