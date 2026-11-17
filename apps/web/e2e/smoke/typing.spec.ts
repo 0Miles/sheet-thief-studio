@@ -10,10 +10,15 @@ import { expect, test } from "../test";
 // unsupported and never gets to paused; CI runs WebKit on Linux, which has it (#129).
 test.skip(({ browserName }) => browserName === "webkit" && process.platform === "win32", "Playwright's WebKit for Windows has no Web Audio (#129)");
 
-test("a member logs in, types a fret, and after reloading the score still holds it", async ({ browser }) => {
+test("a member logs in, types a fret, and after reloading the score still holds it", async ({ browser, browserName }) => {
   const id = seedScore({ title: "瀏覽器打譜測試", owner: ADMIN.username });
   const page = await loggedIn(browser, ADMIN);
   const errors = pageErrors(page);
+  // The session cookie it was given: `__Host-` for Firefox, which takes it over http://localhost;
+  // WebKit, which does not, logs in to the server with the development cookie (playwright.config.ts).
+  const cookies = (await page.context().cookies()).map(({ name }) => name);
+  expect(cookies).toContain(browserName === "webkit" ? "studio_session" : "__Host-studio_session");
+  if (browserName === "webkit") expect(cookies.filter((name) => name.startsWith("__Host-"))).toEqual([]);
   await openScore(page, id);
 
   // The cursor starts in the append slot of the first bar, on the first string.

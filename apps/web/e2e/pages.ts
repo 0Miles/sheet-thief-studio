@@ -2,7 +2,7 @@
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
-import { type Browser, type BrowserContextOptions, expect, type Page } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page } from "@playwright/test";
 import type { Role } from "@studio/contracts";
 import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
@@ -28,9 +28,38 @@ export function pageErrors(page: Page, refused: Refusal[] = [{ status: 401, path
     if (message.type() !== "error") return;
     const url = message.location().url;
     const expected = refused.some(({ status, path }) => message.text().includes(String(status)) && url.endsWith(path));
-    if (!expected) errors.push(message.text());
+    if (expected) return;
+    // Firefox gives an object logged as `JSHandle@object`: the entry is written out once its
+    // arguments have been read from the page, with where it was logged from.
+    const index = errors.push(message.text()) - 1;
+    void describe(message).then((described) => (errors[index] = described));
   });
   return errors;
+}
+
+/** A console message as its arguments read in the page, and the script and line that logged it. */
+async function describe(message: ConsoleMessage): Promise<string> {
+  const { url, lineNumber, columnNumber } = message.location();
+  const where = url ? ` (at ${url}:${lineNumber}:${columnNumber})` : "";
+  try {
+    const args = await Promise.all(
+      message.args().map((arg) =>
+        arg.evaluate((value) => {
+          if (value instanceof Error) return `${value.name}: ${value.message}`;
+          if (typeof value !== "object" || value === null) return String(value);
+          try {
+            return JSON.stringify(value) ?? String(value);
+          } catch {
+            return Object.prototype.toString.call(value);
+          }
+        }),
+      ),
+    );
+    return `${args.join(" ")}${where}`;
+  } catch {
+    // The page is gone: what Playwright gave is all there is.
+    return `${message.text()}${where}`;
+  }
 }
 
 export async function logIn(page: Page, username: string, password: string): Promise<void> {
@@ -44,6 +73,11 @@ export async function logInFromStart(page: Page, account: { username: string; pa
   await page.goto("/login");
   await logIn(page, account.username, account.password);
   await expect(page).toHaveURL("/");
+  // Until the page has its lists: a test that goes on to another address before then has Firefox
+  // abort the page's requests for them (NS_BINDING_ABORTED), and the page reports a list it could
+  // not get as an error of the page (HomeView.vue), which the test's error check then hears.
+  await expect(page.getByRole("heading", { name: strings.home.title })).toBeVisible();
+  await expect(page.getByText(strings.loading)).toBeHidden();
 }
 
 /** A page of its own browser context, logged in as this account, on `/`. */
