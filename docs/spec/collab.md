@@ -35,6 +35,7 @@
 | `beforeHandleAwareness` | 覆寫身分欄位、移除訪客的狀態（第 5 節） |
 | `onDisconnect` | 剩 0 個連線時建立版本（第 8 節） |
 | `afterLoadDocument`、`afterUnloadDocument` | 開始、停止這份文件的 10 分鐘版本計時器（補充） |
+| `beforeUnloadDocument` | **補充**（#131）：只卸載記憶體裡以這個名稱登記的那一份文件，其餘一律拒絕。Hocuspocus 以名稱卸載，而且儲存完成後是用一個 0 ms 的計時器去卸載；這個計時器可能在原本的文件已經卸載（例如伺服器自己的 direct connection 結束時立刻卸載）、團譜又為成員重新載入之後才執行，若照做會把新載入、成員正在用的文件從記憶體移走：下一位打開的成員會從 Postgres 再載入另一份，兩份文件的儲存互相覆蓋 |
 
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建：`POST /api/scores` 在伺服器端建好 `Y.Doc`、寫進 `scores.doc_state`，然後回傳 id。
 - 讀取用的函式（建立版本、鏡射標題）和客戶端是同一個 `docToJson`，讀取時容錯（[`schema.md`](schema.md) 第 11 節）。
