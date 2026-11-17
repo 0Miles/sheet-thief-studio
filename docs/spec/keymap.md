@@ -94,9 +94,12 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Ctrl+Z` | `Cmd+Z` | `KeyZ` 加 `Mod` | 復原 |
 | `Ctrl+Y`、`Ctrl+Shift+Z` | `Cmd+Shift+Z`（不用 `Cmd+Y`：那是 Safari 與 Chrome 的歷史記錄） | `KeyZ` 加 `Mod`、`shiftKey`；Windows、Linux 另有 `KeyY` 加 `ctrlKey` | 重做 |
 | `Alt+1` `Alt+2` | `Option+1` `Option+2` | `Digit1` `Digit2` 加 `altKey` | 切換到第 1／第 2 條聲線 |
+| `F2`（補充，#22） | `Fn+F2` | `F2` | 開關小節屬性面板（第 5 節）。和 `F8` 一樣是 page 綁定（`pageEffectOf` 回傳 `barPanel`），由殼處理 |
 | `F8` | `Fn+F8` | `F8` | 跳到下一個 Flag；工具列另有同功能的按鈕。補充（#36）：和 `Space` 一樣是 page 綁定（`pageEffectOf` 回傳 `nextFlag`），由殼從它畫的 `ScoreJSON` 算出下一個（`flags.ts` 的 `nextFlag`，[`flags.md`](flags.md) 第 4 節） |
 | `Space`（補充） | 同左 | `Space` | 播放／暫停（編輯視圖從游標所在小節開始，有選取時循環選取範圍，見 [`playback.md`](playback.md)）。補充（#31）：`EditorSession` 不處理這個鍵，由殼處理（綁定表上的 page 綁定，`pageEffectOf`） |
 | `Esc`（補充） | 同左 | `Escape` | 取消選取；關閉 popover 或面板，焦點回到譜面 |
+
+**補充**（#22）：結構操作的三個鍵是 `bindings.ts` 的 `insertBarBefore`（`Mod+Insert`，Mac 是 `Mod+Enter`）、`insertBarAfter`（`Mod+Shift+Insert`，Mac 是 `Mod+Shift+Enter`）與 `deleteBars`（`Mod+Delete`，Mac 是 `Mod+Backspace`、`Mod+Delete`），Mac 的組合照表寫在 `mac` 欄，不是由抽象規則推出。修飾鍵要完全相符：Mac 上的 `Ctrl+Insert`、`Cmd+Insert` 不做事，`Option+Return` 仍然是插入拍點；Windows、Linux 上的 `Cmd`（`metaKey`）組合不做事。測試在 `packages/score-editor/tests/bars.test.ts`。
 
 ## 3. `Shift`＋字母：技巧與拍點記號
 
@@ -195,6 +198,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `Enter`（在樂句側欄裡，補充） | `Return` | `Enter` | 焦點在某個樂句、或它的預覽 popover 開著時：放到游標所在的小節 |
 | `F8` | `Fn+F8` | `F8` | 下一個 Flag（見第 2 節） |
 
+**補充**（#22）：`F2` 在譜面上開關面板，只有可編輯視圖有面板（唯讀編輯視圖按 `F2` 不動）。開啟時焦點進面板的第一個欄位；面板裡的鍵屬於欄位，只有 `Esc` 與 `F2` 關閉面板、焦點回到譜面，比對照第 1.1 節（`Esc` 用 `textEntryEffectOf` 的 `cancelEntry`，`F2` 用 `pageEffectOf`）。工具列的「小節屬性」按鈕同樣開關面板，開啟時焦點進面板，關閉時回到譜面。
+
 `F2`、`F4`、`F8` 在 Windows、Linux 的瀏覽器裡沒有預設功能。macOS 的功能鍵預設是系統功能（第 1.2 節），要按著 `Fn`，或在系統設定把 F1–F12 設成標準功能鍵；所以這三個鍵在工具列都有同功能的按鈕（第 7 節）。
 
 ## 6. 文字輸入模式
@@ -227,5 +232,6 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 
 - 工具列：Flag 總數與「下一個 Flag」、播放、插入小節、刪除小節（補充：很多筆電沒有 `Insert` 鍵，Mac 完全沒有）、復原、重做、小節屬性、樂句側欄（只有可編輯視圖有）。小節屬性與樂句側欄的按鈕是補充，理由同第 5 節：Mac 的 `F2`、`F4` 要按著 `Fn`。
 - 按鈕的提示顯示這個平台的鍵，由第 1.3 節的 `formatChord` 產生。
+  - **補充**（#22）：「插入小節」、「刪除小節」、「小節屬性」三個按鈕只在可編輯視圖，提示是 `strings.score.bars` 的 `insertKey`、`removeKey`、`panelKey`，鍵名由 `keyNameOf("insertBarBefore" | "deleteBars" | "barPanel", platform)` 產生：Windows、Linux 是 `Ctrl+Insert`、`Ctrl+Delete`、`F2`，Mac 是 `⌘↩`、`⌘⌫`、`F2`。復原、重做的按鈕還沒有做。
 - 譜尾：「＋小節」按鈕。
 - 唯讀編輯視圖：會改動文件的鍵第一次按到時提示「檢視者無法修改」，之後不再提示（[`views.md`](views.md)）。

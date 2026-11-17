@@ -14,7 +14,7 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton } from "@karyl-chan/ui";
 import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
-import { createEditorSession, decideView, type EditorSession, keyNameOf, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
+import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   type Cursor,
   cursorAt,
@@ -29,6 +29,8 @@ import {
   type ScoreChange,
   type ScoreJSON,
   stillAt,
+  tempoAt,
+  type TimeSignature,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
@@ -38,6 +40,7 @@ import * as Y from "yjs";
 import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
 import AppHeader from "../components/AppHeader.vue";
+import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
@@ -45,7 +48,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect } from "../overlay";
+import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -172,6 +175,14 @@ const flagMarks = shallowRef<FlagMark[]>([]);
 const flagStop = shallowRef<FlagStop | null>(null);
 /** The key of the toolbar's next-flag button, as this platform names it. */
 const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
+/** The keys of the toolbar's buttons of bars, as this platform names them (docs/spec/keymap.md, section 7). */
+const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
+/** Where the bars a structural command works on are drawn, dashed over every part, out of the reserved areas. */
+const structureRects = shallowRef<Rect[]>([]);
+/** The panel of the cursor's bar is open (docs/spec/commands.md, section 6): the editable view only. */
+const panelOpen = ref(false);
+/** The cursor and the selection as of the session's last word, for what is shown of them outside the overlay. */
+const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
 const reserved = shallowRef<Rect[]>([]);
 /** The box the text of a beat is typed in, while Enter has it open: what it asked for and where it is. */
@@ -226,6 +237,46 @@ function placeCursor(): void {
   cursorRect.value = rect && clearOf(rect, reserved.value);
   const selection = session?.selection ?? null;
   selectionRects.value = selection === null ? [] : engine.renderer.boundsOfSelection(selection).map((box) => clearOf(box, reserved.value));
+  structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
+}
+
+/** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
+const panel = computed(() => {
+  const json = score.value;
+  const { cursor: at, selection } = presence.value;
+  if (!panelOpen.value || json === null || at === null) return null;
+  const index = json.bars.findIndex((bar) => bar.id === at.barId);
+  const bar = json.bars[index];
+  if (bar === undefined) return null;
+  const numberOf = (barId: string) => json.bars.findIndex((each) => each.id === barId) + 1;
+  const ends = selection === null ? null : selection.kind === "beats" ? [selection.barId, selection.barId] : [selection.anchorBarId, selection.focusBarId];
+  const numbers = ends?.map(numberOf);
+  const range = numbers && numbers.every((number) => number > 0) ? { first: Math.min(...numbers), last: Math.max(...numbers) } : null;
+  return { bar: index + 1, range, timeSig: bar.timeSig, tempo: bar.tempo, tempoInForce: tempoAt(json, bar.id) ?? 0 };
+});
+
+/** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
+function togglePanel(): void {
+  if (view.value !== "editable") return;
+  if (panelOpen.value) closePanel();
+  else {
+    panelOpen.value = true;
+    placeCursor();
+  }
+}
+
+function closePanel(): void {
+  panelOpen.value = false;
+  placeCursor();
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function onTimeSig(timeSig: TimeSignature): void {
+  session?.setTimeSig(timeSig);
+}
+
+function onTempo(tempo: number | null): void {
+  session?.setTempo(tempo);
 }
 
 /** Draw the overlay again after a drawing: the reserved areas, and where the flags are, change only then. */
@@ -483,7 +534,11 @@ function closeText(text: string | null): void {
 
 function startEditing(json: ScoreJSON): void {
   session = createEditorSession(doc, { platform: keyPlatform(), cursor: firstCursor(json, shown.value[0]), readOnly: view.value === "readOnlyEdit" });
-  session.onPresence(() => {
+  presence.value = session.presence();
+  session.onPresence((now) => {
+    presence.value = now;
+    // A cursor that fell back to the start of the score may land in a part the member hid.
+    keepCursorShown();
     forgetStaleStop();
     placeCursor();
     resumable = false;
@@ -524,6 +579,11 @@ function onKey(event: KeyboardEvent): void {
     goToNextFlag();
     return;
   }
+  if (pageEffect === "barPanel") {
+    event.preventDefault();
+    togglePanel();
+    return;
+  }
   stopFollowing();
   const measured = measurement.key(event);
   const handled = session?.press(event) ?? false;
@@ -536,6 +596,8 @@ function onPointer(event: PointerEvent): void {
   // The main button only: not a right click for the context menu. Not on the scroller itself
   // either: that is its scroll bar, or the room around the page.
   if (event.button !== 0 || event.target === scroller.value) return;
+  // A button on the page (+bar) is not the score.
+  if (event.target instanceof Element && event.target.closest("button") !== null) return;
   if (session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
@@ -705,6 +767,17 @@ onBeforeUnmount(() => {
           <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
         </template>
+        <div v-if="view === 'editable'" class="score__bars">
+          <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
+            {{ text.bars.insert }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" data-delete-bars :title="text.bars.removeKey(barKeys.remove)" @click="onToolbar(() => session?.deleteBars())">
+            {{ text.bars.remove }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="togglePanel">
+            {{ text.bars.panel }}
+          </AppButton>
+        </div>
         <FlagControls
           v-if="view"
           :count="flags.length"
@@ -731,6 +804,7 @@ onBeforeUnmount(() => {
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
         {{ view === "editable" ? text.offline.editing : text.offline.reading }}
       </p>
+      <div class="score__body">
       <div
         ref="scroller"
         class="score__scroller"
@@ -743,6 +817,10 @@ onBeforeUnmount(() => {
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
+          <!-- Also in a score two members left with no bars, which the engine may not report drawn: +bar brings it back. -->
+          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" class="score__end">
+            <AppButton variant="ghost" size="sm" data-append-bar :title="text.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ text.bars.append }}</AppButton>
+          </div>
           <svg v-if="view" class="score__overlay" aria-hidden="true">
             <!-- Invisible: they only tell the e2e tests where no overlay may go. -->
             <rect v-for="(area, index) in reserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
@@ -769,6 +847,17 @@ onBeforeUnmount(() => {
               :width="box.width"
               :height="box.height"
             />
+            <rect
+              v-for="(box, index) in structureRects"
+              :key="`structure-${index}`"
+              data-structure
+              class="score__structure"
+              :stroke-width="STRUCTURE_STROKE"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+            />
             <rect v-if="cursorRect" data-cursor class="score__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
           <InlineTextEntry
@@ -780,6 +869,19 @@ onBeforeUnmount(() => {
             @close="closeText"
           />
         </div>
+      </div>
+      <BarPanel
+        v-if="panel"
+        :platform="keyPlatform()"
+        :bar="panel.bar"
+        :range="panel.range"
+        :time-sig="panel.timeSig"
+        :tempo="panel.tempo"
+        :tempo-in-force="panel.tempoInForce"
+        @time-sig="onTimeSig"
+        @tempo="onTempo"
+        @close="closePanel"
+      />
       </div>
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
@@ -863,8 +965,24 @@ onBeforeUnmount(() => {
   color: var(--danger);
   font-size: 0.875rem;
 }
+/* The score, and the panel of the cursor's bar at its side. */
+.score__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.score__bars {
+  display: flex;
+  gap: 0.25rem;
+}
+.score__end {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0 1.5rem;
+}
 .score__scroller {
   flex: 1;
+  min-width: 0;
   overflow: auto;
   /* The browser never scrolls on its own when the drawing changes size: any scroll the page did not make is the member's. */
   overflow-anchor: none;
@@ -907,6 +1025,12 @@ onBeforeUnmount(() => {
 /* Filled only, as the cursor is. */
 .score__selection {
   fill: rgba(37, 99, 235, 0.18);
+}
+/* Dashed over every part: what is done there changes all of them. Its stroke is inside the rectangle (`structureBoxesOf`). */
+.score__structure {
+  fill: none;
+  stroke: rgba(37, 99, 235, 0.8);
+  stroke-dasharray: 6 4;
 }
 /* Filled only: a stroke would reach past the rectangle, into a reserved area. */
 .score__cursor {

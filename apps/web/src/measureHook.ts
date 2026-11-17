@@ -2,7 +2,7 @@
 // from it (docs/spec/testing.md, sections 2 and 4). Only in a build made with VITE_MEASURE=1: in
 // any other build `measureEditView` gives a measurement that does nothing, the code below it is
 // dead, and the bundle does not even hold the name.
-import { type Cursor, cursorAt, docToJson, insertBeat, LOCAL, type PartJSON, type ScoreJSON, setFret, stepDuration } from "@studio/score-model";
+import { changeBeatAt, type Cursor, cursorAt, docToJson, durationStep, insertBeat, LOCAL, type PartJSON, type ScoreJSON, setFret } from "@studio/score-model";
 import type { NoteHead, PlayerPosition, PlayerState, Rect, RenderedEvent, RenderTimings, ScoreEngine } from "@studio/score-render";
 import * as Y from "yjs";
 
@@ -173,7 +173,7 @@ function measuring(view: MeasuredView): Measurement {
           const at: Cursor = { partId: part.id, barId: bar.id, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line: 1 + next(part.tuning.length) };
           const kind = next(10);
           if (kind < 7) setFret(doc, at, next(20));
-          else if (kind < 9) stepDuration(doc, at, next(2) === 0 ? 1 : -1);
+          else if (kind < 9) changeBeatAt(doc, at, durationStep(next(2) === 0 ? 1 : -1));
           else insertBeat(doc, at, { value: 8 });
         }
       }, LOCAL);

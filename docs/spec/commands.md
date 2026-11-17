@@ -46,6 +46,7 @@ interface Cursor {
 
 - 錨點之後被別人附加了拍點：附加位置畫在錨點之後、他人拍點之前；在附加位置輸入，新拍點也插在那裡。
 - 錨點被刪除（別人刪除或自己復原）：游標用 `settleCursor` 重新解析（`navigation.ts` 的 `settleCursor`）。**補充**：錨點不在了，就落到那條聲線目前的最後一個拍點之後；聲線變空就是空聲線的附加位置；聲部或小節不在了，回到第一個聲部第一小節的第一個位置。
+  - **補充**（#22）：寫法是 `EditorSession` 在 `settleCursor` 回傳 null 時改用 `commands.ts` 的 `startOfScore(doc, lines)`：第一個畫得出來的聲部（種類讀得懂）的第一小節第一個位置，`line` 用這個成員在那個聲部上次的 `line`，沒有記錄就用 `startLine`。`settleCursor` 本身仍然回傳 null，所以移動的函式在聲部或小節不在時不動（第 3 節 #20 的補充）。殼在游標落到隱藏的聲部時，照 [`views.md`](views.md) 第 6 節移到第一個顯示中的聲部。
 - **補充**：游標所在的拍點被刪除（別人刪除或自己復原）：落在接替它位置的拍點上，也就是它後面的那個拍點；它原本是最後一個拍點時，落在前一個拍點；聲線變空就是空聲線的附加位置 `{ beatId: null, at: "after" }`。做法：`EditorSession` 每次移動游標時用 `beatPositionOf` 記下拍點的位置（Yjs 的相對位置），拍點不在了就交給 `settleCursor` 解析。
 - 其他人的游標在遠端修改之後，同樣用 `settleCursor` 重新解析。**補充**：看的人這邊沒有那位成員的拍點位置，所以不帶位置解析：那位成員所在的拍點被刪除時，在看的人這邊先落在那條聲線的最後一個拍點，直到那位成員自己的 session 送出新的 presence。
 - **補充**：`EditorSession` 記住每個聲部上次的 `line`；第一次進入某個聲部時，fretted 是 1，其他種類是 4（中間那條線）。換到弦數較少的聲部時夾在範圍內。
@@ -74,7 +75,7 @@ interface Cursor {
   - **補充**（#20）：在附加位置上，「目前的 tick」是錨點拍點的結尾；空聲線是小節的開頭。時值讀不懂的拍點長度算 0（讀取時被略過）。
   - **補充**（#20）：`Ctrl+↑/↓` 依 `staves` 的順序經過聲部的各個譜表；過了最後一個（或第一個）譜表，到下一個聲部的第一個譜表（或上一個聲部的最後一個譜表）。聲線的編號不變（第二聲線到下一個譜表的第二聲線），目標聲部不提供時（fretted）落在第一聲線。讀不懂種類的聲部不畫出來，跳過。在第一個聲部的第一個譜表按 `Ctrl+↑`、最後一個聲部的最後一個譜表按 `Ctrl+↓`：不動。寫法是 `navigation.ts` 的 `moveByStaff`、`moveToVoice`；`Home`、`End` 是 `moveToBarStart`、`moveToBarEnd`。
   - **補充**（#20）：`Ctrl+←/→`、`Home`、`End`、`Ctrl+↑/↓`、`Alt+1/2` 都先用 `settleCursor` 解析游標，和 `←`、`→` 一樣；游標的聲部或小節不在了就不動（不會跳到第一小節）。
-- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `schema.ts` 的 `voicesOffered` 決定；`navigation.ts` 的 `moveToVoice` 對不提供的聲線回傳 `"notOffered"`。
+- **補充**：fretted 聲部按 `Alt+2` 不動，並提示「弦樂聲部只有一條聲線」（介面不提供第二聲線）。做法（#20）：`EditorSession` 的 `onHint` 送出 `"oneVoice"`，殼顯示 `strings.ts` 的 `score.hints.oneVoice`；fretted 只提供第一聲線，由 `schema.ts` 的 `voicesOffered` 決定；`navigation.ts` 的 `moveToVoice` 對不提供的聲線回傳 `VOICE_NOT_OFFERED`（#22 把字串哨兵改成具名的常數與型別 `VoiceNotOffered`）。
 
 ## 4. Selection
 
@@ -143,7 +144,7 @@ interface Cursor {
 
 | Command | 鍵 | 語意 |
 |---|---|---|
-| `stepDuration` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用）；到 64 分或全音符就不動 |
+| `durationStep` | `+` `-` | 時值變短／變長一級，保留附點（`commands.ts` 的 `durationStep`，由 `changeBeatAt`、`changeBeatsOnSelection` 套用；#22 刪掉了名字容易和它混淆的游標版 `stepDuration`）；到 64 分或全音符就不動 |
 | `cycleDots` | `.` | 附點 0 → 1 → 2 → 0（補充） |
 | `toggleTriplet` | `Shift+T` | 沒有連音時設成 `{ actual: 3, normal: 2 }`，有任何連音時移除（補充） |
 
@@ -179,7 +180,7 @@ interface Cursor {
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
   - **補充**（#36）：寫法是 `commands.ts` 的 `tieToggle`（`NoteToggle<boolean>`）。`decide`：游標那條線上沒有音時是「加上」（才能建立音），否則「不是全部都有 tie 就加上，否則移除」，選取時一樣。`turn` 用 `place.before`：前一個音有格號時設成 `{ ...原值, fret: 前一個音的格號, tie: true }`（已經是同一個格號的 tie 就不寫入）；前一個音沒有格號（沒有音，或沒有格號的 dead note）時，有音就只設 `tie: true`，沒有音就不動，不會建立既沒有格號、也不是 dead 的音。pitched 的建立只帶前一個音的 `spell`；`noteKeyAt` 在 pitched 是 `null`，所以目前只有直接呼叫 `toggleAt` 才會走到（見 [`keymap.md`](keymap.md) 第 3 節的補充）。在附加位置上和 dead note 一樣建立新拍點，游標移到新拍點。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
-  - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
+  - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`；#22 起和讀取共用 `schema.ts` 的 `readableVoicesOf`、`readableVoicesIn`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
   - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
     - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
     - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值，沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著聲部種類（`kind`，補充，#36：tie 在 pitched 才建立同音高的音）、音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
@@ -258,9 +259,20 @@ interface Cursor {
 | `toggleAnacrusis` | 小節屬性面板 | 只能在第一小節切換 |
 
 - 範圍：結構操作讀選取時，拍點範圍當成它所在的那一個小節（補充）。
+- **補充**（#22）：寫法在 `packages/score-model` 的 `commands.ts`，測試在 `packages/score-model/tests/bars.test.ts`、`packages/score-editor/tests/bars.test.ts`。
+  - 選取的範圍由 `structuralRange(doc, selection)` 給出：小節範圍是它的小節，拍點範圍是它的那一個小節，沒有選取是 null（由各指令決定）。
+  - `insertBars` 讀相鄰小節的拍號經過 `parsePlain`，讀不懂就用 4/4；`after` 指的小節不在、或插入後超過 1000 個小節（`MAX_BARS`，`ordered` 讀得到的小節數）時不做事、回傳空陣列。插在最前面時，同一筆交易移除原第一小節的 `anacrusis`（[`schema.md`](schema.md) 第 3 節）。
+  - `insertBarAt(doc, cursor, "before" | "after")`、`appendBar(doc, cursor)`（「＋小節」）：插入 1 個小節，游標移到新小節裡**自己那條聲線**的第一個位置（新小節是空的，所以是附加位置），`line` 不變。游標的小節不在時不動。已經 1000 個小節時回傳 `"tooManyBars"`（`BarRefusal`），`EditorSession` 以 `onHint` 告訴成員（`strings.ts` 的 `score.hints.tooManyBars`）。
+  - `deleteBarsAt(doc, cursor, selection)`：刪除 `structuralRange` 的小節，沒有選取時是游標小節；在同一筆交易裡刪除 `bars` 的項目與每個聲部 `content` 裡那些小節的內容。游標移到刪除範圍之後那個小節裡自己那條聲線的第一個位置，範圍在譜尾時移到它之前的小節。範圍包含所有小節時整個拒絕，回傳 `"lastBar"`（提示「至少要留下一個小節」），不是只留下一個。刪除之後選取結束；被拒絕時選取不變。
+  - `setTimeSig(doc, cursor, selection, timeSig)`：沒有選取時，「原值」是游標小節讀到的拍號（讀不懂當成 4/4），範圍一直到第一個讀到的拍號和原值不同的小節之前（之後又出現同樣的拍號也不算）。只寫入讀到的值不同、或讀不懂的小節；拍號不合 [`schema.md`](schema.md) 第 3 節的範圍時回傳 false、不寫入。選取在之後保留。
+  - `setTempo(doc, cursor, tempo | null)`：20–400 以外（含 `NaN`、無限大）回傳 false；和原值相同、或清除一個沒有的變化點時不寫入。選取在之後保留。
+  - 一個小節「生效的速度」是 `schema.ts` 的 `tempoAt(score, barId)`：到它為止最後一個寫著 `tempo` 的小節的值，沒有時是 `DEFAULT_TEMPO`（120，`score-render` 的投影也用它）。
+  - `EditorSession` 的按鍵是 `insertBarBefore`、`insertBarAfter`、`deleteBars`（[`keymap.md`](keymap.md) 第 2 節）；工具列與面板不經按鍵，呼叫 `insertBar(side)`、`appendBar()`、`deleteBars()`、`setTimeSig(timeSig)`、`setTempo(tempo)`。它們和按鍵走同一條路：唯讀時拒絕並提示一次，各是一個復原步驟（第 8 節），也結束兩位數格號的等待。
+  - 小節屬性面板（#22 先做拍號與速度，其餘欄位是 #23）：`apps/web/src/components/BarPanel.vue`，只在可編輯視圖。標題是游標小節，有選取時是選取的小節；拍號與速度各有「套用」，`Enter` 在欄位裡就是套用；速度欄留空並套用、或按「清除速度」，就是移除這個變化點。開關的鍵與焦點見 [`keymap.md`](keymap.md) 第 5 節。
+  - 「看得出影響所有聲部」：小節範圍、以及面板開著時的游標小節（有拍點範圍時是它的小節），在疊層上畫虛線框，每一行譜一個，橫跨所有顯示中的聲部（`ScoreRenderer.boundsOfBars`、`geometry.ts` 的 `barRangeRects`；選哪些小節是 `apps/web/src/overlay.ts` 的 `structuralEnds`，框是 `structureBoxesOf`，避開保留區域，線畫在框內）。小節範圍原本只蓋住自己聲部的選取框（第 4 節）照樣畫，因為 `Delete` 這類內容操作只作用在那個聲部。疊層裡每個虛線框是 `<rect data-structure>`。
 - **小節屬性面板**：側邊面板，顯示並編輯游標所在小節的拍號、速度、調號、段落名稱、反覆開始、反覆次數、volta、弱起（只有第一小節顯示）。開啟的鍵見 [`keymap.md`](keymap.md)。
 - 新增小節後總數不得超過 1000（補充）。
-- 「＋小節」、「插入小節」、「刪除小節」在工具列也有按鈕（補充：很多筆電沒有 `Insert` 鍵）。
+- 「＋小節」、「插入小節」、「刪除小節」在工具列也有按鈕（補充：很多筆電沒有 `Insert` 鍵）。**補充**（#22）：「插入小節」插在游標小節之前（同 `Ctrl+Insert`）；「＋小節」在譜面最後、整份譜的下方。
 
 ## 7. 設定類的 Command
 
@@ -302,6 +314,13 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 ## 9. 同時修改時的規定
 
 - **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」。
+  - **補充**（#22）：鎖住的結果（`packages/score-model/tests/bars.test.ts` 的「deleting bars while another member types in them」）：另一位成員在刪除送到之前打進那個小節的拍點，合併後消失；復原之後小節與刪除當下的拍點回來，那個拍點不回來。兩份文件最後一致。
+  - **補充**（#22）：「至少留下 1 個小節」只擋得住同一份文件裡的刪除。兩個人同時各刪掉最後兩個小節中的一個，合併後團譜一個小節都沒有。伺服器不自動補小節（那會改寫成員的意圖）；能恢復的方式在客戶端：
+    - 讀取與繪製照常：`readScore` 讀出 `bars: []`、每個聲部 `content: {}`，沒有 Flag；alphaTab 排不了沒有小節的譜（會丟例外），所以 `score-render` 的引擎不交給它，把畫過的東西清掉、照常回報畫完（`alphaTabEngine.ts` 的 `drawNothing`）。殼照樣顯示「＋小節」按鈕。
+    - 游標所在的小節不在了、又沒有地方可放（`startOfScore` 是 null）時，游標變成 null；之後團譜一有小節（別人加的、自己復原的），游標就回到譜首（`EditorSession` 的 `stranded`）。
+    - 沒有游標時，只有復原、重做與「＋小節」能執行（`KeyCommand.runWithoutCursor`），其他按鍵不處理。復原把自己刪掉的那個小節帶回來，游標回到譜首。「＋小節」在沒有小節時插入第一個小節（4/4，因為沒有相鄰的拍號可沿用），游標放到譜首、用這個成員在那個聲部上次的 `line`（`commands.ts` 的 `appendBar(doc, null)`），可以接著打譜。
+    - 測試：`packages/score-model/tests/bars.test.ts`、`packages/score-editor/tests/bars.test.ts`，以及 `apps/web/e2e/bars.spec.ts` 的兩個 e2e（打開一份沒有小節的團譜、按「＋小節」繼續打譜；兩位成員同時刪除之後按 `Ctrl+Z`）。
+- **補充**（#22）：**復原自己插入的小節**：別人在那之後打進那個小節的拍點，跟著小節一起消失（Yjs 復原時刪除小節，連同裡面所有的內容，不分是誰寫的）；重做時小節帶著那些拍點一起回來。鎖在 `packages/score-model/tests/bars.test.ts` 的「undoing a bar one inserted takes away what another member typed in it meanwhile」。
 - **放置與貼上小節段**：在既有的 `Y.Array` 上先刪再插，同時輸入的內容保留（5.7）。
 - **內容容器**：客戶端不補缺少的容器，只有伺服器補（[`collab.md`](collab.md)）。
 - **新團譜的初始內容**由伺服器建立。

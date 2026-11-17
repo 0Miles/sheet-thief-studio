@@ -223,17 +223,21 @@ export function moveByStaff(doc: Y.Doc, from: Cursor, step: 1 | -1, lines: Reado
   return landAt(doc, { ...cursor, partId, voice, line }, tick);
 }
 
+/** What `moveToVoice` gives for a voice the cursor's part does not offer. */
+export const VOICE_NOT_OFFERED = "notOffered";
+export type VoiceNotOffered = typeof VOICE_NOT_OFFERED;
+
 /**
  * The cursor in the first (`voiceIndex` 0, Alt+1) or second voice (1, Alt+2) of its staff, in the
  * same bar, on the beat that holds the tick it stood at, else where End goes. It stays where it is
- * in that voice already. `"notOffered"` for a voice its part does not offer (`voicesOffered`: a
- * fretted part's second): the cursor stays, and the member is told why.
+ * in that voice already. `VOICE_NOT_OFFERED` for a voice its part does not offer (`voicesOffered`:
+ * a fretted part's second): the cursor stays, and the member is told why.
  */
-export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor | "notOffered" {
+export function moveToVoice(doc: Y.Doc, from: Cursor, voiceIndex: 0 | 1): Cursor | VoiceNotOffered {
   const cursor = settleCursor(doc, from);
   const kind = cursor && partKindOf(partsOf(doc).get(cursor.partId));
   if (!kind) return from;
-  if (voiceIndex >= voicesOffered(kind)) return "notOffered";
+  if (voiceIndex >= voicesOffered(kind)) return VOICE_NOT_OFFERED;
   const [staff, current] = staffAndVoiceOf(cursor.voice);
   if (voiceIndex === current) return cursor;
   return landAt(doc, { ...cursor, voice: voiceKey(staff, voiceIndex) }, tickAt(doc, cursor));

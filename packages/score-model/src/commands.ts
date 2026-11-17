@@ -1,13 +1,14 @@
 // Editing commands: each changes the document in one transaction (one undo step) and returns
 // where the cursor is afterwards. They never touch the DOM or the renderer.
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import * as Y from "yjs";
 
 import {
   BEND_SEMITONES,
   BEND_TYPES,
   type BendType,
+  barSchema,
   barsOf,
   beatFieldFits,
   COMMON_TIME,
@@ -19,15 +20,18 @@ import {
   KIND_DEFAULTS,
   LOCAL,
   MAIN_VOICE,
+  MAX_BARS,
   metaOf,
   NOTE_VALUES,
   type NoteJSON,
   type NoteValue,
   ordered,
+  parsePlain,
   type PartKind,
   partKindOf,
   partsOf,
   readNote,
+  readableVoicesOf,
   SCHEMA_VERSION,
   SLIDE_INS,
   SLIDE_OUTS,
@@ -41,6 +45,7 @@ import {
   stringCountOf,
   contentMapOf,
   type TimeSignature,
+  timeSigSchema,
   type Tuplet,
   type VoiceAddress,
   type YBar,
@@ -115,9 +120,9 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KI
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
-    const last = ordered(parts).at(-1);
+    const order = ordered(parts);
     const part: YPart = new Y.Map();
-    part.set("order", generateKeyBetween(last === undefined ? null : orderOf(parts.get(last)), null));
+    part.set("order", keysAfter(parts, order, order.length - 1, 1)[0]);
     part.set("name", name);
     part.set("kind", kind);
     part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
@@ -140,18 +145,70 @@ export interface NewBars {
   timeSig?: TimeSignature;
 }
 
-/** Insert empty bars for every part; returns their ids in order. */
+/** The digits of an ordering key (fractional-indexing's base 62). */
+const KEY_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const keySuffix = customAlphabet(KEY_DIGITS, 5);
+
+/**
+ * A key above `key` and below `upper`, ending in a random suffix: the keys fractional-indexing
+ * makes between two keys are the same for everyone, so two members inserting at the same place
+ * at once would make the same key, and no key lies between two equal keys. A suffix of five
+ * base-62 digits makes that all but impossible. The fractional part of a key must not end in 0.
+ * When `key` is a prefix of `upper` (`a1` below `a1Yx3pQ`, which is common: keys made between
+ * suffixed keys often are), `key` and a suffix may reach past `upper`: a key between `key` and
+ * `upper` is taken first, until the suffix fits.
+ */
+function withSuffix(key: string, upper: string | null): string {
+  const suffix = keySuffix().replace(/0$/, "1");
+  let base = key;
+  // Each step at least one digit closer to `upper`, which has finitely many: a few at most.
+  while (upper !== null && base + suffix >= upper) base = generateKeyBetween(base, upper);
+  return base + suffix;
+}
+
+/**
+ * Ordering keys for `count` items put right after the one at `index` of `order` (-1: first), the
+ * ids of `map` in score order (`ordered`), each with a random suffix (`withSuffix`) so that no
+ * two members make the same key (docs/spec/schema.md, section 1). No other item's key is
+ * changed. Equal keys sort by id; none lies strictly between them, so after an item whose key the
+ * next items share (left by members who inserted before the suffix), the new ones go after all
+ * of those.
+ */
+function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
+  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
+  const lower = index < 0 ? null : keyAt(index);
+  let end = index + 1;
+  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
+  const upper = end < order.length ? keyAt(end) : null;
+  const keys = generateNKeysBetween(lower, upper, count);
+  return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
+}
+
+/** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
+function timeSigOf(bar: YBar | undefined): TimeSignature {
+  const read = parsePlain(timeSigSchema, bar?.get("timeSig"));
+  return read.success ? read.data : COMMON_TIME;
+}
+
+/**
+ * Insert empty bars for every part; returns their ids in order. They take the time signature
+ * given, else the one of the bar they follow, else (first) of the bar they precede, and nothing
+ * else of it (docs/spec/commands.md, section 6). Put first, they take the pickup away from the bar
+ * that was first. None, and nothing changes, when `after` is gone or the score would have more
+ * than `MAX_BARS` bars.
+ */
 export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): string[] {
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  const index = after === null ? -1 : order.indexOf(after);
+  if ((after !== null && index < 0) || count < 1 || order.length + count > MAX_BARS) return [];
   const ids = Array.from({ length: count }, newId);
   doc.transact(() => {
-    const bars = barsOf(doc);
-    const order = ordered(bars);
-    const index = after === null ? -1 : order.indexOf(after);
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = generateNKeysBetween(orderOf(before), orderOf(next), count);
-    const signature = timeSig ?? ((before ?? next)?.get("timeSig") as TimeSignature | undefined) ?? COMMON_TIME;
+    const keys = keysAfter(bars, order, index, count);
+    const signature = timeSig ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);
@@ -160,8 +217,144 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
       // The member who makes a bar makes its place in every part, in the same transaction.
       for (const part of partsOf(doc).values()) contentOf(part).set(id, emptyBarContent(staffCountOf(part)));
     });
+    // Only the first bar can be a pickup (docs/spec/schema.md, section 3).
+    if (before === undefined && next?.has("anacrusis")) next.delete("anacrusis");
   }, LOCAL);
   return ids;
+}
+
+/** Why a structural command did nothing: the score would have more than `MAX_BARS` bars, or none left. */
+export type BarRefusal = "tooManyBars" | "lastBar";
+
+/** Where a bar is inserted: before the cursor's bar (Ctrl+Insert) or after it (Ctrl+Shift+Insert). */
+export type BarSide = "before" | "after";
+
+/** The cursor at the first place of its own voice in another bar: its first beat, or the append slot when it is empty. */
+function firstPlaceIn(doc: Y.Doc, cursor: Cursor, barId: string): Cursor {
+  const voice = voiceIn(doc, { ...cursor, barId });
+  const beatId = voice && voice.length > 0 ? (voice.get(0).get("id") as string) : null;
+  return { ...cursor, barId, beatId, at: beatId === null ? "after" : "on" };
+}
+
+/**
+ * Insert one empty bar before or after the cursor's bar, for every part, one command; the cursor
+ * moves to its first place, in its own voice and on its own line (docs/spec/commands.md, section 6).
+ * `"tooManyBars"` at `MAX_BARS` bars; the cursor as it is when its bar is gone.
+ */
+export function insertBarAt(doc: Y.Doc, cursor: Cursor, side: BarSide): Cursor | BarRefusal {
+  const order = ordered(barsOf(doc));
+  const index = order.indexOf(cursor.barId);
+  if (index < 0) return cursor;
+  if (order.length >= MAX_BARS) return "tooManyBars";
+  const [barId] = insertBars(doc, { after: side === "after" ? cursor.barId : (order[index - 1] ?? null), count: 1 });
+  return barId === undefined ? cursor : firstPlaceIn(doc, cursor, barId);
+}
+
+/**
+ * The toolbar's +bar at the end of the score: one bar after the last, the cursor moving there as
+ * `insertBarAt` moves it. In a score left with no bars (two members deleted the last two at once,
+ * docs/spec/commands.md, section 9) it makes the first one, in 4/4, and the cursor goes to the
+ * start of the score: what a member with no cursor (null) left can do to go on. Null when there
+ * is still nowhere to put the cursor (no part that can be drawn).
+ */
+export function appendBar(doc: Y.Doc, cursor: Cursor | null): Cursor | BarRefusal | null {
+  const last = ordered(barsOf(doc)).at(-1);
+  if (last === undefined) {
+    const [barId] = insertBars(doc, { after: null, count: 1 });
+    if (barId === undefined) return cursor;
+    const kept = cursor && partKindOf(partsOf(doc).get(cursor.partId)) !== undefined ? firstPlaceIn(doc, cursor, barId) : null;
+    return kept ?? startOfScore(doc);
+  }
+  const at = cursor ?? startOfScore(doc);
+  return at && insertBarAt(doc, { ...at, barId: last }, "after");
+}
+
+/**
+ * The bars a structural command works on (docs/spec/commands.md, section 6): a bar range's, or a
+ * beat range's one bar; null without a selection, when each command says what it works on.
+ */
+export function structuralRange(doc: Y.Doc, selection: Selection | null): string[] | null {
+  if (selection === null) return null;
+  return selection.kind === "beats" ? [selection.barId] : selectedBars(doc, selection);
+}
+
+/**
+ * Ctrl+Delete: delete the bars of the selection (`structuralRange`), else the cursor's bar, from
+ * every part, one command and no question asked: an undo brings them back with what they held
+ * then. Beats others send into them meanwhile are lost, the explicit exception to nothing
+ * disappearing silently (docs/spec/commands.md, section 9). The cursor moves to the first place of
+ * its voice in the bar after them, else in the bar before. `"lastBar"` rather than leave a score
+ * with no bars; the cursor as it is when its bars are gone.
+ */
+export function deleteBarsAt(doc: Y.Doc, cursor: Cursor, selection: Selection | null): Cursor | BarRefusal {
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  const range = (structuralRange(doc, selection) ?? [cursor.barId]).filter((barId) => order.includes(barId));
+  if (range.length === 0) return cursor;
+  if (range.length >= order.length) return "lastBar";
+  const first = order.indexOf(range[0] as string);
+  const last = order.indexOf(range.at(-1) as string);
+  const landing = (order[last + 1] ?? order[first - 1]) as string;
+  doc.transact(() => {
+    for (const barId of range) {
+      bars.delete(barId);
+      for (const part of partsOf(doc).values()) contentMapOf(part)?.delete(barId);
+    }
+  }, LOCAL);
+  return firstPlaceIn(doc, cursor, landing);
+}
+
+/**
+ * Give bars a time signature, one command (docs/spec/commands.md, section 6): those of the
+ * selection (`structuralRange`); without one, the cursor's bar and the bars after it that have
+ * the same time signature, up to the next that differs. Only bars whose time signature changes
+ * are written. False, and nothing set, for a time signature out of range (docs/spec/schema.md,
+ * section 3), or when the cursor's bar is gone.
+ */
+export function setTimeSig(doc: Y.Doc, cursor: Cursor, selection: Selection | null, timeSig: TimeSignature): boolean {
+  const valid = parsePlain(timeSigSchema, timeSig);
+  if (!valid.success) return false;
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  let range = structuralRange(doc, selection);
+  if (range === null) {
+    const start = order.indexOf(cursor.barId);
+    if (start < 0) return false;
+    const was = timeSigOf(bars.get(cursor.barId));
+    const end = order.findIndex((barId, index) => index > start && !sameTimeSig(timeSigOf(bars.get(barId)), was));
+    range = order.slice(start, end < 0 ? undefined : end);
+  }
+  if (range.length === 0) return false;
+  const { numerator, denominator } = valid.data;
+  // A time signature that cannot be read (read as 4/4) is written too.
+  const changed = range.filter((barId) => {
+    const stored = parsePlain(timeSigSchema, bars.get(barId)?.get("timeSig"));
+    return !stored.success || !sameTimeSig(stored.data, valid.data);
+  });
+  if (changed.length > 0) doc.transact(() => changed.forEach((barId) => bars.get(barId)?.set("timeSig", { numerator, denominator })), LOCAL);
+  return true;
+}
+
+function sameTimeSig(a: TimeSignature, b: TimeSignature): boolean {
+  return a.numerator === b.numerator && a.denominator === b.denominator;
+}
+
+const tempoSchema = barSchema.shape.tempo.unwrap();
+
+/**
+ * Change the tempo from the cursor's bar on, written on that bar only, one command; null takes
+ * that change away (docs/spec/commands.md, section 6). False, and nothing set, for a tempo out of
+ * 20 to 400, or when the cursor's bar is gone. The same tempo writes nothing.
+ */
+export function setTempo(doc: Y.Doc, cursor: Cursor, tempo: number | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  if (bar === undefined || (tempo !== null && !tempoSchema.safeParse(tempo).success)) return false;
+  if (tempo === null ? !bar.has("tempo") : bar.get("tempo") === tempo) return true;
+  doc.transact(() => {
+    if (tempo === null) bar.delete("tempo");
+    else bar.set("tempo", tempo);
+  }, LOCAL);
+  return true;
 }
 
 /**
@@ -553,15 +746,7 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
     const found = isVoiceKey(selection.voice, staffCountOf(part)) ? selectedBeats(doc, selection) : undefined;
     return found ? [{ barId: selection.barId, voiceKey: selection.voice, ...found }] : [];
   }
-  const keys = voiceKeys(staffCountOf(part));
-  return selectedBars(doc, selection).flatMap((barId) => {
-    const voices: unknown = contentMapOf(part)?.get(barId);
-    if (!(voices instanceof Y.Map)) return [];
-    return keys.flatMap((voiceKey) => {
-      const voice: unknown = voices.get(voiceKey);
-      return voice instanceof Y.Array ? [{ barId, voiceKey, voice: voice as YVoice, first: 0, last: voice.length - 1 }] : [];
-    });
-  });
+  return selectedBars(doc, selection).flatMap((barId) => readableVoicesOf(part, barId).map(([voiceKey, voice]) => ({ barId, voiceKey, voice, first: 0, last: voice.length - 1 })));
 }
 
 /** A beat of a selection that reading keeps, its notes, and where it is. */
@@ -922,11 +1107,6 @@ export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
   return read ? (read.markings.text ?? "") : null;
 }
 
-/** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
-export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
-  return changeBeatAt(doc, cursor, durationStep(step));
-}
-
 /** Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false, and nothing set, for any other length. */
 export function setTitle(doc: Y.Doc, title: string): boolean {
   if (title.length < 1 || title.length > MAX_TITLE) return false;
@@ -942,4 +1122,19 @@ export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = start
   const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
   return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;
+}
+
+/**
+ * Where a cursor goes when its part or bar is gone (docs/spec/commands.md, section 2): the first
+ * place of the first bar of the first part that is drawn (its kind can be read), on the line it
+ * had there last (`lines`, by part), else where the part starts. Null for a score with no such
+ * part or no bars.
+ */
+export function startOfScore(doc: Y.Doc, lines: ReadonlyMap<string, number> = new Map()): Cursor | null {
+  const parts = partsOf(doc);
+  const partId = ordered(parts).find((id) => partKindOf(parts.get(id)) !== undefined);
+  const barId = ordered(barsOf(doc))[0];
+  if (partId === undefined || barId === undefined) return null;
+  const line = lines.get(partId);
+  return line === undefined ? cursorAt(doc, partId, barId) : cursorAt(doc, partId, barId, line);
 }

@@ -2,6 +2,9 @@
 // key that changes the score is one command, one undo step. Nothing here touches the DOM, the
 // renderer or the connection to the server, so any Y.Doc will do.
 import {
+  appendBar,
+  type BarRefusal,
+  type BarSide,
   barsOf,
   bendCycle,
   bendStep,
@@ -11,6 +14,7 @@ import {
   changeBeatsOnSelection,
   clearNotes,
   type Cursor,
+  deleteBarsAt,
   deleteBeat,
   deleteNote,
   deleteSelection,
@@ -18,6 +22,7 @@ import {
   durationStep,
   dynamicCycle,
   extendSelection,
+  insertBarAt,
   insertBeat,
   isRestAt,
   LOCAL,
@@ -37,19 +42,24 @@ import {
   type Selection,
   type SelectionStep,
   setFret,
+  setTempo,
   setText,
+  setTimeSig,
   settleCursor,
   settleSelection,
   slapPopCycle,
   slideInCycle,
   slideOutCycle,
+  startOfScore,
   strokeCycle,
   textAt,
   techniqueToggle,
   tieToggle,
+  type TimeSignature,
   toggleAt,
   toggleOnSelection,
   tripletToggle,
+  VOICE_NOT_OFFERED,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -73,9 +83,10 @@ export interface LocalPresence {
 
 /**
  * What the shell tells the member about a key that did nothing: on a fretted part, Alt+2, as
- * such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3).
+ * such a part has one voice (「弦樂聲部只有一條聲線」, docs/spec/commands.md, section 3); a bar
+ * inserted past `MAX_BARS` bars, or every bar deleted (`BarRefusal`, section 6).
  */
-export type SessionHint = "oneVoice";
+export type SessionHint = "oneVoice" | BarRefusal;
 
 /**
  * Enter on a beat (docs/spec/keymap.md, 6.1): the shell opens a box there for its text, filled
@@ -139,6 +150,22 @@ export interface EditorSession {
    * than `MAX_BEAT_TEXT`. The selection ends, as after any command that does not work on it.
    */
   setText(cursor: Cursor, text: string): boolean;
+  /*
+   * The structural commands the toolbar's buttons and the panel of the cursor's bar run, without a
+   * key (docs/spec/commands.md, section 6): each one command, one undo step, refused while
+   * read-only (the member is told, as for a key). False when nothing was done: read-only, no
+   * cursor, a value out of range, or a refusal the member is told of (`onHint`).
+   */
+  /** Insert a bar before or after the cursor's, as Ctrl+Insert and Ctrl+Shift+Insert do. */
+  insertBar(side: BarSide): boolean;
+  /** The +bar button at the end of the score: a bar after the last, the cursor in it. */
+  appendBar(): boolean;
+  /** Delete the bars of the selection, else the cursor's, as Ctrl+Delete does. */
+  deleteBars(): boolean;
+  /** The time signature of the selection's bars, else of the cursor's bar up to the next change; the selection stays. */
+  setTimeSig(timeSig: TimeSignature): boolean;
+  /** The tempo from the cursor's bar on; null clears it. The selection stays. */
+  setTempo(tempo: number | null): boolean;
   destroy(): void;
 }
 
@@ -150,7 +177,18 @@ interface KeyCommand {
   changes: boolean;
   /** It changes nothing itself, but asks for a change the member makes next (Enter's text box): refused while read-only all the same. */
   leadsToChange?: true;
-  run(at: Cursor): LocalPresence;
+  run(at: Cursor): Outcome;
+  /**
+   * What it does when there is no cursor: its part and every bar gone, as when two members each
+   * delete one of the last two bars. Only undo, redo and +bar have it, so that such a score can
+   * be brought back (docs/spec/commands.md, section 9); any other command does nothing then.
+   */
+  runWithoutCursor?(): Outcome;
+}
+
+/** Where a command leaves the cursor and the selection; `done: false` when it did not do its work (refused, or a value out of range). */
+interface Outcome extends LocalPresence {
+  done?: false;
 }
 
 /** A move or a command that does not work on the selection: the selection ends. */
@@ -212,8 +250,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return { cursor, selection };
   }
 
+  /**
+   * The cursor was lost: its part or bar went, and the score had no place left to put it (no
+   * bars, or no part that can be drawn). It comes back at the start of the score as soon as the
+   * score has one again.
+   */
+  let stranded = false;
+
   /** Put the cursor and the selection there, and tell the presence when either moved. */
   function putAt({ cursor: next, selection: selected }: LocalPresence): void {
+    if (next !== null) stranded = false;
+    else if (cursor !== null) stranded = true;
     const moved = !same(next, cursor);
     if (!moved && same(selected, selection)) return;
     if (moved) {
@@ -227,13 +274,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     for (const listener of presenceListeners) listener(told);
   }
 
-  /** The cursor on a place that exists, whatever changed the score. */
-  const settled = (at: Cursor | null): Cursor | null => at && settleCursor(doc, at, position);
+  /**
+   * The cursor on a place that exists, whatever changed the score: once its part or bar is gone,
+   * the start of the score (docs/spec/commands.md, section 2).
+   */
+  const settled = (at: Cursor | null): Cursor | null => at && (settleCursor(doc, at, position) ?? startOfScore(doc, lines));
   const settle = (): void => {
     if (running) return;
     // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
     if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
-    putAt({ cursor: settled(cursor), selection: selection && settleSelection(doc, selection) });
+    const next = cursor === null ? (stranded ? startOfScore(doc, lines) : null) : settled(cursor);
+    putAt({ cursor: next, selection: selection && settleSelection(doc, selection) });
   };
   doc.on("afterTransaction", settle);
 
@@ -317,14 +368,70 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    */
   const toVoice = (voiceIndex: 0 | 1): KeyCommand => {
     const next = cursor && moveToVoice(doc, cursor, voiceIndex);
-    if (next !== "notOffered") return move((at) => next ?? at);
+    if (next !== VOICE_NOT_OFFERED) return move((at) => next ?? at);
     return {
       changes: false,
       run: (at) => {
-        for (const listener of hintListeners) listener("oneVoice");
+        hint("oneVoice");
         return { cursor: at, selection };
       },
     };
+  };
+
+  function hint(said: SessionHint): void {
+    for (const listener of hintListeners) listener(said);
+  }
+
+  /**
+   * A command that inserts or deletes bars (docs/spec/commands.md, section 6): the cursor goes
+   * where it puts it, and the selection ends, its bars gone or not the ones worked on. Refused,
+   * the member is told why, and nothing moves.
+   */
+  const structural = (run: (at: Cursor) => Cursor | BarRefusal): KeyCommand => ({
+    changes: true,
+    run: (at) => {
+      const result = run(at);
+      if (typeof result !== "string") return { cursor: result, selection: null };
+      hint(result);
+      return { cursor: at, selection, done: false };
+    },
+  });
+
+  /** A structural command that changes bars where they are (a time signature, a tempo): the cursor and the selection stay. */
+  const onBars = (run: (at: Cursor, selected: Selection | null) => boolean): KeyCommand => ({
+    changes: true,
+    run: (at) => (run(at, selection) ? { cursor: at, selection } : { cursor: at, selection, done: false }),
+  });
+
+  /** Undo or redo this member's last step; the cursor, if it was lost, comes back at the start of the score. */
+  const history = (effect: "undo" | "redo"): KeyCommand => {
+    const step = () => (effect === "redo" ? undo.redo() : undo.undo());
+    return {
+      changes: true,
+      run: (at) => {
+        step();
+        return { cursor: settled(at), selection: null };
+      },
+      runWithoutCursor: () => {
+        step();
+        return { cursor: startOfScore(doc, lines), selection: null };
+      },
+    };
+  };
+
+  /**
+   * +bar: a bar after the last, the cursor in it; in a score left with no bars, the first bar, the
+   * cursor at the start of the score (docs/spec/commands.md, section 9).
+   */
+  const addBarAtEnd: KeyCommand = {
+    ...structural((at) => appendBar(doc, at) ?? at),
+    runWithoutCursor: () => {
+      const result = appendBar(doc, null);
+      if (typeof result === "string") hint(result);
+      if (typeof result === "string" || result === null) return { cursor: null, selection: null, done: false };
+      // On the line the member had in that part.
+      return { cursor: { ...result, line: lines.get(result.partId) ?? result.line }, selection: null };
+    },
   };
 
   /**
@@ -401,6 +508,12 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
           (selected, at) => deleteSelection(doc, selected, at),
           (at) => (isRestAt(doc, at) ? deleteBeat(doc, at) : deleteNote(doc, at)),
         );
+      case "insertBarBefore":
+        return structural((at) => insertBarAt(doc, at, "before"));
+      case "insertBarAfter":
+        return structural((at) => insertBarAt(doc, at, "after"));
+      case "deleteBars":
+        return structural((at) => deleteBarsAt(doc, at, selection));
       case "shorter":
         return changeBeats(durationStep(1));
       case "longer":
@@ -413,11 +526,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return changeBeats(clearNotes);
       case "undo":
       case "redo":
-        return change((at) => {
-          if (effect === "redo") undo.redo();
-          else undo.undo();
-          return settled(at);
-        });
+        return history(effect);
       case "fret":
         return change((at) => typeDigit(binding.fret, at, previous));
       case "tie":
@@ -446,6 +555,37 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     }
   }
 
+  /** Whether a command can run now: at the cursor, or without one when it can (`runWithoutCursor`). */
+  const runnable = (command: KeyCommand): boolean => cursor !== null || command.runWithoutCursor !== undefined;
+
+  /**
+   * Run a command at the cursor (without one, `runWithoutCursor`), unless it would change the score
+   * of a read-only session. True when it ran and did its work.
+   */
+  function execute(command: KeyCommand): boolean {
+    const at = cursor;
+    if (!runnable(command)) return false;
+    if ((command.changes || command.leadsToChange) && readOnly) {
+      refuse();
+      return false;
+    }
+    running = true;
+    let next: Outcome;
+    try {
+      next = at === null ? command.runWithoutCursor!() : command.run(at);
+    } finally {
+      running = false;
+    }
+    putAt(next);
+    return next.done !== false;
+  }
+
+  /** A command a button or the panel runs, not a key: a digit typed before it waits for no second one. True when it ran and did its work. */
+  function runWithoutKey(command: KeyCommand): boolean {
+    lastDigit = null;
+    return execute(command);
+  }
+
   return {
     get cursor() {
       return cursor;
@@ -459,28 +599,17 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       return () => presenceListeners.delete(listener);
     },
     press(key) {
-      if (cursor === null) return false;
-      // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11).
-      const binding = matchKey(key, platform, partKindOf(partsOf(doc).get(cursor.partId)));
+      // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11); nor has no cursor.
+      const binding = matchKey(key, platform, cursor === null ? undefined : partKindOf(partsOf(doc).get(cursor.partId)));
       if (binding === undefined || binding.native || binding.page || binding.context === "textEntry") return false;
+      // Without a cursor, only what can bring one back runs (undo, redo): any other key is left alone.
+      if (cursor === null && binding.effect !== "undo" && binding.effect !== "redo") return false;
       // Held down, only moves, + and - run again; the repeats of the others are still not the browser's.
       if (key.repeat === true && !binding.repeat) return true;
       // A digit waits for a second one; any other key that runs something ends the wait.
       const previous = lastDigit;
       lastDigit = null;
-      const command = commandOf(binding, previous);
-      if ((command.changes || command.leadsToChange) && readOnly) {
-        refuse();
-        return true;
-      }
-      running = true;
-      let next: LocalPresence;
-      try {
-        next = command.run(cursor);
-      } finally {
-        running = false;
-      }
-      putAt(next);
+      execute(commandOf(binding, previous));
       return true;
     },
     moveTo(next) {
@@ -510,6 +639,21 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (!setText(doc, at, text)) return false;
       putAt({ cursor, selection: null });
       return true;
+    },
+    insertBar(side) {
+      return runWithoutKey(structural((at) => insertBarAt(doc, at, side)));
+    },
+    appendBar() {
+      return runWithoutKey(addBarAtEnd);
+    },
+    deleteBars() {
+      return runWithoutKey(structural((at) => deleteBarsAt(doc, at, selection)));
+    },
+    setTimeSig(timeSig) {
+      return runWithoutKey(onBars((at, selected) => setTimeSig(doc, at, selected, timeSig)));
+    },
+    setTempo(tempo) {
+      return runWithoutKey(onBars((at) => setTempo(doc, at, tempo)));
     },
     destroy() {
       doc.off("afterTransaction", settle);

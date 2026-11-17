@@ -2,7 +2,7 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { barRangeRects, cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
 import { type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick } from "./ticks";
 import type { NoteHead, PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
@@ -213,6 +213,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
     return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+  }
+
+  boundsOfBars(anchorBarId: string, focusBarId: string): Rect[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return barRangeRects(lookup, this.projection, this.parts, anchorBarId, focusBarId, this.metrics()).map((rect) => this.fromSurface(rect));
   }
 
   noteHeadsOf(cursor: Cursor): NoteHead[] {
@@ -434,6 +440,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   private run({ score, barIds }: Request): void {
     this.parts = new Map(score.parts.map((part) => [part.id, { kind: part.kind as PartKind, strings: part.tuning.length }]));
+    if (score.bars.length === 0) {
+      this.drawNothing();
+      return;
+    }
     const settings = this.api.settings;
     const projectionTimings = { build: 0, finish: 0 };
     const previous = this.projection;
@@ -467,6 +477,22 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       this.reload.loads += 1;
     }
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
+  }
+
+  /**
+   * A score with no bars, as two members who each delete one of the last two bars at once leave
+   * it (docs/spec/commands.md, section 9): alphaTab cannot lay one out (it throws), so it is not
+   * given one. What it drew before is taken off the page, nothing is placed on it, and playback
+   * stops; the next score with bars is a new model, drawn and heard anew.
+   */
+  private drawNothing(): void {
+    this.projection = null;
+    this.layoutChanged = false;
+    const surface = this.element.querySelector<HTMLElement>(".at-surface");
+    surface?.replaceChildren();
+    if (surface) surface.style.height = "0px";
+    if (this.playerIsReady) this.api.stop();
+    this.rendered.emit({ partial: false, timings: { ...NO_TIMINGS } });
   }
 
   /** Draw the score again as it is, with the parts shown and at the scale asked for now; once alphaTab is free. */

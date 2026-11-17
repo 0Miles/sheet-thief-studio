@@ -27,6 +27,8 @@ import {
   techniqueToggle,
   toggleOnSelection,
   tripletToggle,
+  type YBarContent,
+  type YBeat,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
 
@@ -157,13 +159,17 @@ test("over a bar range, clearing takes the notes off every beat of every voice o
 
 test("over a bar range, only the voices reading reads change, in their order: not a voice of a staff the part has not, nor one that holds no beats", () => {
   const { doc, partId, barIds, beats, on } = guitar([{ value: 4, dots: 2 }]);
-  const voices = contentOf(partsOf(doc).get(partId)!).get(barIds[0]!)!;
-  // The first voice made again after the second: it comes last in the map, first in the voices of the staff.
-  const first = voices.get("0:0")!.toArray().map((beat) => beat.clone());
+  const content = contentOf(partsOf(doc).get(partId)!);
+  const first = content.get(barIds[0]!)!.get("0:0")!.toArray().map((beat) => beat.clone());
+  // The bar's voices made anew, the second before the first: it comes first in the map, second in
+  // the voices of the staff. (Set again in the same map, a key would keep its place.)
+  const voices: YBarContent = new Y.Map();
   doc.transact(() => {
-    voices.delete("0:0");
+    voices.set("0:1", new Y.Array<YBeat>());
     voices.set("0:0", Y.Array.from(first));
+    content.set(barIds[0]!, voices);
   });
+  expect([...voices.keys()]).toEqual(["0:1", "0:0"]);
   setFret(doc, { ...cursorAt(doc, partId, barIds[0]!, 3), voice: "0:1", beatId: null, at: "after" }, 7);
   // A guitar has one staff: a voice "5:0" is left out when read, and so is a voice that is not a list of beats.
   const stray = new Y.Map<unknown>();

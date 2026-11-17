@@ -11,7 +11,6 @@ import {
   type BeatJSON,
   barsOf,
   COMMON_TIME,
-  isVoiceKey,
   KIND_DEFAULTS,
   kindSchemas,
   metaOf,
@@ -24,6 +23,7 @@ import {
   partKindOf,
   partSchemas,
   partsOf,
+  readableVoicesIn,
   readNote,
   SCHEMA_VERSION,
   type ScoreJSON,
@@ -207,14 +207,14 @@ function readBeats(beats: Y.Array<unknown>, fit: Fit, place: Place, invalid: Inv
 function readVoices(voices: Y.Map<unknown>, fit: Fit, staves: number, place: Place, invalid: InvalidContentFlag[]): Record<string, BeatJSON[]> {
   const read: Record<string, BeatJSON[]> = {};
   for (let staff = 0; staff < staves; staff++) read[`${staff}:0`] = [];
-  voices.forEach((beats, voice) => {
-    if (!isVoiceKey(voice, staves) || !(beats instanceof Y.Array)) {
-      invalid.push(flag({ ...place, voice }, "voice"));
-      return;
-    }
-    const items = readBeats(beats, fit, { ...place, voice }, invalid);
-    if (items.length > 0 || voice.endsWith(":0")) read[voice] = items;
+  const readable = readableVoicesIn(voices, staves);
+  voices.forEach((_, voice) => {
+    if (!readable.some(([key]) => key === voice)) invalid.push(flag({ ...place, voice }, "voice"));
   });
+  for (const [voice, beats] of readable) {
+    const items = readBeats(beats as Y.Array<unknown>, fit, { ...place, voice }, invalid);
+    if (items.length > 0 || voice.endsWith(":0")) read[voice] = items;
+  }
   return read;
 }
 

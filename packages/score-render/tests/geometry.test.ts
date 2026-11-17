@@ -5,7 +5,7 @@ import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, ins
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { cursorRect, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
+import { barRangeRects, cursorRect, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
 import { projectScore } from "../src/projection";
 import type { Rect } from "../src/types";
 
@@ -53,6 +53,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
     mark,
     rect: (cursor: Cursor) => cursorRect(lookup, projection, parts, cursor, metrics),
     selected: (selection: Selection) => selectionRects(lookup, projection, parts, selection, metrics),
+    structural: (anchorBarId: string, focusBarId: string) => barRangeRects(lookup, projection, parts, anchorBarId, focusBarId, metrics),
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
     played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
     heads: (cursor: Cursor) => noteHeads(lookup, projection, parts, cursor),
@@ -203,6 +204,24 @@ test("a bar range is drawn as one box for each system it is on, over its part on
     const above = drawn.rect(cursorAt(doc, partIds[0]!, barId, 6))!;
     expect(holding[0]!.y).toBeGreaterThan(above.y + above.height / 2);
   }
+});
+
+test("the bars of a structural command are drawn as one box for each system they are on, over every part drawn", () => {
+  const { doc, barIds, partIds } = band(12, 3);
+  const drawn = layOut(docToJson(doc), 2);
+  const boxes = drawn.structural(barIds[11]!, barIds[0]!);
+  expect(boxes.length).toBeGreaterThan(1);
+  for (const barId of barIds) {
+    // The first string of the first part and the last of the second, the last part drawn.
+    const inBar = [drawn.rect(cursorAt(doc, partIds[0]!, barId, 1))!, drawn.rect(cursorAt(doc, partIds[1]!, barId, 6))!];
+    expect(boxes.filter((box) => inBar.every((rect) => contains(box, rect)))).toHaveLength(1);
+  }
+  // One bar: one box, as wide as the bar.
+  const [one] = drawn.structural(barIds[1]!, barIds[1]!);
+  const inBar = drawn.rect(cursorAt(doc, partIds[0]!, barIds[1]!, 1))!;
+  expect(contains(one!, inBar)).toBe(true);
+  expect(one!.width).toBeLessThan(boxes[0]!.width);
+  expect(drawn.structural("gone", barIds[0]!)).toEqual([]);
 });
 
 test("a selection whose part or bars are not drawn has no box", () => {

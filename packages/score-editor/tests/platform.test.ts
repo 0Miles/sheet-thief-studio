@@ -87,6 +87,10 @@ test.each([
   ["fret", 7, "7", "7"],
   ["copy", undefined, "Ctrl+C", "⌘C"],
   ["playPause", undefined, "Space", "Space"],
+  ["insertBarBefore", undefined, "Ctrl+Insert", "⌘↩"],
+  ["insertBarAfter", undefined, "Ctrl+Shift+Insert", "⇧⌘↩"],
+  ["deleteBars", undefined, "Ctrl+Delete", "⌘⌫"],
+  ["barPanel", undefined, "F2", "F2"],
 ] as const)("the key of %s %s is shown as %s on Windows and Linux, %s on a Mac", (effect, fret, other, mac) => {
   expect(keyNameOf(effect, "other", fret)).toBe(other);
   expect(keyNameOf(effect, "mac", fret)).toBe(mac);

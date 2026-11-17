@@ -6,6 +6,7 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  durationStep,
   dynamicCycle,
   flagsOf,
   insertBars,
@@ -15,7 +16,6 @@ import {
   setNote,
   setText,
   slapPopCycle,
-  stepDuration,
   strokeCycle,
 } from "@studio/score-model";
 import { expect, test } from "vitest";
@@ -155,7 +155,7 @@ test("replacing the changed bars leaves the same model as projecting the whole s
     [8, { s2: { fret: 7 } }],
   ]);
   write(doc, drums, barIds[1]!, [[4, { p38: {} }]]);
-  stepDuration(doc, cursorAt(doc, keys, barIds[0]!), 1);
+  changeBeatAt(doc, cursorAt(doc, keys, barIds[0]!), durationStep(1));
   const json = docToJson(doc);
 
   expect(replaceBars(projection, json, [barIds[1]!, barIds[0]!], settings)).toBe(0);
