@@ -91,6 +91,10 @@
 - **補充**（#14）：訪客因此收不到任何 awareness；文件沒有人修改時，訪客的 socket 會完全沒有訊息進來，而 provider 30 秒沒收到訊息就重連（`messageReconnectTimeout`），每次都要取一張新 ticket。所以訪客的 provider 設 `forceSyncInterval: 15000`，每 15 秒送一次 SyncStep1，伺服器的回覆讓連線保持活著。
 - 顏色的雜湊與調色盤見 [`views.md`](views.md) 第 8 節。
 - `displayName` 改了之後，下一次該成員送出 awareness 時就會帶上新名稱（補充：伺服器在每條連線的 context 裡保存顯示名稱，改名時一併更新）。
+- **補充**（#34）：寫法在 `apps/server/src/presence.ts` 與 `collab.ts` 的 `beforeHandleAwareness`。
+  - 成員的狀態一律重建（`presenceOf`）：`accountId`、`displayName`（`onAuthenticate` 從資料庫讀，`PATCH /api/me` 經 `app.collab.renamed` 更新）、`color`（`colorOf`）來自連線；`mode`、`cursor`、`selection` 照 `packages/contracts` 的 `presenceCursor`、`presenceSelection` 檢查，形狀不對就是 null（id 最長 64 字元、`line` 是 −64..64 的整數），`mode` 讀不懂就是 `read`；其他欄位一律丟掉，所以一個狀態的大小有上限，不會把大量資料廣播給每個成員。readOnly 的連線（Viewer、凍結的文件）一律是 `read`。
+  - 一條連線只能代表一個 awareness client：它第一個提到的、而且不屬於同一份文件其他連線的那個（`clientsAllowed`）。其他 client 的狀態與移除都丟掉，所以 Editor 不能改寫或移除別人的游標。
+  - 判斷集中在 `screenAwareness`：只有確定是成員的連線才套用；訪客、以及伺服器說不出是誰的連線（context 不明），整份更新都不套用（fail-closed）。伺服器自己的直接連線不送 awareness，不經過這裡。
 
 ## 6. 伺服器主動斷線
 

@@ -43,6 +43,9 @@ export {
 // The recognizer's answers (docs/spec/recognizer.md, section 5).
 export * from "./recognizer";
 
+// The presence of the members on a score (docs/spec/views.md, section 8).
+export * from "./presence";
+
 export const health = z.object({ status: z.literal("ok") });
 export type Health = z.infer<typeof health>;
 

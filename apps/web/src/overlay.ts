@@ -29,6 +29,25 @@ export function clearOf(rect: Rect, reserved: readonly Rect[]): Rect {
   return clear;
 }
 
+/**
+ * A filled box (a selection) out of the reserved areas, cut only where it is under one: the part
+ * of it left and right of an area stays as it is, the part under the area goes as `clearOf` has
+ * it. A box over a whole system keeps its height on every bar but the one under the mark. None of
+ * the pieces is empty.
+ */
+export function clearPieces(rect: Rect, reserved: readonly Rect[]): Rect[] {
+  const area = reserved.find((each) => overlaps(rect, each));
+  if (area === undefined) return [rect];
+  const rest = reserved.filter((each) => each !== area);
+  const left = Math.max(area.x, rect.x);
+  const right = Math.min(area.x + area.width, rect.x + rect.width);
+  const pieces: Rect[] = [];
+  if (left > rect.x) pieces.push(...clearPieces({ ...rect, width: left - rect.x }, rest));
+  pieces.push(...clearPieces(clearOf({ ...rect, x: left, width: right - left }, [area]), rest));
+  if (right < rect.x + rect.width) pieces.push(...clearPieces({ ...rect, x: right, width: rect.x + rect.width - right }, rest));
+  return pieces;
+}
+
 /** The size of the box a beat's text is typed in, and how far below the cursor it opens: an overlay as docs/spec/views.md, section 9, has them. */
 export const ENTRY_BOX = { width: 160, height: 28, gap: 4 };
 

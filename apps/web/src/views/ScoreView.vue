@@ -63,8 +63,10 @@ import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarr
 import { measureEditView } from "../measureHook";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { errorText, strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
+import { useSessionStore } from "../stores/session";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
@@ -73,6 +75,8 @@ const props = defineProps<{ id?: string; token?: string; notice?: string }>();
 const emit = defineEmits<{ closed: [closing: Closing] }>();
 const text = strings.score;
 const isGuest = props.token !== undefined;
+/** Who is logged in here: their own other tabs are not listed among the members present. */
+const account = useSessionStore();
 
 /** What opening the score needs: its id, title and the role in it (null for a guest), and a ticket for every connection. */
 interface Opening {
@@ -196,6 +200,12 @@ const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: k
 const structureRects = shallowRef<Rect[]>([]);
 /** The panel of the cursor's bar is open (docs/spec/commands.md, section 6): the editable view only. */
 const panelOpen = ref(false);
+/** The other tabs on the score (docs/spec/views.md, section 8); never any for a guest, who takes no part in the presence. */
+const peers = shallowRef<Peer[]>([]);
+/** Where the other tabs' cursors, name tags and selections are drawn, out of the reserved areas. */
+const peerMarks = shallowRef<PeerMark[]>([]);
+/** The members present, each once however many tabs they have open; not oneself. */
+const members = computed(() => membersOf(peers.value, account.me?.accountId ?? null));
 /** The cursor and the selection as of the session's last word, for what is shown of them outside the overlay. */
 const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 /** The areas no overlay may cover, as of the last drawing; each gets an invisible marker, for the e2e tests. */
@@ -238,6 +248,8 @@ const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
+/** This tab in the presence: a member's, once the provider is made. */
+let presenceLink: PresenceLink | null = null;
 let stopObserving: (() => void) | undefined;
 const hideFromTests = exposeForTests({
   // Once open, as this page holds it: what was typed offline too.
@@ -261,9 +273,24 @@ function placeCursor(): void {
   const rect = at && engine.renderer.boundsOf(at);
   cursorRect.value = rect && clearOf(rect, reserved.value);
   const selection = session?.selection ?? null;
-  selectionRects.value = selection === null ? [] : engine.renderer.boundsOfSelection(selection).map((box) => clearOf(box, reserved.value));
+  // Cut only where it is under a reserved area: the boxes of the other bars of a system keep their height.
+  selectionRects.value = selection === null ? [] : selectionBoxes(engine.renderer, selection, reserved.value);
   structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
   updateLoop();
+}
+
+/**
+ * Draw the other tabs again: when their presence changed, or after a drawing, their anchors
+ * placed in the score as it is now (a beat another member removed, a bar deleted).
+ */
+function placePeers(): void {
+  peerMarks.value = engine === undefined ? [] : peerMarksOf(engine.renderer, doc, peers.value, reserved.value);
+}
+
+/** Tell the other tabs where this one is: the view's mode, and in the edit views the cursor and the selection. */
+function tellPresence(): void {
+  if (presenceLink === null || view.value === null) return;
+  presenceLink.tell(localStateOf(view.value, session?.presence() ?? { cursor: null, selection: null }));
 }
 
 /**
@@ -529,6 +556,7 @@ function updateOverlay(): void {
   reserved.value = engine.renderer.reservedRects();
   flagMarks.value = flagMarksOf(engine.renderer, flags.value, shown.value, reserved.value);
   placeCursor();
+  placePeers();
   showPlayback(engine.player.position.tick);
 }
 
@@ -774,6 +802,7 @@ function startEditing(json: ScoreJSON): void {
   presence.value = session.presence();
   session.onPresence((now) => {
     presence.value = now;
+    tellPresence();
     // A cursor that fell back to the start of the score may land in a part the member hid.
     keepCursorShown();
     forgetStaleStop();
@@ -789,6 +818,7 @@ function startEditing(json: ScoreJSON): void {
     notice.value = text.hints[hint];
   });
   session.onEditText(openText);
+  tellPresence();
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
   placeCursor();
   // The score has the keyboard from the start.
@@ -875,6 +905,12 @@ let closed = false;
 function close(closing: Closing): void {
   if (closed) return;
   closed = true;
+  // Its state goes from the others' awareness now: the score opened anew is another tab, with a
+  // new document and a new client, and this one must not stay behind as a ghost.
+  presenceLink?.leave();
+  presenceLink = null;
+  peers.value = [];
+  peerMarks.value = [];
   const dropped = provider;
   provider = undefined;
   // Not from within the provider's own call (the ticket is asked for by it).
@@ -977,14 +1013,30 @@ onMounted(async () => {
     onSynced: () => {
       updateSync();
       start();
+      // After a reconnection: the others see this tab again now, not when its state is renewed.
+      presenceLink?.reconnected();
     },
+    // The others' clocks go with their states, so that the ones the server sends again apply at once.
+    onClose: () => presenceLink?.disconnected(),
     onUnsyncedChanges: updateSync,
     onStatus: ({ status }) => {
       if (status === "disconnected") sync.value = "offline";
       else if (status === "connecting") sync.value = "syncing";
     },
   });
+  // A member's tab is in the presence from now on, in "read" mode with no cursor until the
+  // score is open; a guest's provider has no awareness.
+  if (provider.awareness !== null) {
+    presenceLink = joinPresence(provider.awareness, (now) => {
+      peers.value = now;
+      placePeers();
+    });
+    tellPresence();
+  }
 });
+
+// The view can turn read-only after the score opened (a newer schema): the mode follows it.
+watch(view, tellPresence);
 
 onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
@@ -993,6 +1045,8 @@ onBeforeUnmount(() => {
   sound?.destroy();
   hideFromTests();
   measurement.stop();
+  presenceLink?.leave();
+  presenceLink = null;
   stopObserving?.();
   session?.destroy();
   provider?.destroy();
@@ -1051,6 +1105,13 @@ onBeforeUnmount(() => {
             <option v-for="part in parts" :key="part.id" :value="part.id">{{ part.name }}</option>
           </select>
         </label>
+        <ul v-if="members.length > 0" class="score__members" data-members :aria-label="text.presence.members">
+          <li v-for="member in members" :key="member.accountId" class="score__member" data-member :data-account="member.accountId" :data-mode="member.mode">
+            <span class="score__member-dot" :style="{ background: member.color }"></span>
+            <span>{{ member.displayName }}</span>
+            <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
+          </li>
+        </ul>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
@@ -1118,8 +1179,58 @@ onBeforeUnmount(() => {
               :width="box.width"
               :height="box.height"
             />
-            <rect v-if="cursorRect" data-cursor class="score__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
+            <template v-for="mark in peerMarks" :key="`peer-${mark.clientId}`">
+              <rect
+                v-for="(box, index) in mark.selection"
+                :key="`peer-selection-${mark.clientId}-${index}`"
+                data-peer-selection
+                :data-client="mark.clientId"
+                class="score__peer-selection"
+                :fill="mark.color"
+                :x="box.x"
+                :y="box.y"
+                :width="box.width"
+                :height="box.height"
+              />
+              <rect
+                v-if="mark.cursor"
+                data-peer-cursor
+                :data-client="mark.clientId"
+                :data-account="mark.accountId"
+                :data-mode="mark.mode"
+                :data-bar="mark.at?.barId"
+                :data-beat="mark.at?.beatId ?? ''"
+                :class="['score__peer-cursor', `score__peer-cursor--${mark.mode}`]"
+                :fill="mark.color"
+                :x="mark.cursor.x"
+                :y="mark.cursor.y"
+                :width="mark.cursor.width"
+                :height="mark.cursor.height"
+                rx="2"
+              />
+            </template>
+            <rect v-if="cursorRect" data-cursor :class="['score__cursor', { 'score__cursor--read': view === 'readOnlyEdit' }]" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
+          <!-- The names are what members typed: text only, never markup. -->
+          <template v-for="mark in peerMarks" :key="`tag-${mark.clientId}`">
+            <span
+              v-if="mark.tag"
+              data-name-tag
+              :data-client="mark.clientId"
+              :class="['score__name-tag', `score__name-tag--${mark.mode}`]"
+              :style="{
+                left: `${mark.tag.x}px`,
+                top: `${mark.tag.y}px`,
+                width: `${mark.tag.width}px`,
+                height: `${mark.tag.height}px`,
+                lineHeight: `${mark.tag.height}px`,
+                fontSize: `${TAG.fontSize}px`,
+                padding: `0 ${TAG.padding}px`,
+                background: mark.color,
+              }"
+              >{{ mark.name }}</span
+            >
+          </template>
           <InlineTextEntry
             v-if="textEntry"
             :rect="textEntry.rect"
@@ -1377,5 +1488,57 @@ onBeforeUnmount(() => {
 /* Filled only: a stroke would reach past the rectangle, into a reserved area. */
 .score__cursor {
   fill: rgba(234, 88, 12, 0.4);
+}
+/* The read-only edit view's cursor: pale, nothing is typed there (docs/spec/views.md, section 4). */
+.score__cursor--read {
+  fill: rgba(234, 88, 12, 0.18);
+}
+/* The other members' marks, in their colour (`fill`): filled only, as one's own are. */
+.score__peer-cursor--edit {
+  fill-opacity: 0.45;
+}
+/* A member in a read-only view: pale. */
+.score__peer-cursor--read {
+  fill-opacity: 0.18;
+}
+.score__peer-selection {
+  fill-opacity: 0.12;
+}
+/* Exactly the size `tagRect` gives it: the name cut off rather than the tag grown past it. */
+.score__name-tag {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 3px;
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.score__name-tag--read {
+  opacity: 0.6;
+}
+.score__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+.score__member {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.score__member-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+}
+.score__member-mode {
+  color: var(--text-muted);
 }
 </style>
