@@ -16,6 +16,7 @@ import {
   cursorAt,
   deletePart,
   docToJson,
+  flagsOf,
   insertBars,
   LOCAL,
   MAX_NON_PERCUSSION_PARTS,
@@ -356,4 +357,24 @@ test("two members moving parts at once keep each other's keys apart and end in t
   sync();
   expect(docToJson(b).parts.map((part) => part.id)).toEqual(docToJson(a).parts.map((part) => part.id));
   expect(docToJson(a).parts.map((part) => part.id).indexOf(guitar)).toBeLessThan(2);
+});
+
+test("two members each deleting one of the last two parts leave a score of no parts: it still reads, nowhere to put a cursor, and a part added makes one again", () => {
+  const { doc: a, other: b, sync, guitar, barIds } = twoCopies(2);
+  const bass = added(addPresetPart(a, "bass4"));
+  sync();
+  expect(deletePart(a, bass)).toBe(true);
+  expect(deletePart(b, guitar)).toBe(true);
+  sync();
+  const { score: read, invalid } = readScore(a);
+  expect(read.parts).toEqual([]);
+  expect(read.bars.map((bar) => bar.id)).toEqual(barIds);
+  expect(flagsOf(read, invalid)).toEqual([]);
+  expect(docToJson(b)).toEqual(docToJson(a));
+  expect(startOfScore(a)).toBeNull();
+  // Nothing fills it in; a member adds a part again.
+  const drums = added(addPresetPart(b, "drums"));
+  sync();
+  expect(startOfScore(a)).toEqual(cursorAt(a, drums, barIds[0]!));
+  expect(Object.keys(docToJson(a).parts[0]!.content).sort()).toEqual([...barIds].sort());
 });

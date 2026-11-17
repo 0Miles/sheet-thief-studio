@@ -309,9 +309,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   /**
    * The cursor was lost: its part or bar went, and the score had no place left to put it (no
    * bars, or no part that can be drawn). It comes back at the start of the score as soon as the
-   * score has one again.
+   * score has one again. So it is for a session started with no cursor on a score that has no
+   * such place (no bars, or no parts, as two members deleting the last two at once leave it):
+   * the cursor comes once a bar or a part does (docs/spec/commands.md, sections 7.3 and 9).
    */
-  let stranded = false;
+  let stranded = start === null && startOfScore(doc) === null;
 
   /** Put the cursor and the selection there, and tell the presence when either moved. */
   function putAt({ cursor: next, selection: selected }: LocalPresence): void {

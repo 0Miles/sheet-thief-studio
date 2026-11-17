@@ -130,3 +130,69 @@ test("two members deleting the same part at once, one with the cursor in it: bot
   expect(docToJson(other)).toEqual(docToJson(doc));
   expect(session.cursor).toEqual(cursorAt(doc, partIds.guitar, barIds[0]!));
 });
+
+/** A guitar and a bass over two bars, and two members on it, each with the cursor in a part of their own. */
+function twoParts() {
+  const doc = new Y.Doc();
+  createScore(doc, "兩個聲部");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const guitar = addPart(doc, { name: "吉他 1", kind: "fretted" });
+  const bass = addPart(doc, { name: "貝斯 1", kind: "fretted", tuning: [43, 38, 33, 28] });
+  const { other, send } = otherMember(doc);
+  const sync = () => {
+    send();
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(doc, Y.encodeStateVector(other)));
+  };
+  const mine = createEditorSession(doc, { platform: "other", cursor: cursorAt(doc, guitar, barIds[0]!, 3) });
+  const theirs = createEditorSession(other, { platform: "other", cursor: cursorAt(other, bass, barIds[1]!) });
+  return { doc, other, sync, mine, theirs, barIds, guitar, bass };
+}
+
+test("two members each deleting one of the last two parts leave a score of no parts: no cursor is left, and a part added brings both cursors back to the start", () => {
+  const { doc, other, sync, mine, theirs, barIds, guitar, bass } = twoParts();
+  expect(mine.deletePart(bass)).toBe(true);
+  expect(theirs.deletePart(guitar)).toBe(true);
+  sync();
+  expect(docToJson(doc).parts).toEqual([]);
+  expect(docToJson(other)).toEqual(docToJson(doc));
+  expect(mine.cursor).toBeNull();
+  expect(theirs.cursor).toBeNull();
+  // The panel's +part needs no cursor.
+  expect(mine.addPart("drums")).toBe(true);
+  const [drums] = docToJson(doc).parts;
+  expect(drums).toMatchObject({ name: "鼓 1", kind: "percussion" });
+  expect(mine.cursor).toEqual(cursorAt(doc, drums!.id, barIds[0]!));
+  sync();
+  expect(theirs.cursor).toEqual(cursorAt(other, drums!.id, barIds[0]!));
+});
+
+test("two members each deleting one of the last two parts: undo brings one's part back, and the cursor with it, for both", () => {
+  const { doc, other, sync, mine, theirs, barIds, guitar, bass } = twoParts();
+  mine.deletePart(bass);
+  theirs.deletePart(guitar);
+  sync();
+  // Undo needs no cursor either.
+  expect(mine.press({ code: "KeyZ", ctrlKey: true })).toBe(true);
+  expect(docToJson(doc).parts.map((part) => part.id)).toEqual([bass]);
+  // On the line this member had there last: none, so where a fretted part starts.
+  expect(mine.cursor).toEqual(cursorAt(doc, bass, barIds[0]!));
+  sync();
+  expect(docToJson(other).parts.map((part) => part.id)).toEqual([bass]);
+  // The other member was last in the bass, on its first string.
+  expect(theirs.cursor).toEqual(cursorAt(other, bass, barIds[0]!, 1));
+});
+
+test("a session opened on a score of no parts has no cursor until a part comes, its own or another member's", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "沒有聲部");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const session = createEditorSession(doc, { platform: "other", cursor: startOfScore(doc) });
+  expect(session.cursor).toBeNull();
+  expect(session.press({ code: "Digit5" })).toBe(false);
+  const { other, send } = otherMember(doc);
+  const partId = addPart(other, { name: "吉他 1", kind: "fretted" });
+  send();
+  expect(session.cursor).toEqual(cursorAt(doc, partId, barId!));
+  expect(session.press({ code: "Digit5" })).toBe(true);
+  expect(docToJson(doc).parts[0]!.content[barId!]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ s1: { fret: 5 } }]);
+});

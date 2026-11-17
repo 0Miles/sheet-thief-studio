@@ -43,7 +43,7 @@ import {
   voltaRepeatTimes,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
@@ -324,6 +324,12 @@ const deletion = computed(() => {
   const json = score.value;
   const part = json?.parts.find((each) => each.id === deleting.value);
   return json && part ? { name: part.name || text.untitled, bars: barsWithContent(json, part.id) } : null;
+});
+
+// The part asked about is gone (another member deleted it): the question goes, and does not come
+// back by itself if the part does (an undo).
+watch(deletion, (asked) => {
+  if (asked === null) deleting.value = null;
 });
 
 /** The toolbar's button: the panel of the parts opens or closes, the keyboard back on the score when it does. */

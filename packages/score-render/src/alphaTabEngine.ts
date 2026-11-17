@@ -287,8 +287,9 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   // --- ScorePlayer ---
 
   load(): Promise<void> {
-    // Before the player is ready alphaTab makes the sound itself, once it is.
-    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
+    // Before the player is ready alphaTab makes the sound itself, once it is. Nothing is drawn
+    // (`drawNothing`), nothing to hear: alphaTab's model is an older score's.
+    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady || this.projection === null) return Promise.resolve();
     return new Promise((resolve) => {
       // A change waiting for the drawing under way is not in the model yet: the sound is made once it is.
       if (this.waiting !== null) this.loadsAfterDrawing.push(resolve);
@@ -322,6 +323,8 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   play(): void {
+    // A score with no bars or no parts plays nothing; alphaTab still holds an older score's sound.
+    if (this.projection === null) return;
     this.intendsToPlay = true;
     // While a new sound is made, it plays once that is in place.
     if (this.reload === null) this.api.play();
@@ -440,7 +443,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   private run({ score, barIds }: Request): void {
     this.parts = new Map(score.parts.map((part) => [part.id, { kind: part.kind as PartKind, strings: part.tuning.length }]));
-    if (score.bars.length === 0) {
+    if (score.bars.length === 0 || score.parts.length === 0) {
       this.drawNothing();
       return;
     }
@@ -480,10 +483,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   /**
-   * A score with no bars, as two members who each delete one of the last two bars at once leave
-   * it (docs/spec/commands.md, section 9): alphaTab cannot lay one out (it throws), so it is not
-   * given one. What it drew before is taken off the page, nothing is placed on it, and playback
-   * stops; the next score with bars is a new model, drawn and heard anew.
+   * A score with no bars or no parts, as two members who each delete one of the last two bars, or
+   * of the last two parts, at once leave it (docs/spec/commands.md, sections 7.3 and 9): alphaTab
+   * can neither lay one out nor make its sound (it throws), so it is not given one. What it drew
+   * before is taken off the page, nothing is placed on it, and playback stops; until the score has
+   * bars and parts again nothing plays, and the next such score is a new model, drawn and heard anew.
    */
   private drawNothing(): void {
     this.projection = null;

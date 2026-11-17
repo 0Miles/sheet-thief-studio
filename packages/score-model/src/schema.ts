@@ -31,6 +31,9 @@ export const MAX_BARS = 1000;
 /** The longest title of a score (docs/spec/commands.md, 7.3). */
 export const MAX_TITLE = 100;
 
+/** The longest name of a part (docs/spec/schema.md, sections 4 and 13). */
+export const MAX_PART_NAME = 64;
+
 /** The dynamics a beat can be marked with, softest first. */
 export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
 
@@ -342,7 +345,7 @@ export function voiceKeys(staves: number): string[] {
 const contentSchema = recordOf(recordOf(z.array(beatSchema)));
 
 /** The name may be empty when read: an unreadable name reads as empty (section 11). */
-const partName = text(0, 64);
+const partName = text(0, MAX_PART_NAME);
 
 /**
  * The fields of a part of each kind. `tuning` is the MIDI pitch of each open string, from the

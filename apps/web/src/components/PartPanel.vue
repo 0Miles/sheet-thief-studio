@@ -9,6 +9,7 @@
 import { AppButton } from "@karyl-chan/ui";
 import { type KeyPlatform, textEntryEffectOf } from "@studio/score-editor";
 import {
+  MAX_PART_NAME,
   type PartJSON,
   type PartKind,
   PART_PRESET_IDS,
@@ -54,7 +55,6 @@ const PITCHES = Array.from({ length: 128 }, (_, pitch) => ({ pitch, name: pitchN
 const range = (schema: { minValue: number | null; maxValue: number | null }) => ({ min: schema.minValue ?? undefined, max: schema.maxValue ?? undefined });
 const CAPO = range(partSchemas.fretted.shape.capo);
 const PROGRAM = range(partSchemas.fretted.shape.program);
-const NAME_LENGTH = 64;
 
 // Adding -----------------------------------------------------------------------------------------
 
@@ -230,7 +230,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
       <form class="part-panel__group" data-part-name @submit.prevent="applyName">
         <label class="part-panel__field">
           <span>{{ text.name }}</span>
-          <input v-model="name" type="text" name="name" :maxlength="NAME_LENGTH" required />
+          <input v-model="name" type="text" name="name" :maxlength="MAX_PART_NAME" required />
         </label>
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
