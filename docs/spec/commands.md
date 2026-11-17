@@ -315,6 +315,12 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
 
 - **刪除小節**：刪除之後才同時送到那些小節裡的內容會消失。這是「無聲消失」原則的明確例外（ADR 0002 增補）。復原時，刪除當下的內容會回來（Yjs 在同一筆交易裡刪除父節點與子節點）；之後別人送到的拍點不保證會回來。用 vitest 鎖住這個行為，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」。
   - **補充**（#22）：鎖住的結果（`packages/score-model/tests/bars.test.ts` 的「deleting bars while another member types in them」）：另一位成員在刪除送到之前打進那個小節的拍點，合併後消失；復原之後小節與刪除當下的拍點回來，那個拍點不回來。兩份文件最後一致。
+  - **補充**（#22）：「至少留下 1 個小節」只擋得住同一份文件裡的刪除。兩個人同時各刪掉最後兩個小節中的一個，合併後團譜一個小節都沒有。伺服器不自動補小節（那會改寫成員的意圖）；能恢復的方式在客戶端：
+    - 讀取與繪製照常：`readScore` 讀出 `bars: []`、每個聲部 `content: {}`，沒有 Flag；alphaTab 排不了沒有小節的譜（會丟例外），所以 `score-render` 的引擎不交給它，把畫過的東西清掉、照常回報畫完（`alphaTabEngine.ts` 的 `drawNothing`）。殼照樣顯示「＋小節」按鈕。
+    - 游標所在的小節不在了、又沒有地方可放（`startOfScore` 是 null）時，游標變成 null；之後團譜一有小節（別人加的、自己復原的），游標就回到譜首（`EditorSession` 的 `stranded`）。
+    - 沒有游標時，只有復原、重做與「＋小節」能執行（`KeyCommand.runWithoutCursor`），其他按鍵不處理。復原把自己刪掉的那個小節帶回來，游標回到譜首。「＋小節」在沒有小節時插入第一個小節（4/4，因為沒有相鄰的拍號可沿用），游標放到譜首、用這個成員在那個聲部上次的 `line`（`commands.ts` 的 `appendBar(doc, null)`），可以接著打譜。
+    - 測試：`packages/score-model/tests/bars.test.ts`、`packages/score-editor/tests/bars.test.ts`，以及 `apps/web/e2e/bars.spec.ts` 的兩個 e2e（打開一份沒有小節的團譜、按「＋小節」繼續打譜；兩位成員同時刪除之後按 `Ctrl+Z`）。
+- **補充**（#22）：**復原自己插入的小節**：別人在那之後打進那個小節的拍點，跟著小節一起消失（Yjs 復原時刪除小節，連同裡面所有的內容，不分是誰寫的）；重做時小節帶著那些拍點一起回來。鎖在 `packages/score-model/tests/bars.test.ts` 的「undoing a bar one inserted takes away what another member typed in it meanwhile」。
 - **放置與貼上小節段**：在既有的 `Y.Array` 上先刪再插，同時輸入的內容保留（5.7）。
 - **內容容器**：客戶端不補缺少的容器，只有伺服器補（[`collab.md`](collab.md)）。
 - **新團譜的初始內容**由伺服器建立。

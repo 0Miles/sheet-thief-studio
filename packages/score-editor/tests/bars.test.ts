@@ -1,12 +1,12 @@
 // The structural keys and the commands of the toolbar and the panel of the cursor's bar
 // (docs/spec/commands.md, section 6; docs/spec/keymap.md, sections 2 and 5): bars inserted and
 // deleted for every part, time signatures and tempo, each one undo step, on both platforms.
-import { barsOf, deleteBarsAt, docToJson, insertBarAt } from "@studio/score-model";
+import { barsOf, cursorAt, deleteBarsAt, docToJson, insertBarAt, insertBars, ordered } from "@studio/score-model";
 import { describe, expect, test } from "vitest";
 
 import { createEditorSession, type KeyPlatform } from "../src/index";
 import { band, PLATFORMS } from "./band";
-import { otherMember } from "./support";
+import { otherMember, sessionOn } from "./support";
 
 /** The keys of each structural command on each platform, as a keyboard sends them (keymap.md, section 2). */
 const KEYS = {
@@ -199,4 +199,50 @@ test("undoing the insertion of the bar the cursor is in takes the cursor to the 
   expect(session.cursor!.barId).not.toBe(barIds[1]);
   session.press(UNDO.other);
   expect(session.cursor).toMatchObject({ partId: partIds.guitar, barId: barIds[0], at: "on" });
+});
+
+/** Two bars, this member deleting the first while another deletes the second: no bars are left. */
+function noBarsLeft(platform: KeyPlatform = "other") {
+  const setup = sessionOn("fretted", 2, platform);
+  const { doc, session, partId, barIds } = setup;
+  const { other, send } = otherMember(doc);
+  expect(session.press(KEYS[platform].deleteBars[0])).toBe(true);
+  deleteBarsAt(other, cursorAt(other, partId, barIds[1]!), null);
+  send();
+  expect(ordered(barsOf(doc))).toEqual([]);
+  expect(session.cursor).toBeNull();
+  return { ...setup, other, send };
+}
+
+test.each(PLATFORMS)("on %s, a score two members left with no bars is brought back by undo, though the cursor is gone", (platform) => {
+  const { doc, session, partId, barIds } = noBarsLeft(platform);
+  // Only undo and redo run without a cursor; any other key is left alone.
+  expect(session.press({ code: "Digit5" })).toBe(false);
+  expect(session.press(KEYS[platform].insertBefore[0])).toBe(false);
+  expect(session.press(UNDO[platform])).toBe(true);
+  expect(ordered(barsOf(doc))).toEqual([barIds[0]]);
+  // On the line the member had in that part.
+  expect(session.cursor).toEqual(cursorAt(doc, partId, barIds[0]!, 6));
+});
+
+test("in a score left with no bars, +bar makes the first bar, the cursor in it, and typing goes on", () => {
+  const { doc, session, press } = noBarsLeft();
+  expect(session.appendBar()).toBe(true);
+  const [bar] = ordered(barsOf(doc));
+  expect(session.cursor).toMatchObject({ barId: bar, beatId: null, at: "after" });
+  expect(press("7")).toBe(true);
+  // On the line the member had in that part.
+  expect(docToJson(doc).parts[0]!.content[bar!]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ s6: { fret: 7 } }]);
+  // One undo step each: the fret, then the bar.
+  session.press(UNDO.other);
+  session.press(UNDO.other);
+  expect(ordered(barsOf(doc))).toEqual([]);
+  expect(session.cursor).toBeNull();
+});
+
+test("a cursor lost with the last bars comes back at the start of the score when another member adds a bar", () => {
+  const { doc, session, other, send, partId } = noBarsLeft();
+  const [bar] = insertBars(other, { after: null, count: 1 });
+  send();
+  expect(session.cursor).toEqual(cursorAt(doc, partId, bar!, 6));
 });

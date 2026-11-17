@@ -817,7 +817,8 @@ onBeforeUnmount(() => {
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
-          <div v-if="view === 'editable' && ready" class="score__end">
+          <!-- Also in a score two members left with no bars, which the engine may not report drawn: +bar brings it back. -->
+          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" class="score__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="text.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ text.bars.append }}</AppButton>
           </div>
           <svg v-if="view" class="score__overlay" aria-hidden="true">

@@ -1,6 +1,6 @@
 // Editing commands: each changes the document in one transaction (one undo step) and returns
 // where the cursor is afterwards. They never touch the DOM or the renderer.
-import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
+import { generateNKeysBetween } from "fractional-indexing";
 import { nanoid } from "nanoid";
 import * as Y from "yjs";
 
@@ -120,9 +120,9 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KI
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
-    const last = ordered(parts).at(-1);
+    const order = ordered(parts);
     const part: YPart = new Y.Map();
-    part.set("order", generateKeyBetween(last === undefined ? null : orderOf(parts.get(last)), null));
+    part.set("order", keysAfter(parts, order, order.length - 1, 1).keys[0]);
     part.set("name", name);
     part.set("kind", kind);
     part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
@@ -143,6 +143,24 @@ export interface NewBars {
   count: number;
   /** Defaults to the time signature of the bar they follow (or precede), else 4/4. */
   timeSig?: TimeSignature;
+}
+
+/**
+ * Ordering keys for `count` items put right after the one at `index` of `order` (-1: first), the
+ * ids of `map` in score order (`ordered`). Two members who insert at the same place at once give
+ * their items the same key; `ordered` then sorts them by id. No key lies strictly between two
+ * equal keys, so the items after `index` that share its key (`moved`) get new keys after the new
+ * ones, in the order they had: the new items land right after the one at `index`, and the next
+ * insertion there finds keys that differ (docs/spec/schema.md, section 1).
+ */
+function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): { keys: string[]; moved: [string, string][] } {
+  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
+  const lower = index < 0 ? null : keyAt(index);
+  let end = index + 1;
+  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
+  const tied = order.slice(index + 1, end);
+  const keys = generateNKeysBetween(lower, end < order.length ? keyAt(end) : null, count + tied.length);
+  return { keys: keys.slice(0, count), moved: tied.map((id, i) => [id, keys[count + i] as string]) };
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -168,8 +186,9 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = generateNKeysBetween(orderOf(before), orderOf(next), count);
+    const { keys, moved } = keysAfter(bars, order, index, count);
     const signature = timeSig ?? timeSigOf(before ?? next);
+    moved.forEach(([barId, key]) => bars.get(barId)?.set("order", key));
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);
@@ -211,10 +230,23 @@ export function insertBarAt(doc: Y.Doc, cursor: Cursor, side: BarSide): Cursor |
   return barId === undefined ? cursor : firstPlaceIn(doc, cursor, barId);
 }
 
-/** The toolbar's +bar at the end of the score: one bar after the last, the cursor moving there as `insertBarAt` moves it. */
-export function appendBar(doc: Y.Doc, cursor: Cursor): Cursor | BarRefusal {
+/**
+ * The toolbar's +bar at the end of the score: one bar after the last, the cursor moving there as
+ * `insertBarAt` moves it. In a score left with no bars (two members deleted the last two at once,
+ * docs/spec/commands.md, section 9) it makes the first one, in 4/4, and the cursor goes to the
+ * start of the score: what a member with no cursor (null) left can do to go on. Null when there
+ * is still nowhere to put the cursor (no part that can be drawn).
+ */
+export function appendBar(doc: Y.Doc, cursor: Cursor | null): Cursor | BarRefusal | null {
   const last = ordered(barsOf(doc)).at(-1);
-  return last === undefined ? cursor : insertBarAt(doc, { ...cursor, barId: last }, "after");
+  if (last === undefined) {
+    const [barId] = insertBars(doc, { after: null, count: 1 });
+    if (barId === undefined) return cursor;
+    const kept = cursor && partKindOf(partsOf(doc).get(cursor.partId)) !== undefined ? firstPlaceIn(doc, cursor, barId) : null;
+    return kept ?? startOfScore(doc);
+  }
+  const at = cursor ?? startOfScore(doc);
+  return at && insertBarAt(doc, { ...at, barId: last }, "after");
 }
 
 /**

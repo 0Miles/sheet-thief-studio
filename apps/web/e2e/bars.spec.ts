@@ -2,10 +2,83 @@
 // section 6; docs/spec/keymap.md, sections 2, 5 and 7). Every key goes through the real keyboard;
 // the page is read through `window.__studioTest` and the DOM only.
 import { expect, test } from "./test";
+import { addPart, createScore } from "@studio/score-model";
+import * as Y from "yjs";
 
 import { overlaps } from "../src/overlay";
 import { ADMIN, EDITOR } from "./environment";
 import { loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
+
+test("a score two members left with no bars opens with its +bar button, which makes a bar to type in again", async ({ browser }) => {
+  // What two members who each delete one of the last two bars at once leave behind (docs/spec/commands.md, section 9).
+  const doc = new Y.Doc();
+  createScore(doc, "沒有小節");
+  addPart(doc, { name: "吉他 1", kind: "fretted" });
+  const id = seedScore({ title: "沒有小節", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], state: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64") });
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await page.goto(`/scores/${id}`);
+  // Drawn: empty, nothing laid out, and no error.
+  await expect(page.locator("[data-ready]")).toHaveAttribute("data-ready", "true", { timeout: 30_000 });
+  await synced(page);
+  const append = page.locator("[data-append-bar]");
+  await expect(append).toBeVisible();
+  await expect(page.locator("[data-cursor]")).toHaveCount(0);
+  expect((await scoreOf(page)).bars).toEqual([]);
+  expect(await page.evaluate(() => window.__studioTest!.cursor())).toBeNull();
+
+  await append.click();
+  await expect.poll(async () => (await scoreOf(page)).bars.length).toBe(1);
+  // Drawn, with the cursor on it.
+  await expect(page.locator("[data-cursor]")).toBeVisible();
+  const [bar] = (await scoreOf(page)).bars;
+  expect(bar).toMatchObject({ timeSig: { numerator: 4, denominator: 4 } });
+  expect(await page.evaluate(() => window.__studioTest!.cursor()?.barId)).toBe(bar!.id);
+  await page.keyboard.press("5");
+  expect((await scoreOf(page)).parts[0]!.content[bar!.id]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ s1: { fret: 5 } }]);
+  await synced(page);
+  expect(errors).toEqual([]);
+});
+
+test("two members who each delete one of the last two bars at once leave no bars; the page stays, and Ctrl+Z brings the bar back", async ({ browser }) => {
+  const id = seedScore({ title: "同時刪除", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], bars: 2 });
+  const owner = await loggedIn(browser, ADMIN);
+  const editor = await loggedIn(browser, EDITOR);
+  const ownerErrors = pageErrors(owner);
+  const editorErrors = pageErrors(editor);
+  await openScore(owner, id);
+  await openScore(editor, id);
+  const [first, second] = (await scoreOf(owner)).bars.map((bar) => bar.id);
+
+  // The owner deletes the first bar offline, while the editor deletes the second.
+  await owner.context().setOffline(true);
+  await expect(owner.locator('[data-sync="offline"]')).toBeVisible();
+  await owner.keyboard.press("Control+Delete");
+  expect((await scoreOf(owner)).bars.map((bar) => bar.id)).toEqual([second]);
+  await editor.keyboard.press("Control+ArrowRight");
+  await editor.keyboard.press("Control+Delete");
+  expect((await scoreOf(editor)).bars.map((bar) => bar.id)).toEqual([first]);
+  await synced(editor);
+  await owner.context().setOffline(false);
+  await synced(owner);
+  await expect.poll(async () => (await scoreOf(editor)).bars).toEqual([]);
+  expect((await scoreOf(owner)).bars).toEqual([]);
+  // Nothing is drawn, no cursor is left, and +bar is there.
+  for (const page of [owner, editor]) {
+    await expect(page.locator("[data-cursor]")).toHaveCount(0);
+    await expect(page.locator("[data-append-bar]")).toBeVisible();
+  }
+
+  // Undo needs no cursor: the owner's bar comes back, for both, and the cursor with it.
+  await owner.keyboard.press("Control+z");
+  expect((await scoreOf(owner)).bars.map((bar) => bar.id)).toEqual([first]);
+  await expect(owner.locator("[data-cursor]")).toBeVisible();
+  await synced(owner);
+  await expect.poll(async () => (await scoreOf(editor)).bars.map((bar) => bar.id)).toEqual([first]);
+  await expect(editor.locator("[data-cursor]")).toBeVisible();
+  expect(ownerErrors).toEqual([]);
+  expect(editorErrors).toEqual([]);
+});
 
 const signatures = (bars: { timeSig: { numerator: number; denominator: number } }[]) => bars.map(({ timeSig }) => `${timeSig.numerator}/${timeSig.denominator}`);
 

@@ -14,11 +14,14 @@ import {
   DEFAULT_TEMPO,
   deleteBarsAt,
   docToJson,
+  flagsOf,
   insertBarAt,
   insertBars,
   LOCAL,
   MAX_BARS,
+  ordered,
   partsOf,
+  readScore,
   type Selection,
   setFret,
   setTempo,
@@ -49,8 +52,8 @@ function band(count = 3) {
 const barRange = (partId: string, anchorBarId: string, focusBarId: string): Selection => ({ kind: "bars", partId, anchorBarId, focusBarId });
 
 /** The cursor a command gave, failing on a refusal. */
-function cursorOf(result: Cursor | string): Cursor {
-  if (typeof result === "string") throw new Error(`refused: ${result}`);
+function cursorOf(result: Cursor | string | null): Cursor {
+  if (result === null || typeof result === "string") throw new Error(`refused: ${result}`);
   return result;
 }
 
@@ -312,4 +315,108 @@ test("the tempo in force in a bar is that of the last bar up to it that changes 
   const score = docToJson(doc);
   expect(barIds.map((barId) => tempoAt(score, barId))).toEqual([DEFAULT_TEMPO, 90, 90, 140]);
   expect(tempoAt(score, "gone")).toBeUndefined();
+});
+
+/** Two members' copies of the band score, and a way to exchange their changes. */
+function twoCopies(count = 3) {
+  const first = band(count);
+  const other = new Y.Doc();
+  const send = (from: Y.Doc, to: Y.Doc) => Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+  const sync = () => {
+    send(first.doc, other);
+    send(other, first.doc);
+  };
+  sync();
+  return { ...first, other, sync };
+}
+
+test("bars two members insert at the same place at once share an ordering key; a bar inserted between or after them still lands where it was put", () => {
+  const { doc: a, other: b, sync, barIds, guitar } = twoCopies(2);
+  const anna = cursorOf(insertBarAt(a, cursorAt(a, guitar, barIds[0]!), "after"));
+  const ben = cursorOf(insertBarAt(b, cursorAt(b, guitar, barIds[0]!), "after"));
+  sync();
+  const key = (barId: string) => barsOf(a).get(barId)!.get("order");
+  expect(key(anna.barId)).toBe(key(ben.barId));
+  // Equal keys sort by id, the same for everyone.
+  const [x, y] = [anna.barId, ben.barId].sort();
+  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, y, barIds[1]]);
+
+  // Before the second of the two: between them, where no key lay before.
+  const between = cursorOf(insertBarAt(a, cursorAt(a, guitar, y!), "before"));
+  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, between.barId, y, barIds[1]]);
+  sync();
+  expect(docToJson(b)).toEqual(docToJson(a));
+  // Every key differs now.
+  const keys = ordered(barsOf(b)).map((barId) => barsOf(b).get(barId)!.get("order"));
+  expect(new Set(keys).size).toBe(keys.length);
+  expect([...keys].sort()).toEqual(keys);
+
+  // Two at the same place again, then one right after the first of them, and one before the first.
+  const [p] = insertBars(a, { after: between.barId, count: 1 });
+  const [q] = insertBars(b, { after: between.barId, count: 1 });
+  sync();
+  const [first, second] = [p!, q!].sort();
+  const [right] = insertBars(b, { after: first!, count: 1 });
+  const [front] = insertBars(b, { after: x!, count: 1 });
+  sync();
+  expect(docToJson(a).bars.map((bar) => bar.id)).toEqual([barIds[0], x, front, between.barId, first, right, second, y, barIds[1]]);
+  expect(docToJson(a)).toEqual(docToJson(b));
+});
+
+test("parts two members add at once share an ordering key, sort the same for both, and a part added after them comes last", () => {
+  const { doc: a, other: b, sync, guitar, keys } = twoCopies(1);
+  const bass = addPart(a, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
+  const drums = addPart(b, { name: "Drums", kind: "percussion" });
+  sync();
+  expect(partsOf(a).get(bass)!.get("order")).toBe(partsOf(a).get(drums)!.get("order"));
+  const order = [guitar, keys, ...[bass, drums].sort()];
+  expect(docToJson(a).parts.map((part) => part.id)).toEqual(order);
+  expect(docToJson(b).parts.map((part) => part.id)).toEqual(order);
+  const vocals = addPart(b, { name: "Vocals", kind: "pitched" });
+  sync();
+  expect(docToJson(a).parts.map((part) => part.id)).toEqual([...order, vocals]);
+});
+
+test("two members each deleting one of the last two bars leave a score of no bars: it still reads, and +bar makes its first bar again to type in", () => {
+  const { doc: a, other: b, sync, barIds, guitar, keys } = twoCopies(2);
+  expect(deleteBarsAt(a, cursorAt(a, guitar, barIds[0]!), null)).not.toBe("lastBar");
+  expect(deleteBarsAt(b, cursorAt(b, guitar, barIds[1]!), null)).not.toBe("lastBar");
+  sync();
+  const { score, invalid } = readScore(a);
+  expect(score.bars).toEqual([]);
+  expect(score.parts.map((part) => [part.id, part.content])).toEqual([
+    [guitar, {}],
+    [keys, {}],
+  ]);
+  expect(flagsOf(score, invalid)).toEqual([]);
+  expect(startOfScore(a)).toBeNull();
+
+  const cursor = cursorOf(appendBar(a, null));
+  const [bar] = docToJson(a).bars;
+  expect(bar).toEqual({ id: cursor.barId, timeSig: { numerator: 4, denominator: 4 } });
+  expect(cursor).toEqual(cursorAt(a, guitar, bar!.id));
+  setFret(a, cursor, 3);
+  sync();
+  expect(docToJson(b).parts[0]!.content[bar!.id]!["0:0"]!.map((beat) => beat.notes)).toEqual([{ s1: { fret: 3 } }]);
+});
+
+test("undoing a bar one inserted takes away what another member typed in it meanwhile", () => {
+  const { doc: a, other: b, sync, barIds, guitar } = twoCopies(2);
+  const undo = new Y.UndoManager([barsOf(a), partsOf(a)], { trackedOrigins: new Set([LOCAL]), captureTimeout: 0 });
+  const added = cursorOf(insertBarAt(a, cursorAt(a, guitar, barIds[0]!), "after"));
+  sync();
+  setFret(b, appendBeat(b, cursorAt(b, guitar, added.barId, 2), { value: 4 }), 9);
+  sync();
+  expect(docToJson(a).parts[0]!.content[added.barId]!["0:0"]).toHaveLength(1);
+  undo.undo();
+  sync();
+  // Yjs takes the bar's content away with the bar, whoever wrote in it (docs/spec/commands.md, section 9).
+  expect(docToJson(b).bars.map((bar) => bar.id)).toEqual(barIds);
+  expect(docToJson(b).parts[0]!.content[added.barId]).toBeUndefined();
+  expect(docToJson(a)).toEqual(docToJson(b));
+  // Done again, the bar comes back with that beat: redo restores what the undo removed.
+  undo.redo();
+  sync();
+  expect(docToJson(b).parts[0]!.content[added.barId]?.["0:0"]?.map((beat) => beat.notes)).toEqual([{ s2: { fret: 9 } }]);
+  expect(docToJson(a)).toEqual(docToJson(b));
 });
