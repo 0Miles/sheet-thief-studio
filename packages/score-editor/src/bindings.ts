@@ -43,6 +43,7 @@ export type SessionEffect =
   | "bend"
   | "bendUp"
   | "bendDown"
+  | "harmonic"
   | OnOffTechnique
   | "stroke"
   | "slapPop"
@@ -224,6 +225,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "bend", context: "fretted", keys: ["Shift+KeyB"], keymap: both("Shift+KeyB") },
   { effect: "bendUp", context: "fretted", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "bendDown", context: "fretted", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
+  // A harmonic steps through natural, pinch and artificial back to none.
+  { effect: "harmonic", context: "fretted", keys: ["Shift+KeyN"], keymap: both("Shift+KeyN") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
