@@ -349,6 +349,30 @@ test("a note with no bend is sent only the pitch bend that sets it to none", () 
   expect(bendOf(undefined)).toEqual([0]);
 });
 
+/** The MIDI key the note on string 3 of a guitar (G3, MIDI 55 open) sounds when it is `note` (`midiOf`): the first note-on. */
+function keyOf(note: NoteJSON): number {
+  const { file } = midiOf(note);
+  return file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.tick === 0)!.noteKey;
+}
+
+test("a natural harmonic at the 12th fret sounds an octave over the open string; at the 7th and 5th, the nodes' octave and a fifth, and two octaves", () => {
+  const open = keyOf({ fret: 0 });
+  expect(open).toBe(55);
+  expect(keyOf({ fret: 12, harmonic: "natural" })).toBe(open + 12);
+  expect(keyOf({ fret: 7, harmonic: "natural" })).toBe(open + 19);
+  expect(keyOf({ fret: 5, harmonic: "natural" })).toBe(open + 24);
+});
+
+test("a pinch or an artificial harmonic sounds otherwise than the note plain: an octave over its fret", () => {
+  const plain = keyOf({ fret: 5 });
+  expect(plain).toBe(60);
+  for (const harmonic of ["pinch", "artificial"] as const) {
+    const key = keyOf({ fret: 5, harmonic });
+    expect(key).not.toBe(plain);
+    expect(key).toBe(plain + 12);
+  }
+});
+
 /** Four bars of 4/4 for a guitar, a quarter on its first string in each, fret 1 to 4: which bar sounds is the key less 64. */
 function fourBars() {
   const doc = new Y.Doc();

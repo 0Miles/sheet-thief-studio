@@ -466,6 +466,34 @@ test("a note with no bend has none in alphaTab", () => {
   expect([note.bendType, note.hasBend, note.bendPoints]).toEqual([alphaTab.model.BendType.None, false, null]);
 });
 
+test("each harmonic becomes its alphaTab harmonic type: natural at the node of its fret, pinch and artificial an octave over the fret", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Harmonics");
+  const [barId] = insertBars(doc, { after: null, count: 1 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  write(doc, guitar, barId!, [
+    [4, { s3: { fret: 12, harmonic: "natural" } }],
+    [4, { s3: { fret: 7, harmonic: "natural" } }],
+    [4, { s3: { fret: 5, harmonic: "pinch" } }],
+    [4, { s3: { fret: 5, harmonic: "artificial" } }],
+  ]);
+  const projection = projectScore(docToJson(doc), settings);
+  const notes = projection.score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats.map((beat) => beat.getNoteOnString(4)!);
+  const { HarmonicType } = alphaTab.model;
+  expect(notes.map((note) => [note.harmonicType, note.harmonicValue, note.fret])).toEqual([
+    [HarmonicType.Natural, 12, 12],
+    [HarmonicType.Natural, 7, 7],
+    [HarmonicType.Pinch, 12, 5],
+    [HarmonicType.Artificial, 12, 5],
+  ]);
+});
+
+test("a note with no harmonic has none in alphaTab", () => {
+  const { doc } = band();
+  const note = projectScore(docToJson(doc), settings).score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!.notes[0]!;
+  expect([note.harmonicType, note.harmonicValue, note.isHarmonic]).toEqual([alphaTab.model.HarmonicType.None, 0, false]);
+});
+
 test("the marks of the bars become their master bar fields: section, repeat start and count, alternate endings, pickup", () => {
   const { doc, barIds, guitar } = band();
   const at = (bar: number) => cursorAt(doc, guitar, barIds[bar]!);

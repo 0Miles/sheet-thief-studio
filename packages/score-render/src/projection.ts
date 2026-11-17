@@ -8,6 +8,7 @@ import {
   beatAfter,
   type BeatJSON,
   type BendType,
+  type Harmonic,
   beatTicks,
   DYNAMICS,
   type KeySignature,
@@ -161,6 +162,24 @@ const BENDS: Record<BendType, { type: alphaTab.model.BendType; shape: [offset: n
   preBendRelease: { type: model.BendType.PrebendRelease, shape: [[0, 1], [15, 0]] },
 };
 
+/** The harmonic value of a pinch or artificial harmonic: an octave over the fretted note. */
+const HARMONIC_OCTAVE = 12;
+
+/**
+ * Each harmonic (docs/spec/schema.md, section 8) as alphaTab's type, and the harmonic value it is
+ * given: where on the string, in frets, the harmonic is touched. alphaTab sounds a natural
+ * harmonic at the node of that fret over the open string (12 an octave, 7 an octave and a fifth,
+ * 5 two octaves; a fret with no node in its table, the open string) and draws that value as the
+ * fret, so a natural harmonic is given its own fret. Pinch and artificial sound that far over the
+ * fretted note: 12, an octave, as alphaTab's Guitar Pro import does; with none they would sound
+ * as the note plain.
+ */
+const HARMONIC_TYPES: Record<Harmonic, { type: alphaTab.model.HarmonicType; value: (fret: number) => number }> = {
+  natural: { type: model.HarmonicType.Natural, value: (fret) => fret },
+  pinch: { type: model.HarmonicType.Pinch, value: () => HARMONIC_OCTAVE },
+  artificial: { type: model.HarmonicType.Artificial, value: () => HARMONIC_OCTAVE },
+};
+
 /** Set a bend on an alphaTab note: its type, and its points up `semitones`, in alphaTab's quarter tones. */
 function projectBend(note: AtNote, { type, semitones }: NonNullable<NoteJSON["bend"]>): void {
   const bend = BENDS[type];
@@ -210,6 +229,11 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
   if (json.slideIn) note.slideInType = SLIDE_IN_TYPES[json.slideIn];
   if (json.bend) projectBend(note, json.bend);
+  if (json.harmonic) {
+    const harmonic = HARMONIC_TYPES[json.harmonic];
+    note.harmonicType = harmonic.type;
+    note.harmonicValue = harmonic.value(note.fret);
+  }
   return note;
 }
 
