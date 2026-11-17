@@ -325,6 +325,39 @@ test("replacing a bar whose dynamic changed rebuilds the bars after it up to the
   expect(whole.score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => beat.dynamics))).toEqual(dynamics());
 });
 
+test("replacing a bar that leaves a dynamic on a rest to draw, or no longer, rebuilds the bar after it, where it is drawn, though the dynamic in force is the same (#97)", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Dynamics");
+  const barIds = insertBars(doc, { after: null, count: 3 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  const fret = { s1: { fret: 0 } };
+  const marked = write(doc, guitar, barIds[0]!, [[2, fret], [2, {}]]);
+  write(doc, guitar, barIds[1]!, [[2, {}], [2, fret]]);
+  write(doc, guitar, barIds[2]!, [[1, fret]]);
+  const projection = projectScore(docToJson(doc), settings);
+  const bars = () => projection.score.tracks[0]!.staves[0]!.bars;
+  const drawn = (score: alphaTab.model.Score) => score.tracks[0]!.staves[0]!.bars.map((bar) => bar.voices[0]!.beats.map((beat) => (beat.isRest ? null : beat.showDynamics)));
+  const third = bars()[2];
+  // Whether each beat that is not a rest is drawn with a dynamic (null: a rest).
+  expect(drawn(projection.score)).toEqual([[false, null], [null, false], [false]]);
+
+  // An f on the rest: the dynamic in force is f before and after, but the second bar draws it now.
+  for (let step = 0; step < 5; step++) changeBeatAt(doc, marked, dynamicCycle);
+  let json = docToJson(doc);
+  expect(json.parts[0]!.content[barIds[0]!]!["0:0"]![1]!.dynamic).toBe("f");
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(drawn(projection.score)).toEqual([[false, null], [null, true], [false]]);
+  expect(bars()[2]).toBe(third);
+  expect(drawn(projectScore(json, settings).score)).toEqual(drawn(projection.score));
+
+  // Taken off again (ff, then none): the second bar draws nothing.
+  for (let step = 0; step < 2; step++) changeBeatAt(doc, marked, dynamicCycle);
+  json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(drawn(projection.score)).toEqual([[false, null], [null, false], [false]]);
+  expect(drawn(projectScore(json, settings).score)).toEqual(drawn(projection.score));
+});
+
 /** A guitar of bars of 4/4, one for each entry of `bars`, each bar's beats given as frets on string 3 (null: a rest), with these fields on its notes. */
 function linked(bars: [number | null, Partial<NoteJSON>?][][]) {
   const doc = new Y.Doc();

@@ -231,6 +231,26 @@ test("a dynamic holds from its beat on, in its part and voice: the beats after i
   expect(soft[0]).toBeLessThan(velocityOf(59, 3840));
 });
 
+test("a dynamic written on a rest holds from the rest, drawn on a later beat or not: it sounds as written on the first note after it (#97)", () => {
+  /** A guitar: a rest, two notes, and a note in the next bar; `marked` is the beat given a pp (none: none). */
+  const played = (marked?: 0 | 1) => {
+    const doc = new Y.Doc();
+    createScore(doc, "Softly");
+    const barIds = insertBars(doc, { after: null, count: 2 });
+    const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+    let cursor = cursorAt(doc, guitar, barIds[0]!);
+    const beats = [null, 0, 1, 2].map((fret, index) => {
+      cursor = insertBeat(doc, { ...cursor, ...(index === 3 ? { barId: barIds[1]!, beatId: null } : {}), at: "after" }, { value: 4 });
+      if (fret !== null) setNote(doc, cursor, "s3", { fret });
+      return cursor;
+    });
+    if (marked !== undefined) changeBeatAt(doc, beats[marked]!, dynamicCycle);
+    return eventsOf(doc);
+  };
+  expect(played(0)).toEqual(played(1));
+  expect(played(0)).not.toEqual(played());
+});
+
 /** Every event alphaTab generates for the guitar of a score, in a form that can be compared: what, when, which key, how loud or how bent. */
 function eventsOf(doc: Y.Doc): string[] {
   const { score } = projectScore(docToJson(doc), settings);
