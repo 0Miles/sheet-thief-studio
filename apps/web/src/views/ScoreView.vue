@@ -920,17 +920,26 @@ function close(closing: Closing): void {
 
 /**
  * The browser went offline: so is the page, at once, rather than once the provider hears nothing
- * for 30 seconds. Its socket is closed: what is typed from now on waits for the next connection.
+ * for 30 seconds. Its socket is closed, and no other is tried until the browser is back online:
+ * each attempt would only fail (and the browser log it as an error). What is typed from now on
+ * waits for the next connection.
  */
 function goOffline(): void {
   online.value = false;
-  provider?.configuration.websocketProvider.webSocket?.close();
+  provider?.configuration.websocketProvider.disconnect();
 }
 
-/** Back online: connect now, rather than when the provider's next attempt comes up. */
+/**
+ * Back online: connect now. The provider's `connect` does nothing while its last socket is still
+ * closing (it counts as connected until then), so it is also told to connect again once that
+ * socket has closed.
+ */
 function goOnline(): void {
   online.value = true;
-  void provider?.configuration.websocketProvider.connect();
+  const socket = provider?.configuration.websocketProvider;
+  if (socket === undefined) return;
+  socket.shouldConnect = true;
+  void socket.connect();
 }
 
 /** Leaving the page with changes the server has not confirmed: the browser asks first (docs/spec/collab.md, section 7). */

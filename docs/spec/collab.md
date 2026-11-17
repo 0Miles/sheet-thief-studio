@@ -112,7 +112,7 @@
 - 已開啟的分頁可以繼續編輯，重連時由 Yjs 合併；畫面顯示「離線」橫幅。
 - 不做 IndexedDB 離線保存。
 - `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`provider.unsyncedChanges` 在 `ScoreView.vue` 的 `updateSync` 裡讀得到）。**補充**（#35）：只在可編輯視圖警告；只有那裡會有本機的修改。
-- **補充**（#35）：瀏覽器的 `offline` 事件一來就算離線（同步指示器是 `offline`、顯示橫幅；只有可編輯視圖的橫幅說可以繼續編輯，其他視圖與訪客的只說恢復連線後會繼續更新），並關掉 provider 的 socket，之後輸入的修改等下一次連線再送；不等 provider 30 秒收不到訊息才發現。`online` 事件時立刻重連，不等 provider 下一次嘗試。瀏覽器說離線的期間，指示器一直是 `offline`，不隨 provider 的重試變成 `syncing`。
+- **補充**（#35）：瀏覽器的 `offline` 事件一來就算離線（同步指示器是 `offline`、顯示橫幅；只有可編輯視圖的橫幅說可以繼續編輯，其他視圖與訪客的只說恢復連線後會繼續更新），並斷開 provider（`websocketProvider.disconnect()`）：關掉 socket，而且在 `online` 之前不再嘗試連線（每一次嘗試都只會失敗，瀏覽器還會把它記成 console error）；之後輸入的修改等下一次連線再送；不等 provider 30 秒收不到訊息才發現。`online` 事件時立刻重連，不等 provider 下一次嘗試；上一條 socket 還沒關完時 provider 的 `connect()` 什麼都不做，所以也把 `shouldConnect` 設回 true，讓它在那條 socket 關掉時自己重連。瀏覽器說離線的期間，指示器一直是 `offline`。
 - 重連時：
   - 取 ticket 失敗（401 或 404），或拿到的 `role` 比原本低：客戶端丟掉本機的 `Y.Doc`，重新以唯讀載入並提示；本機未同步的修改放棄。只切換介面不夠，因為本機文件已經和伺服器分歧了。
   - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
