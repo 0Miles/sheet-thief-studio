@@ -13,6 +13,8 @@ import {
   cursorAt,
   docToJson,
   flagsOf,
+  HARMONICS,
+  harmonicCycle,
   insertBars,
   type NoteJSON,
   type NotePlace,
@@ -204,36 +206,19 @@ test("the key of the note on the cursor's line is its string on a fretted part, 
   expect(noteKeyAt(doc, cursorAt(doc, keys, barId, 4))).toBeNull();
 });
 
-/**
- * A technique of three states, as a cycling one is (#27, #29): none → natural → pinch → none.
- * The state is decided once for all the notes: the one after the state they share, natural when
- * they do not share one.
- */
-const cycling: NoteToggle<NoteJSON["harmonic"]> = {
-  decide(seen) {
-    const first = seen[0]?.harmonic;
-    if (first === undefined || !seen.every((note) => note.harmonic === first)) return "natural";
-    return first === "natural" ? "pinch" : undefined;
-  },
-  turn(stored, harmonic) {
-    if (stored === undefined) return null;
-    const note = { ...stored };
-    delete note.harmonic;
-    return harmonic === undefined ? note : { ...note, harmonic };
-  },
-};
-
-test("over a selection, a cycling technique takes every note to the one state decided for them all", () => {
+test("over a selection, a cycling technique takes every note to the one state decided for them all: the one after the first note's", () => {
   const { doc, cursor, notes, range } = selected();
   setNote(doc, { ...cursor, beatId: range.focusBeatId }, "s1", { fret: 0, harmonic: "pinch" });
   const harmonics = () => notes().slice(0, 2).flatMap((beat) => Object.values(beat).map((note) => note.harmonic ?? null));
-  // One note is pinch, the others none: not one shared state, so all go to the first, not each to its own next.
-  toggleOnSelection(doc, range, cursor, cycling);
+  // The first note has none and one note is pinch: all go to natural, not each to its own next.
+  toggleOnSelection(doc, range, cursor, harmonicCycle);
   expect(harmonics()).toEqual(["natural", "natural", "natural"]);
-  toggleOnSelection(doc, range, cursor, cycling);
+  toggleOnSelection(doc, range, cursor, harmonicCycle);
   expect(harmonics()).toEqual(["pinch", "pinch", "pinch"]);
-  toggleOnSelection(doc, range, cursor, cycling);
+  toggleOnSelection(doc, range, cursor, harmonicCycle);
+  toggleOnSelection(doc, range, cursor, harmonicCycle);
   expect(harmonics()).toEqual([null, null, null]);
+  expect(notes()[2]).toEqual({ s3: { fret: 7 } });
 });
 
 /** As tie is at the cursor (#27): the fret of the note before, tied to it; where there is no note before, nothing changes. */
@@ -482,6 +467,7 @@ test("at the cursor, on a beat reading leaves out, no technique key changes it, 
   const transactions = transactionsOf(doc);
   for (const technique of ON_OFF_TECHNIQUES) toggleNote(doc, cursor, "s3", technique);
   toggleAt(doc, cursor, "s3", slideOutCycle);
+  toggleAt(doc, cursor, "s3", harmonicCycle);
   toggleAt(doc, { ...cursor, line: 1 }, "s1", tieToggle);
   expect(transactions.count).toBe(0);
   expect(storedNotes(doc, cursor).toJSON()).toEqual({ s3: { fret: 5 } });
@@ -548,4 +534,23 @@ test("over a selection, a bend takes every note to the shape after the first not
   toggleOnSelection(doc, range, cursor, bendCycle);
   expect(bends((bend) => bend.type)).toEqual([{ s3: "bendRelease" }, { s1: "bendRelease", s2: "bendRelease" }]);
   expect(notes()[2]).toEqual({ s3: { fret: 7 } });
+});
+
+// Harmonic (#29; docs/spec/commands.md, 5.4): Shift+N steps through natural, pinch and artificial,
+// back to none.
+test("a harmonic steps through natural, pinch and artificial, back to none, one undo step each, keeping what else the note holds", () => {
+  const { doc, cursor, notes } = guitar();
+  setNote(doc, cursor, "s3", { fret: 12, letRing: true });
+  const undo = undoOf(doc);
+  const harmonics = [1, 2, 3, 4].map(() => {
+    toggleAt(doc, cursor, "s3", harmonicCycle);
+    return notes()[0]!.s3!.harmonic ?? null;
+  });
+  expect(harmonics).toEqual(["natural", "pinch", "artificial", null]);
+  expect(notes()).toEqual([{ s3: { fret: 12, letRing: true } }]);
+  undoEach(undo, () => notes()[0]!.s3!, [{}, ...HARMONICS.map((harmonic) => ({ harmonic }))], { fret: 12, letRing: true });
+  // On an empty string it makes no note.
+  const transactions = transactionsOf(doc);
+  toggleAt(doc, { ...cursor, line: 1 }, "s1", harmonicCycle);
+  expect(transactions.count).toBe(0);
 });

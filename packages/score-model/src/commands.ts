@@ -18,6 +18,7 @@ import {
   type Duration,
   durationOf,
   emptyBarContent,
+  HARMONICS,
   KIND_DEFAULTS,
   type KeySignature,
   keySigSchema,
@@ -742,7 +743,7 @@ export const tieToggle: NoteToggle<boolean> = {
  * every note to the kind after the one of the first note seen, as the beat markings do
  * (`markingCycle`), on the notes there are; it makes none.
  */
-function noteCycle<F extends "slideOut" | "slideIn">(field: F, kinds: readonly NonNullable<NoteJSON[F]>[]): NoteToggle<NoteJSON[F]> {
+function noteCycle<F extends "slideOut" | "slideIn" | "harmonic">(field: F, kinds: readonly NonNullable<NoteJSON[F]>[]): NoteToggle<NoteJSON[F]> {
   return {
     decide: (seen) => nextOf(kinds, seen[0]?.[field]),
     turn(stored, kind) {
@@ -757,6 +758,9 @@ export const slideOutCycle: NoteToggle<NoteJSON["slideOut"]> = noteCycle("slideO
 
 /** Shift+E: a slide into the note, from below, from above, then none. */
 export const slideInCycle: NoteToggle<NoteJSON["slideIn"]> = noteCycle("slideIn", SLIDE_INS);
+
+/** Shift+N: a harmonic of the note, natural, pinch, artificial, then none. */
+export const harmonicCycle: NoteToggle<NoteJSON["harmonic"]> = noteCycle("harmonic", HARMONICS);
 
 /**
  * Shift+B: a bend of the note, bend, bend and release, pre-bend, pre-bend and release, then none,
