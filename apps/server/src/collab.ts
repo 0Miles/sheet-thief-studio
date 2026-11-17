@@ -35,6 +35,13 @@ export const STORE_MAX_DEBOUNCE_MS = 10_000;
 /** The `updated_at` a store leaves: now, or the one the score had when it is deleted. */
 const STORED_AT = literal("CASE WHEN deleted_at IS NULL THEN now() ELSE updated_at END") as unknown as Date;
 
+/**
+ * Thrown by `beforeUnloadDocument` to keep Hocuspocus from unloading a document that is no longer
+ * the one in memory under its name. Without a message: Hocuspocus logs the errors of its hooks
+ * that have one, and this is no fault.
+ */
+class NotInMemory extends Error {}
+
 /** The `socketId` Hocuspocus gives the `onDisconnect` of a direct connection: the server's own, not a member's. */
 const SERVER_SOCKET = "server";
 
@@ -429,6 +436,15 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       // own connection ends (`collab.change`): a version is made as the members leave.
       if (clientsCount > 0 || socketId === SERVER_SOCKET || closing) return;
       await makeVersion(document, "last_disconnect");
+    },
+    async beforeUnloadDocument({ documentName, document }) {
+      // Hocuspocus unloads by name: once it has stored a document, it unloads it from a timer,
+      // and that timer may run after the document is gone (a direct connection unloads its own
+      // at once) and the score loaded again for a member. Unloaded then, the new document would
+      // leave the server's documents while members are on it: the next member to open the score
+      // would get another one, loaded from Postgres, and each document's stores would write over
+      // the other's (#131). Only the document in memory under its name is unloaded.
+      if (hocuspocus.documents.get(documentName) !== document) throw new NotInMemory();
     },
     async afterUnloadDocument({ documentName }) {
       cancelFill(documentName);

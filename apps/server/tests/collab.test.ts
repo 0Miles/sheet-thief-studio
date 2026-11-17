@@ -358,3 +358,39 @@ test("changing one's password while the kept session's document is being loaded 
   expect(loading).toHaveBeenCalledOnce();
   expect(closed).toBe(4401);
 });
+
+test("an unload left over from a document that is gone does not drop the one loaded after it (#131)", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  // Once Hocuspocus has stored a document, it unloads it from a timer of 0 ms. The server's own
+  // change (here, the content of a new score) stores and unloads its document at once, leaving
+  // that timer behind; an event loop busy elsewhere runs it only after the score is loaded again
+  // for a member. Held here until then, the one and only timer of its kind.
+  const held: Array<() => void> = [];
+  const setTimer = globalThis.setTimeout;
+  const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) => {
+    if (!delay && String(callback).includes("shouldUnloadDocument")) {
+      held.push(callback);
+      return setTimer(() => {}, 0);
+    }
+    return setTimer(callback, delay);
+  }) as typeof setTimeout);
+  const id = await createScore(app, session, "載入前的標題");
+  timers.mockRestore();
+  expect(held.length).toBeGreaterThan(0);
+  expect(app.collab.loadedScores()).not.toContain(id);
+
+  const anna = await open(app, url, id, session);
+  for (const unload of held) unload();
+  // Let the unloads run to their end.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // Still the document in memory: a member who opens the score now joins Anna's, sees what she
+  // writes, and nothing either of them writes is stored over the other's.
+  expect(app.collab.loadedScores()).toContain(id);
+  const applied = nextSyncStatus(anna.provider);
+  metaOf(anna.doc).set("title", "載入後改的標題");
+  expect(await applied).toBe(true);
+  const ben = await open(app, url, id, await sessionOf(app, "anna", PASSWORD));
+  expect(metaOf(ben.doc).get("title")).toBe("載入後改的標題");
+});
