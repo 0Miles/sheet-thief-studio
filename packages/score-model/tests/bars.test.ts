@@ -11,12 +11,15 @@ import {
   createScore,
   type Cursor,
   cursorAt,
+  DEFAULT_KEY_SIG,
   DEFAULT_TEMPO,
   deleteBarsAt,
   docToJson,
   flagsOf,
   insertBarAt,
   insertBars,
+  keySigAt,
+  keySigsOf,
   LOCAL,
   MAX_BARS,
   ordered,
@@ -24,12 +27,18 @@ import {
   readScore,
   type Selection,
   setFret,
+  setKeySig,
+  setRepeat,
+  setSection,
   setTempo,
   setTimeSig,
+  setVoltas,
   startOfScore,
   structuralRange,
   tempoAt,
   type TimeSignature,
+  toggleAnacrusis,
+  voltaRepeatTimes,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
 
@@ -500,4 +509,284 @@ test("undoing a bar one inserted takes away what another member typed in it mean
   sync();
   expect(docToJson(b).parts[0]!.content[added.barId]?.["0:0"]?.map((beat) => beat.notes)).toEqual([{ s2: { fret: 9 } }]);
   expect(docToJson(a)).toEqual(docToJson(b));
+});
+
+// Keys, sections, repeats, voltas and the pickup bar (#23) ------------------------------------------
+
+const G_MAJOR = { fifths: 1, mode: "major" } as const;
+const E_MINOR = { fifths: 1, mode: "minor" } as const;
+const C_MINOR = { fifths: -3, mode: "minor" } as const;
+
+test("a key is written on the cursor's bar only and holds from there on; clearing it takes that change away", () => {
+  const { doc, barIds, at, bars } = band(3);
+  const transactions = transactionsOf(doc);
+  expect(setKeySig(doc, at(1), G_MAJOR)).toBe(true);
+  expect(bars().map((bar) => bar.keySig)).toEqual([undefined, G_MAJOR, undefined]);
+  expect(barIds.map((barId) => keySigAt(docToJson(doc), barId))).toEqual([DEFAULT_KEY_SIG, G_MAJOR, G_MAJOR]);
+  expect(setKeySig(doc, at(1), { fifths: 1, mode: "major" })).toBe(true);
+  expect(transactions.count).toBe(1);
+  expect(setKeySig(doc, at(1), E_MINOR)).toBe(true);
+  expect(bars()[1]!.keySig).toEqual(E_MINOR);
+  expect(setKeySig(doc, at(1), null)).toBe(true);
+  expect(setKeySig(doc, at(1), null)).toBe(true);
+  expect(transactions.count).toBe(3);
+  expect(bars().map((bar) => bar.keySig)).toEqual([undefined, undefined, undefined]);
+  expect(keySigAt(docToJson(doc), "gone")).toBeUndefined();
+});
+
+test("the key in force is a copy for each bar: changing one changes neither the default, nor the score, nor another bar", () => {
+  const { doc, at } = band(3);
+  setKeySig(doc, at(1), G_MAJOR);
+  const score = docToJson(doc);
+  const keys = keySigsOf(score.bars);
+  expect(Object.isFrozen(DEFAULT_KEY_SIG)).toBe(true);
+  keys[0]!.fifths = 5;
+  keys[1]!.fifths = 6;
+  expect(DEFAULT_KEY_SIG).toEqual({ fifths: 0, mode: "major" });
+  expect(score.bars[1]!.keySig).toEqual(G_MAJOR);
+  expect(keys[2]).toEqual(G_MAJOR);
+  expect(keySigsOf(score.bars)[0]).toEqual(DEFAULT_KEY_SIG);
+});
+
+test("a key out of range is refused; a key that cannot be read is written over", () => {
+  const { doc, barIds, at, bars } = band(1);
+  for (const wrong of [
+    { fifths: 8, mode: "major" },
+    { fifths: -8, mode: "minor" },
+    { fifths: 1.5, mode: "major" },
+    { fifths: 0, mode: "dorian" },
+  ]) {
+    expect(setKeySig(doc, at(0), wrong as never)).toBe(false);
+  }
+  expect(bars()[0]!.keySig).toBeUndefined();
+  // Read through parsePlain: an inherited mode is not one of its own.
+  barsOf(doc).get(barIds[0]!)!.set("keySig", Object.assign(Object.create({ mode: "major" }) as object, { fifths: 1 }));
+  expect(readScore(doc).invalid.map((flag) => flag.what)).toEqual(["bar.keySig"]);
+  expect(setKeySig(doc, at(0), G_MAJOR)).toBe(true);
+  expect(readScore(doc).invalid).toEqual([]);
+  expect(bars()[0]!.keySig).toEqual(G_MAJOR);
+});
+
+test("a section name is written on the cursor's bar only, of 1 to 64 characters; clearing takes it away", () => {
+  const { doc, at, bars } = band(2);
+  expect(setSection(doc, at(1), "副歌")).toBe(true);
+  expect(bars().map((bar) => bar.section)).toEqual([undefined, "副歌"]);
+  expect(setSection(doc, at(1), "")).toBe(false);
+  expect(setSection(doc, at(1), "x".repeat(65))).toBe(false);
+  expect(setSection(doc, at(1), "x".repeat(64))).toBe(true);
+  expect(setSection(doc, at(1), null)).toBe(true);
+  expect(bars().map((bar) => bar.section)).toEqual([undefined, undefined]);
+});
+
+test("a repeat over a bar range starts on its first bar and ends on its last, played the times given in all, one transaction", () => {
+  const { doc, barIds, keys, bars } = band(4);
+  const undo = undoOf(doc);
+  const transactions = transactionsOf(doc);
+  const cursor = cursorAt(doc, keys, barIds[2]!);
+  expect(setRepeat(doc, cursor, barRange(keys, barIds[2]!, barIds[1]!), { times: 3 })).toBe(true);
+  expect(transactions.count).toBe(1);
+  const marks = () => bars().map((bar) => [bar.repeatStart ?? null, bar.repeatEnd ?? null]);
+  expect(marks()).toEqual([
+    [null, null],
+    [true, null],
+    [null, 3],
+    [null, null],
+  ]);
+  undo.undo();
+  expect(marks()).toEqual([
+    [null, null],
+    [null, null],
+    [null, null],
+    [null, null],
+  ]);
+});
+
+test("a repeat without a selection, or with a beat range, starts and ends on that one bar", () => {
+  const { doc, barIds, keys, at, bars } = band(3);
+  expect(setRepeat(doc, at(0), null, { times: 2 })).toBe(true);
+  const beats: Selection = { kind: "beats", partId: keys, barId: barIds[2]!, voice: "0:0", anchorBeatId: "x", focusBeatId: "x" };
+  expect(setRepeat(doc, at(0), beats, { times: 4 })).toBe(true);
+  expect(bars().map((bar) => [bar.repeatStart ?? null, bar.repeatEnd ?? null])).toEqual([
+    [true, 2],
+    [null, null],
+    [true, 4],
+  ]);
+});
+
+test("the start and the end of a repeat are cleared each alone, from the bar each is written on; nothing else changes", () => {
+  const { doc, barIds, keys, at, bars } = band(4);
+  setRepeat(doc, at(0), barRange(keys, barIds[0]!, barIds[3]!), { times: 2 });
+  setRepeat(doc, at(1), barRange(keys, barIds[1]!, barIds[2]!), { times: 2 });
+  const marks = () => bars().map((bar) => [bar.repeatStart ?? null, bar.repeatEnd ?? null]);
+  expect(setRepeat(doc, at(1), barRange(keys, barIds[1]!, barIds[2]!), { clear: "end" })).toBe(true);
+  expect(marks()).toEqual([
+    [true, null],
+    [true, null],
+    [null, null],
+    [null, 2],
+  ]);
+  expect(setRepeat(doc, at(0), null, { clear: "start" })).toBe(true);
+  expect(marks()).toEqual([
+    [null, null],
+    [true, null],
+    [null, null],
+    [null, 2],
+  ]);
+  const transactions = transactionsOf(doc);
+  // Clearing what is not there writes nothing.
+  expect(setRepeat(doc, at(0), null, { clear: "end" })).toBe(true);
+  expect(transactions.count).toBe(0);
+});
+
+test("a repeat played fewer than 2 or more than 32 times in all is refused", () => {
+  const { doc, at, bars } = band(1);
+  for (const wrong of [1, 33, 2.5, Number.NaN]) expect(setRepeat(doc, at(0), null, { times: wrong })).toBe(false);
+  expect(bars()[0]).not.toHaveProperty("repeatStart");
+  expect(setRepeat(doc, at(0), null, { times: 32 })).toBe(true);
+  expect(bars()[0]!.repeatEnd).toBe(32);
+});
+
+test("voltas are written on every bar of the selection, else the cursor's, each one undo step; an empty list clears them", () => {
+  const { doc, barIds, keys, at, bars } = band(4);
+  const undo = undoOf(doc);
+  expect(setVoltas(doc, at(1), barRange(keys, barIds[1]!, barIds[2]!), [1, 2])).toBe(true);
+  expect(setVoltas(doc, at(3), null, [3])).toBe(true);
+  expect(bars().map((bar) => bar.voltas)).toEqual([undefined, [1, 2], [1, 2], [3]]);
+  expect(setVoltas(doc, at(1), barRange(keys, barIds[1]!, barIds[3]!), [])).toBe(true);
+  expect(bars().map((bar) => bar.voltas)).toEqual([undefined, undefined, undefined, undefined]);
+  undo.undo();
+  expect(bars().map((bar) => bar.voltas)).toEqual([undefined, [1, 2], [1, 2], [3]]);
+  undo.undo();
+  undo.undo();
+  expect(bars().map((bar) => bar.voltas)).toEqual([undefined, undefined, undefined, undefined]);
+});
+
+test("voltas not of 1 to 8 in increasing order are refused", () => {
+  const { doc, at, bars } = band(1);
+  for (const wrong of [[0], [9], [2, 1], [1, 1], [1.5]]) expect(setVoltas(doc, at(0), null, wrong)).toBe(false);
+  expect(bars()[0]!.voltas).toBeUndefined();
+  expect(setVoltas(doc, at(0), null, [1, 3, 8])).toBe(true);
+  expect(bars()[0]!.voltas).toEqual([1, 3, 8]);
+});
+
+test("voltas belong to the repeat that ends among the bars with voltas around them, else just before them; without one, the score is played once", () => {
+  const { doc, barIds, keys, at } = band(6);
+  const times = (...bars: number[]) => voltaRepeatTimes(docToJson(doc), bars.map((bar) => barIds[bar]!));
+  expect(times(2)).toBe(1);
+  // Bars 2 to 3 played three times; bar 3 the first ending, bar 4 the second.
+  setRepeat(doc, at(1), barRange(keys, barIds[1]!, barIds[2]!), { times: 3 });
+  expect(times(2)).toBe(3);
+  setVoltas(doc, at(2), null, [1]);
+  expect(times(3)).toBe(3);
+  // Another end on bar 4, after the first ending: the first end in the run of voltas still counts.
+  setRepeat(doc, at(3), null, { times: 4 });
+  setRepeat(doc, at(3), null, { clear: "start" });
+  expect(times(3)).toBe(3);
+  // Bar 6, far from any ending, with no voltas between: played once.
+  expect(times(5)).toBe(1);
+  expect(times()).toBe(1);
+});
+
+test("the pickup bar is toggled on the first bar only, one undo step each, and is refused on the second", () => {
+  const { doc, at, bars } = band(2);
+  const undo = undoOf(doc);
+  const transactions = transactionsOf(doc);
+  expect(toggleAnacrusis(doc, at(1))).toBe(false);
+  expect(transactions.count).toBe(0);
+  expect(toggleAnacrusis(doc, at(0))).toBe(true);
+  expect(bars().map((bar) => bar.anacrusis)).toEqual([true, undefined]);
+  expect(toggleAnacrusis(doc, at(0))).toBe(true);
+  expect(bars().map((bar) => bar.anacrusis)).toEqual([undefined, undefined]);
+  undo.undo();
+  expect(bars()[0]!.anacrusis).toBe(true);
+});
+
+test("a pickup that cannot be read is no pickup: toggling it sets one", () => {
+  const { doc, barIds, at, bars } = band(1);
+  barsOf(doc).get(barIds[0]!)!.set("anacrusis", "yes");
+  expect(bars()[0]!.anacrusis).toBeUndefined();
+  expect(toggleAnacrusis(doc, at(0))).toBe(true);
+  expect(bars()[0]!.anacrusis).toBe(true);
+});
+
+test("a short first bar is not underfull once it is a pickup; the other bars are flagged as before", () => {
+  const { doc, barIds, guitar, at } = band(2);
+  for (const bar of [0, 1]) setFret(doc, appendBeat(doc, cursorAt(doc, guitar, barIds[bar]!, 2), { value: 4 }), 5);
+  const underfull = () =>
+    flagsOf(docToJson(doc), [])
+      .filter((flag) => flag.kind === "underfull")
+      .map((flag) => flag.barId);
+  expect(underfull()).toEqual([barIds[0], barIds[1]]);
+  toggleAnacrusis(doc, at(0));
+  expect(underfull()).toEqual([barIds[1]]);
+});
+
+test("each of these commands on a bar that is gone changes nothing", () => {
+  const { doc, barIds, at } = band(2);
+  const cursor = at(0);
+  barsOf(doc).delete(barIds[0]!);
+  const transactions = transactionsOf(doc);
+  expect(setKeySig(doc, cursor, G_MAJOR)).toBe(false);
+  expect(setSection(doc, cursor, "A")).toBe(false);
+  expect(setRepeat(doc, cursor, null, { times: 2 })).toBe(false);
+  expect(setVoltas(doc, cursor, null, [1])).toBe(false);
+  expect(toggleAnacrusis(doc, cursor)).toBe(false);
+  expect(transactions.count).toBe(0);
+});
+
+test("two members setting repeats over bars that overlap, at once, keep both: unpaired or nested, they read with no flag", () => {
+  const { doc: a, other: b, sync, barIds, keys } = twoCopies(4);
+  setRepeat(a, cursorAt(a, keys, barIds[1]!), barRange(keys, barIds[1]!, barIds[2]!), { times: 2 });
+  setRepeat(b, cursorAt(b, keys, barIds[0]!), barRange(keys, barIds[0]!, barIds[1]!), { times: 3 });
+  // And an end with no start of its own.
+  setRepeat(b, cursorAt(b, keys, barIds[3]!), null, { times: 2 });
+  setRepeat(b, cursorAt(b, keys, barIds[3]!), null, { clear: "start" });
+  sync();
+  expect(docToJson(a)).toEqual(docToJson(b));
+  const { score, invalid } = readScore(a);
+  expect(score.bars.map((bar) => [bar.repeatStart ?? null, bar.repeatEnd ?? null])).toEqual([
+    [true, null],
+    [true, 3],
+    [null, 2],
+    [null, 2],
+  ]);
+  expect(flagsOf(score, invalid)).toEqual([]);
+});
+
+test("two members writing the repeat count, the voltas or the key of the same bar at once end with one of the two, the same for both, and legal", () => {
+  const { doc: a, other: b, sync, barIds, guitar } = twoCopies(1);
+  const anna = cursorAt(a, guitar, barIds[0]!);
+  const ben = cursorAt(b, guitar, barIds[0]!);
+  setRepeat(a, anna, null, { times: 2 });
+  setRepeat(b, ben, null, { times: 5 });
+  setVoltas(a, anna, null, [1, 2]);
+  setVoltas(b, ben, null, [3]);
+  setKeySig(a, anna, G_MAJOR);
+  setKeySig(b, ben, C_MINOR);
+  sync();
+  const { score, invalid } = readScore(a);
+  expect(docToJson(b)).toEqual(score);
+  expect(invalid).toEqual([]);
+  const [bar] = score.bars;
+  expect([2, 5]).toContain(bar!.repeatEnd);
+  expect([[1, 2], [3]]).toContainEqual(bar!.voltas);
+  expect([G_MAJOR, C_MINOR]).toContainEqual(bar!.keySig);
+});
+
+test("a pickup set on the first bar while another member inserts a bar before it is ignored, unflagged; the new first bar can be made one", () => {
+  const { doc: a, other: b, sync, barIds, guitar } = twoCopies(2);
+  setFret(a, appendBeat(a, cursorAt(a, guitar, barIds[0]!, 2), { value: 4 }), 5);
+  sync();
+  expect(toggleAnacrusis(a, cursorAt(a, guitar, barIds[0]!))).toBe(true);
+  const added = cursorOf(insertBarAt(b, cursorAt(b, guitar, barIds[0]!), "before"));
+  sync();
+  expect(docToJson(a)).toEqual(docToJson(b));
+  const { score, invalid } = readScore(a);
+  expect(score.bars.map((bar) => bar.anacrusis)).toEqual([undefined, undefined, undefined]);
+  // Not first any more: its short content is underfull again, and nothing else is flagged.
+  expect(flagsOf(score, invalid)).toEqual([{ kind: "underfull", partId: guitar, barId: barIds[0], voice: "0:0" }]);
+  expect(toggleAnacrusis(b, cursorAt(b, guitar, barIds[0]!))).toBe(false);
+  expect(toggleAnacrusis(b, added)).toBe(true);
+  sync();
+  expect(docToJson(a).bars.map((bar) => bar.anacrusis)).toEqual([true, undefined, undefined]);
 });

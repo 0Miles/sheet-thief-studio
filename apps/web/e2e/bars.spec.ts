@@ -203,3 +203,78 @@ test("Ctrl+Delete deletes a bar range from every part with no question asked, an
   await synced(page);
   expect(errors).toEqual([]);
 });
+
+test("the panel sets a repeat over the selected bars, voltas, a key, a section and the pickup of the first bar; scoreJson follows, and Ctrl+Z undoes each", async ({ browser }) => {
+  const id = seedScore({ title: "反覆與調號", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], bars: 4, parts: [{ name: "鼓 1", kind: "percussion" }] });
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+  const ids = (await scoreOf(page)).bars.map((bar) => bar.id);
+  const marks = async () =>
+    (await scoreOf(page)).bars.map(({ keySig, section, repeatStart, repeatEnd, voltas, anacrusis }) => ({ keySig, section, repeatStart, repeatEnd, voltas, anacrusis }));
+  const none = { keySig: undefined, section: undefined, repeatStart: undefined, repeatEnd: undefined, voltas: undefined, anacrusis: undefined };
+  expect(await marks()).toEqual([none, none, none, none]);
+
+  // Bars 2 to 3 selected, the panel open on them.
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("Control+Shift+ArrowRight");
+  await page.locator("[data-toggle-panel]").click();
+  const panel = page.locator("[data-bar-panel]");
+  await expect(panel).toBeVisible();
+  await expect(page.locator("[data-panel-bar]")).toContainText("第 2–3 小節");
+  const repeat = panel.locator("[data-panel-repeat]");
+  await repeat.locator('input[name="repeatTimes"]').fill("2");
+  await repeat.locator('input[name="repeatTimes"]').press("Enter");
+  await expect.poll(marks).toEqual([none, { ...none, repeatStart: true }, { ...none, repeatEnd: 2 }, none]);
+  await expect(repeat.locator("[data-repeat-start]")).toBeVisible();
+  await expect(repeat.locator("[data-repeat-end]")).toBeVisible();
+
+  // The first ending on bar 3, where the selection left the cursor, the second on bar 4: one bar
+  // each, the cursor's. Esc closes the panel, then ends the selection.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("F2");
+  await expect(page.locator("[data-panel-bar]")).toHaveAttribute("data-bar", "3");
+  const voltas = panel.locator("[data-panel-voltas]");
+  await voltas.locator('input[name="volta"][value="1"]').check();
+  await voltas.getByRole("button", { name: "套用" }).click();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("F2");
+  await expect(page.locator("[data-panel-bar]")).toHaveAttribute("data-bar", "4");
+  await voltas.locator('input[name="volta"][value="2"]').check();
+  // A third pass of a repeat played twice never sounds: the panel says so as it is ticked.
+  const unplayed = voltas.locator("[data-voltas-unplayed]");
+  await expect(unplayed).toHaveCount(0);
+  await voltas.locator('input[name="volta"][value="3"]').check();
+  await expect(unplayed).toContainText("第 3 遍");
+  await voltas.locator('input[name="volta"][value="3"]').uncheck();
+  await expect(unplayed).toHaveCount(0);
+  await voltas.getByRole("button", { name: "套用" }).click();
+  await expect.poll(async () => (await marks()).map((bar) => bar.voltas)).toEqual([undefined, undefined, [1], [2]]);
+  // The pickup is the first bar's only.
+  await expect(panel.locator("[data-panel-anacrusis]")).toHaveCount(0);
+
+  // On the first bar: G major and a section from it, and the pickup.
+  await page.keyboard.press("Escape");
+  for (let bar = 4; bar > 1; bar--) await page.keyboard.press("Control+ArrowLeft");
+  await page.keyboard.press("F2");
+  await expect(page.locator("[data-panel-bar]")).toHaveAttribute("data-bar", "1");
+  await panel.locator('select[name="fifths"]').selectOption("1");
+  await panel.locator("[data-panel-key-sig]").getByRole("button", { name: "套用" }).click();
+  await panel.locator('input[name="section"]').fill("前奏");
+  await panel.locator('input[name="section"]').press("Enter");
+  await panel.locator('input[name="anacrusis"]').check();
+  await expect.poll(async () => (await marks())[0]).toEqual({ ...none, keySig: { fifths: 1, mode: "major" }, section: "前奏", anacrusis: true });
+  // Nothing written on the bars after: the key holds from the first bar on.
+  expect((await marks()).slice(1).map((bar) => bar.keySig)).toEqual([undefined, undefined, undefined]);
+  await page.keyboard.press("Escape");
+  await synced(page);
+  expect((await scoreOf(page)).bars.map((bar) => bar.id)).toEqual(ids);
+
+  // Each one undo step: the pickup, the section, the key, the two voltas, the repeat.
+  for (let step = 0; step < 6; step++) await page.keyboard.press("Control+z");
+  expect(await marks()).toEqual([none, none, none, none]);
+  await synced(page);
+  expect(errors).toEqual([]);
+});

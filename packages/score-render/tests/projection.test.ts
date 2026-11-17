@@ -13,10 +13,15 @@ import {
   insertBeat,
   type NoteJSON,
   type NoteValue,
+  setKeySig,
   setNote,
+  setRepeat,
+  setSection,
   setText,
+  setVoltas,
   slapPopCycle,
   strokeCycle,
+  toggleAnacrusis,
 } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
@@ -25,7 +30,7 @@ import { DRUM_PIECES } from "../src/drums";
 import { beatIdOf, beatOf, type Projection, projectScore, replaceBars, restsFilling } from "../src/projection";
 
 const settings = new alphaTab.Settings();
-const { AccentuationType, BrushType, Duration, DynamicValue, NoteAccidentalMode, VibratoType } = alphaTab.model;
+const { AccentuationType, BrushType, Duration, DynamicValue, KeySignatureType, NoteAccidentalMode, VibratoType } = alphaTab.model;
 
 function write(doc: Y.Doc, partId: string, barId: string, beats: [NoteValue, Record<string, NoteJSON>][]): Cursor {
   let cursor = cursorAt(doc, partId, barId);
@@ -450,4 +455,120 @@ test("a note with no bend has none in alphaTab", () => {
   const { doc } = band();
   const note = projectScore(docToJson(doc), settings).score.tracks[0]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!.notes[0]!;
   expect([note.bendType, note.hasBend, note.bendPoints]).toEqual([alphaTab.model.BendType.None, false, null]);
+});
+
+test("the marks of the bars become their master bar fields: section, repeat start and count, alternate endings, pickup", () => {
+  const { doc, barIds, guitar } = band();
+  const at = (bar: number) => cursorAt(doc, guitar, barIds[bar]!);
+  setSection(doc, at(0), "前奏");
+  toggleAnacrusis(doc, at(0));
+  setRepeat(doc, at(1), { kind: "bars", partId: guitar, anchorBarId: barIds[1]!, focusBarId: barIds[2]! }, { times: 3 });
+  setVoltas(doc, at(1), null, [1, 3]);
+  setVoltas(doc, at(2), null, [2]);
+  const { score } = projectScore(docToJson(doc), settings);
+  const fields = score.masterBars.map((bar) => ({
+    section: bar.section?.text ?? null,
+    start: bar.isRepeatStart,
+    count: bar.repeatCount,
+    endings: bar.alternateEndings,
+    pickup: bar.isAnacrusis,
+  }));
+  expect(fields).toEqual([
+    { section: "前奏", start: false, count: 0, endings: 0, pickup: true },
+    { section: null, start: true, count: 0, endings: 0b101, pickup: false },
+    { section: null, start: false, count: 3, endings: 0b010, pickup: false },
+  ]);
+  expect(score.masterBars[2]!.isRepeatEnd).toBe(true);
+});
+
+test("a key holds from its bar on, on every staff but the drums', in its mode", () => {
+  const { doc, barIds, guitar } = band();
+  setKeySig(doc, cursorAt(doc, guitar, barIds[1]!), { fifths: -3, mode: "minor" });
+  const projection = projectScore(docToJson(doc), settings);
+  const keysOf = (track: number) => projection.score.tracks[track]!.staves[0]!.bars.map((bar) => [bar.keySignature, bar.keySignatureType]);
+  const minor = [-3, KeySignatureType.Minor];
+  expect(keysOf(0)).toEqual([[0, KeySignatureType.Major], minor, minor]);
+  expect(keysOf(2)).toEqual([[0, KeySignatureType.Major], minor, minor]);
+  expect(keysOf(1)).toEqual([[0, KeySignatureType.Major], [0, KeySignatureType.Major], [0, KeySignatureType.Major]]);
+
+  // A bar replaced takes the key in force where it is.
+  write(doc, guitar, barIds[2]!, [[4, { s2: { fret: 1 } }]]);
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[2]!], settings)).toBe(2);
+  expect(keysOf(0)).toEqual([[0, KeySignatureType.Major], minor, minor]);
+  expect(voiceOf(projection, 0, 2)).toEqual(voiceOf(projectScore(json, settings), 0, 2));
+});
+
+test("a pickup bar is as long as its longest voice in any part: shorter voices are filled to it, an empty one with rests of that length", () => {
+  const { doc, barIds, guitar, drums, keys } = band();
+  toggleAnacrusis(doc, cursorAt(doc, keys, barIds[0]!));
+  // The guitar holds a quarter and an eighth, the drums a quarter, the keys two halves: the keys fill the bar.
+  let projection = projectScore(docToJson(doc), settings);
+  expect(projection.score.masterBars[0]!.calculateDuration()).toBe(3840);
+  // Without the keys' bar, the guitar's quarter and eighth are the longest: a dotted quarter.
+  const emptied = docToJson(doc);
+  emptied.parts[2]!.content[barIds[0]!] = { "0:0": [] };
+  projection = projectScore(emptied, settings);
+  expect(projection.score.masterBars[0]!.calculateDuration()).toBe(1440);
+  expect(voiceOf(projection, 0, 0).map((beat) => [beat.duration, beat.rest])).toEqual([
+    [Duration.Quarter, false],
+    [Duration.Eighth, true],
+  ]);
+  expect(voiceOf(projection, 1, 0).map((beat) => [beat.duration, beat.rest])).toEqual([
+    [Duration.Quarter, false],
+    [Duration.Eighth, true],
+  ]);
+  expect(voiceOf(projection, 2, 0).map((beat) => [beat.duration, beat.rest])).toEqual([
+    [Duration.Quarter, true],
+    [Duration.Eighth, true],
+  ]);
+  // The bar after starts right after it.
+  expect(projection.score.masterBars[1]!.start).toBe(1440);
+  expect(drums).toBe(projection.partIds[1]);
+  expect(guitar).toBe(projection.partIds[0]);
+});
+
+test("a pickup bar with nothing in it is as long as its time signature", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Empty pickup");
+  const [barId] = insertBars(doc, { after: null, count: 2, timeSig: { numerator: 3, denominator: 4 } });
+  const keys = addPart(doc, { name: "Keys", kind: "pitched" });
+  toggleAnacrusis(doc, cursorAt(doc, keys, barId!));
+  const projection = projectScore(docToJson(doc), settings);
+  expect(projection.score.masterBars[0]!.isAnacrusis).toBe(true);
+  expect(projection.score.masterBars[0]!.calculateDuration()).toBe(2880);
+  expect(voiceOf(projection, 0, 0).map((beat) => [beat.duration, beat.rest])).toEqual([
+    [Duration.Half, true],
+    [Duration.Quarter, true],
+  ]);
+});
+
+test("a change that keeps the length of a pickup bar replaces its bars like any other: the same model as projecting the whole score again", () => {
+  const { doc, barIds, guitar, keys } = band();
+  toggleAnacrusis(doc, cursorAt(doc, keys, barIds[0]!));
+  const projection = projectScore(docToJson(doc), settings);
+  const score = projection.score;
+  // The keys fill the bar; the guitar's quarter and eighth get one more eighth, still shorter.
+  write(doc, guitar, barIds[0]!, [[8, { s2: { fret: 5 } }]]);
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[0]!], settings)).toBe(0);
+  expect(projection.score).toBe(score);
+  const whole = projectScore(json, settings);
+  for (const track of [0, 1, 2]) expect(voiceOf(projection, track, 0)).toEqual(voiceOf(whole, track, 0));
+  const lengths = (bars: alphaTab.model.MasterBar[]) => bars.map((bar) => [bar.calculateDuration(), bar.start]);
+  expect(lengths(score.masterBars)).toEqual(lengths(whole.score.masterBars));
+});
+
+test("a change of the length of a pickup bar is not a replacement: where the bars after it start changes with it", () => {
+  const { doc, barIds, keys } = band();
+  toggleAnacrusis(doc, cursorAt(doc, keys, barIds[0]!));
+  const projection = projectScore(docToJson(doc), settings);
+  // The keys' first half becomes a quarter: the longest voice, and the bar, a quarter shorter.
+  changeBeatAt(doc, cursorAt(doc, keys, barIds[0]!), durationStep(1));
+  expect(replaceBars(projection, docToJson(doc), [barIds[0]!], settings)).toBeNull();
+  // Projected again, any bar after it is replaced as before.
+  write(doc, keys, barIds[1]!, [[4, { n60: {} }]]);
+  const fresh = projectScore(docToJson(doc), settings);
+  write(doc, keys, barIds[2]!, [[4, { n62: {} }]]);
+  expect(replaceBars(fresh, docToJson(doc), [barIds[2]!], settings)).toBe(2);
 });

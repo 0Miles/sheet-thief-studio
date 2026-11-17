@@ -14,6 +14,7 @@ import {
   changeBeatsOnSelection,
   clearNotes,
   type Cursor,
+  type KeySignature,
   deleteBarsAt,
   deleteBeat,
   deleteNote,
@@ -37,14 +38,19 @@ import {
   moveToVoice,
   noteKeyAt,
   type NoteToggle,
+  type RepeatChange,
   partKindOf,
   partsOf,
   type Selection,
   type SelectionStep,
   setFret,
+  setKeySig,
+  setRepeat,
+  setSection,
   setTempo,
   setText,
   setTimeSig,
+  setVoltas,
   settleCursor,
   settleSelection,
   slapPopCycle,
@@ -56,6 +62,7 @@ import {
   techniqueToggle,
   tieToggle,
   type TimeSignature,
+  toggleAnacrusis,
   toggleAt,
   toggleOnSelection,
   tripletToggle,
@@ -166,6 +173,16 @@ export interface EditorSession {
   setTimeSig(timeSig: TimeSignature): boolean;
   /** The tempo from the cursor's bar on; null clears it. The selection stays. */
   setTempo(tempo: number | null): boolean;
+  /** The key from the cursor's bar on; null clears it. The selection stays. */
+  setKeySig(keySig: KeySignature | null): boolean;
+  /** The name of the section that starts at the cursor's bar; null clears it. The selection stays. */
+  setSection(section: string | null): boolean;
+  /** A repeat over the selection's bars, else the cursor's, or its start or end cleared. The selection stays. */
+  setRepeat(change: RepeatChange): boolean;
+  /** The passes the selection's bars, else the cursor's, are played on; none clears them. The selection stays. */
+  setVoltas(passes: readonly number[]): boolean;
+  /** Make the first bar a pickup bar, or a full one again: false on any other bar. The selection stays. */
+  toggleAnacrusis(): boolean;
   destroy(): void;
 }
 
@@ -397,7 +414,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
   });
 
-  /** A structural command that changes bars where they are (a time signature, a tempo): the cursor and the selection stay. */
+  /** A structural command that changes bars where they are (a time signature, a tempo, a key, a repeat…): the cursor and the selection stay. */
   const onBars = (run: (at: Cursor, selected: Selection | null) => boolean): KeyCommand => ({
     changes: true,
     run: (at) => (run(at, selection) ? { cursor: at, selection } : { cursor: at, selection, done: false }),
@@ -654,6 +671,21 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
     setTempo(tempo) {
       return runWithoutKey(onBars((at) => setTempo(doc, at, tempo)));
+    },
+    setKeySig(keySig) {
+      return runWithoutKey(onBars((at) => setKeySig(doc, at, keySig)));
+    },
+    setSection(section) {
+      return runWithoutKey(onBars((at) => setSection(doc, at, section)));
+    },
+    setRepeat(change) {
+      return runWithoutKey(onBars((at, selected) => setRepeat(doc, at, selected, change)));
+    },
+    setVoltas(passes) {
+      return runWithoutKey(onBars((at, selected) => setVoltas(doc, at, selected, passes)));
+    },
+    toggleAnacrusis() {
+      return runWithoutKey(onBars((at) => toggleAnacrusis(doc, at)));
     },
     destroy() {
       doc.off("afterTransaction", settle);

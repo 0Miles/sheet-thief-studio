@@ -1,9 +1,15 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
+
+/** The tonic of each key, by the number of sharps (positive) or flats (negative) plus 7. */
+const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
+  major: ["C♭", "G♭", "D♭", "A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯"],
+  minor: ["A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯", "G♯", "D♯", "A♯"],
+};
 
 export const strings = {
   app: {
@@ -91,6 +97,41 @@ export const strings = {
       tempoHere: "從這個小節起",
       tempoInherited: (tempo: number) => `沒有變化，沿用 ${tempo}`,
       clearTempo: "清除速度",
+      keySig: "調號",
+      keyMode: "大小調",
+      keyModes: { major: "大調", minor: "小調" } satisfies Record<KeySignature["mode"], string>,
+      key: "調",
+      /** A key by name and by what it writes, such as 「B♭ 大調（2 個降記號）」. */
+      keyName: ({ fifths, mode }: KeySignature) => {
+        const tonic = KEY_TONICS[mode][fifths + 7];
+        const marks = fifths === 0 ? "沒有升降記號" : fifths > 0 ? `${fifths} 個升記號` : `${-fifths} 個降記號`;
+        return `${tonic} ${mode === "major" ? "大調" : "小調"}（${marks}）`;
+      },
+      keySigHere: (bar: number) => `從第 ${bar} 小節起`,
+      keySigInherited: (bar: number, name: string) => `第 ${bar} 小節沒有變化，沿用 ${name}`,
+      clearKeySig: "清除調號",
+      section: "段落名稱",
+      sectionHere: (bar: number) => `從第 ${bar} 小節開始的段落，例如「主歌」、「副歌」`,
+      clearSection: "清除段落名稱",
+      repeat: "反覆",
+      repeatTimes: "總共演奏幾次",
+      repeatOnBar: "反覆開始與結束都寫在這個小節",
+      repeatOnRange: (first: number, last: number) => `反覆開始寫在第 ${first} 小節，結束寫在第 ${last} 小節`,
+      repeatStartHere: "這裡是反覆開始",
+      repeatEndHere: (times: number) => `這裡是反覆結束，總共演奏 ${times} 次`,
+      setRepeat: "設定反覆",
+      clearRepeatStart: "清除反覆開始",
+      clearRepeatEnd: "清除反覆結束",
+      voltas: "跳房子：只在勾選的第幾遍演奏",
+      voltaPass: (pass: number) => `第 ${pass} 遍`,
+      voltasOnBar: "寫在這個小節",
+      voltasOnRange: "寫在選取的每一個小節",
+      // Told only, not refused: a repeat set or changed later can make the pass sound (docs/spec/commands.md, section 6).
+      voltasUnplayed: (passes: readonly number[], times: number) =>
+        `${times === 1 ? "這裡沒有反覆" : `對應的反覆總共只演奏 ${times} 次`}，第 ${passes.join("、")} 遍不會演奏`,
+      clearVoltas: "清除跳房子",
+      anacrusis: "弱起小節",
+      anacrusisHelp: "只有第一小節可以是弱起小節。它的長度是裡面最長的聲線，不標時值不足。",
       apply: "套用",
       close: "關閉",
     },

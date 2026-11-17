@@ -3,6 +3,7 @@
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { customAlphabet, nanoid } from "nanoid";
 import * as Y from "yjs";
+import type { z } from "zod";
 
 import {
   BEND_SEMITONES,
@@ -18,6 +19,8 @@ import {
   durationOf,
   emptyBarContent,
   KIND_DEFAULTS,
+  type KeySignature,
+  keySigSchema,
   LOCAL,
   MAIN_VOICE,
   MAX_BARS,
@@ -354,6 +357,128 @@ export function setTempo(doc: Y.Doc, cursor: Cursor, tempo: number | null): bool
     if (tempo === null) bar.delete("tempo");
     else bar.set("tempo", tempo);
   }, LOCAL);
+  return true;
+}
+
+/** Whether a stored value reads as `value` (docs/spec/schema.md, section 11): one that cannot be read never does. */
+function storedAs<Schema extends z.ZodType>(schema: Schema, stored: unknown, value: z.output<Schema>): boolean {
+  const read = parsePlain(schema, stored);
+  return read.success && JSON.stringify(read.data) === JSON.stringify(value);
+}
+
+/**
+ * Write a field of one bar that holds from it on, or take it away (undefined), one command: none
+ * when the bar already reads so. The value is copied, so that no two bars share it.
+ */
+function writeBarField<Schema extends z.ZodType>(bar: YBar, name: string, schema: Schema, value: z.output<Schema> | undefined): void {
+  if (value === undefined ? !bar.has(name) : storedAs(schema, bar.get(name), value)) return;
+  (bar.doc as Y.Doc).transact(() => {
+    if (value === undefined) bar.delete(name);
+    // Every value of a bar is flat: a list of numbers, or an object of plain fields.
+    else bar.set(name, Array.isArray(value) ? [...value] : typeof value === "object" && value !== null ? { ...value } : value);
+  }, LOCAL);
+}
+
+/**
+ * Change the key from the cursor's bar on, written on that bar only, one command; null takes that
+ * change away (docs/spec/commands.md, section 6). False, and nothing set, for a key out of range
+ * (docs/spec/schema.md, section 3), or when the cursor's bar is gone. The same key writes nothing.
+ */
+export function setKeySig(doc: Y.Doc, cursor: Cursor, keySig: KeySignature | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  const valid = keySig === null ? null : parsePlain(keySigSchema, keySig);
+  if (bar === undefined || (valid !== null && !valid.success)) return false;
+  writeBarField(bar, "keySig", keySigSchema, valid?.data);
+  return true;
+}
+
+const sectionSchema = barSchema.shape.section.unwrap();
+
+/**
+ * Name the section that starts at the cursor's bar, one command; null takes the name away
+ * (docs/spec/commands.md, section 6). False, and nothing set, for a name not of 1 to 64
+ * characters, or when the cursor's bar is gone. The same name writes nothing.
+ */
+export function setSection(doc: Y.Doc, cursor: Cursor, section: string | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  if (bar === undefined || (section !== null && !sectionSchema.safeParse(section).success)) return false;
+  writeBarField(bar, "section", sectionSchema, section ?? undefined);
+  return true;
+}
+
+/** What `setRepeat` does: repeat its bars `times` times in all, or clear the start or the end of a repeat. */
+export type RepeatChange = { times: number } | { clear: "start" | "end" };
+
+const repeatEndSchema = barSchema.shape.repeatEnd.unwrap();
+const repeatStartSchema = barSchema.shape.repeatStart.unwrap();
+
+/**
+ * The bars a structural command that writes on bars where they are works on: those of the
+ * selection (`structuralRange`) still in the score, else the cursor's bar; none when they are gone.
+ */
+function barsWorkedOn(doc: Y.Doc, cursor: Cursor, selection: Selection | null): string[] {
+  const bars = barsOf(doc);
+  return (structuralRange(doc, selection) ?? [cursor.barId]).filter((barId) => bars.has(barId));
+}
+
+/**
+ * A repeat, one command (docs/spec/commands.md, section 6): its start on the first bar of the
+ * selection (`structuralRange`), its end, how many times it is played in all (2 to 32), on the
+ * last; without a selection, both on the cursor's bar. Either can be cleared alone, from the same
+ * bar it is written on. Nothing else is changed: a repeat begun or ended elsewhere stays. False,
+ * and nothing set, for a count out of range, or when the bars are gone.
+ */
+export function setRepeat(doc: Y.Doc, cursor: Cursor, selection: Selection | null, change: RepeatChange): boolean {
+  const range = barsWorkedOn(doc, cursor, selection);
+  const bars = barsOf(doc);
+  const first = bars.get(range[0] as string);
+  const last = bars.get(range.at(-1) as string);
+  if (first === undefined || last === undefined) return false;
+  if ("clear" in change) {
+    if (change.clear === "start") writeBarField(first, "repeatStart", repeatStartSchema, undefined);
+    else writeBarField(last, "repeatEnd", repeatEndSchema, undefined);
+    return true;
+  }
+  if (!repeatEndSchema.safeParse(change.times).success) return false;
+  // One transaction: the two writes, when both are needed, are one undo step.
+  doc.transact(() => {
+    writeBarField(first, "repeatStart", repeatStartSchema, true);
+    writeBarField(last, "repeatEnd", repeatEndSchema, change.times);
+  }, LOCAL);
+  return true;
+}
+
+const voltasSchema = barSchema.shape.voltas.unwrap();
+
+/**
+ * The passes of a repeat the bars of the selection (`structuralRange`), else the cursor's bar,
+ * are played on, written on every one of them, one command; none (an empty list) clears them
+ * (docs/spec/commands.md, section 6). False, and nothing set, unless the passes are 1 to 8 in
+ * increasing order, or when the bars are gone. Bars that already read so are not written.
+ */
+export function setVoltas(doc: Y.Doc, cursor: Cursor, selection: Selection | null, passes: readonly number[]): boolean {
+  const range = barsWorkedOn(doc, cursor, selection);
+  const valid = passes.length === 0 ? null : parsePlain(voltasSchema, [...passes]);
+  if (range.length === 0 || (valid !== null && !valid.success)) return false;
+  const bars = barsOf(doc);
+  doc.transact(() => {
+    for (const barId of range) writeBarField(bars.get(barId) as YBar, "voltas", voltasSchema, valid?.data);
+  }, LOCAL);
+  return true;
+}
+
+/**
+ * Make the first bar a pickup bar, or a full one again, one command (docs/spec/commands.md,
+ * section 6). False, and nothing changed, on any bar but the first: only the first bar can be a
+ * pickup (docs/spec/schema.md, section 3). A pickup that cannot be read is no pickup: it is set.
+ */
+export function toggleAnacrusis(doc: Y.Doc, cursor: Cursor): boolean {
+  const bars = barsOf(doc);
+  const [first] = ordered(bars);
+  const bar = first === cursor.barId ? bars.get(first) : undefined;
+  if (bar === undefined) return false;
+  const schema = barSchema.shape.anacrusis.unwrap();
+  writeBarField(bar, "anacrusis", schema, storedAs(schema, bar.get("anacrusis"), true) ? undefined : true);
   return true;
 }
 

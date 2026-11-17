@@ -170,6 +170,9 @@ export type BarJSON = z.infer<typeof barSchema>;
 /** Quarter notes per minute of a score whose first bar gives no tempo (docs/spec/schema.md, section 3). */
 export const DEFAULT_TEMPO = 120;
 
+/** The key of a score whose bars give none: C major, no sharps or flats. */
+export const DEFAULT_KEY_SIG: Readonly<KeySignature> = Object.freeze({ fifths: 0, mode: "major" });
+
 // Notes and beats -------------------------------------------------------------------------------
 
 /** Every field a note can have, whatever its part; `kindSchemas` says which ones each kind has. */
@@ -453,6 +456,43 @@ export const scoreSchema = metaSchema
     });
   });
 export type ScoreJSON = z.infer<typeof scoreSchema>;
+
+/** The key in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_KEY_SIG`; none for a bar not in the score. */
+export function keySigAt(score: ScoreJSON, barId: string): KeySignature | undefined {
+  const index = score.bars.findIndex((bar) => bar.id === barId);
+  if (index < 0) return undefined;
+  return keySigsOf(score.bars)[index];
+}
+
+/**
+ * The key in force in each bar, in order: from the bar that changes it on, `DEFAULT_KEY_SIG` before
+ * any does. Each a copy of its own: changing one changes neither the score nor another bar's.
+ */
+export function keySigsOf(bars: readonly BarJSON[]): KeySignature[] {
+  let key: Readonly<KeySignature> = DEFAULT_KEY_SIG;
+  return bars.map((bar) => {
+    key = bar.keySig ?? key;
+    return { ...key };
+  });
+}
+
+/**
+ * How many times in all the repeat that voltas on `barIds` belong to is played
+ * (docs/spec/commands.md, section 6): the count of the repeat that ends inside the run of bars
+ * with voltas around them (they count as having some), else of one that ends on the bar just
+ * before that run; 1, played once, when no repeat does. A pass past it never sounds. Bars not in
+ * the score are left out; none at all is 1.
+ */
+export function voltaRepeatTimes(score: ScoreJSON, barIds: readonly string[]): number {
+  const indexes = barIds.map((barId) => score.bars.findIndex((bar) => bar.id === barId)).filter((index) => index >= 0);
+  if (indexes.length === 0) return 1;
+  let first = Math.min(...indexes);
+  let last = Math.max(...indexes);
+  while (first > 0 && score.bars[first - 1]?.voltas !== undefined) first--;
+  while (last < score.bars.length - 1 && score.bars[last + 1]?.voltas !== undefined) last++;
+  const ending = score.bars.slice(first, last + 1).find((bar) => bar.repeatEnd !== undefined) ?? score.bars[first - 1];
+  return ending?.repeatEnd ?? 1;
+}
 
 /** The tempo in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_TEMPO`; none for a bar not in the score. */
 export function tempoAt(score: ScoreJSON, barId: string): number | undefined {
