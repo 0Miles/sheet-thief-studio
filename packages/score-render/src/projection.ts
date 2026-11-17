@@ -557,8 +557,10 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
 /**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
  * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
- * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
- * next written dynamic in each voice that changed. A bar line that a link crosses, before the
+ * did, or another dynamic written on a rest still to draw (#97), has the bar after it rebuilt too,
+ * and so on up to a bar whose voices go on as before: the next written dynamic in each voice that
+ * changed, or, for one still to draw, the next beat that is not a rest, past any bars of rests
+ * only in between. A bar line that a link crosses, before the
  * change or after it, has the bars on both sides of it rebuilt: both notes of a link hold it, and
  * alphaTab sets it up when it finishes the bar of the note it starts from. Returns the index of
  * the first rebuilt bar, or null when the change is not one this can do (a bar, a part or a voice
