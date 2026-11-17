@@ -42,7 +42,7 @@ import {
   type TimeSignature,
   voltaRepeatTimes,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PlayerState, type Rect, type ScoreEngine } from "@studio/score-render";
+import { createAlphaTabEngine, type PartMix, type PlayerState, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
@@ -54,14 +54,17 @@ import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
+import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
+import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { errorText, strings } from "../strings";
+import { type SoundUpdates, soundUpdates } from "../sound";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
@@ -220,7 +223,16 @@ let keepInSight = false;
 const isFollowing = () => (keepInSight || reading.value) && playerState.value === "playing";
 /** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
 let ownScrollTop: number | null = null;
-let soundTimer: ReturnType<typeof setTimeout> | undefined;
+/** The member's settings of every score, kept in this browser (docs/spec/playback.md, section 1). */
+const playback = ref<PlaybackOptions>({ metronome: false, countIn: false, whilePlaying: "a" });
+/** The member's mix and speed of this score, kept in this browser under its id. */
+const mix = shallowRef<ScoreMix>({ parts: new Map(), speed: 1 });
+/** The panel of the mixer is open, at the side of the score (in the narrow Read view, the drawer has it). */
+const mixerOpen = ref(false);
+/** Behaviour (b): what plays is the score before a change (docs/spec/views.md, section 10). */
+const behind = ref(false);
+/** When the sound is made again after a change of content (docs/spec/playback.md, section 3). */
+let sound: SoundUpdates | undefined;
 
 const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
@@ -232,6 +244,7 @@ const hideFromTests = exposeForTests({
   scoreJson: () => (stopObserving !== undefined ? docToJson(doc) : null),
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
+  player: () => engine?.player.settings() ?? null,
 });
 const measurement = measureEditView({
   doc,
@@ -250,7 +263,79 @@ function placeCursor(): void {
   const selection = session?.selection ?? null;
   selectionRects.value = selection === null ? [] : engine.renderer.boundsOfSelection(selection).map((box) => clearOf(box, reserved.value));
   structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
+  updateLoop();
 }
+
+/**
+ * The selection is the loop (docs/spec/playback.md, section 4): set again whenever the selection
+ * moves or the sound changes, the ticks of a selection being those of the sound in place.
+ */
+function updateLoop(): void {
+  if (engine === undefined || !editing.value) return;
+  const selection = session?.selection ?? null;
+  engine.player.setLoop(selection && engine.player.loopOf(selection));
+}
+
+/** What the mixer says of the loop: the bars of the selection; null in the Read view, which has none. */
+const loopText = computed(() => {
+  const json = score.value;
+  if (!editing.value || json === null) return null;
+  const selection = presence.value.selection;
+  if (selection === null) return text.mixer.loopNone;
+  const numberOf = (barId: string) => json.bars.findIndex((bar) => bar.id === barId) + 1;
+  if (selection.kind === "beats") return text.mixer.loopBeats(numberOf(selection.barId));
+  const [first, last] = [numberOf(selection.anchorBarId), numberOf(selection.focusBarId)].sort((a, b) => a - b);
+  return text.mixer.loopBars(first!, last!);
+});
+
+/** The parts as the mixer lists them, and whether each shares its channels with another (playback.md, section 5). */
+const mixerParts = computed(() => {
+  const shared = sharesChannels(parts.value.map((part) => part.kind));
+  return parts.value.map((part, index) => ({ id: part.id, name: part.name, shared: shared[index] === true }));
+});
+
+/** The toolbar's button: the mixer opens at the side of the score, alone there, or closes. */
+function toggleMixer(): void {
+  if (mixerOpen.value) {
+    closeMixer();
+    return;
+  }
+  panelOpen.value = false;
+  partsOpen.value = false;
+  placeCursor();
+  mixerOpen.value = true;
+}
+
+function closeMixer(): void {
+  mixerOpen.value = false;
+  scroller.value?.focus({ preventScroll: true });
+}
+
+function onPartMix(partId: string, change: Partial<PartMix>): void {
+  const next = { ...partMix(mix.value, partId), ...change };
+  const mixed = new Map(mix.value.parts).set(partId, next);
+  mix.value = { ...mix.value, parts: mixed };
+  saveMix(scoreId, mix.value);
+  const player = engine?.player;
+  if (change.mute !== undefined) player?.setMute(partId, next.mute);
+  if (change.solo !== undefined) player?.setSolo(partId, next.solo);
+  if (change.volume !== undefined) player?.setVolume(partId, next.volume);
+}
+
+function onSpeed(speed: number): void {
+  mix.value = { ...mix.value, speed };
+  saveMix(scoreId, mix.value);
+  engine?.player.setSpeed(speed);
+}
+
+function onPlayback(change: Partial<PlaybackOptions>): void {
+  playback.value = { ...playback.value, ...change };
+  savePlayback(playback.value);
+  if (change.metronome !== undefined) engine?.player.setMetronome(change.metronome);
+  if (change.countIn !== undefined) engine?.player.setCountIn(change.countIn);
+  if (change.whilePlaying !== undefined) sound?.setMode(change.whilePlaying);
+}
+
 
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
 const panel = computed(() => {
@@ -293,6 +378,7 @@ function togglePanel(): void {
   else {
     // One panel at the side of the score at a time.
     partsOpen.value = false;
+    mixerOpen.value = false;
     panelOpen.value = true;
     placeCursor();
   }
@@ -338,6 +424,7 @@ function toggleParts(): void {
   if (partsOpen.value) closeParts();
   else {
     panelOpen.value = false;
+    mixerOpen.value = false;
     placeCursor();
     partsOpen.value = true;
   }
@@ -548,14 +635,6 @@ function onScroll(): void {
   stopFollowing();
 }
 
-/** Changes are heard once typing stops for 400 ms (docs/spec/playback.md, section 3, behaviour (a)). */
-const SOUND_DELAY = 400;
-
-function soundLater(): void {
-  clearTimeout(soundTimer);
-  soundTimer = setTimeout(() => void engine?.player.load(), SOUND_DELAY);
-}
-
 /** Scroll so that the cursor is on screen, with some room around it. */
 function reveal(): void {
   const element = scroller.value;
@@ -583,12 +662,13 @@ function draw(change: ScoreChange): void {
     if (narrow.value) keepNarrowPart(json);
     shown.value = partsToShow(json);
     engine.renderer.setScore(json, shown.value);
+    sound?.remade();
     keepCursorShown();
     return;
   }
   engine.renderer.patchBars(json, [...change.barIds]);
   // Another member's changes are heard as one's own are (docs/spec/playback.md, section 3).
-  soundLater();
+  sound?.changed();
 }
 
 /** The first place of a bar of a part (the first bar when left out); null when either is not in the score. */
@@ -854,6 +934,15 @@ onMounted(async () => {
     seekOnClick: reading.value,
     scale: display.value.scale,
   });
+  // The player starts with the member's settings of this score, and the mixer shows them.
+  const started = startPlayback(scoreId, engine.player);
+  mix.value = started.mix;
+  playback.value = started.playback;
+  // The sound of a change is in place: so are the ticks the loop is set in.
+  sound = soundUpdates(engine.player, playback.value.whilePlaying, updateLoop);
+  sound.onBehind((now) => {
+    behind.value = now;
+  });
   engine.renderer.onRendered(() => {
     ready.value = true;
     updateOverlay();
@@ -901,7 +990,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
   window.removeEventListener("online", goOnline);
   window.removeEventListener("beforeunload", warnUnsynced);
-  clearTimeout(soundTimer);
+  sound?.destroy();
   hideFromTests();
   measurement.stop();
   stopObserving?.();
@@ -930,6 +1019,9 @@ onBeforeUnmount(() => {
         <template v-if="view && !narrow">
           <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
+          <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
+            {{ text.mixer.open }}
+          </AppButton>
         </template>
         <div v-if="view === 'editable'" class="score__bars">
           <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
@@ -971,6 +1063,7 @@ onBeforeUnmount(() => {
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
         {{ view === "editable" ? text.offline.editing : text.offline.reading }}
       </p>
+      <p v-if="behind" class="score__banner score__banner--note" role="status" data-behind>{{ text.mixer.behind }}</p>
       <div class="score__body">
       <div
         ref="scroller"
@@ -1079,6 +1172,13 @@ onBeforeUnmount(() => {
         @clef="onClef"
         @close="closeParts"
       />
+      <aside v-if="mixerOpen && view && !narrow" class="score__side" data-mixer-panel :aria-label="text.mixer.title">
+        <header class="score__side-header">
+          <h2 class="score__side-title">{{ text.mixer.title }}</h2>
+          <AppButton variant="ghost" size="sm" @click="closeMixer">{{ text.mixer.close }}</AppButton>
+        </header>
+        <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="loopText" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
+      </aside>
       </div>
       <AppConfirmDialog
         :visible="deletion !== null"
@@ -1095,6 +1195,7 @@ onBeforeUnmount(() => {
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
+        <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="null" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
       </section>
       <footer v-if="narrow" class="score__playbar" data-playbar>
         <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
@@ -1140,8 +1241,34 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--border);
 }
 .score__drawer {
+  display: grid;
+  gap: 0.75rem;
+  /* The score keeps some room above it on a phone: the drawer scrolls instead. */
+  max-height: 45vh;
+  overflow-y: auto;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border);
+}
+/* The mixer at the side of the score, as the panels of the edit view are. */
+.score__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 18rem;
+  flex: none;
+  padding: 0.75rem 1rem;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow-y: auto;
+}
+.score__side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.score__side-title {
+  margin: 0;
+  font-size: 1rem;
 }
 .score__title {
   margin: 0;
@@ -1176,6 +1303,9 @@ onBeforeUnmount(() => {
   background: var(--bg-surface);
   color: var(--danger);
   font-size: 0.875rem;
+}
+.score__banner--note {
+  color: var(--text-muted);
 }
 /* The score, and the panel of the cursor's bar at its side. */
 .score__body {

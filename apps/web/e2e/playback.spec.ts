@@ -8,7 +8,7 @@ import { expect, type Page, test } from "./test";
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, soundReady } from "./pages";
+import { barsShown, cursorOf, loggedIn, oneAfterAnother, openScore, pageErrors, recordBarsShown, scoreOf, seedScore, soundReady, untilShown } from "./pages";
 
 const text = strings.score.player;
 
@@ -30,35 +30,6 @@ async function openToPlay(page: Page, id: string): Promise<void> {
   await soundReady(page);
 }
 
-/**
- * From now on, write down every bar the toolbar shows as playing, in the order it shows them
- * (each once, as it changes); `barsShown` reads them back.
- */
-async function recordBarsShown(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const shown: number[] = [];
-    (window as unknown as { barsShown: number[] }).barsShown = shown;
-    const toolbar = document.querySelector("[data-player]")!;
-    new MutationObserver(() => {
-      const bar = document.querySelector("[data-playing-bar]")?.getAttribute("data-bar");
-      if (bar != null && shown.at(-1) !== Number(bar)) shown.push(Number(bar));
-    }).observe(toolbar, { subtree: true, childList: true, attributes: true, characterData: true });
-  });
-}
-
-function barsShown(page: Page): Promise<number[]> {
-  return page.evaluate(() => (window as unknown as { barsShown: number[] }).barsShown);
-}
-
-/** Each bar shown is the one after the bar shown before it: playback went on, it never jumped. */
-function oneAfterAnother(bars: number[]): boolean {
-  return bars.every((bar, index) => index === 0 || bar === bars[index - 1]! + 1);
-}
-
-/** Wait until the toolbar has shown this bar playing (a 4/4 bar lasts 2 seconds at 120). */
-async function untilShown(page: Page, bar: number): Promise<void> {
-  await expect.poll(() => barsShown(page), { timeout: 15_000 }).toContain(bar);
-}
 
 test("with the cursor in bar 5, playing starts at bar 5 and goes on; stop ends it", async ({ browser }) => {
   const id = seed();

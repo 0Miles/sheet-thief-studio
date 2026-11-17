@@ -42,6 +42,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - alphaTab 的捲動已經關掉（`alphaTabEngine.ts` 的 `ScrollMode.Off`），跟隨由殼自己做，所以 `ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（#31，細節見 [`playback.md`](playback.md) 4.1）。
 - **補充**（#31）：`EngineOptions.seekOnClick` 預設關閉；Read view 要點譜面跳過去時再打開。
   - **補充**（#32）：alphaTab 1.9 只有在它自己的播放游標打開時（`enableCursor`）才會點譜面跳過去，而我們把它關掉了；所以 `seekOnClick` 由引擎自己做：聽 `beatMouseUp`，用 tick lookup 算出那個拍點第一次播到的 tick，走和 `seek` 一樣的路（聲音產生期間點的，聲音換好之後跳到那裡）。
+  - **補充**（#33）：有循環時，點擊位置夾在循環範圍內（`seek` 本身就夾，見 [`playback.md`](playback.md) 第 4 節）。目前沒有任何視圖同時有 `seekOnClick` 與循環（Read view 沒有選取，編輯視圖點譜面不跳），所以只在 `engine.test.ts` 測，沒有 e2e。
 - 排版：Page 版面、lazy loading、`useWorkers: false`、以小節為單位就地更新（ADR 0003）。
 
 ## 3. 可編輯視圖
@@ -97,7 +98,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 預設一次只顯示一個聲部，用聲部切換器換。各團譜上次選的聲部存在 localStorage（補充：鍵是 `studio.narrowPart.<scoreId>`）；沒有紀錄時用第一個聲部。
 - 用 Page 版面，每行小節數交給 alphaTab 依寬度決定。
 - 播放列固定在底部，混音面板收在抽屜裡。
-  - **補充**（#32）：播放列是頁面版面的最後一列，譜面捲動區在它上面結束，所以播放列從不疊在譜面上；抽屜打開時在播放列上方，把譜面往上推，也不疊在譜面上。目前抽屜裡只有縮放，混音的內容由 #33 加上。聲部切換器在上方的工具列。
+  - **補充**（#32）：播放列是頁面版面的最後一列，譜面捲動區在它上面結束，所以播放列從不疊在譜面上；抽屜打開時在播放列上方，把譜面往上推，也不疊在譜面上。抽屜裡是縮放與混音（#33）；抽屜最高 45vh，放不下就在抽屜裡捲動。聲部切換器在上方的工具列。
   - **補充**（#32）：窄螢幕與否和視圖一樣，只在載入頁面時判定一次。
 - 捲動到頂端時，底部的播放列不能蓋住 alphaTab 的標記（見第 9 節）。
 
@@ -157,5 +158,6 @@ interface PresenceState {
   - **補充**（#35）：被鎖成唯讀的 Owner 或 Editor 按了會修改的鍵時，提示的是鎖住的理由，不是「檢視者無法修改」。
 - **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 或 `"migrationFailed"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
+  - **補充**（#33）：和離線橫幅一樣在譜面上方（`data-behind`），聲音換好就消失。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。
   - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機的修改都已經由伺服器確認收到（`provider.isSynced && provider.unsyncedChanges === 0`；`unsyncedChanges` 在伺服器回覆 SyncStatus 時才減少）；還有修改沒被確認時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。

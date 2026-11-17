@@ -63,8 +63,8 @@ async function clearOfReserved(page: Page, playbar: "[data-playbar]" | "[data-pl
     const below = [page.locator(playbar), ...(await page.locator("[data-drawer]").all())];
     for (const part of below) expect((await part.boundingBox())!.y, "below the score").toBeGreaterThanOrEqual(score.y + score.height);
   } else {
-    const toolbar = (await page.locator("main > header").boundingBox())!;
-    expect(toolbar.y + toolbar.height, "the toolbar is above the score").toBeLessThanOrEqual(score.y);
+    const player = (await page.locator(playbar).boundingBox())!;
+    expect(player.y + player.height, "the player is above the score").toBeLessThanOrEqual(score.y);
   }
   const reserved = await Promise.all((await page.locator("[data-reserved]").all()).map((area) => area.boundingBox()));
   expect(reserved).not.toHaveLength(0);
@@ -152,6 +152,9 @@ test("a guest opening a read-only link gets the Read view, and can play", async 
   await expect(guest.locator("main")).toHaveAttribute("data-view", "read");
   await expect(guest.locator("[data-cursor]")).toHaveCount(0);
   expect(await cursorOf(guest)).toBeNull();
+  // A guest has the mixer too, kept in their own browser.
+  await guest.locator("[data-toggle-mixer]").click();
+  await guest.locator("[data-mixer-panel]").getByLabel(text.mixer.speed).selectOption({ label: text.mixer.percent(1.5) });
   await guest.getByRole("button", { name: text.player.play }).click();
   await expect(guest.locator("[data-playing-bar]")).toHaveAttribute("data-bar", "2", { timeout: 15_000 });
   expect(errors).toEqual([]);
@@ -167,6 +170,9 @@ test("scrolled to the top, the player and the playhead keep clear of the reserve
   // With the drawer open too: it pushes the score up, never over it.
   await phone.getByRole("button", { name: text.display.options }).click();
   await expect(phone.locator("[data-drawer]")).toBeVisible();
+  // The mixer is in it, with no loop: the Read view has no selection.
+  await expect(phone.locator("[data-drawer] [data-mixer]")).toBeVisible();
+  await expect(phone.locator("[data-drawer] [data-loop]")).toHaveCount(0);
   await clearOfReserved(phone, "[data-playbar]");
   expect(phoneErrors).toEqual([]);
 
