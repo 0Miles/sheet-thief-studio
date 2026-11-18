@@ -40,15 +40,22 @@ export const test = base.extend<{ cspWatch: CspWatch; cspViolations: string[] }>
           });
         });
       };
-      // The contexts a test makes itself (`loggedIn` in pages.ts) are watched like the fixture's.
+      // The contexts a test makes itself (`loggedIn` in pages.ts) are watched like the fixture's,
+      // and closed when it ends as Playwright closes the fixture's. The worker keeps one browser
+      // for the whole suite: left open, every page of every test before stayed alive in it, with
+      // its score, sockets and sound font; some 120 of them by the versions spec, until the runner
+      // slowed down for everything on it (e2e/contexts.spec.ts).
+      const made: BrowserContext[] = [];
       const newContext = browser.newContext;
       browser.newContext = async (...options: Parameters<Browser["newContext"]>) => {
         const context = await newContext.apply(browser, options);
+        made.push(context);
         await watch(context);
         return context;
       };
       await use({ violations, watch });
       browser.newContext = newContext;
+      await Promise.all(made.map((context) => context.close()));
       expect(violations, "Content Security Policy violations").toEqual([]);
     },
     { auto: true },

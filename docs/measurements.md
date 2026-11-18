@@ -182,12 +182,12 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 ### 指令
 
-和 M1b 相同；`-g` 只跑其中一項：
+和 M1b 相同；`-g` 只跑其中一項：預設里程碑已改成 M3(#51),所以每一行都要帶 `MEASURE_MILESTONE=m2`,才會用 M2 的譜、存成 m2 的檔名。
 
 ```
-pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
 MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency   # 只量按鍵
-pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
 ```
 
 ### 做法
@@ -405,3 +405,88 @@ pnpm --filter @studio/web measure --project=chromium staves
 - 「`BarBounds` 的上緣就是第一條譜線」仍是讀 alphaTab 內部得知的（M0 的 S3）；alphaTab 升版後要重跑這個量測。
 - 第二條聲線的音和第一條聲線相差一度或二度時，alphaTab 會把音符頭錯開；這次的譜刻意避開，游標的橫向位置是拍點的 `onNotesX`，錯開的那個音可能不在游標中心。輸入第二條聲線時（#45、#48）若遇到，要另外量。
 - 點擊選游標（`cursorAtPoint`）在兩條聲線同一時間都有拍點時，取先找到的那一個；譜表與譜表位置是對的（測試鎖住第二個譜表），聲線怎麼選屬於第二條聲線的輸入票。
+
+## M3：S2 重測
+
+日期：2026-11-19　分支：`hiad-20261118/51-m3-s2-retest`（以 `hiad-20261118/studio` `13841d4` 為底，合併 #50 歌詞模式 `e8ab48e`）　票：#51
+
+**這一節的每一格都是「未量」。** 使用者在 2026-11-19 裁定：這台機器一直有其他專案的負載（M2 的重測五次碰上 53–92% 的 CPU），效能與延遲的量測一律先註記後跳過，不等安靜的時段、也不重試。這次只把量測套件改成 M3 的種子譜，確認套件能跑；確認時跑出來的數字沒有提交，也不拿來下結論。數字要在安靜的機器上補量（見「需要人做的事」）。
+
+### 結論
+
+| 項目 | 結果 |
+|---|---|
+| 門檻 | 和 M1b、M2 相同：按鍵到畫面 p95，一個聲部 ≤ 80 ms、五個聲部 ≤ 150 ms（100 小節 × 5 聲部） |
+| Chromium | 未量 |
+| Firefox | 未量 |
+| WebKit | 未量 |
+| 五線譜與歌詞的成本 | 未量 |
+| `readScore`（zod 驗證 + `WeakMap` 快取） | 未量 |
+| Flag 全部重算 | 未量 |
+
+### 做法
+
+和 M2 相同（兩份譜 `plain`、`techniques`，三項量測，每格 50 次，第二個 frame 和門檻比較，修改 Guitar 1 的格號，「一個聲部」只顯示 Guitar 1），只有種子譜不同（`e2e/measure/scores.ts` 的 `PERF_BAND`，`MILESTONE` 是 `m3` 以後才用）：
+
+1. **Keys 改成兩個譜表**（`treble`、`bass`）：高音譜表的八分音符和 M2 相同；低音譜表（`1:0`）每小節四個四分音符，小節根音低兩個八度與它的五度。
+2. **人聲帶歌詞**：Guitar 2 換成 Vocals（pitched、`treble`、program 53，和預設表的「人聲」相同），仍然是五個聲部、門檻的那個樂團。每小節八個八分音符，在 Keys 的音階上依小節根音上下走；每個拍點一個音節，中文、英文、字還沒結束的 `sing-`，以及延長（空字串）輪流（`SYLLABLES`）。兩份譜都有歌詞；techniques 譜的人聲另有 staccato。
+3. Guitar 2 的刷弦（`stroke`）跟著它離開，改放在 Bass 沒有 slap / pop 的八分音符上（只在 techniques 譜），techniques 譜的拍點標記種類和 M2 相同；Guitar 2 的 palm mute 在 Guitar 1 仍有。
+4. Guitar 1、鼓（兩條聲線）、Bass 的音和 M2 相同（隨機數只用在 Guitar 1 與 Keys 的高音譜表，人聲與低音譜表不用隨機數）。拍點從 4,500 變成 4,900（Guitar 2 的 800 個換成人聲的 800 個，加上低音譜表的 400 個）。
+
+和 M2 比較時要記得：五個聲部的格子少了一個三音的 tab 和弦聲部，多了一個有歌詞的五線譜聲部與一個譜表；一個聲部的格子（只顯示 Guitar 1）內容不變。
+
+`MEASURE_MILESTONE=m2` 仍然用 M2 的種子譜（Guitar 2、Keys 一個譜表、沒有歌詞），所以 M2 還沒補的 Firefox / WebKit 按鍵可以照 M2 那一節的指令補量，結果和 M2 的其他數字可比。
+
+### 數字：按鍵到畫面
+
+毫秒，中位數 / p95，取第二個 frame（frame after）；補量後在括號內附 M2、M1b 的同一格。
+
+| 瀏覽器 | 情境 | 顯示 | 第 3 小節 | 第 50 小節 | 第 98 小節 |
+|---|---|---|---|---|---|
+| Chromium | plain | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| Chromium | techniques | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| Chromium | 同時修改（plain） | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| Firefox | plain | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| Firefox | techniques | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| Firefox | 同時修改（plain） | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| WebKit | plain | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| WebKit | techniques | 1、5 個聲部 | 未量 | 未量 | 未量 |
+| WebKit | 同時修改（plain） | 1、5 個聲部 | 未量 | 未量 | 未量 |
+
+**和門檻比較**（p95 的最差值）
+
+| 瀏覽器 | 一個聲部（≤ 80） | 五個聲部（≤ 150） | 同時修改：一個 / 五個聲部 | M2（同欄順序） | M1b（同欄順序） |
+|---|---|---|---|---|---|
+| Chromium | 未量 | 未量 | 未量 | 59 / 98 / 51、113 | 61 / 86 / 54、89 |
+| Firefox | 未量 | 未量 | 未量 | 未量 / 未量 / 61、204 | 93 / 158 / 96、169 |
+| WebKit（無播放器） | 未量 | 未量 | 未量 | 未量 / 未量 / 107、168 | 88 / 108 / 90、169 |
+
+### 數字：各階段
+
+| 瀏覽器 | `readScore` | `flagsOf` | 投影 | `finish()` | 排版到 rendered | 合計 |
+|---|---|---|---|---|---|---|
+| Chromium | 未量 | 未量 | 未量 | 未量 | 未量 | 未量 |
+| Firefox | 未量 | 未量 | 未量 | 未量 | 未量 | 未量 |
+| WebKit | 未量 | 未量 | 未量 | 未量 | 未量 | 未量 |
+
+補量後要看的：五個聲部第 3 小節 `render → rendered` 和 M2（Chromium 28.0 / 38.0 ms、Firefox 65 / 93 ms、WebKit 26 / 39 ms，plain / techniques）比，第二個譜表與歌詞讓排版多多少；`flagsOf` 是否仍然不是瓶頸（Flag 個數寫在 stages 的資料檔）。
+
+### 需要人做的事
+
+- **在安靜的機器上量 M3 的 S2**（三個瀏覽器共約 30 分鐘；量的時候不要跑建置、測試或其他瀏覽器自動化；需要 5183、8031–8034 空著，Postgres 與 Redis 照 e2e 的設定）。結果寫成 `docs/measurements/data/m3-s2-{stages,keys,concurrent}-<瀏覽器>-headless.{json,md}`，再把這一節的「未量」換成數字並寫結論：
+  ```
+  pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
+  ```
+  只量一個瀏覽器或一項：
+  ```
+  pnpm --filter @studio/web measure --project=firefox latency
+  pnpm --filter @studio/web measure --project=webkit -g 'painted frame$' latency      # 只量按鍵
+  pnpm --filter @studio/web measure --project=chromium -g 'another member' latency    # 只量同時修改
+  pnpm --filter @studio/web measure --project=chromium -g 'stages' latency            # 只量各階段
+  ```
+- M2 還沒補的 Firefox / WebKit 按鍵（M2 那一節的指令，`MEASURE_MILESTONE=m2`，用 M2 的種子譜）。
+- M1b 的兩項仍然有效：在 60 Hz 螢幕上開視窗量 Firefox（`HEADED=1`），以及在 macOS 的 Safari 上量 WebKit。
+
+### 資料檔
+
+還沒有。補量後是 [`measurements/data/`](measurements/data/) 的 `m3-s2-stages-*`、`m3-s2-keys-*`、`m3-s2-concurrent-*`。

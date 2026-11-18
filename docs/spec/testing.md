@@ -66,6 +66,7 @@
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
+    - **補充**（PR 186 的紅燈）：測試自己開的 browser context（`browser.newContext`，例如 `e2e/pages.ts` 的 `loggedIn`）也由 `e2e/test.ts` 在測試結束時關掉，和 fixture 的 context 一樣。整套 e2e 只有一個 worker、一個瀏覽器，以前這些 context 從不關，跑到後段的 `versions.spec.ts` 時瀏覽器裡還開著約 240 個 context、120 個頁面（各自帶著譜、連線與音色），CI 的 runner 整台變慢（spawn 的 `seedScore` 要 26 秒、collab ticket 要 10 秒），測試因而偶發逾時。`e2e/contexts.spec.ts` 鎖住這件事：下一個測試開始時瀏覽器裡沒有上一個測試留下的 context。
   - **補充**（#64）：e2e 的 server 呼叫假的辨識服務（`apps/server/tests/recognizerE2e.ts`），由 Playwright 的 `webServer` 在 port 8034 啟動（`e2e/environment.ts` 的 `RECOGNIZER_URL`），不會連到開發用、在 8000 的真辨識服務。要別的回答時，測試先送 `PUT /fixture/<契約 fixture 名稱>`，之後都回那一份。
   - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），辨識的審核頁（上傳圖片、畫出辨識結果、音色載入完成、原圖載入，#64），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
   - **補充**（#72）：Playwright project `plugin` 只跑 `e2e/plugin.spec.ts`。一個假的 karyl-chan bot（`apps/server/tests/botE2e.ts`，port 8036）讓 plugin 模式的 server（port 8035，`WEB_ROOT` 指向 `dist`）註冊，像真的 bot 一樣把它的頁面放在 `/plugin/sheet-thief-studio/` 底下代理（去掉前綴、刪掉 cookie、轉發 WebSocket Upgrade），並提供 `POST /test/studio` 簽一個 `/studio` dispatch、回傳回覆裡的連結。spec 用連結登入，在 base path 底下開一份團譜：畫出譜面、音色載入完成、打字同步到伺服器、重新整理後仍登入、登出；另外是未綁定與用過的連結在 `/login` 顯示原因，全程沒有 CSP 違規。CI 的 `e2e` job 用 `--project=plugin` 一起跑。
@@ -79,6 +80,7 @@
   - 數字寫到 `docs/measurements/data/`，截圖寫到 `docs/measurements/`；M0 的結果留在 `docs/spike/`。`MEASURE_RUNS=3` 把每項量測縮短，只用來確認套件能跑。
   - **補充**（#39）：瀏覽器用 `--project` 選（`chromium`、`firefox`、`webkit`）。`chromium` 跑全部量測，`firefox` 與 `webkit` 只跑 S2；WebKit 和 smoke 一樣從 8033 的 `INSECURE_COOKIES=1` server 取頁面。資料檔名帶瀏覽器（`m1b-s2-keys-firefox-headless.json`（#46 起帶里程碑前綴）），報告寫在 `docs/measurements.md`，每個里程碑一節。
   - **補充**（#46）：S2 的資料檔名前面加上重測的里程碑（`e2e/measure/output.ts` 的 `MILESTONE`，`MEASURE_MILESTONE` 可覆寫，用來補量前一個里程碑缺的項目；例如 `m2-s2-keys-firefox-headless.json`），各里程碑的檔案並存，報告和前一次比較；重測的票改這個常數。100 × 5 種子譜的鼓從 M2 起是兩條聲線（手在第一聲線、腳在第二聲線），每小節都有。
+  - **補充**（#51）：`MILESTONE` 的預設是 `m3`。從 M3 起 100 × 5 種子譜的 Keys 是兩個譜表（`treble`、`bass`，低音譜表每小節四個四分音符），Guitar 2 換成帶歌詞的 Vocals（每個八分音符一個音節），仍然是五個聲部；Guitar 2 的刷弦移到 Bass。種子譜跟著里程碑：`MEASURE_MILESTONE=m2` 用 M2 的種子譜，補量的數字和 M2 可比（`e2e/measure/scores.ts` 的 `BEFORE_M3`；`m1b` 也用 M2 的種子譜，鼓是兩條聲線，和 M1b 不同）。
 - M1b、M2、M3 的結尾各有一張「重跑並回報」的票，結果寫進報告。範圍包含：
   - `docToJson` 加 zod 驗證與 `WeakMap` 快取之後的延遲；
   - Firefox 與 WebKit 的數字；
