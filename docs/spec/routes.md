@@ -165,6 +165,7 @@
 
 - **補充**（#63）：`POST /api/recognitions` 的格式以檔頭判斷，瀏覽器說的 `type` 不算；第幾張不是 PNG、JPEG、WebP 時回 415 `unsupported_image`，`params.page` 是那一張（從 1 數起）。沒有圖片或超過 15 張回 400 `invalid_request`（`params.issues` 的路徑是 `images`）；一張超過 10 MB、合計超過 40 MB 回 413 `payload_too_large`。`GET /api/recognitions/:id` 與列表的每一筆都帶 `id`、`pages`（張數）、`createdAt`；形狀在 `packages/contracts/src/recognitions.ts`（`recognitionDetails`、`recognitionList`）。`report` 是 `{ strings, tuning, capo, warnings, skipped }`：前三項照辨識服務讀到的，`skipped` 見 [`recognizer.md`](recognizer.md) 7.2。`:page` 不是 1 起的整數或超過張數時 404。
 
+- **補充**（#64）：`POST /api/recognitions/:id/save` 的 body 和 `POST /api/phrases` 相同（`saveRecognitionRequest`），上限與 413 也相同（1 MB 加 64 KB；片段超過 1 MB 回 `phrase_too_large`）。依序檢查：body 大小、body 驗證（400）、別人的或不存在的辨識（404）、還在跑或已失敗（409 `recognition_not_succeeded`）、片段的 `kind` 和辨識結果不同（400，`params.issues` 的路徑是 `fragment.kind`）。建立樂句（revision 1）與刪除辨識、原圖在同一個交易裡，辨識列以 `FOR UPDATE` 鎖住：同時兩次存檔只有一次成功，另一次 404。片段可以是審核頁修改過的（例如手動選的調弦），不必和辨識結果相同。
 - **補充**（#53）：`?q=` 是名稱的子字串、不分大小寫，最多 100 字元；`?kind=` 不是三種之一時回 400。`POST` 與 `PUT` 的 body 上限是 1 MB 加 64 KB；片段本身（UTF-8 序列化後）超過 1 MB 回 413 `phrase_too_large`，整個 body 超過上限回 413 `payload_too_large`。別人的樂句、不存在的樂句、不是 UUID 的 id，一律 404 `not_found`。`PUT` 的片段和樂句的 `kind` 不同時回 400 `invalid_request`（`params.issues` 的路徑是 `fragment.kind`），不論 `baseRevision` 對不對：樂句的種類不能改（[`phrases.md`](phrases.md) 第 5 節）。
 - 樂句與辨識的 API 不分裝置。手機與平板上「只能看」是介面上的限制（[`views.md`](views.md) 第 7 節），伺服器不分辨裝置。
 
@@ -186,9 +187,10 @@
 | `version_unreadable` | 409 | 這台伺服器讀不了這個版本，不能預覽或還原（補充，#67） |
 | `version_name_required` | 409 | 成員手動存下的版本（`manual`）不能取消命名（補充，#67） |
 | `recognition_in_progress` | 409 | 自己已有一件辨識在跑 |
+| `recognition_not_succeeded` | 409 | 辨識還在跑或已經失敗，沒有結果可以存成樂句（補充，#64） |
 | `payload_too_large`、`phrase_too_large`、`score_too_large` | 413 | |
 | `unsupported_image` | 415 | 不是 PNG、JPEG、WebP |
-| `invalid_request` | 400 | zod 驗證失敗；`params.issues` 帶欄位路徑 |
+| `invalid_request` | 400 | zod 驗證失敗，或內容和現有資料不合（例如樂句的種類）；`params.issues` 帶欄位路徑 |
 | `limit_exceeded` | 422 | 超過聲部、小節等數量上限；`params` 帶上限名稱 |
 | `rate_limited` | 429 | |
 | `recognizer_busy` | 503 | 辨識服務忙碌中 |

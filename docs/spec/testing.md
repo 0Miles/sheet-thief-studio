@@ -64,7 +64,8 @@
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
-  - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
+  - **補充**（#64）：e2e 的 server 呼叫假的辨識服務（`apps/server/tests/recognizerE2e.ts`），由 Playwright 的 `webServer` 在 port 8034 啟動（`e2e/environment.ts` 的 `RECOGNIZER_URL`），不會連到開發用、在 8000 的真辨識服務。要別的回答時，測試先送 `PUT /fixture/<契約 fixture 名稱>`，之後都回那一份。
+  - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），辨識的審核頁（上傳圖片、畫出辨識結果、音色載入完成、原圖載入，#64），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
 - 送 PR 前：`pnpm lint && pnpm typecheck && pnpm test`；web 或 server 有改時加上 `pnpm --filter @studio/web test:e2e`。
 
 ## 4. 量測（不是 CI 的關卡）
@@ -98,6 +99,8 @@
 | 7 | 刪除小節的復原行為 | vitest 鎖住「刪除當下的內容會回來、之後別人同時送到的不保證」，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」 | — |
 | 8 | 聲道分配 | 用 `sound.test.ts` 的寫法，斷言 16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道 | — |
 | 9 | alphaTab 標記不被遮蓋 | e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽 | 移開疊層，不是遮住標記 |
+
+**補充**（#47 的結果）：確認檢查 6 通過，不必修正 `geometry.ts` 的公式。兩個譜表（高音、低音）、每個譜表的第二條聲線與高音譜號低八度上，游標中心和 alphaTab 回報的音符頭中心相差 0 px（取到 0.001 px），空位置（線與間）也是 0 px；數字與截圖在 [`../measurements.md`](../measurements.md) 的「M3：游標幾何」。量測是 `apps/web/e2e/measure/staves.spec.ts`，游標的聲線用 `__studioMeasure.placeCursor` 的第 5 個參數 `voice`（省略時是 `"0:0"`，#45 也用同一個）；同樣的比對也在 `packages/score-render/tests/geometry.test.ts` 以 Node 的 alphaTab 排版鎖住。
 
 **補充**（#52 的結果）：確認檢查 3 通過，焦點元素維持 `[data-scroller]`，不改用 `<textarea>`。三個瀏覽器都觸發 `copy`、`cut`、`paste`，`copy`、`cut` 寫入的 `text/plain` 在 `paste` 讀得到（Windows 上的 Playwright WebKit 例外：它不保留事件裡寫入的內容，焦點換成選取文字的 `<textarea>` 也一樣，不是焦點的問題；測試在那裡只斷言事件與空字串，round trip 以 CI 的 Linux WebKit 為準）。事件送到的元素不同：Chromium、WebKit 是 `[data-scroller]`，Firefox 是 `<body>`；所以頁面在 document 上聽，只在 `document.activeElement` 是 scroller 時處理（`apps/web/e2e/clipboard.spec.ts` 開頭的註解）。
 

@@ -23,6 +23,7 @@ export const router = createRouter({
     { path: "/", name: "home", component: HomeView },
     { path: "/phrases", name: "phrases", component: () => import("./views/PhrasesView.vue") },
     { path: "/phrases/:id", name: "phrase", component: () => import("./views/PhrasePage.vue"), props: true },
+    { path: "/recognitions/:id", name: "recognition", component: () => import("./views/RecognitionView.vue"), props: true },
     // The score's page holds the score open (its document and connection) under its versions
     // page too, which restores a version in that document (docs/spec/collab.md, 8.5).
     {

@@ -63,9 +63,15 @@ import {
   type YVoice,
   voiceKeys,
   withinPartLimits,
+  DEFAULT_KEY_SIG,
+  keySigsOf,
+  lineRange,
+  type PitchedClef,
+  staffAndVoiceOf,
 } from "./schema";
 import { writeScore } from "./build";
 import { drumLineOf, drumLineOfKey } from "./drums";
+import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling } from "./pitch";
 import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -872,12 +878,12 @@ export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> 
  * The keys of the notes on the cursor's line, those a technique key changes at the cursor
  * (docs/spec/commands.md, 5.4): its string on a fretted part, whether a note is there or not;
  * on drums, every piece of the cursor's beat drawn on that line (`drumLineOfKey`), none in the
- * append slot. None on staves until their keys name the notes drawn on a line (docs/ROADMAP.md,
- * M3), as with `deleteNote`.
+ * append slot; on staves, every note of the cursor's beat drawn on that line (`notesOnLine`, #48).
  */
 export function noteKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const kind = partKindOf(partsOf(doc).get(cursor.partId));
   if (kind === "fretted") return [`s${cursor.line}`];
+  if (kind === "pitched") return staffKeysAt(doc, cursor);
   if (kind !== "percussion") return [];
   const notes = notesOf(beatAt(doc, cursor));
   return [...(notes?.keys() ?? [])].filter((key) => drumLineOfKey(key) === cursor.line);
@@ -974,6 +980,156 @@ const pieceToggle: NoteToggle<boolean> = {
 export function toggleDrum(doc: Y.Doc, cursor: Cursor, id: number): Cursor {
   const next = toggleAt(doc, cursor, `p${id}`, pieceToggle);
   return { ...next, line: drumLineOf(id) ?? next.line };
+}
+
+// Staves (#48; docs/spec/commands.md, 5.1, 5.2 and 5.8) ----------------------------------------
+
+/** The key of a pitched note of a pitch ("n61"). */
+function pitchKey(pitch: number): string {
+  return `n${pitch}`;
+}
+
+/** The pitch a pitched note's key names ("n61" is 61); asked only of keys reading keeps. */
+function pitchOfKey(key: string): number {
+  return Number(key.slice(1));
+}
+
+/**
+ * The key in force in a bar of the document, as reading has it (`keySigsOf`: a key that cannot
+ * be read is no change); C major for a bar not in the score.
+ */
+function keySigIn(doc: Y.Doc, barId: string): KeySignature {
+  const bars = barsOf(doc);
+  const ids = ordered(bars);
+  const keys = keySigsOf(
+    ids.map((id) => {
+      const read = parsePlain(keySigSchema, bars.get(id)?.get("keySig"));
+      return { keySig: read.success ? read.data : undefined };
+    }),
+  );
+  return keys[ids.indexOf(barId)] ?? { ...DEFAULT_KEY_SIG };
+}
+
+/**
+ * Where the cursor stands on a staff: the clef of its staff, the key in force in its bar, how its
+ * part is read, and its beat (none in the append slot).
+ */
+interface StaffPlace {
+  clef: PitchedClef;
+  keySig: KeySignature;
+  reader: PartReader;
+  beat: YBeat | undefined;
+}
+
+/**
+ * Where the cursor stands on a staff (`StaffPlace`): the clef as reading has the staves (their
+ * default, a treble staff, when they cannot be read). None but on a pitched part, nor on a beat
+ * that is gone or that reading leaves out.
+ */
+function staffPlaceOf(doc: Y.Doc, cursor: Cursor): StaffPlace | undefined {
+  const reader = readerOf(doc, cursor.partId);
+  if (reader?.kind !== "pitched") return undefined;
+  const beat = beatAt(doc, cursor);
+  if (cursor.at === "on" && (beat === undefined || !readsAsBeat(reader.kind, beat))) return undefined;
+  const staves = parsePlain(pitchedStavesSchema, partsOf(doc).get(cursor.partId)?.get("staves"));
+  const [staff] = staffAndVoiceOf(cursor.voice);
+  const clef = staves.success ? staves.data[staff]?.clef : undefined;
+  return { clef: clef ?? "treble", keySig: keySigIn(doc, cursor.barId), reader, beat };
+}
+
+/** A note of the cursor's beat on a staff: its key, its pitch and its own fields (`ownNote`). */
+interface StaffNote {
+  key: string;
+  pitch: number;
+  stored: NoteJSON;
+}
+
+/**
+ * The notes of the beat of a place on a staff drawn on `line` (`lineOfPitch`: by the clef, and by
+ * their spelling, else the key's): C and C♯ share a line, D♭ is on D's. None in the append slot,
+ * nor a note reading leaves out, which is drawn nowhere.
+ */
+function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
+  return [...(notesOf(place.beat)?.entries() ?? [])].flatMap(([key, value]) => {
+    const note = place.reader.note(key, value);
+    const pitch = pitchOfKey(key);
+    return note !== undefined && lineOfPitch(place.clef, pitch, note.spell, place.keySig) === line ? [{ key, pitch, stored: ownNote(value) as NoteJSON }] : [];
+  });
+}
+
+/** The keys of the notes drawn on the cursor's line of a staff (`notesOnLine`). */
+function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const place = staffPlaceOf(doc, cursor);
+  return place === undefined ? [] : notesOnLine(place, cursor.line).map(({ key }) => key);
+}
+
+/** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */
+function staffLine(line: number): number {
+  const { first, last } = lineRange("pitched", 0);
+  return Math.min(last, Math.max(first, line));
+}
+
+/**
+ * A letter key on a staff (docs/spec/keymap.md, 4.3), one command: the note of that letter
+ * nearest the natural note of the cursor's position, with the sharp or flat of the key in force
+ * (`enteredPitch`), always spelled (docs/spec/schema.md, 8.1). On a beat with notes it joins the
+ * chord; a note of that pitch there is replaced by it, the later spelling winning (C♯ then D♭ is
+ * one note, D♭), what else it held kept (`ownFields`); spelled as it is already, nothing is
+ * written. In the append slot it goes on a new beat, the cursor then on it. The cursor goes to the
+ * position the note is drawn on, held to its range. A beat reading leaves out is left alone, as is
+ * a pitch out of 0 to 127.
+ */
+export function enterNote(doc: Y.Doc, cursor: Cursor, letter: NoteLetter): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const entered = place && enteredPitch(place.clef, cursor.line, letter, place.keySig);
+  if (place === undefined || entered === undefined) return cursor;
+  const key = pitchKey(entered.pitch);
+  const next = writeNote(doc, cursor, key, (stored) => {
+    // A note stored there that reading leaves out is not one to keep the fields of.
+    const kept = stored !== undefined && place.reader.note(key, stored) !== undefined ? stored : undefined;
+    return kept?.spell === entered.spell ? kept : { ...kept, spell: entered.spell };
+  });
+  return { ...next, line: staffLine(entered.line) };
+}
+
+/**
+ * Move every note of the cursor's line to another pitch, one command (docs/spec/commands.md, 5.8):
+ * `to` gives each its new pitch and spelling (undefined keeps its own). Its key is changed, what
+ * else it holds kept (`ownFields`); a note of the beat already at a new pitch is replaced, the note
+ * moved there winning. Nothing moves when any would leave 0 to 127, or when there is none on the
+ * line. The cursor follows the lowest moved note to its position, held to its range.
+ */
+function moveNotesOnLine(doc: Y.Doc, cursor: Cursor, to: (pitch: number) => { pitch: number; spell?: string }): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const notes = notesOf(place?.beat);
+  if (place === undefined || notes === undefined) return cursor;
+  const moved = notesOnLine(place, cursor.line).map(({ key, pitch, stored }) => {
+    const next = to(pitch);
+    return { from: key, pitch: next.pitch, note: next.spell === undefined ? stored : { ...stored, spell: next.spell } };
+  });
+  if (moved.length === 0 || moved.some(({ pitch }) => pitch < 0 || pitch > 127)) return cursor;
+  const copies = writable(...moved.map(({ note }) => note));
+  if (copies === undefined) return cursor;
+  doc.transact(() => {
+    for (const { from } of moved) notes.delete(from);
+    moved.forEach(({ pitch }, index) => notes.set(pitchKey(pitch), copies[index]!));
+  }, LOCAL);
+  const lowest = moved.reduce((low, each) => (each.pitch < low.pitch ? each : low));
+  return { ...cursor, line: staffLine(lineOfPitch(place.clef, lowest.pitch, lowest.note.spell, place.keySig)) };
+}
+
+/**
+ * `]` (`1`) and `[` (`-1`) on a staff: the notes of the cursor's line a semitone up or down, one
+ * command; on a black key spelled sharp going up, flat going down, on a white key natural
+ * (`semitoneSpelling`).
+ */
+export function moveNotesBySemitone(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + step, spell: semitoneSpelling(pitch + step, step) }));
+}
+
+/** Shift+↑ (`1`) and Shift+↓ (`-1`) on a staff: the notes of the cursor's line an octave up or down, one command, each keeping its spelling. */
+export function moveNotesByOctave(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + 12 * step }));
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -1105,13 +1261,13 @@ function afterRemoval(cursor: Cursor, voice: YVoice, index: number): Cursor {
 /**
  * Remove the notes on the line of the cursor, from its beat, one command: on a fretted part, the
  * note on its string; on drums, every piece drawn on that line (`noteKeysAt`: several pieces share
- * a line, so taking one off would be a guess, docs/spec/commands.md 5.2). Staves get theirs with
- * the keys that enter their notes (docs/ROADMAP.md, M3): until then nothing is removed from them.
+ * a line, so taking one off would be a guess, docs/spec/commands.md 5.2); on staves, every note
+ * drawn on that line (C and C♯ share one, #48).
  */
 export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
   const kind = partKindOf(partsOf(doc).get(cursor.partId));
   if (kind === "fretted") return setFret(doc, cursor, null);
-  if (kind !== "percussion" || cursor.at !== "on") return cursor;
+  if ((kind !== "percussion" && kind !== "pitched") || cursor.at !== "on") return cursor;
   return writeNotes(doc, cursor, noteKeysAt(doc, cursor), () => null);
 }
 
@@ -1547,9 +1703,6 @@ export function setProgram(doc: Y.Doc, partId: string, program: number): boolean
 }
 
 const pitchedStavesSchema = partSchemas.pitched.shape.staves;
-
-/** A clef a staff of a pitched part can have. */
-export type PitchedClef = z.output<typeof pitchedStavesSchema>[number]["clef"];
 
 /** The clefs a staff of a pitched part can have, in the order the panel offers them. */
 export const PITCHED_CLEFS: readonly PitchedClef[] = pitchedStavesSchema.element.shape.clef.options;

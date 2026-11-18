@@ -32,9 +32,25 @@ export function rateLimited(reply: FastifyReply, retryAfterSeconds: number) {
   return reply.code(429).header("retry-after", String(retryAfterSeconds)).send({ code: "rate_limited" });
 }
 
-export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
-  const issues = error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code }));
+/** One field a request got wrong: where it is in the body, and what is wrong with it (a zod issue code). */
+export interface FieldIssue {
+  path: string[];
+  code: string;
+}
+
+/**
+ * 400 `invalid_request` naming the fields at fault: those zod refused, or those that do not fit
+ * what the server already has (docs/spec/routes.md, section 4).
+ */
+export function invalidFields(reply: FastifyReply, issues: FieldIssue[]) {
   return reply.code(400).send({ code: "invalid_request", params: { issues } });
+}
+
+export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
+  return invalidFields(
+    reply,
+    error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code })),
+  );
 }
 
 /**

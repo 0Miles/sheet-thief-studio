@@ -1,17 +1,26 @@
 // Recognizing images (docs/spec/recognizer.md, section 7; docs/spec/routes.md, 3.8): an account
 // sends the images of a TAB, the server keeps them and calls the recognizer in the background,
 // once at a time, and the browser polls until the result is there. The result is a fragment of
-// bars the review page opens; saving it as a phrase is #64. Only the account that started a
+// bars the review page opens, then saves as a phrase or discards. Only the account that started a
 // recognition reaches it, its images included; to anyone else it does not exist.
-import { createdRecognition, RECOGNITION_RETENTION_DAYS, type RecognitionError, recognitionDetails, recognitionList } from "@studio/contracts";
+import {
+  createdRecognition,
+  RECOGNITION_RETENTION_DAYS,
+  type RecognitionError,
+  recognitionDetails,
+  recognitionList,
+  saveRecognitionRequest,
+  savedRecognition,
+} from "@studio/contracts";
 import { barsFragmentSchema } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { literal, Op, UniqueConstraintError } from "sequelize";
 
 import { Recognition, RecognitionImage } from "./db/models";
 import { NOW } from "./deletion";
-import { isUuid, notFound } from "./http";
-import { MAX_RECOGNITION_IMAGES, RECOGNITION_BODY_LIMIT, RECOGNITION_IMAGE_BYTES, RECOGNITION_IMAGES_BYTES } from "./limits";
+import { invalidFields, invalidRequest, isUuid, notFound } from "./http";
+import { FRAGMENT_BODY_LIMIT, MAX_RECOGNITION_IMAGES, RECOGNITION_BODY_LIMIT, RECOGNITION_IMAGE_BYTES, RECOGNITION_IMAGES_BYTES } from "./limits";
+import { createPhrase, otherKind, refusedAsTooLarge } from "./phrases";
 import { fragmentOfRecognition } from "./recognitionFragment";
 import { failure, type ImageMime, type PageImage, recognize } from "./recognizer";
 
@@ -38,7 +47,7 @@ export function imageType(data: Uint8Array): ImageMime | null {
 }
 
 function invalidImages(reply: FastifyReply, code: "too_small" | "too_big") {
-  return reply.code(400).send({ code: "invalid_request", params: { issues: [{ path: ["images"], code }] } });
+  return invalidFields(reply, [{ path: ["images"], code }]);
 }
 
 function unsupportedImage(reply: FastifyReply, page: number) {
@@ -233,6 +242,28 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
     if (image === null) return notFound(reply);
     // Gone once the recognition is saved or discarded: never kept by the browser or anything between.
     return reply.header("content-type", image.mime).header("cache-control", "private, no-store").send(image.data);
+  });
+
+  // Saved as a phrase: the fragment the review page sends, edited or not, becomes one of the
+  // account's phrases, and the recognition goes with its images, in one transaction.
+  app.post<IdParams>("/api/recognitions/:id/save", { bodyLimit: FRAGMENT_BODY_LIMIT }, async (request, reply) => {
+    if (refusedAsTooLarge(request.body, reply)) return reply;
+    const body = saveRecognitionRequest.safeParse(request.body);
+    if (!body.success) return invalidRequest(reply, body.error);
+    const { name, fragment } = body.data;
+    const accountId = request.account!.id;
+    const { id } = request.params;
+    if (!isUuid(id)) return notFound(reply);
+    return Recognition.sequelize!.transaction(async (transaction) => {
+      // Locked: a second save of it at once waits, then finds it gone.
+      const recognition = await Recognition.findOne({ where: { id, accountId }, attributes: ["id", "status", "fragment"], transaction, lock: transaction.LOCK.UPDATE });
+      if (recognition === null) return notFound(reply);
+      if (recognition.status !== "succeeded") return reply.code(409).send({ code: "recognition_not_succeeded" });
+      if (recognition.fragment?.kind !== fragment.kind) return otherKind(reply);
+      const phrase = await createPhrase(accountId, name, fragment, transaction);
+      await recognition.destroy({ transaction });
+      return reply.code(201).send(savedRecognition.parse({ phraseId: phrase.id }));
+    });
   });
 
   app.delete<IdParams>("/api/recognitions/:id", async (request, reply) => {

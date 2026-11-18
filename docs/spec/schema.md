@@ -101,7 +101,8 @@ Y.Doc
 | 聲線 | 每個譜表 2 條（schema 允許）；介面不提供第二聲線 | 預設一條，允許第二條（手、腳分開） | 每個譜表最多 2 條 |
 
 - `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
-- 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
+- 譜表數與譜號由 `staves` 決定，不從 content 推出。
+  - **補充**（#47）：投影的譜表數是 `staves.length`，每個譜表的譜號取 `staves[i].clef`：`treble` → alphaTab 的 G2、`bass` → F4、`treble-8vb` → G2 加 `clefOttava = _8vb`（音符畫高一個八度）；每個譜表的聲線數仍由 content 推出。寫法是 `projection.ts` 的 `staffVoiceCounts` 與 `clefOf`。這次實際的改變只有譜號（F4 與 `_8vb`，以前每個非鼓譜表都是 G2）：讀取（`read.ts` 的 `readVoices`）與 `emptyBarContent` 本來就替每個譜表放了 `"<譜表>:0"` 鍵，所以以前從 content 推出的譜表數也和 `staves` 一樣，就地換小節的行為不變。改譜號是聲部欄位的修改（`observeScore` 的 `structure`），照舊整份重投影；`replaceBars` 沒有新增整份重投影的情況。測試：`projection.test.ts` 的「each staff of a part has the clef its `staves` give it …」與「a bar replaced on a bass staff, or on a staff an octave down, keeps its clef …」。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
 
@@ -235,6 +236,7 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 - 拼寫必須和音符鍵的音高相符（音名加升降後的 pitch class 等於 `音高 mod 12`）。不相符時，投影忽略 `spell`、改用預設拼寫，不標 Flag（補充）。
 - **預設拼寫**（沒有 `spell` 時，投影依該小節生效的 `keySig` 決定黑鍵怎麼寫）：`fifths > 0` 寫成升，`fifths < 0` 寫成降。**補充**：`fifths = 0`（C 大調、A 小調）寫成升。
 - **補充**：從介面輸入的 pitched 音一律寫入 `spell`，所以之後改調號不會改變已經寫好的音；只有匯入或其他來源的音可能沒有 `spell`。
+- **補充**（#48）：預設拼寫是 `pitch.ts` 的 `defaultSpelling(pitch, keySig)`：白鍵寫成本位，黑鍵依上一條寫成升或降。一個音畫在哪個譜表位置（`lineOfPitch(clef, pitch, spell, keySig)`）由它拼出的音名決定：`spell` 和音高相符時用它，否則用預設拼寫。投影照同一個規則畫（`pitch.ts` 的 `drawnAccidentalOf`，`projection.ts` 的 `accidentalModeOf`）：`spell` 相符時強制它的升降，本位也強制（`ForceNatural`）；沒有相符的 `spell` 時，白鍵強制本位，黑鍵交給 alphaTab 依調號決定（`Default`，和 `defaultSpelling` 相同）。理由：alphaTab 自己決定時會優先選調號裡有的拼法，六、七個升號時把 F（`n65`）畫成 E♯、六、七個降號時把 B（`n71`）畫成 C♭，畫的位置就和編輯器找的線不一樣（#48 審查）。測試：`packages/score-render/tests/spelling.test.ts`。八度跟著音名：B♯3（`n60`、`"B#"`）畫在 B3 的位置，C♭5（`n71`、`"Cb"`）畫在 C5 的位置。編輯器用它找「游標那條線上的音」（[`commands.md`](commands.md) 5.8 的補充）。
 
 ## 9. `schemaVersion` 與加法規則
 
