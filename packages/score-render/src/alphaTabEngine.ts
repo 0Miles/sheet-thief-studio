@@ -52,6 +52,21 @@ class Listeners<T> {
 
 const NO_TIMINGS: RenderTimings = { project: 0, finish: 0, render: 0 };
 
+/**
+ * Whether alphaTab 1.9 can make its player in this browser, by the checks it makes itself
+ * (`BrowserUiFacade.createWorkerPlayer`, and the audio context of its outputs): a worker to make
+ * the sound in, an audio context, and a script processor, or audio worklets on a secure page (the
+ * engine leaves `player.outputMode` at its default, worklets). Without them alphaTab only logs an
+ * error, and its player never gets ready: Playwright's WebKit for Windows has no Web Audio (#129).
+ */
+function canPlaySound(): boolean {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  const has = (name: string) => scope[name] != null;
+  const context = has("AudioContext") || has("webkitAudioContext");
+  const output = has("ScriptProcessorNode") || (scope.isSecureContext === true && has("AudioWorkletNode"));
+  return has("Worker") && context && output;
+}
+
 /** A place in the music by bar id (`placeAtTick`), and the tick lookup it was found in. */
 interface Place {
   barId: string;
@@ -126,12 +141,18 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
    */
   private resumeAt: Place | null = null;
   private destroyed = false;
+  /** There is a player: a sound font asked for, and a browser alphaTab can play in. */
+  private readonly plays: boolean;
 
   constructor(
     private element: HTMLElement,
-    private options: EngineOptions,
+    options: EngineOptions,
   ) {
     this.scale = options.scale ?? 1;
+    this.plays = options.soundFont !== null && canPlaySound();
+    // A browser that cannot play: alphaTab is not asked to try (it would log an error), and the
+    // page is told so from the start (docs/spec/playback.md, 4.1).
+    if (options.soundFont !== null && !this.plays) this.playerState = "unavailable";
     const settings = new alphaTab.Settings();
     settings.core.fontDirectory = options.fontDirectory;
     settings.core.useWorkers = options.useWorkers ?? true;
@@ -141,7 +162,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     settings.display.staveProfile = alphaTab.StaveProfile.Default;
     settings.display.scale = this.scale;
     settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
-    if (options.soundFont === null) {
+    if (!this.plays || options.soundFont === null) {
       settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     } else {
       settings.player.playerMode = alphaTab.PlayerMode.EnabledSynthesizer;
@@ -329,7 +350,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   load(): Promise<void> {
     // Before the player is ready alphaTab makes the sound itself, once it is. Nothing is drawn
     // (`drawNothing`), nothing to hear: alphaTab's model is an older score's.
-    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady || this.projection === null) return Promise.resolve();
+    if (!this.plays || this.api.score === null || !this.playerIsReady || this.projection === null) return Promise.resolve();
     return new Promise((resolve) => {
       // A change waiting for the drawing under way is not in the model yet: the sound is made once it is.
       if (this.waiting !== null) this.loadsAfterDrawing.push(resolve);
@@ -365,13 +386,14 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   play(): void {
     // A score with no bars or no parts plays nothing; alphaTab still holds an older score's sound.
-    if (this.projection === null) return;
+    if (!this.plays || this.projection === null) return;
     this.intendsToPlay = true;
     // While a new sound is made, it plays once that is in place.
     if (this.reload === null) this.api.play();
   }
 
   pause(): void {
+    if (!this.plays) return;
     this.intendsToPlay = false;
     this.api.pause();
     // alphaTab has stopped to take the new sound, and reports nothing of the member's pause.
@@ -379,6 +401,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   stop(): void {
+    if (!this.plays) return;
     this.intendsToPlay = false;
     // alphaTab stops at the start of the loop, when there is one: playback is there from now on,
     // before alphaTab reports it.
@@ -403,6 +426,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   seek(tick: number): void {
+    if (!this.plays) return;
     // Within the loop, when there is one, as alphaTab keeps it: outside it, to its nearer end.
     const loop = this.loop;
     const within = loop ? Math.min(Math.max(tick, loop.startTick), loop.endTick) : tick;
@@ -574,7 +598,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // alphaTab makes the sound of a score it has not seen and, doing so, stops playback and goes
     // back to the start, playing or paused: playback goes on from where it was.
     this.soundStale = false;
-    if (this.playerIsReady && this.options.soundFont !== null) {
+    if (this.playerIsReady && this.plays) {
       // Where playback is, in the old score's sound (alphaTab makes the new one's tick lookup with the model).
       if (this.reload === null) this.resumeAt = this.placeOf(this.currentTick(), previous);
       this.reload ??= { loads: 0, done: () => {} };

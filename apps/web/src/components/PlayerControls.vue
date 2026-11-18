@@ -3,10 +3,11 @@
 // toolbar of the score, or in the bar at the bottom of the narrow Read view.
 import { AppButton } from "@karyl-chan/ui";
 import type { PlayerState } from "@studio/score-render";
+import { computed } from "vue";
 
 import { strings } from "../strings";
 
-defineProps<{
+const props = defineProps<{
   state: PlayerState;
   /** Nothing to stop: never started, or stopped. */
   stopped: boolean;
@@ -15,15 +16,18 @@ defineProps<{
 }>();
 const emit = defineEmits<{ toggle: []; stop: [] }>();
 const text = strings.score.player;
+/** No player yet, or none in this browser (no Web Audio): nothing to press. */
+const idle = computed(() => props.state === "loading" || props.state === "unavailable");
 </script>
 
 <template>
   <div class="player" :data-player="state">
-    <AppButton variant="primary" size="sm" :disabled="state === 'loading'" @click="emit('toggle')">
+    <AppButton variant="primary" size="sm" :disabled="idle" @click="emit('toggle')">
       {{ state === "playing" ? text.pause : text.play }}
     </AppButton>
-    <AppButton variant="ghost" size="sm" :disabled="state === 'loading' || stopped" @click="emit('stop')">{{ text.stop }}</AppButton>
+    <AppButton variant="ghost" size="sm" :disabled="idle || stopped" @click="emit('stop')">{{ text.stop }}</AppButton>
     <span v-if="state === 'loading'" class="player__playing">{{ text.loading }}</span>
+    <span v-else-if="state === 'unavailable'" class="player__playing">{{ text.unavailable }}</span>
     <span v-else-if="bar !== null" class="player__playing" data-playing-bar :data-bar="bar">{{ text.bar(bar) }}</span>
   </div>
 </template>

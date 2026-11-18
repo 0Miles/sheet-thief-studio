@@ -6,7 +6,7 @@
 // settings, the model, the projection, and the tick lookup made with the sound.
 import * as alphaTab from "@coderline/alphatab";
 import { addPart, createScore, docToJson, insertBars, type PartKind, type ScoreJSON } from "@studio/score-model";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
 import { createAlphaTabEngine, type PlayerState, type ScoreEngine } from "../src/index";
@@ -259,8 +259,19 @@ function asked(): string[] {
   return calls;
 }
 
+/**
+ * A browser that can play: what alphaTab 1.9 needs to make its player (`createWorkerPlayer`).
+ * Node has none of it; the engine looks for it when it is made.
+ */
+function withWebAudio(): void {
+  vi.stubGlobal("AudioContext", class {});
+  vi.stubGlobal("Worker", class {});
+  vi.stubGlobal("ScriptProcessorNode", class {});
+}
+
 /** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
 function start(options: { seekOnClick?: boolean } = {}): void {
+  withWebAudio();
   standIns.length = 0;
   // An element with nothing drawn in it: what the engine clears when it draws nothing.
   engine = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false, ...options });
@@ -280,6 +291,7 @@ function start(options: { seekOnClick?: boolean } = {}): void {
 }
 
 beforeEach(() => start());
+afterEach(() => vi.unstubAllGlobals());
 
 /** Playing, as alphaTab reports it, at a tick. */
 function playingAt(tick: number): void {
@@ -300,6 +312,58 @@ function changeInPlace(): void {
 
 test("the first sound makes the player ready, paused", () => {
   expect(engine.player.state).toBe("paused");
+});
+
+/** A browser with only these of what alphaTab's player needs, on a secure page or not. */
+function browserWith(present: readonly string[], secure: boolean): void {
+  vi.unstubAllGlobals();
+  for (const name of ["AudioContext", "webkitAudioContext", "Worker", "ScriptProcessorNode", "AudioWorkletNode"]) vi.stubGlobal(name, present.includes(name) ? class {} : undefined);
+  vi.stubGlobal("isSecureContext", secure);
+  standIns.length = 0;
+}
+
+test.each([
+  ["no audio context", ["Worker", "ScriptProcessorNode", "AudioWorkletNode"], true],
+  ["no worker", ["AudioContext", "ScriptProcessorNode", "AudioWorkletNode"], true],
+  ["neither output node", ["AudioContext", "Worker"], true],
+  ["audio worklets only, on a page that is not a secure context", ["AudioContext", "Worker", "AudioWorkletNode"], false],
+])("a browser alphaTab cannot play in (%s): the player is left out, unavailable from the start, and asks nothing of alphaTab", async (_, present, secure) => {
+  browserWith(present, secure);
+  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3" });
+  const stand = standIns[0]!;
+  expect(stand.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
+  expect(made.player.state).toBe("unavailable");
+  made.renderer.setScore(scoreOf(2));
+  stand.postRenderFinished.emit();
+  const told: PlayerState[] = [];
+  made.player.onState((state) => told.push(state));
+  const before = stand.calls.length;
+  await made.player.load();
+  made.player.play();
+  made.player.pause();
+  made.player.stop();
+  made.player.seek(BAR);
+  expect(stand.calls.slice(before)).toEqual([]);
+  expect(made.player.state).toBe("unavailable");
+  expect(told).toEqual([]);
+});
+
+test.each([
+  ["a script processor", ["AudioContext", "Worker", "ScriptProcessorNode"], false],
+  ["audio worklets alone, on a secure page", ["AudioContext", "Worker", "AudioWorkletNode"], true],
+  ["the prefixed audio context of older Safari", ["webkitAudioContext", "Worker", "ScriptProcessorNode"], false],
+])("a browser that can play with %s has the player, loading until its sound is in", (_, present, secure) => {
+  browserWith(present, secure);
+  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3" });
+  expect(standIns[0]!.settings.player.playerMode).toBe(alphaTab.PlayerMode.EnabledSynthesizer);
+  expect(made.player.state).toBe("loading");
+});
+
+test("with no sound font, the player is left out whatever the browser can do", () => {
+  standIns.length = 0;
+  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null });
+  expect(standIns[0]!.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
+  expect(made.player.state).toBe("loading");
 });
 
 test("while it plays, a new sound: never paused, the start it went back to is never told, and it plays on from where it was", async () => {

@@ -168,6 +168,20 @@ export async function soundReady(page: Page): Promise<void> {
   await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
 }
 
+/** Whether the browser has Web Audio, which alphaTab's player needs: Playwright's WebKit for Windows has none (#129). */
+function hasWebAudio(page: Page): Promise<boolean> {
+  return page.evaluate(() => typeof AudioContext !== "undefined");
+}
+
+/**
+ * Wait until the player is where it stays until asked to play: paused once its sound is ready or,
+ * in a browser with no Web Audio, saying it cannot play (docs/spec/playback.md, 4.1).
+ */
+export async function playerSettled(page: Page): Promise<void> {
+  if (await hasWebAudio(page)) await soundReady(page);
+  else await expect(page.locator('[data-player="unavailable"]')).toBeVisible();
+}
+
 /** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
 export async function openToPlay(page: Page, id: string): Promise<void> {
   await openScore(page, id);
