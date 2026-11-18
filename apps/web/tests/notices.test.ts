@@ -2,7 +2,7 @@
 // then connects no more is in apps/server/tests/collabDepth.test.ts, against a real server.
 import { expect, test } from "vitest";
 
-import { noticeOf, type NoticedProvider, stopWhenClosed } from "../src/notices";
+import { lockWhenReadOnly, noticeOf, type NoticedProvider, stopWhenClosed } from "../src/notices";
 
 test("a notice is read from its payload; anything else is none", () => {
   expect(noticeOf('{"type":"closed","reason":"tooDeep"}')).toEqual({ type: "closed", reason: "tooDeep" });
@@ -32,4 +32,18 @@ test("the closed notice stops the provider's socket and says why; any other leav
   expect([stopped.count, reasons]).toEqual([0, []]);
   send('{"type":"closed","reason":"tooDeep"}');
   expect([stopped.count, reasons]).toEqual([1, ["tooDeep"]]);
+});
+
+test("the readOnly notice says why the score is locked, at every connection; any other is not one, and the socket is left be", () => {
+  const { provider, send, stopped } = fakeProvider();
+  const reasons: string[] = [];
+  lockWhenReadOnly(provider, (reason) => reasons.push(reason));
+  send('{"type":"closed","reason":"tooDeep"}');
+  send('{"type":"readOnly","reason":"later"}');
+  send("something else");
+  expect(reasons).toEqual([]);
+  send('{"type":"readOnly","reason":"missingMigration"}');
+  send('{"type":"readOnly","reason":"migrationFailed"}');
+  send('{"type":"readOnly","reason":"newerSchema"}');
+  expect([stopped.count, reasons]).toEqual([0, ["missingMigration", "migrationFailed", "newerSchema"]]);
 });

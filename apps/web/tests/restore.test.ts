@@ -3,6 +3,7 @@
 import { SCHEMA_VERSION, type ScoreJSON } from "@studio/score-model";
 import { afterEach, expect, test, vi } from "vitest";
 
+import type { ReadOnlyReason } from "../src/access";
 import { ApiError } from "../src/api";
 import { restoreVersion, type RestoreTarget } from "../src/restore";
 
@@ -28,10 +29,11 @@ function fakeServer(answers: Record<string, () => Response>) {
 
 const json = (status: number, body: unknown) => () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-function target(open = true) {
+function target(open = true, locked: ReadOnlyReason | null = null) {
   const written: ScoreJSON[] = [];
   const restoreTarget: RestoreTarget = {
-    canRestore: () => open,
+    canRestore: () => open && locked === null,
+    lockedBecause: () => locked,
     replace: (version) => {
       written.push(version);
       return true;
@@ -91,6 +93,14 @@ test("while the score is not open here, nothing is asked of the server", async (
   const calls = fakeServer({});
   const { restoreTarget, written } = target(false);
   expect(await restoreVersion(SCORE_ID, VERSION_ID, restoreTarget)).toBe("notOpen");
+  expect(calls).toEqual([]);
+  expect(written).toEqual([]);
+});
+
+test("a score locked here (#109) says why, and nothing is asked of the server", async () => {
+  const calls = fakeServer({});
+  const { restoreTarget, written } = target(true, "missingMigration");
+  expect(await restoreVersion(SCORE_ID, VERSION_ID, restoreTarget)).toEqual({ locked: "missingMigration" });
   expect(calls).toEqual([]);
   expect(written).toEqual([]);
 });
