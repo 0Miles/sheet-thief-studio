@@ -603,14 +603,14 @@ export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cur
  * A note as the commands that rewrite it see it: its own fields (`ownFields`), so that every
  * member decides and writes alike (#103); none for nothing stored.
  */
-function asStored(value: unknown): NoteJSON | undefined {
+function ownNote(value: unknown): NoteJSON | undefined {
   return value === undefined ? undefined : (ownFields(value) as NoteJSON);
 }
 
 /**
  * Write a note at the cursor, one command: on its beat, or in the append slot on a new beat made
  * there (as `insertBeat` makes it), the cursor then on that beat. `write` gets the note stored
- * at `key` (`asStored`) and returns the new one, or null to remove it; removing makes no beat.
+ * at `key` (`ownNote`) and returns the new one, or null to remove it; removing makes no beat.
  */
 function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
   if (cursor.at === "after") {
@@ -621,7 +621,7 @@ function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: Note
   }
   const notes = notesOf(beatAt(doc, cursor));
   if (notes === undefined) return cursor;
-  const stored = asStored(notes.get(key));
+  const stored = ownNote(notes.get(key));
   const note = write(stored);
   // Given back as stored, or nothing to remove: nothing is written.
   if (note === stored || (note === null && stored === undefined)) return cursor;
@@ -929,7 +929,7 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
   const beats = selectedBeatsOf(doc, reader, selection).map(({ address, voice, index, map }) => {
     const notes = [...map.entries()].flatMap(([key, value]) => {
       const seen = reader.note(key, value);
-      return seen ? [{ key, stored: asStored(value), seen }] : [];
+      return seen ? [{ key, stored: ownNote(value), seen }] : [];
     });
     return { address, voice, index, map, notes };
   });

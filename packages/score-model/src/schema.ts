@@ -100,25 +100,33 @@ function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
 }
 
 /** Whether a value of the document is an object of fields: not a list, nor a shared type. */
-function isFields(value: unknown): value is object {
+function isFieldObject(value: unknown): value is object {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Y.AbstractType);
 }
 
 /** The fields a value has of its own but __proto__, each as stored; none when it is not an object of fields. */
 function ownEntries(value: unknown): [string, unknown][] {
-  return isFields(value) ? Object.entries(value).filter(([name]) => name !== "__proto__") : [];
+  return isFieldObject(value) ? Object.entries(value).filter(([name]) => name !== "__proto__") : [];
+}
+
+/** A copy of a value without __proto__ fields, `depth` lists and objects down; below, values as stored. */
+function ownCopy(value: unknown, depth: number): unknown {
+  if (depth === 0) return value;
+  if (Array.isArray(value)) return value.map((item) => ownCopy(item, depth - 1));
+  if (!isFieldObject(value)) return value;
+  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, ownCopy(field, depth - 1)]));
 }
 
 /**
- * What a command that rewrites a value of the document starts from (#103), a note's fields: the
- * fields the value has of its own but __proto__, as `parsePlain` reads them, and so too those of
- * the objects among them (a bend), in a new object. What reading does not know is kept, and every
- * member, the writer of a __proto__ and those who decode it as a prototype, decides from the same
- * fields and writes the same value. Deeper down values are kept as stored. A value that is not an
- * object of fields (a list, a shared type, a string) has no fields to keep.
+ * What a command that rewrites a value of the document starts from (#103): a note's fields.
+ * It is a new object of the fields the value has of its own. A field named __proto__ is not one
+ * (#78). The lists and objects in it are copied so too, `PLAIN_DEPTH` levels down; below that,
+ * values are kept as stored. Fields reading does not know are kept. So every member decides from
+ * the same fields and writes the same value. A value that is not an object of fields (a list, a
+ * shared type, a string) has no fields to keep.
  */
 export function ownFields(value: unknown): Record<string, unknown> {
-  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, isFields(field) ? Object.fromEntries(ownEntries(field)) : field]));
+  return isFieldObject(value) ? (ownCopy(value, PLAIN_DEPTH + 1) as Record<string, unknown>) : {};
 }
 
 /**

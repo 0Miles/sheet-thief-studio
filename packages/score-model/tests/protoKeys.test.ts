@@ -1,7 +1,7 @@
 // Values with a key of their own named __proto__ (#78). The member who writes one holds it as a
 // key; the others, who decode it (lib0's readAny assigns key by key), hold it as the prototype of
 // the value. Every member must read the same score, and values nested without end must not make
-// reading throw.
+// reading throw. Every member must also rewrite a note alike (#103).
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -14,6 +14,7 @@ import {
   deadToggle,
   durationOf,
   fragmentSchema,
+  harmonicCycle,
   importedScoreSchema,
   jsonToDoc,
   moveByBeat,
@@ -25,6 +26,7 @@ import {
   type ScoreJSON,
   scoreSchema,
   setFret,
+  slideInCycle,
   slideOutCycle,
   staffCountOf,
   techniqueToggle,
@@ -34,6 +36,7 @@ import {
   toggleOnSelection,
   type YBeat,
 } from "../src/index";
+import { transactionsOf } from "./support";
 
 /** One bar of 4/4, a guitar with two quarter notes in it, and a piano with one. */
 function band(): ScoreJSON {
@@ -246,6 +249,14 @@ const noteChanges: NoteChange[] = [
   { name: "dead off, on a dead note with no fret of its own", note: '{"dead":true,"__proto__":{"fret":5}}', change: (doc) => toggleAt(doc, atX2, "s6", deadToggle), after: undefined },
   { name: "tie on", note: '{"fret":3,"__proto__":{"tie":true}}', change: (doc) => toggleAt(doc, atX2, "s6", tieToggle), after: '{"fret":3,"tie":true}' },
   { name: "a slide out", note: '{"fret":3,"__proto__":{"slideOut":"legato"}}', change: (doc) => toggleAt(doc, atX2, "s6", slideOutCycle), after: '{"fret":3,"slideOut":"legato"}' },
+  { name: "a slide in", note: '{"fret":3,"__proto__":{"slideIn":"inBelow"}}', change: (doc) => toggleAt(doc, atX2, "s6", slideInCycle), after: '{"fret":3,"slideIn":"inBelow"}' },
+  { name: "a harmonic", note: '{"fret":3,"__proto__":{"harmonic":"natural"}}', change: (doc) => toggleAt(doc, atX2, "s6", harmonicCycle), after: '{"fret":3,"harmonic":"natural"}' },
+  {
+    name: "ghost on, a field reading does not know holding a __proto__ further down",
+    note: '{"fret":3,"later":{"x":{"__proto__":{"a":1}}},"list":[{"__proto__":{"b":2}}]}',
+    change: (doc) => toggleAt(doc, atX2, "s6", techniqueToggle("ghost")),
+    after: '{"fret":3,"later":{"x":{}},"list":[{}],"ghost":true}',
+  },
   {
     name: "a bend of another shape, its own semitones kept",
     note: '{"fret":3,"bend":{"type":"bend","semitones":3,"__proto__":{"semitones":2}},"__proto__":{"bend":{"type":"preBend","semitones":1}}}',
@@ -276,13 +287,40 @@ test.each(noteChanges)("a command that changes a note decides from its own field
   readBySides(sides);
 });
 
-test("a fret put on a value that is not the fields of a note keeps nothing of it", () => {
-  for (const value of ["abc", [7, 8], 4, new Y.Map()]) {
-    const doc = jsonToDoc(band());
-    notesOf(doc, 1).set("s6", value);
-    setFret(doc, atX2, 5);
-    expect(storedNote(doc, 1, "s6")).toBe('{"fret":5}');
+test.each([
+  { name: "with no bend of its own to step", note: '{"fret":3,"__proto__":{"bend":{"type":"bend","semitones":2}}}', change: (doc: Y.Doc) => toggleAt(doc, atX2, "s6", bendStep(1)) },
+  { name: "bent as far as it goes", note: '{"fret":3,"bend":{"type":"bend","semitones":4,"__proto__":{"semitones":1}}}', change: (doc: Y.Doc) => toggleAt(doc, atX2, "s6", bendStep(1)) },
+])("a note with a __proto__ that is already what a command makes it is not written, by anyone: $name", ({ note, change }) => {
+  const sides = bothSides((doc) => notesOf(doc, 1).set("s6", written(note)));
+  for (const doc of [sides.writer, sides.receiver]) {
+    const transactions = transactionsOf(doc);
+    change(doc);
+    expect(transactions.count).toBe(0);
   }
+});
+
+test("over a selection, a note left as it is tells the note after it its own fields only", () => {
+  const sides = bothSides((doc) => {
+    // Tied already, and with no fret of its own: the receiver would see a 9 to take.
+    notesOf(doc, 0).set("s6", written('{"dead":true,"tie":true,"__proto__":{"fret":9}}'));
+    notesOf(doc, 1).set("s6", written('{"fret":7}'));
+  });
+  for (const doc of [sides.writer, sides.receiver]) toggleOnSelection(doc, { kind: "bars", partId: "gtr", anchorBarId: "b1", focusBarId: "b1" }, atX2, tieToggle);
+  // No fret before to take: x2 keeps its own, a dangling tie.
+  expect(storedNote(sides.writer, 1, "s6")).toBe('{"fret":7,"tie":true}');
+  expect(storedNote(sides.receiver, 1, "s6")).toBe('{"fret":7,"tie":true}');
+});
+
+test.each([
+  { name: "a string", value: "abc" },
+  { name: "a list", value: [7, 8] },
+  { name: "a number", value: 4 },
+  { name: "a shared type", value: new Y.Map() },
+])("a fret put on a value that is not the fields of a note keeps nothing of it: $name", ({ value }) => {
+  const doc = jsonToDoc(band());
+  notesOf(doc, 1).set("s6", value);
+  setFret(doc, atX2, 5);
+  expect(storedNote(doc, 1, "s6")).toBe('{"fret":5}');
 });
 
 test("parsePlain reads the fields a value has of its own, whatever its prototype", () => {
