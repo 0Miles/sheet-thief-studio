@@ -28,7 +28,7 @@ const usable = computed(() => playerUsable(props.state));
     <span v-if="state === 'loading'" class="player__status">{{ text.loading }}</span>
     <template v-else-if="state === 'failed'">
       <span class="player__status">{{ text.failed }}</span>
-      <AppButton variant="ghost" size="sm" data-retry-sound @click="emit('retry')">{{ text.retry }}</AppButton>
+      <AppButton variant="ghost" size="sm" @click="emit('retry')">{{ text.retry }}</AppButton>
     </template>
     <span v-else-if="state === 'unavailable'" class="player__status">{{ text.unavailable }}</span>
     <span v-else-if="bar !== null" class="player__status" data-playing-bar :data-bar="bar">{{ text.bar(bar) }}</span>

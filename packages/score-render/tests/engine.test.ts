@@ -451,12 +451,54 @@ test("retried, it is downloaded again, as often as it fails; never while it load
   expect(states).toEqual(["failed", "loading", "failed", "loading", "paused"]);
 });
 
-test("destroyed, the engine does not hear the browser come back online", () => {
+test("back online before the download under way is told failed: it is downloaded again at once", () => {
+  withoutSoundFont();
+  backOnline();
+  expect(asked()).toEqual([]);
+  soundFontFailed();
+  expect(asked()).toEqual(["loadSoundFont:/soundfont/test.sf3:false"]);
+  expect(states).toEqual(["failed", "loading"]);
+  // Only once: failing again, it waits for the next time the browser is back online, or a retry.
+  soundFontFailed();
+  expect(asked()).toEqual([]);
+  expect(engine.player.state).toBe("failed");
+  soundFontIn();
+  expect(engine.player.state).toBe("paused");
+});
+
+test("destroyed, the engine does not hear the browser come back online, and tells the page nothing more", () => {
   withoutSoundFont();
   soundFontFailed();
   engine.destroy();
   backOnline();
   expect(asked()).toEqual([]);
+  states = [];
+  soundFontIn();
+  at(BAR);
+  expect(states).toEqual([]);
+  expect(positions).toEqual([]);
+});
+
+test("destroyed while the sound font is downloaded, its failure told after is told to no one", () => {
+  withoutSoundFont();
+  engine.destroy();
+  soundFontFailed();
+  backOnline();
+  expect(states).toEqual([]);
+  expect(asked()).toEqual([]);
+});
+
+test.each([
+  ["a browser that cannot play", { present: ["AudioContext", "Worker"] }],
+  ["no sound font", { soundFont: null }],
+] as const)("with %s, neither a retry nor the browser back online downloads anything", (_, setup) => {
+  browserWith("present" in setup ? setup.present : undefined);
+  const { made, stand } = makeEngine("soundFont" in setup ? { soundFont: setup.soundFont } : {});
+  const before = made.player.state;
+  made.player.retry();
+  backOnline();
+  expect(stand.calls).toEqual([]);
+  expect(made.player.state).toBe(before);
 });
 
 test("changed in place while the sound font was not in: the sound is made again once it is, and nothing older is heard", async () => {
