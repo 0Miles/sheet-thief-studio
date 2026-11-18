@@ -243,8 +243,8 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
     const doc = new Y.Doc();
     Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
     const score = docToJson(doc);
-    expect((await createVersion(scoreId, () => score, "last_disconnect"))?.created).toBe(true);
-    expect((await createVersion(scoreId, () => ({ ...score, title: "後來的標題" }), "interval"))?.created).toBe(true);
+    expect((await createVersion(scoreId, { read: () => score, reason: "last_disconnect" }))?.created).toBe(true);
+    expect((await createVersion(scoreId, { read: () => ({ ...score, title: "後來的標題" }), reason: "interval" }))?.created).toBe(true);
   }
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
   const destroy = vi.spyOn(Score, "destroy");
