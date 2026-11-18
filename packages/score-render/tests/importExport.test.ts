@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 
 import * as alphaTab from "@coderline/alphatab";
 import { type BeatJSON, defaultSpelling, keySigsOf, MAX_BARS, MAX_IMPORT_BYTES, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartJSON, type ScoreJSON } from "@studio/score-model";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { exportGp7, exportMidi, type ImportReportItem, type ImportResult, importScore, MAX_IMPORT_FILE_BYTES } from "../src/index";
 import { projectScore } from "../src/projection";
@@ -139,6 +139,21 @@ describe("the import report", () => {
     expect(long.score.title).toBe("x".repeat(100));
     expect(long.report).toContainEqual({ loss: "titleTruncated", count: 1, bars: [] });
     expect(imported(importScore(musicXml({}), "My Song.musicxml")).score.title).toBe("My Song");
+  });
+
+  test("a title is trimmed, and one of white space only is the file's name: trimmed, cut to 100 characters, the whole name when it is all extension; none at all is no score (#70)", () => {
+    // Guitar Pro keeps the white space of a title as written; alphaTab trims that of MusicXML.
+    const fromGp7 = (title: string, fileName: string) => imported(importScore(exportGp7({ ...GP7_SAMPLE, title }), fileName)).score.title;
+    expect(fromGp7("  Song  ", "x.gp")).toBe("Song");
+    expect(fromGp7("   ", "  My Song .gp")).toBe("My Song");
+    const titleOf = (title: string | undefined, fileName: string) => imported(importScore(musicXml({ title }), fileName));
+    expect(titleOf(undefined, ".musicxml").score.title).toBe(".musicxml");
+    expect(titleOf("   ", "   .musicxml").score.title).toBe(".musicxml");
+    const long = titleOf("   ", `${"名".repeat(120)}.musicxml`);
+    expect(long.score.title).toBe("名".repeat(100));
+    expect(long.report).toContainEqual({ loss: "titleTruncated", count: 1, bars: [] });
+    // A name of white space only: the caller gives none such (ImportScoreDialog.vue).
+    expect(importScore(musicXml({ title: "   " }), "   ")).toEqual({ ok: false, failure: "invalid" });
   });
 
   test("a grace note, a third staff, a third voice and a fermata are left out and reported", () => {
@@ -278,6 +293,19 @@ describe("limits: a file over one makes no score, and says which", () => {
   test("a file over 20 MB is not read; one alphaTab cannot read makes no score", () => {
     expect(importScore(new Uint8Array(MAX_IMPORT_FILE_BYTES + 1), "huge.gp")).toEqual({ ok: false, failure: "fileTooLarge" });
     expect(importScore(new TextEncoder().encode("not a score"), "notes.txt")).toEqual({ ok: false, failure: "unreadable" });
+  });
+
+  test("a file alphaTab fails on is an answer, not an error: nothing is logged, and alphaTab's log level is as it was (#70)", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const level = alphaTab.Logger.logLevel;
+    try {
+      // Read as Guitar Pro 3 to 5, it ends before its version string does: alphaTab's loader logs that as an error of its own.
+      expect(importScore(new TextEncoder().encode("not a score at all"), "notes.gp")).toEqual({ ok: false, failure: "unreadable" });
+      expect(logged).not.toHaveBeenCalled();
+      expect(alphaTab.Logger.logLevel).toBe(level);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

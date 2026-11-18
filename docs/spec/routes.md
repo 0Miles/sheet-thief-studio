@@ -90,7 +90,7 @@
 | `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
 | `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜。**補充**（#15）：`{ scores: [...] }`，每一筆是 `id`、`title`、`artist`、`deletedAt`，依 `deletedAt` 由新到舊；不是任何已刪除團譜的 Owner 時是空陣列 | 任何帳號 |
 | `POST /api/scores` | `{ title, parts: [{ preset, count, tuning? }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。**補充**（#11）：`preset` 是 `PART_PRESETS` 的 id；`tuning` 只給 fretted，弦數要和預設相同，不給就是預設的調弦；`title` 以外都可以省略，省略時是一個「吉他 6 弦」、4/4、120、8 小節（`NEW_SCORE`）；第一小節一定寫上 `tempo`。驗證在 contracts 的 `createScoreRequest` | 任何帳號 |
-| `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
+| `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)）。**補充**（#70）：body 超過 5 MB 加 64 KB 回 413 `payload_too_large`；團譜超過 5 MB、超過聲部或小節上限、標題是空的或只有空白、不是目前的 `schemaVersion`、zod 不通過，都回 400 `invalid_request`，不建立任何東西。驗證在 contracts 的 `importScoreRequest`（[`import-export.md`](import-export.md) 2.3） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |
 | `DELETE /api/scores/:id` | 軟刪除 → 204。**補充**（#15）：非成員、已刪除的團譜回 404 `not_found`，其他成員回 403 `forbidden` | Owner |

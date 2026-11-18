@@ -12,16 +12,21 @@ import {
   type Harmonic,
   importedScoreSchema,
   jsonBytes,
-  KIND_DEFAULTS,
   type KeySignature,
+  KIND_DEFAULTS,
   MAX_BARS,
   MAX_BEAT_TEXT,
+  MAX_CAPO,
+  MAX_FRET,
   MAX_IMPORT_BYTES,
+  MAX_IMPORT_FILE_BYTES,
   MAX_LYRIC,
   MAX_NON_PERCUSSION_PARTS,
   MAX_PART_NAME,
   MAX_PARTS,
+  MAX_REPEAT,
   MAX_SECTION_NAME,
+  MAX_STAVES,
   MAX_TITLE,
   newId,
   NOTE_LETTERS,
@@ -35,8 +40,10 @@ import {
   type SlideIn,
   type SlideOut,
   type Staff,
-  timeSigSchema,
+  STRING_COUNTS,
+  TEMPO_RANGE,
   type TimeSignature,
+  timeSigSchema,
   tupletSchema,
   voiceKey,
 } from "@studio/score-model";
@@ -50,8 +57,9 @@ type AtNote = alphaTab.model.Note;
 
 const { model } = alphaTab;
 
-/** The largest file read at all (docs/spec/import-export.md, section 2): checked before alphaTab reads it. */
-export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
+// The largest file read at all (docs/spec/import-export.md, section 2), checked before alphaTab
+// reads it: defined in score-model, where the web app's texts read it without loading alphaTab.
+export { MAX_IMPORT_FILE_BYTES };
 
 /**
  * What an import leaves out or changes (docs/spec/import-export.md, section 2): each is listed in the
@@ -169,19 +177,15 @@ function kindOf(staff: AtStaff | undefined): PartKind {
   return staff.stringTuning.tunings.length > 0 && staff.showTablature ? "fretted" : "pitched";
 }
 
-const STRINGS = { min: 4, max: 7 } as const;
-
 /** The General MIDI programs of guitars and basses, from 0. */
 const STRINGED_PROGRAMS: readonly number[] = Array.from({ length: 16 }, (_, index) => 24 + index);
-const MAX_CAPO = 24;
-const MAX_FRET = 36;
 
 /** The kinds of the parts a score's tracks become, a fretted one of a string count the score cannot hold read as pitched. */
 function kindsOf(score: AtScore): PartKind[] {
   return score.tracks.map((track) => {
     const kind = kindOf(track.staves[0]);
     const strings = track.staves[0]?.stringTuning.tunings.length ?? 0;
-    return kind === "fretted" && (strings < STRINGS.min || strings > STRINGS.max) ? "pitched" : kind;
+    return kind === "fretted" && (strings < STRING_COUNTS.min || strings > STRING_COUNTS.max) ? "pitched" : kind;
   });
 }
 
@@ -493,7 +497,7 @@ function clefOf(staff: AtStaff, report: Report): Staff["clef"] {
 function readPart(track: AtTrack, kind: PartKind, barIds: readonly string[], report: Report): PartJSON {
   const name = cut(track.name, MAX_PART_NAME, report, "partNameTruncated");
   const first = track.staves[0] as AtStaff;
-  const staffCount = kind === "pitched" ? Math.min(2, track.staves.length) : 1;
+  const staffCount = kind === "pitched" ? Math.min(MAX_STAVES, track.staves.length) : 1;
   if (track.staves.length > staffCount) report.add("staves");
   const staves = track.staves.slice(0, staffCount);
   const tuning = kind === "fretted" ? [...first.stringTuning.tunings] : [];
@@ -546,8 +550,6 @@ function keyStaffOf(score: AtScore): AtStaff | undefined {
 
 const KEY_MODES = { [model.KeySignatureType.Major]: "major", [model.KeySignatureType.Minor]: "minor" } as const;
 
-const TEMPO = { min: 20, max: 400 } as const;
-
 /**
  * The bars of the file (docs/spec/import-export.md, 2.1). The tempo is written on the first bar, as a
  * new score has it, and where it changes; the key where it changes from C major or the key before.
@@ -565,7 +567,7 @@ function readBars(score: AtScore, report: Report): BarJSON[] {
     let tempo = atStart.at(-1)?.value ?? (index === 0 ? score.tempo : undefined);
     if (index === 0 && !(tempo !== undefined && tempo > 0)) tempo = DEFAULT_TEMPO;
     if (tempo !== undefined) {
-      const kept = Math.min(TEMPO.max, Math.max(TEMPO.min, tempo));
+      const kept = Math.min(TEMPO_RANGE.max, Math.max(TEMPO_RANGE.min, tempo));
       if (kept !== tempo) report.add("tempoOutOfRange", index);
       if (kept !== tempoInForce) bar.tempo = kept;
       tempoInForce = kept;
@@ -580,8 +582,8 @@ function readBars(score: AtScore, report: Report): BarJSON[] {
 
     if (masterBar.isRepeatStart) bar.repeatStart = true;
     if (masterBar.repeatCount >= 2) {
-      bar.repeatEnd = Math.min(32, masterBar.repeatCount);
-      if (masterBar.repeatCount > 32) report.add("repeatCount", index);
+      bar.repeatEnd = Math.min(MAX_REPEAT, masterBar.repeatCount);
+      if (masterBar.repeatCount > MAX_REPEAT) report.add("repeatCount", index);
     }
     const voltas = Array.from({ length: 8 }, (_, bit) => bit + 1).filter((pass) => (masterBar.alternateEndings & (1 << (pass - 1))) !== 0);
     if (voltas.length > 0) bar.voltas = voltas;
@@ -612,17 +614,27 @@ function spaced(text: string): string {
   return text.replaceAll(" ", " ");
 }
 
-/** The title a file without one gets: its own name, without the extension. */
+/**
+ * The title a file without one gets: its own name, without the extension, trimmed; the whole name
+ * trimmed when nothing is left without it (".gp"). Empty only for a name that is all white space,
+ * which the caller does not give (docs/spec/import-export.md, 2.3).
+ */
 function titleOfFile(fileName: string): string {
-  return fileName.replace(/\.[^.]*$/, "");
+  return fileName.replace(/\.[^.]*$/, "").trim() || fileName.trim();
 }
 
 /** The score alphaTab reads from a file, or null when it cannot read it. */
 function load(bytes: Uint8Array): AtScore | null {
+  // A file alphaTab cannot read is an answer (`unreadable`), not an error of the page: its loader
+  // would log one to the console for each (#70). Its log level is global, so it is put back.
+  const level = alphaTab.Logger.logLevel;
+  alphaTab.Logger.logLevel = alphaTab.LogLevel.None;
   try {
     return alphaTab.importer.ScoreLoader.loadScoreFromBytes(bytes, new alphaTab.Settings());
   } catch {
     return null;
+  } finally {
+    alphaTab.Logger.logLevel = level;
   }
 }
 
@@ -641,7 +653,7 @@ export function importScore(bytes: Uint8Array, fileName: string): ImportResult {
   if (score.masterBars.length > MAX_BARS) return { ok: false, failure: "tooManyBars" };
 
   const report = new Report();
-  const title = cut(spaced(score.title) || titleOfFile(fileName), MAX_TITLE, report, "titleTruncated");
+  const title = cut(spaced(score.title).trim() || titleOfFile(fileName), MAX_TITLE, report, "titleTruncated");
   const artist = score.artist ? cut(spaced(score.artist), MAX_TITLE, report, "artistTruncated") : undefined;
   const bars = readBars(score, report);
   const barIds = bars.map((bar) => bar.id);

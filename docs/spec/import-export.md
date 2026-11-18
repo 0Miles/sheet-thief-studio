@@ -70,6 +70,15 @@
 - **標題與 artist**：alphaTab 讀 MusicXML 時把空白換成不換行空白（`_sanitizeDisplay`），匯入換回一般空白。
 - **歌詞**：MusicXML 的 `syllabic` 不在 alphaTab 的模型裡，所以從 MusicXML 讀到的音節不帶結尾的 `-`；Guitar Pro 的歌詞照原樣保留。
 
+### 2.3 建立新團譜（#70）
+
+- **介面**：`/` 的「匯入」按鈕開檔案選擇（`.gp`、`.gp3`、`.gp4`、`.gp5`、`.gpx`、`.musicxml`、`.xml`、`.mxl`）。選好檔案後開「匯入檔案」對話框（`apps/web/src/components/ImportScoreDialog.vue`）：先檢查 20 MB（`MAX_IMPORT_FILE_BYTES`，在讀檔前），再以動態 import 載入 score-render 讀檔（`/` 不帶 alphaTab；為此 zod 的 jitless 設定改成 vite alias，見 [`security.md`](security.md) 第 7 節）。讀完顯示標題、artist、聲部數與小節數，以及匯入報告（每一項是代碼的文字、幾處、在哪些小節；超過 8 個小節時列前 8 個加總數）；報告是空的時說「所有內容都能轉換」。按「建立團譜」才送出，成功後打開新團譜。讀不了或超過上限時只顯示原因（`strings.importScore.failures`），沒有建立按鈕。
+- **`MAX_IMPORT_FILE_BYTES`** 定義在 score-model（score-render 照舊匯出），介面文字讀它時不必載入 alphaTab。
+- **伺服器**：`POST /api/scores/import` 的 body 上限是 `IMPORT_BODY_LIMIT`（5 MB 加 `BODY_MARGIN` 64 KB，`apps/server/src/limits.ts`；fragment 的上限也改用 `BODY_MARGIN`），超過時 Fastify 在讀完 body 之前回 413 `payload_too_large`。body 以 `parsePlain` 讀（只留自有欄位、`__proto__` 鍵與超過深度上限的值都不通過），驗證是 contracts 的 `importScoreRequest`：`importedScoreSchema`（聲部、小節、5 MB）加上 `schemaVersion` 必須是目前的版本（`jsonToDoc` 只寫這個版本）。不通過時回 400 `invalid_request`，不建立任何東西。通過後以 `writableCopy` 的複本，和新增團譜同一條路（`makeScore`）：建立 `scores` 列（標題與 artist 寫入）與 Owner 成員，再以參與者身分（`collab.change`）用 `jsonToDoc` 寫入文件；寫入失敗時刪掉這一列。
+- **標題**（更正 2.1 的「空的時候用檔名」）：`importScore` 先去掉標題前後的空白，剩下空的時用檔名：去掉副檔名後再去掉前後空白；這樣是空的（例如 `.gp`）時用整個檔名去掉前後空白。最後截到 100 字元（截斷時列入報告）。檔名整個是空白時沒有標題可用（`invalid`），所以介面在檔名整個是空白時改傳 `strings.score.untitled`（「未命名」，和讀到空標題時顯示的相同）。伺服器與 `importScore` 用同一個 `importedScoreSchema`：標題 1–100 字元、不能只有空白（和建立團譜相同，[`schema.md`](schema.md) 第 2 節），不通過時回 400。
+- **上限的數字**：報告文字裡的速度範圍、反覆次數、弦數、譜表數、格數取自 score-model 的 `TEMPO_RANGE`、`MAX_REPEAT`、`STRING_COUNTS`、`MAX_STAVES`、`MAX_FRET`（schema 與 `importScore` 也用它們），不另外寫死。
+- **alphaTab 的 log**：讀不了的檔案是一個答案（`unreadable`），不是頁面的錯誤；`importScore` 讀檔時把 alphaTab 的全域 log level 設成 `None`，讀完放回。
+
 ## 3. 匯出
 
 - `projectScore` 加上 `Gp7Exporter`，或 `MidiFileGenerator`；前身 `frontend/src/score/exporters.ts:7-16` 有寫法。

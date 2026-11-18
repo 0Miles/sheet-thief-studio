@@ -28,7 +28,14 @@ export default defineConfig({
   // The icon component that fetches nothing: @karyl-chan/ui imports `@iconify/vue`, which asks
   // api.iconify.design for each icon it is given. It gets the `Icon` of src/icons.ts instead,
   // which draws the icons bundled there and reports a name that is not one of them.
-  resolve: { alias: [{ find: new RegExp("^@iconify/vue$"), replacement: fileURLToPath(new URL("src/icons.ts", import.meta.url)) }] },
+  // And zod, as every module here imports it, set to parse without eval before any schema is built
+  // (packages/contracts/src/withoutEval.ts).
+  resolve: {
+    alias: [
+      { find: new RegExp("^@iconify/vue$"), replacement: fileURLToPath(new URL("src/icons.ts", import.meta.url)) },
+      { find: new RegExp("^zod$"), replacement: fileURLToPath(new URL("../../packages/contracts/src/withoutEval.ts", import.meta.url)) },
+    ],
+  },
   // @karyl-chan/ui ships .vue/.ts source with module-level state (confirm dialog, toasts):
   // pre-bundling it beside the source files would create two copies of that state in dev.
   optimizeDeps: {
