@@ -54,6 +54,7 @@ import InlineTextEntry from "../components/InlineTextEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
 import PlayerControls from "../components/PlayerControls.vue";
+import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
@@ -61,6 +62,7 @@ import { measureEditView } from "../measureHook";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
+import { barsToSave, type BarsToSave } from "../savePhrase";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
@@ -491,6 +493,32 @@ function applyTitle(title: string, artist: string): void {
 function cancelTitle(): void {
   editingTitle.value = false;
   focusScore();
+}
+
+/**
+ * Bars may be saved as a phrase (docs/spec/phrases.md, section 3): in either edit view, a Viewer's
+ * too, once a range of bars is selected; never a range of beats. A guest has no edit view, nor a
+ * library to save to.
+ */
+const canSavePhrase = computed(() => editing.value && presence.value.selection?.kind === "bars");
+/** The bars being saved as a phrase, as they were when the member asked; null while the dialog is closed. */
+const savingPhrase = shallowRef<BarsToSave | null>(null);
+
+/** The toolbar's button: the bars selected, as they are now, wait in the dialog for a name. */
+function openSavePhrase(): void {
+  const json = score.value;
+  if (!canSavePhrase.value || json === null) return;
+  savingPhrase.value = barsToSave(json, session?.selection ?? null);
+}
+
+function closeSavePhrase(): void {
+  savingPhrase.value = null;
+  focusScore();
+}
+
+function onPhraseSaved(name: string): void {
+  notice.value = strings.savePhrase.saved(name);
+  closeSavePhrase();
 }
 
 function closePanel(): void {
@@ -967,6 +995,19 @@ onBeforeUnmount(() => {
             {{ text.parts.panel }}
           </AppButton>
         </div>
+        <!-- Disabled, the button says why on the box around it: a disabled button gets no pointer of its own. -->
+        <span v-if="editing" :title="canSavePhrase ? undefined : strings.savePhrase.barsOnly" data-save-phrase-hint>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            data-save-phrase
+            :disabled="!canSavePhrase"
+            :title="canSavePhrase ? strings.savePhrase.openTitle : undefined"
+            @click="openSavePhrase"
+          >
+            {{ strings.savePhrase.open }}
+          </AppButton>
+        </span>
         <FlagControls
           v-if="view"
           :count="flags.length"
@@ -1167,6 +1208,7 @@ onBeforeUnmount(() => {
         @close="closeDeletion"
         @confirm="confirmDelete"
       />
+      <SavePhraseDialog v-if="editing" :saving="savingPhrase" :title="score?.title ?? ''" @close="closeSavePhrase" @saved="onPhraseSaved" />
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />

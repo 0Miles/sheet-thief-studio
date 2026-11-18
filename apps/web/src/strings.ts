@@ -339,6 +339,21 @@ export const strings = {
     /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
     desktopOnly: "請在電腦上編輯",
   },
+  // A range of bars of a score saved as a phrase, from either edit view (docs/spec/phrases.md, section 3).
+  savePhrase: {
+    open: "存成樂句",
+    openTitle: "把選取的小節存進樂句庫",
+    /** Why the button does nothing: no range of bars selected (a range of beats, or nothing). */
+    barsOnly: "請選取小節範圍",
+    title: "存成樂句",
+    name: "名稱",
+    /** The name offered: the score's title and the bars, one bar by its number alone. */
+    defaultName: (title: string, first: number, last: number) => `${title} 第 ${first === last ? first : `${first}–${last}`} 小節`,
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+    saved: (name: string) => `已存成樂句「${name}」。`,
+  },
   saveAsNewPhrase: {
     title: "另存成新樂句",
     name: "名稱",
