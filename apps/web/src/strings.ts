@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 import type { WhilePlaying } from "./mixer";
@@ -16,6 +16,7 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const TOO_MANY_BARS = `小節最多 ${MAX_BARS} 個`;
 const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
@@ -102,7 +103,7 @@ export const strings = {
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",
-      tooManyBars: `小節最多 ${MAX_BARS} 個`,
+      tooManyBars: TOO_MANY_BARS,
       lastBar: "至少要留下一個小節",
       tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
@@ -271,6 +272,39 @@ export const strings = {
         danglingLink: "搥弦、勾弦或連到下一個音的滑音後面沒有音",
         invalidContent: "這裡有讀不懂的內容，已經略過",
       } satisfies Record<Flag["kind"], string>,
+    },
+    // The phrase sidebar of the editable view (docs/spec/phrases.md, section 6): my phrases, those
+    // that fit the cursor's part unless all are asked for, a preview, and a drop on a bar.
+    phraseSidebar: {
+      open: "樂句側欄",
+      openKey: (key: string) => `開關樂句側欄（${key}）`,
+      title: "樂句",
+      close: "關閉",
+      search: "搜尋樂句",
+      showAll: "顯示全部，包含和游標所在聲部不相容的",
+      help: "拖到譜面上的小節放下，或選好樂句按 Enter 放到游標所在的小節。",
+      empty: "還沒有樂句。",
+      noneFit: "沒有和游標所在聲部相容的樂句。",
+      noMatch: "沒有符合的樂句。",
+      library: "樂句庫",
+      preview: (name: string) => `「${name}」的預覽`,
+      closePreview: "關閉預覽",
+      dropAtCursor: "放到游標所在的小節",
+      /** Over a part of another kind, while a phrase is dragged over it. */
+      cannotDrop: "不能放",
+      // What a drop tells, no dialog (docs/spec/commands.md, 5.7).
+      hints: {
+        tuningDiffers: "調弦不同，格號照原樣放入",
+        barsAppended: "小節不夠，已在譜尾附加小節",
+      } satisfies Record<DropHint, string>,
+      refused: {
+        gone: "要放的小節或聲部已經不在了",
+        otherKind: "只能放進同一種聲部",
+        tooManyStrings: "樂句用到的弦超過這個聲部的弦數",
+        otherStaves: "樂句用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+        invalid: "這個樂句的內容讀不懂，沒有放入",
+      } satisfies Record<DropRefusal, string>,
     },
     // Each member's own display options (docs/spec/views.md, section 6).
     display: {

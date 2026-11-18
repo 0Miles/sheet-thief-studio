@@ -5,6 +5,7 @@ import {
   addPresetPart,
   appendBar,
   type BarRefusal,
+  type BarsFragment,
   type BarSide,
   barsOf,
   bendCycle,
@@ -22,6 +23,10 @@ import {
   deletePart,
   deleteSelection,
   dotCycle,
+  type DropRefusal,
+  type Dropped,
+  dropFragment,
+  type DropTarget,
   durationStep,
   dynamicCycle,
   extendSelection,
@@ -237,6 +242,15 @@ export interface EditorSession {
    * here (newer than this code, or not a score), or read-only.
    */
   replaceScore(version: unknown): boolean;
+  /**
+   * Drop a fragment of bars (a phrase from the sidebar) on a part, from a bar on, one command
+   * (`dropFragment`, docs/spec/commands.md, 5.7): the target is the bar dragged onto, or the
+   * cursor's. The cursor settles where it was (its beat replaced, the nearest place there now);
+   * the selection ends. What was dropped and the hints the page tells (`Dropped`), or why it was
+   * refused, nothing changed (`DropRefusal`); null when nothing ran: read-only (the member is told,
+   * as for a key), or no cursor.
+   */
+  drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null;
   destroy(): void;
 }
 
@@ -808,6 +822,18 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
           }
         }),
       );
+    },
+    drop(target, fragment) {
+      let result: Dropped | DropRefusal | null = null;
+      const done = runWithoutKey({
+        changes: true,
+        run: (at) => {
+          result = dropFragment(doc, target, fragment);
+          if (typeof result === "string") return { cursor: at, selection, done: false };
+          return { cursor: settled(at), selection: null };
+        },
+      });
+      return done || typeof result === "string" ? result : null;
     },
     destroy() {
       doc.off("afterTransaction", settle);

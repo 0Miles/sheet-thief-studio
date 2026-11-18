@@ -118,6 +118,14 @@ interface BeatsFragment {
 - 放置：拖到小節上放下，或按鍵放到游標所在的小節。拖曳時的目標由 `hitTest` 決定（`geometry.ts:91-129` 的 `cursorAtPoint`，由 `alphaTabEngine.ts:162` 呼叫）；種類不合的聲部，高亮成「不能放」。
 - 放置的語意見 [`commands.md`](commands.md) 5.7。
 - 側欄不做辨識。
+- **補充**（#57）：寫法。
+  - 側欄是 `apps/web/src/components/PhraseSidebar.vue`，放在譜面旁邊，和小節屬性面板、聲部面板、混音器同一時間只開一個。打開時重新讀 `GET /api/phrases`（搜尋同 `/phrases`，打字停 200 ms 後送），焦點進搜尋框；`Esc` 先關預覽，沒有預覽時關側欄；`F4` 關側欄；關掉後焦點回到譜面。
+  - 相容與拖曳目標的判定是 `apps/web/src/phraseSidebar.ts` 的純函式（vitest）：`fitsPart`（樂句庫列表的 `stringCount`、`staffCount` 對聲部的弦數與譜表數）、`phrasesShown`（沒有游標時列出全部）、`dropSpotOf`。
+  - 預覽的 popover 開在側欄自己的欄位裡，不疊在譜面上，所以不會蓋住譜面的保留區域。預覽裡畫出樂句的小節框（`structureBoxesOf`，避開預覽自己的保留區域），並放上 `data-reserved`。預覽的捲動區最高 50vh、`overflow: auto`；縮放 0.75。renderer 在第一次預覽時建立，側欄關閉時不銷毀（側欄以 `v-show` 隱藏），離開譜頁才銷毀。
+  - 樂句內容（`GET /api/phrases/:id`）依 `id` 與 `revision` 快取，讀不到的下次重讀。
+  - 拖曳用 HTML5 drag and drop：`dragover` 時以 `hitTest` 找小節，`dropSpotOf` 算出要取代的小節（譜裡有的那些）；種類相同時畫成可以放（`data-drop="ok"`），種類不同時只畫游標下那個小節、標成「不能放」（`data-drop="refused"`、`data-drop-label`），不接受放下。弦數、譜表數等其他拒絕由 `dropFragment` 判斷，放下後以提示告知。
+  - 放置走 `EditorSession.drop(target, fragment)`：一個 Command、一個復原步驟；唯讀時拒絕（同其他會改動文件的鍵）；游標以 `settleCursor` 留在原處（原本的拍點被取代時移到最近的位置），選取結束。拖曳放下後焦點回到譜面，`Ctrl+Z` 直接復原。
+  - 放置的提示（`DropHint`）與拒絕（`DropRefusal`）用譜頁工具列的提示（`role="status"`，不疊在譜面上，所以不碰保留區域）顯示，文字在 `strings.score.phraseSidebar`。
 
 ## 7. 審核頁（`/recognitions/:id`）
 

@@ -13,7 +13,7 @@
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
-import { type ClosedNotice, type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
+import { type ClosedNotice, type CollabTicket, type PhraseSummary, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   barsWithContent,
@@ -21,6 +21,8 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  type DropRefusal,
+  type Dropped,
   type Flag,
   flagsOf,
   type FlagStop,
@@ -54,6 +56,7 @@ import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
+import PhraseSidebar from "../components/PhraseSidebar.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
@@ -61,6 +64,7 @@ import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarr
 import { measureEditView } from "../measureHook";
 import { stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
+import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { strings } from "../strings";
@@ -203,7 +207,12 @@ const flagStop = shallowRef<FlagStop | null>(null);
 /** The key of the toolbar's next-flag button, as this platform names it. */
 const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
 /** The keys of the toolbar's buttons of bars, as this platform names them (docs/spec/keymap.md, section 7). */
-const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
+const barKeys = {
+  insert: keyNameOf("insertBarBefore", keyPlatform()),
+  remove: keyNameOf("deleteBars", keyPlatform()),
+  panel: keyNameOf("barPanel", keyPlatform()),
+  phrases: keyNameOf("phraseSidebar", keyPlatform()),
+};
 /** Where the bars a structural command works on are drawn, dashed over every part, out of the reserved areas. */
 const structureRects = shallowRef<Rect[]>([]);
 /** The panel of the cursor's bar is open (docs/spec/commands.md, section 6): the editable view only. */
@@ -349,6 +358,7 @@ function toggleMixer(): void {
   }
   panelOpen.value = false;
   partsOpen.value = false;
+  sidebarOpen.value = false;
   placeCursor();
   mixerOpen.value = true;
 }
@@ -395,6 +405,7 @@ function togglePanel(): void {
     // One panel at the side of the score at a time.
     partsOpen.value = false;
     mixerOpen.value = false;
+    sidebarOpen.value = false;
     panelOpen.value = true;
     placeCursor();
   }
@@ -441,6 +452,7 @@ function toggleParts(): void {
   else {
     panelOpen.value = false;
     mixerOpen.value = false;
+    sidebarOpen.value = false;
     placeCursor();
     partsOpen.value = true;
   }
@@ -449,6 +461,120 @@ function toggleParts(): void {
 function closeParts(): void {
   partsOpen.value = false;
   focusScore();
+}
+
+/** The phrase sidebar is open (docs/spec/phrases.md, section 6): the editable view only. */
+const sidebarOpen = ref(false);
+/** The contents of the phrases previewed and dropped, each asked for once per revision. */
+const contents = phraseContents();
+/** The phrase dragged from the sidebar, while it is. */
+const dragged = shallowRef<PhraseSummary | null>(null);
+/** Where the phrase dragged would go now, and the boxes drawn there, out of the reserved areas. */
+const dropSpot = shallowRef<DropSpot | null>(null);
+const dropRects = shallowRef<Rect[]>([]);
+/** The cursor's part, which the phrases the sidebar lists fit. */
+const cursorPart = computed(() => score.value?.parts.find((part) => part.id === presence.value.cursor?.partId));
+
+/** F4, or the toolbar's button: the sidebar opens, the keyboard going to its search box, or closes, the keyboard back on the score. */
+function toggleSidebar(): void {
+  if (view.value !== "editable") return;
+  if (sidebarOpen.value) {
+    closeSidebar();
+    return;
+  }
+  panelOpen.value = false;
+  partsOpen.value = false;
+  mixerOpen.value = false;
+  placeCursor();
+  sidebarOpen.value = true;
+}
+
+function closeSidebar(): void {
+  sidebarOpen.value = false;
+  focusScore();
+}
+
+/** What a drop tells the member, no dialog (docs/spec/commands.md, 5.7): why nothing went in, or its hints. */
+function tellDrop(result: Dropped | DropRefusal | null): void {
+  if (result === null) return;
+  if (typeof result === "string") notice.value = text.phraseSidebar.refused[result];
+  else if (result.hints.length > 0) notice.value = result.hints.map((hint) => text.phraseSidebar.hints[hint]).join("；");
+}
+
+/** Drop a phrase on a bar of a part, once its content is here: one command, undone with Ctrl+Z. */
+async function dropPhrase(phrase: PhraseSummary, target: { partId: string; barId: string }): Promise<void> {
+  let fragment;
+  try {
+    fragment = await contents.of(phrase);
+  } catch (failure) {
+    notice.value = refusal(failure);
+    return;
+  }
+  if (session === undefined || view.value !== "editable") return;
+  tellDrop(session.drop(target, fragment));
+}
+
+/** Enter in the sidebar: the phrase goes on the cursor's bar, of the cursor's part. */
+function dropAtCursor(phrase: PhraseSummary): void {
+  const at = session?.cursor;
+  if (at == null) return;
+  void dropPhrase(phrase, { partId: at.partId, barId: at.barId });
+}
+
+function onDrag(phrase: PhraseSummary | null): void {
+  dragged.value = phrase;
+  if (phrase === null) forgetDropSpot();
+}
+
+function forgetDropSpot(): void {
+  dropSpot.value = null;
+  dropRects.value = [];
+}
+
+/** Where on the score the pointer is, while a phrase is dragged: the bar `hitTest` gives, and whether it can go there. */
+function spotAt(event: DragEvent): DropSpot | null {
+  const phrase = dragged.value;
+  if (phrase === null || engine === undefined || host.value === undefined || score.value === null) return null;
+  const box = host.value.getBoundingClientRect();
+  return dropSpotOf(score.value, engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top), phrase);
+}
+
+/**
+ * A phrase dragged over the score: the bars it would replace are drawn, or the bar of a part of
+ * another kind, marked as one it cannot be dropped on (no drop is let through there).
+ */
+function onDragOver(event: DragEvent): void {
+  if (dragged.value === null) return;
+  const spot = spotAt(event);
+  if (spot !== null && !spot.refused) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  } else if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+  const before = dropSpot.value;
+  if (spot !== null && before !== null && spot.partId === before.partId && spot.barId === before.barId) return;
+  dropSpot.value = spot;
+  dropRects.value =
+    spot === null || engine === undefined
+      ? []
+      : selectionBoxes(engine.renderer, { kind: "bars", partId: spot.partId, anchorBarId: spot.first, focusBarId: spot.last }, reserved.value);
+}
+
+/** Out of the score, not into something on it. */
+function onDragLeave(event: DragEvent): void {
+  if (event.relatedTarget instanceof Node && scroller.value?.contains(event.relatedTarget)) return;
+  forgetDropSpot();
+}
+
+function onDrop(event: DragEvent): void {
+  const phrase = dragged.value;
+  const spot = spotAt(event);
+  forgetDropSpot();
+  dragged.value = null;
+  if (phrase === null || spot === null || spot.refused) return;
+  event.preventDefault();
+  // The score has the keyboard: Ctrl+Z undoes the drop.
+  focusScore();
+  void dropPhrase(phrase, { partId: spot.partId, barId: spot.barId });
 }
 
 function onAddPart(preset: PartPresetId, tuning: number[] | undefined): void {
@@ -738,6 +864,11 @@ function onKey(event: KeyboardEvent): void {
   if (pageEffect === "barPanel") {
     event.preventDefault();
     togglePanel();
+    return;
+  }
+  if (pageEffect === "phraseSidebar") {
+    event.preventDefault();
+    toggleSidebar();
     return;
   }
   stopFollowing();
@@ -1042,6 +1173,9 @@ onBeforeUnmount(() => {
           <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleParts">
             {{ text.parts.panel }}
           </AppButton>
+          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleSidebar">
+            {{ text.phraseSidebar.open }}
+          </AppButton>
         </div>
         <FlagControls
           v-if="view"
@@ -1092,6 +1226,9 @@ onBeforeUnmount(() => {
         @keydown="onKey"
         @pointerdown="onPointer"
         @scroll.passive="onScroll"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
@@ -1166,6 +1303,18 @@ onBeforeUnmount(() => {
                 rx="2"
               />
             </template>
+            <rect
+              v-for="(box, index) in dropRects"
+              :key="`drop-${index}`"
+              data-drop-target
+              :data-drop="dropSpot?.refused ? 'refused' : 'ok'"
+              :data-part="dropSpot?.partId"
+              :class="['score__drop', { 'score__drop--refused': dropSpot?.refused }]"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+            />
             <rect v-if="cursorRect" data-cursor :class="['score__cursor', { 'score__cursor--read': view === 'readOnlyEdit' }]" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
           <!-- The names are what members typed: text only, never markup. -->
@@ -1188,6 +1337,14 @@ onBeforeUnmount(() => {
               >{{ mark.name }}</span
             >
           </template>
+          <!-- Inside the box of the bar it is about, which is clear of the reserved areas. -->
+          <span
+            v-if="dropSpot?.refused && dropRects[0]"
+            class="score__drop-label"
+            data-drop-label
+            :style="{ left: `${dropRects[0].x + 2}px`, top: `${dropRects[0].y + 2}px`, maxWidth: `${Math.max(dropRects[0].width - 4, 0)}px` }"
+            >{{ text.phraseSidebar.cannotDrop }}</span
+          >
           <InlineTextEntry
             v-if="textEntry"
             :rect="textEntry.rect"
@@ -1226,6 +1383,17 @@ onBeforeUnmount(() => {
         @program="onProgram"
         @clef="onClef"
         @close="closeParts"
+      />
+      <PhraseSidebar
+        v-if="view === 'editable'"
+        v-show="sidebarOpen"
+        :platform="keyPlatform()"
+        :open="sidebarOpen"
+        :part="cursorPart"
+        :contents="contents"
+        @close="closeSidebar"
+        @drop="dropAtCursor"
+        @drag="onDrag"
       />
       <aside v-if="mixerOpen && view && !narrow" class="score__side" data-mixer-panel :aria-label="text.mixer.title">
         <header class="score__side-header">
@@ -1436,6 +1604,26 @@ onBeforeUnmount(() => {
 /* The read-only edit view's cursor: pale, nothing is typed there (docs/spec/views.md, section 4). */
 .score__cursor--read {
   fill: rgba(234, 88, 12, 0.18);
+}
+/* Where a phrase dragged would go: filled only, as the selection is. */
+.score__drop {
+  fill: rgba(22, 163, 74, 0.22);
+}
+/* A part of another kind: the phrase cannot be dropped there. */
+.score__drop--refused {
+  fill: rgba(220, 38, 38, 0.22);
+}
+.score__drop-label {
+  position: absolute;
+  z-index: 5;
+  overflow: hidden;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* The other members' marks, in their colour (`fill`): filled only, as one's own are. */
 .score__peer-cursor--edit {
