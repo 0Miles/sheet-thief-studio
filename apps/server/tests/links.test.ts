@@ -15,7 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Account, Score, ScoreMember } from "../src/db/models";
 import { withoutLinkTokens } from "../src/links";
-import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
+import { apiCall, closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -192,16 +192,26 @@ test("only the Owner manages the link: 403 to another member, 404 to anyone else
 
 /** Hand Anna's score over to Ben, as the members page does. */
 function handToBen(app: FastifyInstance, scoreId: string, session: string) {
-  return app.inject({ method: "POST", url: `/api/scores/${scoreId}/transfer`, headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, payload: { accountId: ben } });
+  return apiCall(app, "POST", `/api/scores/${scoreId}/transfer`, session, { accountId: ben });
 }
 
-/** Resolves once some query of this database waits for a lock another transaction holds. */
-async function aQueryWaitsForALock(): Promise<void> {
-  for (;;) {
-    const [rows] = await sequelize.query("SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'");
+/**
+ * Resolves once another connection waits for a lock to read this score's row `FOR UPDATE`;
+ * throws when none does within 5 seconds.
+ */
+async function theScoreRowIsAwaited(scoreId: string): Promise<void> {
+  const until = Date.now() + 5000;
+  while (Date.now() < until) {
+    const [rows] = await sequelize.query(
+      `SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+          AND query LIKE 'SELECT % FROM "scores" %' AND query LIKE '%FOR UPDATE%' AND strpos(query, $1) > 0`,
+      { bind: [scoreId] },
+    );
     if ((rows as { waiting: number }[])[0]!.waiting > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+  throw new Error(`no connection waited for the row of score ${scoreId}`);
 }
 
 test("an Owner who hands the score over as they make or revoke its link is refused once the transfer is committed", async () => {
@@ -228,14 +238,18 @@ test("an Owner who hands the score over as they make or revoke its link is refus
       return read(key, options);
     });
     const transfer = handToBen(app, id, session);
-    await holding;
-    const asked = link(app, method, id, session);
-    await aQueryWaitsForALock();
-    goOn();
+    let asked!: ReturnType<typeof link>;
+    try {
+      await holding;
+      asked = link(app, method, id, session);
+      await theScoreRowIsAwaited(id);
+    } finally {
+      goOn();
+      spy.mockRestore();
+    }
 
     expect((await transfer).statusCode).toBe(204);
     const answer = await asked;
-    spy.mockRestore();
     // As if it had come after the transfer: Anna is an Editor by then, and nothing is written.
     expect(answer.statusCode).toBe(403);
     expect(answer.json()).toEqual({ code: "forbidden" });

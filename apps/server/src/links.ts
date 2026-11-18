@@ -77,15 +77,17 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
   // Making a link anew revokes the one before (docs/spec/accounts.md, section 7).
   app.post<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) =>
     unlessRefused(reply, async () => {
+      const { id } = request.params;
       const token = newToken();
-      revoked(request.params.id, await replaceLink(request.params.id, request.account!.id, token));
+      revoked(id, await replaceLink(id, request.account!.id, token));
       return scoreLink.parse({ token });
     }),
   );
 
   app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) =>
     unlessRefused(reply, async () => {
-      revoked(request.params.id, await replaceLink(request.params.id, request.account!.id, null));
+      const { id } = request.params;
+      revoked(id, await replaceLink(id, request.account!.id, null));
       return reply.code(204).send();
     }),
   );

@@ -53,9 +53,10 @@ export type Changer = { accountId: string; by: "owner" | "member" } | { by: "adm
  * to make. An admin is refused with 404 unless the Owner is disabled; the Owner's account row is
  * held until the change is committed, so that it is not enabled in between. Every change of
  * `score_members` goes through here, whoever makes it: the lock is what keeps two of them apart.
- * So does every write only the Owner may make to the score's row (deleting it, its link): made
- * here, it is made by whoever is the Owner as it is written, not by the Owner of a moment before
- * a transfer.
+ * So do the writes only the Owner may make to the row of a score not deleted (deleting it, its
+ * link): made here, each is made by whoever is the Owner as it is written, not by the Owner of a
+ * moment before a transfer. Restoring a deleted score, which this does not find, does the same
+ * by itself in deletion.ts: its row locked first, its Owner checked then.
  */
 export async function changeMembers<T>(scoreId: string, changer: Changer, change: (members: Members) => Promise<T>): Promise<T> {
   if (!isUuid(scoreId)) throw new Refusal(404, "not_found");

@@ -18,19 +18,19 @@ export async function liveScore(id: string): Promise<Score | null> {
 }
 
 /** The columns of a score that a membership check loads unless told others. */
-const MEMBERSHIP_COLUMNS = ["id", "title", "artist"];
+const MEMBERSHIP_COLUMNS: readonly (keyof Score)[] = ["id", "title", "artist"];
 
 /**
  * The account's role in the score, with the score (these columns of it); null when either is
  * missing, the score is deleted or the account is no member. Role and columns are read in one
  * statement, as of the same moment.
  */
-export async function membership(scoreId: string, accountId: string, columns = MEMBERSHIP_COLUMNS): Promise<{ score: Score; role: Role } | null> {
+export async function membership(scoreId: string, accountId: string, columns: readonly (keyof Score)[] = MEMBERSHIP_COLUMNS): Promise<{ score: Score; role: Role } | null> {
   if (!isUuid(scoreId)) return null;
   const member = await ScoreMember.findOne({
     where: { scoreId, accountId },
     // Not the Yjs state: no caller needs it, and it is the largest column of the table.
-    include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true, attributes: columns }],
+    include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true, attributes: [...columns] }],
   });
   return member === null ? null : { score: member.get("score") as Score, role: member.role };
 }
@@ -42,7 +42,7 @@ export async function membership(scoreId: string, accountId: string, columns = M
  * with the score's row locked (`changeMembers` in members.ts), as an Owner may hand the score
  * over in between.
  */
-export async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply, columns = MEMBERSHIP_COLUMNS): Promise<Score | null> {
+export async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply, columns: readonly (keyof Score)[] = MEMBERSHIP_COLUMNS): Promise<Score | null> {
   const member = await membership(request.params.id, request.account!.id, columns);
   if (member?.role === "owner") return member.score;
   if (member === null) notFound(reply);
