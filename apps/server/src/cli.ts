@@ -26,11 +26,22 @@ const USAGE = `用法：
   cli create-admin <帳號名稱> <顯示名稱>    密碼從標準輸入讀取
 `;
 
+export interface CliOptions {
+  /**
+   * A connection the models (src/db/models.ts) are already bound to, used as it is and left
+   * open: the server's tests run the commands in their own process on their own connection
+   * (#116). Without one, the command connects to the database of `io.env` and closes it.
+   */
+  sequelize?: Sequelize;
+}
+
 /** Run one command; resolves to the process exit code. */
-export async function runCli(args: string[], io: CliIo): Promise<number> {
+export async function runCli(args: string[], io: CliIo, options: CliOptions = {}): Promise<number> {
+  const withDatabase = (run: (sequelize: Sequelize) => Promise<number>) =>
+    options.sequelize === undefined ? withOwnDatabase(io, run) : run(options.sequelize);
   const [command, ...rest] = args;
   if (command === "migrate" && rest.length === 0) {
-    return withDatabase(io, async (sequelize) => {
+    return withDatabase(async (sequelize) => {
       const ran = await migrate(sequelize);
       io.stdout.write(ran.length === 0 ? "資料庫已是最新。\n" : `已執行遷移：${ran.join("、")}\n`);
       return 0;
@@ -38,7 +49,7 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
   }
   if (command === "create-admin" && rest.length === 2) {
     const [username, displayName] = rest as [string, string];
-    return withDatabase(io, async () => {
+    return withDatabase(async () => {
       const password = await readPassword(io);
       if (password === null) return 1;
       try {
@@ -59,7 +70,7 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
 }
 
 /** Run with a connection bound to the models (src/db/models.ts), closed afterwards. */
-async function withDatabase(io: CliIo, run: (sequelize: Sequelize) => Promise<number>): Promise<number> {
+async function withOwnDatabase(io: CliIo, run: (sequelize: Sequelize) => Promise<number>): Promise<number> {
   const sequelize = connectDatabase(readConfig(io.env).databaseUrl);
   try {
     return await run(sequelize);
