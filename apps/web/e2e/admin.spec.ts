@@ -21,9 +21,9 @@ test("an admin makes an account on /admin, which logs in; resets its password, d
   await page.getByRole("link", { name: strings.header.admin }).click();
   await expect(page).toHaveURL("/admin");
   await expect(page.getByRole("heading", { name: text.title })).toBeVisible();
-  // Nothing to do to one's own account here.
+  // Nothing to do to one's own account here but binding a Discord id, to log in from the karyl-chan bot.
   await expect(page.locator(`[data-account="${ADMIN.username}"]`)).toContainText(text.isAdmin);
-  await expect(page.locator(`[data-account="${ADMIN.username}"]`).getByRole("button")).toHaveCount(0);
+  await expect(page.locator(`[data-account="${ADMIN.username}"]`).getByRole("button")).toHaveText([text.discord.bind]);
 
   await page.getByRole("button", { name: text.newAccount }).click();
   const create = page.getByRole("dialog", { name: text.create.title });
@@ -133,6 +133,59 @@ test("an admin hands a disabled Owner's score to a member on /admin, who then fi
 
   expect(errors).toEqual([]);
   expect(theirErrors).toEqual([]);
+});
+
+test("an admin binds a Discord id to an account on /admin and unbinds it; one bound already is refused", async ({ page }, testInfo) => {
+  const run = `${testInfo.project.name.slice(0, 4)}-${randomBytes(4).toString("hex")}`;
+  const account = (name: string) => ({ username: `e2e-${name}-${run}`, displayName: "綁定 Discord 的成員", password: "e2e discord password", isAdmin: false, mustChangePassword: false });
+  const first = account("discord");
+  const second = account("discord2");
+  seedAccount(first);
+  seedAccount(second);
+  // A Discord id of this run's own: 18 digits.
+  const discordId = `9${BigInt(`0x${randomBytes(7).toString("hex")}`).toString().padStart(17, "0").slice(-17)}`;
+  const errors = pageErrors(page, [
+    { status: 401, path: "/api/me" },
+    { status: 409, path: "/identities" },
+  ]);
+  await logInFromStart(page, ADMIN);
+  await page.goto("/admin");
+  const row = page.locator(`[data-account="${first.username}"]`);
+  await expect(row.locator("[data-discord]")).toHaveCount(0);
+
+  await row.getByRole("button", { name: text.discord.bind }).click();
+  const bind = page.getByRole("dialog", { name: text.discord.bindTitle(first.username) });
+  // What is no Discord id is not sent.
+  await bind.getByLabel(text.discord.field).fill("12345");
+  await bind.getByRole("button", { name: text.discord.submit }).click();
+  await expect(bind.getByRole("alert")).toHaveText(text.discord.rule);
+  await bind.getByLabel(text.discord.field).fill(discordId);
+  await bind.getByRole("button", { name: text.discord.submit }).click();
+  await expect(bind).toBeHidden();
+  await expect(page.getByRole("status")).toHaveText(text.discord.wasBound(first.username, discordId));
+  await expect(row.locator("[data-discord]")).toHaveText(text.discord.bound(discordId));
+  await expect(row.getByRole("button", { name: text.discord.bind })).toHaveCount(0);
+
+  // The same id for another account: refused, said in the dialog.
+  await page.locator(`[data-account="${second.username}"]`).getByRole("button", { name: text.discord.bind }).click();
+  const again = page.getByRole("dialog", { name: text.discord.bindTitle(second.username) });
+  await again.getByLabel(text.discord.field).fill(discordId);
+  await again.getByRole("button", { name: text.discord.submit }).click();
+  await expect(again.getByRole("alert")).toHaveText(strings.errors.identity_taken);
+  await again.getByRole("button", { name: text.cancel }).click();
+  await expect(page.locator(`[data-account="${second.username}"]`).locator("[data-discord]")).toHaveCount(0);
+
+  await row.getByRole("button", { name: text.discord.unbind }).click();
+  const unbind = page.getByRole("dialog", { name: text.discord.unbindTitle });
+  await expect(unbind).toContainText(text.discord.unbindMessage(first.username, discordId));
+  await unbind.getByRole("button", { name: text.discord.unbind }).click();
+  await expect(unbind).toBeHidden();
+  await expect(page.getByRole("status")).toHaveText(text.discord.wasUnbound(first.username));
+  await expect(row.locator("[data-discord]")).toHaveCount(0);
+  // Still unbound when the page is loaded again: the server has it so.
+  await page.reload();
+  await expect(page.locator(`[data-account="${first.username}"]`).getByRole("button", { name: text.discord.bind })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("a username that is taken is refused in the dialog", async ({ page }) => {

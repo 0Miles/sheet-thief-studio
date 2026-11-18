@@ -16,6 +16,9 @@ const proxy = {
 const headers = { "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex" };
 
 export default defineConfig({
+  // Paths relative to the page, which its `<base>` resolves: `/` on its own, `/plugin/<key>/`
+  // behind the karyl-chan bot (docs/spec/karyl-login.md, section 6).
+  base: "./",
   plugins: [
     vue(),
     // Build tooling only: bundles alphaTab's workers and copies its font and soundfont into

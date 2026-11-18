@@ -1,7 +1,10 @@
-// Calls to the server's JSON API (docs/spec/routes.md, section 3). The session cookie goes along
-// by itself: the page and the API share one origin.
+// Calls to the server's JSON API (docs/spec/routes.md, section 3), under where the page is served.
+// The session cookie goes along by itself: the page and the API share one origin. Behind the
+// karyl-chan bot, whose proxy drops cookies, the session goes as a Bearer token instead
+// (docs/spec/karyl-login.md, section 5).
 import { apiError, type CollabTicket, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
 
+import { appPath, appUrl, bearerToken, forgetBearer } from "./served";
 import { errorText, strings } from "./strings";
 
 /**
@@ -37,15 +40,28 @@ export function refusal(failure: unknown): string {
 async function call(method: string, path: string, body?: unknown): Promise<Response> {
   // A form goes as it is: the browser writes its multipart/form-data and the boundary.
   const form = body instanceof FormData;
-  const response = await fetch(path, {
+  const headers: Record<string, string> = body === undefined || form ? {} : { "content-type": "application/json" };
+  const bearer = bearerToken();
+  if (bearer !== null) headers.authorization = `Bearer ${bearer}`;
+  const response = await fetch(appPath(path), {
     method,
-    headers: body === undefined || form ? {} : { "content-type": "application/json" },
+    headers,
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
   if (response.ok) return response;
   const error = apiError.safeParse(await response.json().catch(() => null));
   const { code, params } = error.success ? error.data : { code: "internal_error" as const, params: undefined };
+  // The server no longer knows the session the token named: it is kept no longer.
+  if (bearer !== null && code === "unauthenticated") forgetBearer();
   throw new ApiError(response.status, code, retryAfterOf(response.headers.get("retry-after")), params ?? null);
+}
+
+/**
+ * GET a file the API answers with (a recognition's image), as an object URL for an `<img>`: an
+ * image's own request would carry no Bearer token. The caller revokes it when done.
+ */
+export async function getObjectUrl(path: string): Promise<string> {
+  return URL.createObjectURL(await (await call("GET", path)).blob());
 }
 
 /** GET, the answer checked against its shape in @studio/contracts. */
@@ -78,9 +94,11 @@ export async function patchFor<T>(path: string, body: unknown, shape: { parse(va
   return shape.parse(await (await call("PATCH", path, body)).json());
 }
 
-/** The WebSocket address of /collab on this server (docs/adr/0001). */
+/** The WebSocket address of /collab on this server, under where the page is served (docs/adr/0001). */
 export function collabUrl(): string {
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
+  const url = new URL(appUrl("/collab"));
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.href;
 }
 
 /**
