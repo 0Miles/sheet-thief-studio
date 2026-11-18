@@ -1,0 +1,5 @@
+# The tests (the image's "test" target): the core's packages plus pytest and reportlab, which draws
+# the tests' PDFs (tests/pdf_factory.py).
+-r requirements.txt
+pytest==9.1.1
+reportlab==5.0.1

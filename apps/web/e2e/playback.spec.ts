@@ -63,9 +63,12 @@ test("a click on the score while it plays moves the cursor there, and playback g
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[0]!.id });
 
   await recordBarsShown(page);
+  const scoreTop = (await page.locator("[data-scroller]").boundingBox())!.y;
   // Space plays, as the toolbar's button does.
   await page.keyboard.press("Space");
   await untilShown(page, 2);
+  // Where playback is, said in the toolbar, never moves the score: the click lands where bar 6 was seen.
+  expect((await page.locator("[data-scroller]").boundingBox())!.y).toBe(scoreTop);
   await page.mouse.click(sixth.x + sixth.width / 2, sixth.y + sixth.height / 2);
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[5]!.id, line: 1 });
   await untilShown(page, 3);
@@ -272,7 +275,13 @@ test("a sound font that could not be had: the toolbar says so, asks again once b
   await openScore(page, id);
   const failed = page.locator('[data-player="failed"]');
   await expect(failed).toContainText(text.failed);
-  await expect(page.getByRole("button", { name: text.play })).toBeDisabled();
+  // The play button asks for it again instead; stop has nothing to stop.
+  await expect(page.getByRole("button", { name: text.play })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: text.retry })).toBeEnabled();
+  await expect(page.getByRole("button", { name: text.stop })).toBeDisabled();
+  // Said failed, the toolbar is as wide as when paused: the score is where it will be then.
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+  const scoreTop = (await page.locator("[data-scroller]").boundingBox())!.y;
   expect(cut).toBe(1);
 
   // Back online, the page asks for it again by itself; still cut short, it says so again.
@@ -285,6 +294,10 @@ test("a sound font that could not be had: the toolbar says so, asks again once b
   await page.unroute(soundFont);
   await page.getByRole("button", { name: text.retry }).click();
   await soundReady(page);
+  // Back in step with the server, as when the score was first measured (no offline banner).
+  await expect(page.locator("[data-offline]")).toHaveCount(0);
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+  expect((await page.locator("[data-scroller]").boundingBox())!.y).toBe(scoreTop);
   await page.getByRole("button", { name: text.play }).click();
   await expect(page.locator('[data-player="playing"]')).toBeVisible();
   // What the browser, alphaTab and the engine log of each download cut short, and nothing else:
