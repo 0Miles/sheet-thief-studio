@@ -111,7 +111,7 @@
 4. 真實照片的辨識品質，包含非六弦的 TAB，以及用手機直接拍照上傳（iPhone、Android 各一次：檔案格式被不被接受、直拍的照片有沒有轉正）。
 5. 目視確認 alphaTab 的標記沒有被我們的疊層蓋住；e2e 的幾何斷言之外，仍保留這項人工檢查。
 6. 在樂團成員實際的筆電上重量 S2。spike 只在一台 i9-9900K 桌機上量過（`spike-report.md:22,355`）。Mac 的成員另外用 WebKit 量一次。
-7. 部署，以及在 karyl-chan bot 的 `/admin/services` 註冊 service。
+7. 部署，以及在 karyl-chan bot 的 `/admin/plugins` 建立 plugin（取得 setup secret）、啟用它，再用 `/studio` 實際登入一次，並在共編頁確認 WebSocket 經過 bot 的代理連得上。
 8. 在 Windows、macOS 各實際試一次衝突的快捷鍵，有 Linux 的話也試：[`keymap.md`](keymap.md) 裡每個帶修飾鍵的組合、Mac 上要按 `Fn` 的功能鍵與 `Fn+←`、`Fn+→`、Mac 上 Safari 的 `Cmd+C`、`Cmd+V`、`Cmd+Z`，以及 Linux 版 Chrome 的 `Alt+1`、`Alt+2`。記錄動作有沒有生效、作業系統或瀏覽器有沒有另外做事。
 
 ## 7. 其他用測試鎖住的行為

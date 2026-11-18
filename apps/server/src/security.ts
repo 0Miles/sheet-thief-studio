@@ -1,7 +1,8 @@
 // The headers every answer carries, and the web app's build served by this server in production
 // (docs/spec/security.md, sections 6 and 7; docs/spec/routes.md, section 2).
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import type { Socket } from "node:net";
 import { extname, join, resolve, sep } from "node:path";
 
@@ -23,7 +24,8 @@ export const CONTENT_SECURITY_POLICY = [
   "worker-src 'self' blob:",
   "media-src 'self' blob:",
   "object-src 'none'",
-  "base-uri 'none'",
+  // The page's own `<base>`, which says where it is served (`registerPages`).
+  "base-uri 'self'",
   "frame-ancestors 'none'",
   "form-action 'self'",
 ].join("; ");
@@ -195,28 +197,53 @@ function sendFile(request: FastifyRequest, reply: FastifyReply, found: BuildFile
     .send(createReadStream(found.file));
 }
 
+/** The `<base>` of the build's page, which Vite writes as `/` (apps/web/index.html). */
+const BASE_ELEMENT = /<base\s+href="[^"]*"\s*\/?>/i;
+
+/**
+ * The page with its `<base>` set to where it is served: `/` on its own, `/plugin/<key>/` behind the
+ * karyl-chan bot (docs/spec/karyl-login.md, section 6). Its scripts, the API and /collab are found
+ * from there. Without one in the build, it goes first in `<head>`.
+ */
+function pageUnder(html: string, basePath: string): string {
+  const element = `<base href="${basePath.replace(/[&"<>]/g, "")}">`;
+  return BASE_ELEMENT.test(html) ? html.replace(BASE_ELEMENT, element) : html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${element}`);
+}
+
+/** Send the page with its `<base>`, or 304 when the browser already holds it as it is now. */
+async function sendPage(request: FastifyRequest, reply: FastifyReply, found: BuildFile, basePath: string) {
+  const html = pageUnder(await readFile(found.file, "utf8"), basePath);
+  const etag = `W/"${createHash("sha256").update(html).digest("base64url").slice(0, 22)}"`;
+  reply.header("etag", etag);
+  if (holds(request, etag)) return reply.code(304).send();
+  return reply.type(CONTENT_TYPES[".html"]!).send(html);
+}
+
 /**
  * Serve the build of the web app in `webRoot`: its files, and its page for every other path, which
  * the page's own router then reads (the SPA fallback). Not for the API nor /collab, and not for
  * a path that names a file (its last segment has an extension) the build does not hold: those
- * stay a 404. In development Vite serves the page and this is not registered.
+ * stay a 404. In development Vite serves the page and this is not registered. `basePath` is
+ * where the browser sees the page served, asked at each request: the bot may tell it later.
  */
-export function registerPages(app: FastifyInstance, webRoot: string): void {
+export function registerPages(app: FastifyInstance, webRoot: string, basePath: () => string = () => "/"): void {
   const root = resolve(webRoot);
   app.get("/*", async (request: FastifyRequest<{ Params: { "*": string } }>, reply: FastifyReply) => {
     // As the router decoded it: `/%61pi/…` is the API too.
     const path = `/${request.params["*"]}`;
     if (under(path, "/api") || under(path, "/collab")) return notFound(reply);
-    const found = await fileAt(root, path);
+    const found = path === "/index.html" ? null : await fileAt(root, path);
     if (found !== null) {
       // Only the files of /assets/ have the hash of their content in their name.
       if (path.startsWith("/assets/")) reply.header("cache-control", ASSET_CACHE);
       return sendFile(request, reply, found);
     }
     // A file that is not there is missing, not a page: no route of the page ends like a file name.
-    if (path.startsWith("/assets/") || /\.[A-Za-z0-9]+$/.test(path)) return notFound(reply);
+    if (path.startsWith("/assets/") || (path !== "/index.html" && /\.[A-Za-z0-9]+$/.test(path))) return notFound(reply);
     const page = await fileAt(root, "/index.html");
     if (page === null) throw new Error(`no index.html in the web build at ${root}`);
-    return sendFile(request, reply, page);
+    // Served from the root, the page is the build's as it is.
+    const base = basePath();
+    return base === "/" ? sendFile(request, reply, page) : sendPage(request, reply, page, base);
   });
 }

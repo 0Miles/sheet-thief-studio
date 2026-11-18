@@ -11,6 +11,8 @@ import type { z } from "zod";
 export function registerOriginCheck(app: FastifyInstance, publicOrigin: string): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "GET" || request.method === "HEAD") return;
+    // The karyl-chan bot's dispatches: no browser sends them, and the plugin's HMAC key signs them.
+    if (request.routeOptions.config.botDispatch) return;
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ code: "bad_origin" });
   });
 }

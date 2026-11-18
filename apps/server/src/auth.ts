@@ -39,6 +39,17 @@ export function mustChangePassword(request: FastifyRequest): boolean {
   return request.account?.mustChangePassword === true && request.session?.via === "password";
 }
 
+/**
+ * The session id a request shows: in `Authorization: Bearer`, as the pages served by the karyl-chan
+ * bot send it, whose proxy drops cookies (docs/spec/karyl-login.md, section 5); otherwise in the
+ * session cookie.
+ */
+function shownSession(request: FastifyRequest, cookieName: string): { id: string | undefined; bearer: boolean } {
+  const header = request.headers.authorization;
+  const bearer = typeof header === "string" ? /^Bearer +(\S+)$/i.exec(header)?.[1] : undefined;
+  return bearer === undefined ? { id: request.cookies[cookieName], bearer: false } : { id: bearer, bearer: true };
+}
+
 export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }: { cookie: CookieSettings; sessions: Sessions; limiter: RateLimiter }): void {
   const cookieOptions = { path: "/", httpOnly: true, secure: cookie.secure, sameSite: "lax" } as const;
   // Sent again with every use, so the browser keeps the cookie as long as Redis keeps the session.
@@ -53,17 +64,18 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
     // `/api` itself too: the route `/` of a plugin registered under that prefix.
     const route = request.routeOptions.url;
     if (!(route === "/api" || route?.startsWith("/api/")) || request.routeOptions.config.public) return;
-    const id = request.cookies[cookie.name];
+    const { id, bearer } = shownSession(request, cookie.name);
     const session = id ? await sessions.resume(id) : null;
     const account = session ? await Account.findByPk(session.accountId) : null;
     if (!session || !account || account.disabledAt !== null) {
       if (session) await sessions.end({ sessionId: session.id });
-      if (id) reply.clearCookie(cookie.name, cookieOptions);
+      if (id && !bearer) reply.clearCookie(cookie.name, cookieOptions);
       return reply.code(401).send({ code: "unauthenticated" });
     }
     request.session = session;
     request.account = account;
-    keepSession(reply, session.id);
+    // A Bearer token is kept by the page; no cookie for it.
+    if (!bearer) keepSession(reply, session.id);
     // On the server too, not only in the page's router: a new route is behind it unless it says otherwise.
     if (mustChangePassword(request) && !request.routeOptions.config.beforePasswordChange) {
       return reply.code(403).send({ code: "password_change_required" });
@@ -92,9 +104,9 @@ export function registerAuth(app: FastifyInstance, { cookie, sessions, limiter }
   });
 
   app.post("/api/auth/logout", { config: { public: true } }, async (request, reply) => {
-    const id = request.cookies[cookie.name];
+    const { id, bearer } = shownSession(request, cookie.name);
     if (id) await sessions.end({ sessionId: id });
-    reply.clearCookie(cookie.name, cookieOptions);
+    if (!bearer) reply.clearCookie(cookie.name, cookieOptions);
     return reply.code(204).send();
   });
 
