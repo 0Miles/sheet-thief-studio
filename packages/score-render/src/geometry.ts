@@ -308,7 +308,8 @@ export function cursorAtPoint(lookup: BoundsLookup, projection: Projection, part
     const distance = Math.abs(beat.onNotesX - x);
     if (nearest === null || distance < nearest.distance) nearest = { beat, id, distance };
   }
-  const position = Math.round((y - bar.visualBounds.y + metrics.lineThickness / 2) / lineStep(shape, metrics));
+  // Just over the top line rounds to -0: the top line is 0 (`|| 0`), as the cursor's line is written.
+  const position = Math.round((y - bar.visualBounds.y + metrics.lineThickness / 2) / lineStep(shape, metrics)) || 0;
   const line = shape.kind === "fretted" ? Math.min(Math.max(position + 1, 1), Math.max(shape.strings, 1)) : position;
   return {
     partId,

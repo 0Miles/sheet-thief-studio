@@ -50,6 +50,7 @@ import * as Y from "yjs";
 import { afterRoleChange, type Closing, openedView, ownChangesOf, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal, whyRefused } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
 import { barPanelOf } from "../barPanel";
+import { listenToClipboard } from "../clipboard";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -1047,6 +1048,8 @@ function warnUnsynced(event: BeforeUnloadEvent): void {
 window.addEventListener("offline", goOffline);
 window.addEventListener("online", goOnline);
 window.addEventListener("beforeunload", warnUnsynced);
+// Copy, cut and paste while the score has the keyboard (docs/spec/phrases.md, section 2); told as a drop is.
+const stopClipboard = listenToClipboard({ scroller: () => scroller.value, session: () => session, tell: say });
 
 onMounted(async () => {
   let opened: Opening;
@@ -1186,6 +1189,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
   window.removeEventListener("online", goOnline);
   window.removeEventListener("beforeunload", warnUnsynced);
+  stopClipboard();
   sound?.destroy();
   hideFromTests();
   measurement.stop();

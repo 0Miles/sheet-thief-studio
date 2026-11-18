@@ -74,7 +74,7 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 
 正式部署（Docker Compose、nginx、獨立部署與 plugin 模式）見 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 
-送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著，用獨立的 `studio_test` 資料庫）：
+送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著；每次執行自己建一個資料庫與挑一個 Redis database，好幾個 worktree 可以同時跑，見 [`docs/spec/testing.md`](docs/spec/testing.md) 第 1 節）：
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test

@@ -107,7 +107,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 | 鍵 | `code` | 動作 | 適用的聲部 |
 |---|---|---|---|
-| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#36：目前只綁 fretted，見本節最後的補充） |
+| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#49：pitched 見本節最後的補充） |
 | `Shift+H` | `KeyH` | legato（搥弦、勾弦） | fretted |
 | `Shift+S` | `KeyS` | slideOut：legato → shift → outUp → outDown → 沒有 | fretted |
 | `Shift+E`（補充） | `KeyE` | slideIn：inBelow → inAbove → 沒有 | fretted |
@@ -130,17 +130,17 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
 
-**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeysAt` 給出。**補充**（#44）：鼓的 ghost、accent 已加上：`bindings.ts` 另有情境 `percussion` 的 `ghost`、`accent` 綁定，作用在畫在游標那條線上的**所有**鼓件（`noteKeysAt`，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`），一次決定、一個 Command（`toggleKeysAt`）。五線譜的 accent、staccato 跟著 M3 加上；在那之前，這些鍵在五線譜聲部不動。鼓沒有 tie，`Shift+L` 在鼓聲部不是按鍵。
+**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeysAt` 給出。**補充**（#44）：鼓的 ghost、accent 已加上：`bindings.ts` 另有情境 `percussion` 的 `ghost`、`accent` 綁定，作用在畫在游標那條線上的**所有**鼓件（`noteKeysAt`，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`），一次決定、一個 Command（`toggleKeysAt`）。**補充**（#49）：五線譜的 accent（`Shift+A`）、staccato（`Shift+C`）已加上：`bindings.ts` 另有情境 `pitched` 的 `accent`、`staccato` 綁定，作用在畫在游標那條線上的所有音（`noteKeysAt`，例如 C 與 C♯），一次決定、一個 Command；那條線上沒有音時不動。其他開關型技巧（dead、ghost、vibrato、palm mute、let ring、tap、legato）在五線譜聲部不是按鍵。鼓沒有 tie，`Shift+L` 在鼓聲部不是按鍵。
 
 **補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
 
 **補充**（#27）：`Shift+H`（legato）是 `bindings.ts` 的 `TECHNIQUE_KEYS` 裡的一項；`Shift+S`（slideOut）、`Shift+E`（slideIn）是 `slideOut`、`slideIn` 綁定。三者都只綁在 fretted 聲部（這些欄位只有 fretted 有）；有選取時作用在整個範圍，循環型的走到同一個狀態（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）跟著 M3 加上，綁在 pitched 情境，和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
+**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）綁在 pitched 情境（#48 加上，第 4.3 節的補充），和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
 
 **補充**（#29）：`Shift+N` 是 `bindings.ts` 的 `harmonic` 綁定，只綁在 fretted 聲部（這個欄位只有 fretted 有），兩個平台相同；有選取時作用在整個範圍，走到同一個泛音（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
+**補充**（#36）：tie（`Shift+L`）是 `bindings.ts` 的 `tie` 綁定（`commands.ts` 的 `tieToggle`）。**補充**（#49）：五線譜另有情境 `pitched` 的 `tie` 綁定，依「同一條線」找前一個音：鍵由 `tieKeysAt` 給出，那條線上沒有音時建立前一個拍點畫在那條線上的音（[`commands.md`](commands.md) 5.4 的 #49 補充）。和五線譜的 `L` 以外的字母鍵不衝突：修飾鍵要完全相符，`Shift+A`、`Shift+C` 也不會輸入 A、C。
 
 ## 4. 各聲部種類的輸入鍵
 
@@ -189,6 +189,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `↑` `↓` | `ArrowUp` `ArrowDown` | 依自然音階上下：`score-model` 的純函式由「clef 加譜表位置」得出自然音的音高 |
 
 拼寫的規則見 [`schema.md`](schema.md) 8.1。
+
+**補充**（#48）：鍵在 `bindings.ts`：`A`–`G` 是 `pitch` 綁定（帶 `letter`，`KeyA`–`KeyG`，不帶修飾鍵），`]`、`[` 是 `sharpen`、`flatten`（`BracketRight`、`BracketLeft`），`Shift+↑`、`Shift+↓` 是 `octaveUp`、`octaveDown`；全部綁在情境 `pitched`，兩個平台相同，按住時不重複。和鼓的 `B`、`C`、`D`、`F`（情境 `percussion`）與 fretted 的 `Shift+↑`、`Shift+↓`（bend 的半音數）不衝突：綁定只作用在它那種聲部。指令是 `commands.ts` 的 `enterNote`、`moveNotesBySemitone`、`moveNotesByOctave`（[`commands.md`](commands.md) 5.1、5.8 的補充）。`Delete` 在五線譜刪掉畫在游標那條線上的所有音（5.2）。
 
 ## 5. 面板與模式的鍵
 

@@ -1,12 +1,13 @@
 // Dropping a fragment of bars on a part (docs/spec/commands.md, 5.7): a phrase put in place, or a
 // fragment of bars pasted (5.6). It replaces, one command: from the bar dropped on, as many bars
-// of the part as the fragment has, every voice of them.
+// of the part as the fragment has, every voice of them. A fragment of beats pasted (5.6) is
+// inserted instead, at the cursor.
 import * as Y from "yjs";
 
 import { beatToY } from "./build";
-import { insertBars, newId } from "./commands";
+import { type Cursor, insertBars, newId, placeFor } from "./commands";
 import { writableCopy } from "./depth";
-import { type BarsFragment, barsFragmentSchema } from "./phrases";
+import { type BarsFragment, barsFragmentSchema, type BeatsFragment, beatsFragmentSchema, type BeatWithoutId } from "./phrases";
 import {
   barsOf,
   contentMapOf,
@@ -21,6 +22,7 @@ import {
   staffAndVoiceOf,
   staffCountOf,
   stringOfNoteKey,
+  type YPart,
 } from "./schema";
 
 /** Where a fragment is dropped: a part, and the bar its first bar goes in. */
@@ -45,15 +47,16 @@ export interface Dropped {
   hints: DropHint[];
 }
 
-/** The highest string a fretted fragment has a note on; 0 when none. */
-function stringsUsed(fragment: BarsFragment): number {
+/** The highest string the beats have a note on; 0 when none. */
+function highestString(beats: Iterable<BeatWithoutId>): number {
   let highest = 0;
-  for (const bar of fragment.bars) {
-    for (const beats of Object.values(bar.voices)) {
-      for (const beat of beats) for (const key of Object.keys(beat.notes)) highest = Math.max(highest, stringOfNoteKey(key) ?? 0);
-    }
-  }
+  for (const beat of beats) for (const key of Object.keys(beat.notes)) highest = Math.max(highest, stringOfNoteKey(key) ?? 0);
   return highest;
+}
+
+/** Every beat of a fragment of bars, of every voice. */
+function* beatsOfBars(fragment: BarsFragment): Generator<BeatWithoutId> {
+  for (const bar of fragment.bars) for (const beats of Object.values(bar.voices)) yield* beats;
 }
 
 /** How many staves a fragment uses: up to the last staff with a beat (a rest too) in any voice of it. */
@@ -66,6 +69,18 @@ function stavesUsed(fragment: BarsFragment): number {
 }
 
 const tuningSchema = partSchemas.fretted.shape.tuning;
+
+/**
+ * Whether the strings a fretted fragment uses fit a part (docs/spec/commands.md, 5.7, points 6
+ * and 7): false when it uses a string the part has not. When the tuning differs, or the part's
+ * cannot be read (which says nothing of its strings, so any fits), `hints` is told so.
+ */
+function stringsFit(part: YPart, tuning: readonly number[], used: number, hints: DropHint[]): boolean {
+  const read = parsePlain(tuningSchema, part.get("tuning"));
+  if (read.success && used > read.data.length) return false;
+  if (!read.success || JSON.stringify(read.data) !== JSON.stringify(tuning)) hints.push("tuningDiffers");
+  return true;
+}
 
 /**
  * Drop a fragment of bars on a part, from a bar on, one command (docs/spec/commands.md, 5.7). Every
@@ -91,12 +106,7 @@ export function dropFragment(doc: Y.Doc, target: DropTarget, given: BarsFragment
   if (part === undefined || kind === undefined || contentMapOf(part) === undefined || start < 0) return "gone";
   if (kind !== fragment.kind) return "otherKind";
   const hints: DropHint[] = [];
-  if (fragment.kind === "fretted") {
-    // A tuning that cannot be read says nothing of the strings: the frets go in as they are, and the member is told the tuning differs.
-    const tuning = parsePlain(tuningSchema, part.get("tuning"));
-    if (tuning.success && stringsUsed(fragment) > tuning.data.length) return "tooManyStrings";
-    if (!tuning.success || JSON.stringify(tuning.data) !== JSON.stringify(fragment.tuning)) hints.push("tuningDiffers");
-  }
+  if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(beatsOfBars(fragment)), hints)) return "tooManyStrings";
   if (stavesUsed(fragment) > staffCountOf(part)) return "otherStaves";
   const missing = Math.max(0, start + fragment.bars.length - order.length);
   if (order.length + missing > MAX_BARS) return "tooManyBars";
@@ -116,4 +126,39 @@ export function dropFragment(doc: Y.Doc, target: DropTarget, given: BarsFragment
     });
   }, LOCAL);
   return { barIds, hints };
+}
+
+/** Why a paste of beats did nothing: the cursor's voice or beat is gone (or its part cannot be read), and as for a drop. */
+export type BeatsPasteRefusal = "gone" | "otherKind" | "tooManyStrings" | "invalid";
+
+/** Beats pasted: their new ids, in order, and what to tell the member. */
+export interface PastedBeats {
+  beatIds: string[];
+  hints: DropHint[];
+}
+
+/**
+ * Paste a fragment of beats at the cursor, one command (docs/spec/commands.md, 5.6): inserted in
+ * its voice where `insertBeat` puts a beat (`placeFor`: before its beat, or in the append slot
+ * after the anchor), each with a new id. Refused,
+ * nothing changed, for a part of another kind, a fragment using a string the part has not (the
+ * tuning differing is told, as for a drop), or one that does not pass `beatsFragmentSchema`.
+ */
+export function pasteBeats(doc: Y.Doc, cursor: Cursor, given: BeatsFragment): PastedBeats | BeatsPasteRefusal {
+  const valid = beatsFragmentSchema.safeParse(given);
+  const fragment = valid.success ? writableCopy(valid.data) : undefined;
+  if (fragment === undefined) return "invalid";
+  const part = partsOf(doc).get(cursor.partId);
+  const kind = partKindOf(part);
+  // Only a voice reading reads: a beat put anywhere else would not be seen.
+  const readable = part !== undefined && readableVoicesOf(part, cursor.barId).some(([key]) => key === cursor.voice);
+  const place = readable ? placeFor(doc, cursor) : undefined;
+  if (part === undefined || kind === undefined || place === undefined) return "gone";
+  const { voice, index } = place;
+  if (kind !== fragment.kind) return "otherKind";
+  const hints: DropHint[] = [];
+  if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(fragment.beats), hints)) return "tooManyStrings";
+  const beatIds = fragment.beats.map(() => newId());
+  doc.transact(() => voice.insert(index, fragment.beats.map((beat, at) => beatToY({ ...beat, id: beatIds[at]! }))), LOCAL);
+  return { beatIds, hints };
 }

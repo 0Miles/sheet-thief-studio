@@ -16,11 +16,13 @@ import {
   insertBars,
   insertBeat,
   LOCAL,
+  MAIN_VOICE,
   type NewPart,
   type NoteJSON,
   type NoteValue,
   readScore,
   setNote,
+  voiceKey,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -48,9 +50,12 @@ type NewBeat = [NoteValue, Notes] | [NoteValue, Notes, Markings | undefined];
 /** Put these markings on a beat (stroke, slap, pop, dynamic, text). */
 const marked = (set: Markings): BeatChange<void> => ({ decide: () => undefined, turn: () => ({ set }) });
 
-/** Append beats to a bar of a part, each with its notes and markings. */
-function write(doc: Y.Doc, partId: string, barId: string, beats: NewBeat[]): void {
-  let cursor: Cursor = cursorAt(doc, partId, barId);
+/** The second voice of the first staff: the feet of the drums (#45). */
+const SECOND_VOICE = voiceKey(0, 1);
+
+/** Append beats to a bar of a part, each with its notes and markings: to the first voice unless told otherwise. */
+function write(doc: Y.Doc, partId: string, barId: string, beats: NewBeat[], voice?: string): void {
+  let cursor: Cursor = voice === undefined ? cursorAt(doc, partId, barId) : { ...cursorAt(doc, partId, barId), voice, beatId: null, at: "after" };
   for (const [value, notes, markings] of beats) {
     cursor = insertBeat(doc, { ...cursor, at: "after" }, { value });
     for (const [key, note] of Object.entries(notes)) setNote(doc, cursor, key, note);
@@ -58,7 +63,7 @@ function write(doc: Y.Doc, partId: string, barId: string, beats: NewBeat[]): voi
   }
 }
 
-const { kick, snare, hiHatClosed, hiHatOpen, crash, ride, tomHigh, tomFloor } = DRUM_PIECES;
+const { kick, snare, hiHatClosed, hiHatOpen, hiHatPedal, crash, ride, tomHigh, tomFloor } = DRUM_PIECES;
 const p = (...ids: number[]): Notes => Object.fromEntries(ids.map((id) => [`p${id}`, {}]));
 
 export interface DemoOptions {
@@ -196,12 +201,21 @@ function seedPerf(doc: Y.Doc, bars: number, techniques: boolean): void {
         const note = and({ fret: root + (index % 4 === 3 ? 2 : 0) }, index % 4 === 1 ? { ghost: true } : index === 7 ? { slideOut: "legato" } : {});
         return [8, { [`s${index % 4 === 3 ? 3 : 4}`]: note }, marks(index % 4 === 0 ? { slap: true } : index % 4 === 2 ? { pop: true } : undefined)];
       }));
+      // Drums in two voices (#46): hands in the first, eighths of hi-hat with the snare on 2 and 4;
+      // feet in the second, the kick on 1, 3 and the "and" of 3, the hi-hat pedal on 2 and 4.
       write(doc, drums, barId, eighths.map((index): NewBeat => {
-        const notes = p(hiHatClosed.id, ...(index % 4 === 0 ? [kick.id] : index % 4 === 2 ? [snare.id] : []));
+        const notes = p(hiHatClosed.id, ...(index % 4 === 2 ? [snare.id] : []));
         if (index === 0) notes[`p${hiHatClosed.id}`] = and({}, { accent: true });
         if (index === 6) notes[`p${snare.id}`] = and({}, { ghost: true });
         return [8, notes];
       }));
+      write(doc, drums, barId, [
+        [4, p(kick.id)],
+        [4, p(hiHatPedal.id)],
+        [8, p(kick.id)],
+        [8, p(kick.id)],
+        [4, p(hiHatPedal.id)],
+      ], SECOND_VOICE);
       write(doc, keys, barId, eighths.map((index): NewBeat => {
         const pitch = scale[next(scale.length)] as number;
         const spell = flats[pitch];
@@ -247,36 +261,29 @@ const DRUM_VOICES_TITLE = "Drums, two voices";
  * has both, bar 2 hands only (its second voice empty), bar 3 feet against quarters, bar 4 nothing.
  */
 function seedDrumVoices(doc: Y.Doc): void {
-  const { hiHatPedal } = DRUM_PIECES;
   doc.transact(() => {
     createScore(doc, DRUM_VOICES_TITLE);
     const [first, second, third] = insertBars(doc, { after: null, count: 4 }) as [string, string, string, string];
     const partId = addPart(doc, { name: "Drums", kind: "percussion", program: 0 });
     /** Append beats to a voice of a bar. */
-    const voice = (barId: string, key: string, beats: [NoteValue, Notes][]) => {
-      let cursor: Cursor = { ...cursorAt(doc, partId, barId), voice: key };
-      for (const [value, notes] of beats) {
-        cursor = insertBeat(doc, { ...cursor, at: "after" }, { value });
-        for (const [note, json] of Object.entries(notes)) setNote(doc, cursor, note, json);
-      }
-    };
-    const hands = Array.from({ length: 8 }, (_, index): [NoteValue, Notes] => [8, p(hiHatClosed.id, ...(index % 4 === 2 ? [snare.id] : []))]);
-    voice(first, "0:0", hands);
-    voice(first, "0:1", [
+    const voice = (barId: string, key: string, beats: NewBeat[]) => write(doc, partId, barId, beats, key);
+    const hands = Array.from({ length: 8 }, (_, index): NewBeat => [8, p(hiHatClosed.id, ...(index % 4 === 2 ? [snare.id] : []))]);
+    voice(first, MAIN_VOICE, hands);
+    voice(first, SECOND_VOICE, [
       [4, p(kick.id)],
       [8, p(hiHatPedal.id)],
       [8, p(kick.id)],
       [4, p(kick.id, hiHatPedal.id)],
       [4, p(hiHatPedal.id)],
     ]);
-    voice(second, "0:0", hands);
-    voice(third, "0:0", [
+    voice(second, MAIN_VOICE, hands);
+    voice(third, MAIN_VOICE, [
       [4, p(crash.id)],
       [4, p(snare.id)],
       [4, p(ride.id)],
       [4, p(snare.id)],
     ]);
-    voice(third, "0:1", [
+    voice(third, SECOND_VOICE, [
       [8, p(kick.id)],
       [8, p(kick.id)],
       [2, p(hiHatPedal.id)],
@@ -290,4 +297,50 @@ function seedDrumVoices(doc: Y.Doc): void {
 /** A new score of drums written in two voices. */
 export function drumVoicesScore(): SeededScore {
   return seeded(DRUM_VOICES_TITLE, seedDrumVoices);
+}
+
+/** A voice of the M3 cursor geometry score: its part (by index), voice key, note value, and each note's pitch and staff position. */
+export interface StavesVoice {
+  part: number;
+  voice: string;
+  value: NoteValue;
+  notes: [pitch: number, position: number][];
+}
+
+/**
+ * The voices of the M3 cursor geometry score (#47): a piano, a treble and a bass staff with two
+ * voices on each, and a guitar written on a treble clef an octave down. One bar of four quarters,
+ * then an empty bar. Each note has the staff position it is drawn on, worked out by hand from its
+ * clef (0 the top line, 8 the bottom one): the treble staff's top line is F5, the bass staff's A3,
+ * that of the treble clef an octave down F4. The same notes as `packages/score-render/tests/geometry.test.ts`.
+ */
+export const STAVES_VOICES: StavesVoice[] = [
+  // F5, C5, G5, D5.
+  { part: 0, voice: "0:0", value: 4, notes: [[77, 0], [72, 3], [79, -1], [74, 2]] },
+  // E4, D4, F4, C4: under the first voice, never a second from it.
+  { part: 0, voice: "0:1", value: 4, notes: [[64, 8], [62, 9], [65, 7], [60, 10]] },
+  // A3, F2, C4, E2.
+  { part: 0, voice: "1:0", value: 4, notes: [[57, 0], [41, 9], [60, -2], [40, 10]] },
+  // C2, C3: halves.
+  { part: 0, voice: "1:1", value: 2, notes: [[36, 12], [48, 5]] },
+  // E4, E3, B3, G3: drawn an octave over, E5, E4, B4, G4.
+  { part: 1, voice: "0:0", value: 4, notes: [[64, 1], [52, 8], [59, 4], [55, 6]] },
+];
+
+/** A new score of `STAVES_VOICES`. */
+export function stavesScore(): SeededScore {
+  return seeded("Staves", (doc) =>
+    doc.transact(() => {
+      createScore(doc, "Staves");
+      const [barId] = insertBars(doc, { after: null, count: 2 });
+      const partIds = [
+        addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] }),
+        addPart(doc, { name: "Guitar", kind: "pitched", program: 25, staves: [{ clef: "treble-8vb" }] }),
+      ];
+      for (const { part, voice, value, notes } of STAVES_VOICES) {
+        let cursor: Cursor = { ...cursorAt(doc, partIds[part]!, barId!), voice };
+        for (const [pitch] of notes) cursor = setNote(doc, insertBeat(doc, { ...cursor, at: "after" }, { value }), `n${pitch}`, {});
+      }
+    }, LOCAL),
+  );
 }
