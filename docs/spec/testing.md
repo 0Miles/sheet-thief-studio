@@ -19,6 +19,7 @@
 - `eslint.config.js:18` 禁止 import alphaTab 的清單已經包含 `packages/score-editor/**`。
 - **補充**（#31）：`packages/score-render/tests/engine.test.ts` 測播放器在重新產生聲音前後的行為（[`playback.md`](playback.md) 4.1）。瀏覽器裡碰不到那十幾毫秒，所以把 alphaTab 的 `AlphaTabApi` 換成替身（`vi.mock`），其他都是 alphaTab 自己的：設定、模型、投影，以及用 `MidiFileGenerator` 建的 tick lookup。替身不會自己回報任何事；worker 的回報由測試照 alphaTab 1.9 的順序送出（位置 0、paused、ready、midiLoaded、ready、位置 0），替身的 `playerState`、`tickPosition` 也只在這些回報時改變，和 alphaTab 的快取一樣。範圍只到引擎怎麼回應這些回報；alphaTab 實際的順序、聲音本身與跟隨仍由 Playwright e2e 與人工試聽確認。升 alphaTab 版本時要重新核對這個順序。
   - **補充**（#129）：引擎建立時讀瀏覽器的全域（`Worker`、`AudioContext`／`webkitAudioContext`、`ScriptProcessorNode`、`AudioWorkletNode`、`isSecureContext`）判斷能不能播（[`playback.md`](playback.md) 4.1）。Node 沒有這些，所以測試用 `vi.stubGlobal` 換掉它們再建引擎（`engine.test.ts` 的 `browserWith`：預設是能播的瀏覽器，`afterEach` 用 `vi.unstubAllGlobals` 還原）；缺件的各種組合也這樣測。這是這個檔案的第二個 seam：瀏覽器能力由全域決定，引擎不另外開 option。
+  - **補充**（#132）：替身的播放器多了 `soundFontLoadFailed`（音色檔拿不到，alphaTab 1.9 只由播放器回報），替身的 API 多了 `loadSoundFont`（記下 `loadSoundFont:<網址>:<append>`，不自己回報結果）。測試的起點除了「第一個聲音已經好、paused」（`start`），還有「worker 已經起來、第一個聲音已經產生，但音色檔還沒到」（`withoutSoundFont`，狀態 loading）；之後由測試送出 `soundFontFailed`（失敗）或 `soundFontIn`（alphaTab 的 `readyForPlayback`，即 `playerReady`）。`browserWith` 也把 `window` 換成一個 `EventTarget`，`backOnline` 在上面送 `online`。
 - **補充**：`compose.dev.yaml` 的 Postgres 與 Redis 是 M1a 第一張 server 票建立的；伺服器測試用獨立的資料庫名稱，每個測試檔自己清資料。
   - **補充**（#114）：遷移只在 vitest 的 `globalSetup`（`apps/server/tests/globalSetup.ts`）跑一次，每個測試檔開頭用 `TRUNCATE ... RESTART IDENTITY CASCADE` 清空（`tests/support.ts` 的 `freshDatabase`），不再每檔重建 schema（CPU 忙碌時重建會超過 hook 的 10 秒上限）。測試檔共用一個資料庫與一個 Redis database，所以 server 的測試檔依序執行（`fileParallelism: false`）。`migrations.test.ts` 在自己的資料庫（`<測試資料庫>_migrations`，跑完刪掉）從零遷移，不影響其他檔。等待「之後不會再寫入」的測試用 fake timer 推過去，不用真的 sleep。
   - **補充**（#116）：CLI（`apps/server/src/cli.ts`）的 seam 是 `runCli(args, io, { sequelize })`：給了連線就直接用（models 必須已綁到它），不讀環境變數、不另外連線、不關閉。測試平常用 `tests/support.ts` 的 `cli(sequelize, args, input)`，在測試行程內、用測試檔自己的連線跑；它給 CLI 的環境變數一讀就丟例外，以免測試連到開發用的資料庫。只有要確認「以 `cli` script 啟動的行程」本身（argv、`DATABASE_URL`、管線 stdin、exit code）時才用 `cliProcess(args, input)` 開子行程；每個子行程都要冷啟動 Node 與 tsx，CPU 忙碌時要好幾秒，所以 `cli.test.ts` 只留一個這樣的測試，而且不同時開兩個。
@@ -30,12 +31,12 @@
 
 | 掛鉤 | 何時存在 | 內容 |
 |---|---|---|
-| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器 |
+| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器。**補充**（#102）：加上唯一會寫入的 `writeMeta(field, json)`：繞過指令，把 JSON 直接寫進這一頁文件的 `meta`，模擬舊版分頁或離線資料手上的值（巢狀超過 `MAX_VALUE_DEPTH` 的值沒有任何指令或按鍵寫得出來）；只有團譜頁有（版本頁沒有文件可寫），只有 `e2e/depth.spec.ts` 用 |
 | `window.__studioMeasure` | 只在 `VITE_MEASURE=1` 的 build | 只給 measure 套件用：`placeCursor`、`editBar`、`bulkEdit`、`renders`、`keys`、`player.reload`、`player.trace`，以及 measure 套件讀的 `ready`、`synced`、`json`、`stateSize`、`cursorRect`、`noteHeads`（游標所在拍點的音符頭，alphaTab 回報的位置，給游標幾何檢查用）、`errors`、`player.state`、`player.position`（補充）。在 `apps/web/src/measureHook.ts`，掛在編輯視圖上 |
 
 - 正式 build 兩者都沒有。加一個檢查，確認打包結果（`apps/web/dist`）不含 `__studio` 這個字串；CI 的 `check` job 跑它。
   - `__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷；`__studioMeasure` 只在 `apps/web/src/measureHook.ts`，以 `import.meta.env.VITE_MEASURE` 判斷。其他 build 裡兩者都是死碼，打包時整段移除。CI 的檢查用 `grep -rq "__studio" apps/web/dist`（#37；#6 到 #37 之間檢查的是 `__studioTest`，因為 spike 頁的 `window.__studio` 還在正式 build 裡）。
-- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
+- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果（例外是上表的 `writeMeta`，只用來放進介面做不出來的前置資料）。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
   - **補充**（#19）：還沒有介面或 API 可以建立的前置資料（帶 Editor、Viewer 成員的團譜、超過 8 小節的團譜，或多聲部的團譜），由 server 自己的腳本直接寫進 e2e 資料庫（`apps/server/tests/scoreE2e.ts`，`e2e/pages.ts` 的 `seedScore`）。腳本只接受名稱以 `_e2e` 結尾的資料庫，而且只建立新的團譜，所以不會和 server 記憶體裡的文件衝突。#13 有了加入成員的頁面之後，成員本身的行為仍然要經由介面驗證。
   - **補充**（#7）：會被測試用掉的帳號（例如要改掉暫時密碼的帳號）不放進 `e2e/environment.ts` 的固定帳號，由測試自己用 `apps/server/tests/accountE2e.ts`（`e2e/pages.ts` 的 `seedAccount`）建立一個名稱帶亂數的新帳號，所以同一個測試可以重跑，也可以在別的瀏覽器 project 再跑一次。

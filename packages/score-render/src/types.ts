@@ -92,11 +92,13 @@ export interface ScoreRenderer {
 }
 
 /**
- * "loading" until the soundfont and the sound of the score are in place. "unavailable" from the
- * start, and for good, in a browser that cannot play (no Web Audio): nothing plays, the score is
- * still drawn (docs/spec/playback.md, 4.1).
+ * "loading" until the soundfont and the sound of the score are in place. "failed" when the
+ * soundfont could not be had (the network went, the server refused it): `retry()` asks for it
+ * again, as the player does itself once the browser is back online, "loading" meanwhile.
+ * "unavailable" from the start, and for good, in a browser that cannot play (no Web Audio):
+ * nothing plays, the score is still drawn (docs/spec/playback.md, 4.1).
  */
-export type PlayerState = "loading" | "paused" | "playing" | "unavailable";
+export type PlayerState = "loading" | "paused" | "playing" | "failed" | "unavailable";
 
 /** A bar as playback finds it: its id, and its index in the score as the sound has it. */
 export interface PlayedBar {
@@ -138,6 +140,8 @@ export interface ScorePlayer {
    * was; resolves once the new sound is in place.
    */
   load(): Promise<void>;
+  /** The soundfont could not be had ("failed"): ask for it again, "loading" meanwhile. Otherwise nothing. */
+  retry(): void;
   play(): void;
   pause(): void;
   stop(): void;

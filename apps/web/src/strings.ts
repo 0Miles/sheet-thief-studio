@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -85,6 +85,15 @@ export const strings = {
       missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
       migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
     } satisfies Record<ReadOnlyReason, string>,
+    // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
+    // holds would be refused again at every reconnection. Opening the score anew drops it.
+    closed: {
+      reasons: {
+        tooDeep: "這個分頁裡有伺服器不接受的內容（巢狀太深的資料），已停止同步，之後的修改也不會儲存。重新載入會改用伺服器上的版本，這個分頁還沒儲存的修改會全部丟掉。",
+      } satisfies Record<ClosedNotice["reason"], string>,
+      reload: "重新載入",
+      reloaded: "已重新載入伺服器上的版本，先前那個分頁沒儲存的修改已丟掉。",
+    },
     // The 404 page of a member removed from the score, or of a score deleted, while it was open.
     removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
@@ -213,6 +222,8 @@ export const strings = {
     player: {
       loading: "音色載入中…",
       unavailable: "這個瀏覽器無法播放聲音",
+      failed: "音色載入失敗",
+      retry: "重試",
       play: "播放",
       pause: "暫停",
       stop: "停止",
