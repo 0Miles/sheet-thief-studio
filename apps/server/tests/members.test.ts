@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest
 import { setDisabled } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { ScoreMember } from "../src/db/models";
+import { holdClock } from "./clock";
 import { apiCall, askTicket, closes, COOKIE, createMembers, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -141,6 +142,7 @@ test("adding an account that does not exist, one that is a member already, or on
 });
 
 test("an Owner's username lookups are limited to 20 in 15 minutes, whatever they find", async () => {
+  holdClock();
   const { app } = await startApp();
   const { id, session } = await annasScore(app);
   const bens = await sessionOf(app, "ben", PASSWORD);

@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Account } from "../src/db/models";
+import { holdClock } from "./clock";
 import { apiCall, freshDatabase, freshRedis, isActiveSession, login, sessionCookie, sessionOf, testConfig, whoAmI } from "./support";
 
 const TEMPORARY = "a temporary password";
@@ -197,6 +198,7 @@ test("a wrong current password, or none, changes nothing and ends no session", a
 });
 
 test("the eleventh wrong guess of the current password in 15 minutes is refused; right ones do not count", async () => {
+  holdClock();
   const member = await account(false);
   const session = await sessionOf(app, member.username, member.password);
   let current = member.password;

@@ -48,6 +48,7 @@ interface BeatsFragment {
 - 複製：拍點範圍產生拍點段，小節範圍產生小節段；沒有選取時不動。
 - 剪下等於「複製加上一個清空的 Command」。Viewer 只能複製，不能剪下或貼上。
 - **焦點元素要先用測試確認**：現在譜面的焦點元素是 `ScoreView.vue` 的 `[data-scroller]`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
+  - **補充**（#52 的結果）：三個瀏覽器都通過，焦點元素維持 `[data-scroller]`。事件在 Chromium、WebKit 送到 `[data-scroller]`，在 Firefox 送到 `<body>`，所以在 document 上聽 `copy`、`cut`、`paste`，只在 `document.activeElement` 是 `[data-scroller]` 時處理（[`testing.md`](testing.md) 第 5 節）。
 
 ## 3. 建立樂句的三種途徑
 
@@ -101,6 +102,8 @@ interface BeatsFragment {
 - 超過 1 MB 時伺服器回 413，介面顯示「樂句太大」，並保留本機內容。
 - **補充**：「完全相同」以「鍵依字母排序後的 JSON 字串相同」判斷。
 - **補充**：改名（`PATCH`）同樣帶 `baseRevision`、同樣讓 `revision` 加 1、同樣的 409 處理；比較內容時連名稱一起比。
+- **補充**（#54）：存檔與排隊在 `apps/web/src/phraseSaver.ts`（`createPhraseSaver`，vitest 用假的 `fetch` 與假時鐘測）。409 拿「送出的那一份」，以及從同一個 revision 送出、回應沒回來（連不上或 5xx）的每一份（名稱與片段），和讀回來的內容比，兩邊都先經過 `barsFragmentSchema`；任何一份相同就採用伺服器的 revision，不提示，再送本機最新的內容。409 之後讀不到最新內容時，顯示「無法確認這個樂句是否在別處被修改過」，不自動重送，由使用者按「再試一次」重新讀取。連不上伺服器、5xx、429 時用同一個 `baseRevision` 自動重送：等 5 秒、之後每次加倍，最多 1 分鐘，最多 5 次；429 照 `Retry-After`（「回應在網路上丟了」的 409 就是這樣來的）。其他被拒的情況、或重送用完次數，不自動重送，下一次修改或按「再試一次」再送。在 app 內換頁時，等待中的修改先立刻送出，送完才離開；送不出去（衝突、太大、連不上）時先問要不要離開。關閉或重新整理頁面時同樣立刻送出，並由 `beforeunload` 警告。樂句編輯器裡也能改名，按下就送，排在還沒送的片段之後。「另存成新樂句」的名稱預設是目前的名稱，可以修改，存好後打開新的樂句；「重新載入」丟掉本機的修改，重新讀一次。
+- **補充**（#54）：樂句編輯器的小節屬性面板只有拍號，聲部面板只有調弦（fretted）與譜號（pitched）；不顯示 Flag 與混音器。
 
 ## 6. 編輯視圖裡的樂句側欄
 

@@ -82,14 +82,11 @@ type FrozenReason = ReadOnlyNotice["reason"];
 export type CollabContext = (Member & { displayName: string }) | Guest;
 
 /**
- * A version a member asks for, named as it is made (`manual`): who asks, the name, and what must
- * still hold once the score's row is locked (`VersionToMake.admit`).
+ * A version a member asks for: who asks, and what must still hold once the score's row is locked
+ * (`VersionToMake.admit`). A member's own (`manual`), named as it is made; or the one a restore
+ * makes first (`before_restore`), with no name, none made when the latest holds the same.
  */
-export interface SavedVersion {
-  name: string;
-  createdBy: string;
-  admit: NonNullable<VersionToMake["admit"]>;
-}
+export type SavedVersion = { createdBy: string; admit: NonNullable<VersionToMake["admit"]> } & ({ reason: "manual"; name: string } | { reason: "before_restore" });
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -107,7 +104,7 @@ export interface Collab {
    */
   change(scoreId: string, transaction: (doc: Y.Doc) => void): Promise<void>;
   /**
-   * Make a version, asked for by a member, of what the score is now on this server: the document
+   * Make a version, asked for by a member (named, or before a restore), of what the score is now on this server: the document
    * the members have open, or the stored one brought up to date as any load does
    * (docs/spec/collab.md, 8.3). `readOnly`, with none made, when the document is frozen: this
    * server cannot read it for sure. Null when the score is gone, or deleted before it could be
@@ -563,7 +560,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       try {
         if (frozen.has(scoreId)) return "readOnly";
         const document = direct.document!;
-        return await createVersion(scoreId, { read: () => docToJson(document), reason: "manual", createdBy: made.createdBy, name: made.name, admit: made.admit });
+        const name = made.reason === "manual" ? made.name : null;
+        return await createVersion(scoreId, { read: () => docToJson(document), reason: made.reason, createdBy: made.createdBy, name, admit: made.admit });
       } finally {
         await direct.disconnect();
       }

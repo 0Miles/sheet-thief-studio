@@ -17,6 +17,7 @@ const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}�
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
 const VERSIONS = "版本記錄";
+const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -80,11 +81,15 @@ export const strings = {
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
     // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).
+    // Locked until the page is loaded again: each says so.
     readOnly: {
       newerSchema: "這份團譜由較新的版本建立，請重新整理頁面。",
-      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
-      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
+      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視；伺服器更新後請重新整理頁面。",
+      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視；問題排除後請重新整理頁面。",
     } satisfies Record<ReadOnlyReason, string>,
+    // Locked while open for typing, the score opened anew from the server's document: what this
+    // tab wrote and the server never took went with the old one (docs/spec/collab.md, 2.1).
+    readOnlyDropped: (why: string) => `已改用伺服器上的版本，這個分頁沒同步到伺服器的修改已經丟掉。${why}`,
     // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
     // holds would be refused again at every reconnection. Opening the score anew drops it.
     closed: {
@@ -321,6 +326,40 @@ export const strings = {
     confirm: "刪除",
     cancel: "取消",
   },
+  // The phrase editor (/phrases/:id; docs/spec/phrases.md, section 5). Changed elsewhere and too
+  // large are said with the texts of their error codes (`errors`).
+  phraseEditor: {
+    label: "樂句",
+    library: "樂句庫",
+    rename: "改名",
+    parts: "調弦與譜號",
+    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: "沒有儲存", unchecked: "沒有儲存", tooLarge: "沒有儲存", failed: "沒有儲存" },
+    reload: "重新載入",
+    saveAsNew: "另存成新樂句",
+    /** The server could not be reached, or failed itself: saving is tried again by itself. */
+    retrying: "無法儲存，稍後會自動再試。",
+    /** Refused for its revision, and the phrase could not be read to tell why: nothing is sent until the member checks again. */
+    unchecked: "無法確認這個樂句是否在別處被修改過，修改先留在這一頁。",
+    /** Not saved, and not tried again by itself: what the server said, then this. */
+    notSaved: (said: string) => `沒有儲存：${said}`,
+    retry: "再試一次",
+    /** Leaving the editor for another page of the app with changes the server does not have. */
+    leave: {
+      title: "還有修改沒有儲存",
+      message: "這個樂句還有修改沒有存到伺服器，離開之後就沒有了。要離開嗎？",
+      confirm: "離開",
+      cancel: "留下",
+    },
+    /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
+    desktopOnly: "請在電腦上編輯",
+  },
+  saveAsNewPhrase: {
+    title: "另存成新樂句",
+    name: "名稱",
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+  },
   // The part presets (docs/spec/commands.md, section 10).
   presets: {
     guitar6: "吉他 6 弦",
@@ -342,7 +381,7 @@ export const strings = {
     reasons: {
       last_disconnect: "自動（所有人離開時）",
       interval: "自動（每 10 分鐘）",
-      before_restore: "還原前",
+      before_restore: BEFORE_RESTORE,
       manual: "手動存下",
     } satisfies Record<VersionReason, string>,
     named: "已命名",
@@ -362,6 +401,16 @@ export const strings = {
       title: "把目前的內容存成版本",
       help: "存下伺服器上目前的內容，並替它命名。",
       submit: "存成版本",
+    },
+    // Restoring a version in place (docs/spec/collab.md, 8.5): Owners and Editors.
+    restore: {
+      action: "還原",
+      title: "還原這個版本",
+      message: (when: string, undoKey: string) =>
+        `這會以 ${when} 的版本取代你這個分頁目前看到的內容；伺服器上目前的內容會先存成一個版本（「${BEFORE_RESTORE}」）。其他人在同一時間所做的修改會被取代，需要時可以從那個版本找回；他們剛新增、還沒同步到這裡的小節與聲部則會保留下來。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+      confirm: "還原",
+      notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
+      notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",
     },
   },
   // A guest's page, opened with a read-only link (/s/:token).

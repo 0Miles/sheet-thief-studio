@@ -338,10 +338,12 @@ export const versionList = z.object({ versions: z.array(versionSummary) });
 export type VersionList = z.infer<typeof versionList>;
 
 /**
- * A member's own version, named as it is made, of the content the server has now
- * (`POST /api/scores/:id/versions`): always a new one, whatever the latest version holds.
+ * A version of the content the server has now (`POST /api/scores/:id/versions`). With a name, a
+ * member's own (`manual`): always a new one, whatever the latest version holds. Without one, the
+ * version a restore makes first (`before_restore`, docs/spec/collab.md, 8.5): none is made when
+ * the latest version holds the same, which is then the one answered.
  */
-export const createVersionRequest = z.object({ name: versionName });
+export const createVersionRequest = z.object({ name: versionName.optional() });
 export type CreateVersionRequest = z.infer<typeof createVersionRequest>;
 
 export const createdVersion = z.object({ versionId: z.string() });

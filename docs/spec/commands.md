@@ -238,6 +238,17 @@ interface Cursor {
 10. 整個動作是一筆交易、一個復原步驟。
 11. 不跳對話框；用提示加上 Flag 告知。
 
+- **補充**（#56）：寫法在 `packages/score-model` 的 `drop.ts`，測試在 `packages/score-model/tests/drop.test.ts`。
+  - `dropFragment(doc, { partId, barId }, fragment)`：目標是聲部與小節，不是游標（拖曳的目標由 `hitTest` 給出，可以不是游標所在的聲部）；游標由殼或 `EditorSession` 之後用 `settleCursor` 處理。成功時回傳 `Dropped`：`barIds`（寫入的小節，依順序，附加的在最後）與 `hints`（`DropHint`：`"tuningDiffers"`、`"barsAppended"`），殼依 `hints` 顯示提示。
+  - 拒絕時回傳 `DropRefusal`，文件不動、不開交易：`"gone"`（聲部或小節不在，或聲部讀不懂）、`"otherKind"`（第 1 點）、`"tooManyStrings"`（第 7 點）、`"otherStaves"`（第 8 點）、`"tooManyBars"`（第 4 點）、`"invalid"`（片段不合 `barsFragmentSchema`：指令自己再驗一次，所以不合 schema 的值不會進文件）。
+  - 「用到的譜表」是有拍點（休止也算）的聲線所在的最後一個譜表；片段帶了目標沒有的譜表、但那些聲線是空的，照樣接受。「用到的弦」同第 7 點，只看有音的弦，所以 6 弦的片段只用到第 1–4 弦時可以放進 4 弦貝斯（照樣提示調弦不同）。
+  - 調弦「不同」：目標聲部的 `tuning` 讀不懂、弦數不同或任一條弦不同。`tuning` 讀不懂時不知道有幾條弦，所以略過第 7 點的弦數檢查，照樣放入並提示調弦不同（host 裁定，#56 審查）。
+  - 覆寫的聲線是 `readableVoicesOf` 讀得到的那些；文件裡缺少的聲線容器不在這裡建立（第 9 節：只有伺服器補），片段在那條聲線的拍點不寫入。
+  - 附加小節用 `insertBars`，與覆寫在同一筆交易裡（Yjs 的巢狀 `transact` 併入外層），所以整個放置、包含附加的小節，是一個復原步驟。
+  - 片段裡不認得的欄位在驗證時已經去掉（[`phrases.md`](phrases.md) 1.1），寫進文件的是驗證後的值，再經 `writableCopy`（#102：沒有 `__proto__`、不超過 `MAX_VALUE_DEPTH`）。放置不改寫既有的值（先刪再插新的拍點），所以不經 `ownFields`（#103）。
+  - 兩位成員同時放置在同一個小節：兩邊都刪掉自己看到的拍點、插入自己的片段，合併後兩段片段都在、各自連在一起，小節標成 overfull（第 3 點）。
+  - 附加的小節目前用 `keysAfter` 的排序鍵；#68 的 `keysOfARun` 併入後改用它，讓兩人同時在譜尾附加的兩串小節不交錯。
+
 ### 5.8 Pitched 的升降與八度
 
 - `]`／`[`：把游標那條線上的音升高／降低半音。做法是重設音符鍵（例如 `n60` 改成 `n61`），保留其他欄位，算一個 Command。**補充**：結果是黑鍵時，`]` 拼成升、`[` 拼成降；結果是白鍵時拼成本位。`line` 跟著音移到它新的譜表位置。
@@ -322,7 +333,7 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
     - 沒有游標時，復原、重做與聲部面板、標題列的設定類指令照常執行（它們不需要游標），其他按鍵不處理。
     - 測試：`packages/score-model/tests/parts.test.ts`、`packages/score-editor/tests/parts.test.ts`、`packages/score-render/tests/engine.test.ts`，以及 `apps/web/e2e/parts.spec.ts` 的兩個 e2e（打開一份沒有聲部的團譜、從面板新增後繼續打譜；兩位成員同時刪除之後按 `Ctrl+Z`）。
   - **補充**（#24）：刪除確認對話框開著時，那個聲部被別人刪掉，對話框關閉、不再記著要刪的聲部，聲部之後被復原也不會自己再跳出來。
-- `replaceScore(json)`：還原版本用。在一筆交易裡以版本的內容取代 `meta` 的 `title`、`artist`，以及所有小節與聲部；保留版本裡的 id；是一個復原步驟。流程見 [`collab.md`](collab.md)。
+- `replaceScore(json)`：還原版本用。在一筆交易裡以版本的內容取代 `meta` 的 `title`、`artist`，以及所有小節與聲部；保留版本裡的 id；是一個復原步驟。流程見 [`collab.md`](collab.md)。**補充**（#68）：score-model 的 `replaceScore(doc, version, migrations?)`（`migrateJson` 再 `jsonToDoc`）；`EditorSession.replaceScore(version)` 和其他設定類指令一樣不需要游標、唯讀時拒絕，讀不懂的版本回 false、不改文件；游標所在的小節或聲部不在版本裡時回到譜首。測試：`packages/score-model/tests/restore.test.ts`、`packages/score-editor/tests/restore.test.ts`。
 
 ## 8. 復原
 

@@ -2,26 +2,36 @@
 // A score's versions (`/scores/:id/versions`; docs/spec/collab.md, section 8; docs/spec/routes.md,
 // 3.6): every member, a Viewer too, lists them and previews one, drawn and played read-only as the
 // Read view draws a score; the preview never connects to /collab and changes nothing. An Owner or
-// an Editor names a version (a named one is never deleted on its own) and saves what the score is
-// now as a named version. Anyone who is not a member sees the 404 page. Restoring a version is #68.
-import { AppButton, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
+// an Editor names a version (a named one is never deleted on its own), saves what the score is now
+// as a named version, and restores one: a page of the score's (ScorePage), which holds the score
+// open under it, the version is written in that document once the server made a version of what
+// the score is now (restore.ts), and the member is back on the score, where Ctrl+Z undoes it
+// (docs/spec/collab.md, 8.5). Anyone who is not a member sees the 404 page.
+import { AppButton, AppConfirmDialog, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import { createdVersion, type ScoreDetails, scoreDetails, scoreSchema, versionLimits, versionList, type VersionSummary, versionSummary } from "@studio/contracts";
+import { keyNameOf } from "@studio/score-editor";
 import type { ScoreJSON } from "@studio/score-model";
 import { createAlphaTabEngine, type PlayerState, type ScoreEngine } from "@studio/score-render";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 
 import { ApiError, get, patchFor, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PlayerControls from "../components/PlayerControls.vue";
+import { keyPlatform } from "../device";
+import { type RestoreTarget, restoreVersion } from "../restore";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
-const props = defineProps<{ id: string }>();
+/** The score open under this page, which a version is restored in. */
+const props = defineProps<{ id: string; restoreTarget: RestoreTarget }>();
+const router = useRouter();
 const text = strings.versions;
 const path = `/api/scores/${props.id}/versions`;
 const MAX_NAME = versionLimits.name.max;
+/** The key that undoes a restore, back on the score. */
+const undoKey = keyNameOf("undo", keyPlatform());
 
 const details = ref<ScoreDetails | null>(null);
 const notFound = ref(false);
@@ -58,6 +68,9 @@ const stopped = ref(true);
 const playingBar = ref<number | null>(null);
 /** Counts the previews asked for: an answer that comes after a newer one was asked for is dropped. */
 let previewing = 0;
+
+/** The version the member asked to restore, while the question is asked. */
+const restoring = ref<VersionSummary | null>(null);
 
 const selectedVersion = computed(() => versions.value?.find((version) => version.id === selected.value) ?? null);
 
@@ -171,6 +184,34 @@ async function saveName(version: VersionSummary): Promise<void> {
   }
 }
 
+/**
+ * Restore the version, the question answered: a version of what the score is now first, then the
+ * version written over the score this tab has open, and the member back on it. Nothing is
+ * restored when the server could not make that version first.
+ */
+async function restore(): Promise<void> {
+  const version = restoring.value;
+  restoring.value = null;
+  if (version === null) return;
+  error.value = null;
+  sending.value = true;
+  try {
+    const result = await restoreVersion(props.id, version.id, props.restoreTarget);
+    if (result === "restored") {
+      await router.push({ name: "score", params: { id: props.id } });
+      return;
+    }
+    // A score locked on its page says why there, rather than "still loading".
+    error.value = typeof result === "string" ? text.restore[result] : strings.score.readOnly[result.locked];
+    // The version made before, if any, is in the list now.
+    if (result === "notWritten") await loadList();
+  } catch (failure) {
+    error.value = refusal(failure);
+  } finally {
+    sending.value = false;
+  }
+}
+
 /** Save what the score is now on the server as a version with this name; it heads the list. */
 async function saveNow(): Promise<void> {
   error.value = null;
@@ -247,6 +288,7 @@ async function saveNow(): Promise<void> {
                 <Cluster v-else gap="2">
                   <AppButton variant="ghost" size="sm" data-preview @click="preview(version)">{{ text.preview }}</AppButton>
                   <AppButton v-if="canWrite" variant="ghost" size="sm" data-rename @click="startNaming(version)">{{ text.rename }}</AppButton>
+                  <AppButton v-if="canWrite" variant="ghost" size="sm" data-restore :disabled="sending" @click="restoring = version">{{ text.restore.action }}</AppButton>
                 </Cluster>
               </li>
             </ul>
@@ -264,6 +306,18 @@ async function saveNow(): Promise<void> {
           </section>
         </div>
       </Stack>
+      <AppConfirmDialog
+        :visible="restoring !== null"
+        :title="text.restore.title"
+        :message="restoring ? text.restore.message(timeOf(restoring), undoKey) : ''"
+        :confirm-label="text.restore.confirm"
+        :cancel-label="text.cancel"
+        :loading-label="strings.loading"
+        confirm-variant="danger"
+        data-confirm-restore
+        @close="restoring = null"
+        @confirm="restore"
+      />
     </main>
   </template>
 </template>
