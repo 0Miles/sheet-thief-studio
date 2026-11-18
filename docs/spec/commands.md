@@ -213,6 +213,7 @@ interface Cursor {
   - **補充**（#30）：`commands.ts` 的 `setText(doc, cursor, text)`，以 `beatText` 這個 `BeatChange` 套用在游標拍點；超過 64 字元（`MAX_BEAT_TEXT`）時回傳 false、不寫入；和原本相同時不寫入。附加位置沒有拍點，不動。不修剪空白，照原樣存。
   - **補充**（#30）：開框與存入分在兩邊。`EditorSession` 處理 `Enter`：游標在讀得懂的拍點上時，以 `onEditText` 送出 `{ cursor, text }`（`textAt`：現有的文字，沒有時是空字串）；附加位置不送。唯讀時 `Enter` 和其他會改動文件的鍵一樣被拒絕。殼開框，`Enter` 時呼叫 `EditorSession.setText(cursor, text)`：存在開框時的 `cursor` 那個拍點上（拍點已被刪除就不動），選取結束。開框本身不改動文件，選取不變；`Esc` 或焦點離開輸入框時不存，選取也不變。
 - `setLyric`（只有 pitched）：歌詞模式，見 [`keymap.md`](keymap.md)。每存一個音節是一個 Command。空字串表示延長；音節結尾的 `-` 表示字還沒結束。
+  - **補充**（#50）：`commands.ts` 的 `setLyric(doc, cursor, lyric)`，以 `beatLyric` 這個 `BeatChange` 套用在游標拍點（`BeatMarkings` 多了 `lyric`）：字串照原樣存（空字串是延長），`null` 移除歌詞；超過 32 字元（`MAX_LYRIC`）時回傳 false、不寫入；和原本相同時不寫入（空字串和沒有不算相同）。附加位置、非 pitched 聲部的拍點都不寫入（`beatFieldFits`）。歌詞模式的拍點移動是 `sungBeatFrom(doc, cursor, "here" | "next")`：同一聲線、可以跨小節的下一個非休止拍點，沒有時是 null。開框與按鍵的分工見 [`keymap.md`](keymap.md) 6.2 的補充。
 - 段落名稱（`section`）從小節屬性面板編輯，是結構操作（第 6 節）。
 
 ### 5.6 清空、複製、剪下、貼上

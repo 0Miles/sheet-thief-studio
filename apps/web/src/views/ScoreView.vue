@@ -29,6 +29,7 @@ import {
   type FlagStop,
   type KeySignature,
   MAX_BEAT_TEXT,
+  MAX_LYRIC,
   metaOf,
   nextFlag,
   observeScore,
@@ -55,6 +56,7 @@ import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
+import LyricEntry from "../components/LyricEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
 import PhraseSidebar from "../components/PhraseSidebar.vue";
@@ -63,6 +65,7 @@ import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
+import { useLyricEntry } from "../lyricEntry";
 import { measureEditView } from "../measureHook";
 import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
@@ -252,6 +255,17 @@ const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 const reserved = shallowRef<Rect[]>([]);
 /** The box the text of a beat is typed in, while Enter has it open: what it asked for and where it is. */
 const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
+/** Lyrics mode, while Shift+Enter has it open (docs/spec/keymap.md, 6.2): its box below the beat sung. */
+const lyrics = useLyricEntry({
+  session: () => session,
+  boundsOf: (cursor) => engine?.renderer.boundsOf(cursor) ?? null,
+  reserved: () => reserved.value,
+  tell: (said) => {
+    notice.value = said;
+  },
+  done: focusScore,
+});
+const { request: lyricRequest, rect: lyricRect } = lyrics;
 const {
   playerState,
   stopped,
@@ -329,6 +343,7 @@ function placeCursor(): void {
   // Cut only where it is under a reserved area: the boxes of the other bars of a system keep their height.
   selectionRects.value = selection === null ? [] : selectionBoxes(engine.renderer, selection, reserved.value);
   structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
+  lyrics.place();
   updateLoop();
 }
 
@@ -869,6 +884,7 @@ function startEditing(json: ScoreJSON): void {
     notice.value = text.hints[hint];
   });
   session.onEditText(openText);
+  session.onEditLyric(lyrics.open);
   tellPresence();
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
   placeCursor();
@@ -1172,6 +1188,7 @@ defineExpose({
     stop();
     deleting.value = null;
     textEntry.value = null;
+    lyrics.drop();
     tellPresence();
   },
   /** Back from the versions page: in the presence as before, and the score has the keyboard again. */
@@ -1439,6 +1456,16 @@ onBeforeUnmount(() => {
             :max-length="MAX_BEAT_TEXT"
             :label="text.beatText"
             @close="closeText"
+          />
+          <LyricEntry
+            v-if="lyricRequest && lyricRect"
+            :rect="lyricRect"
+            :initial="lyricRequest.lyric"
+            :beat-key="`${lyricRequest.cursor.barId}/${lyricRequest.cursor.beatId}`"
+            :max-length="MAX_LYRIC"
+            :label="text.lyrics"
+            @key="lyrics.onKey"
+            @close="lyrics.close"
           />
         </div>
       </div>

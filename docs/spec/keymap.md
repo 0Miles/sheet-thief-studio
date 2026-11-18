@@ -234,6 +234,9 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 - `Esc`：不存目前的輸入，離開歌詞模式。
 - **補充**：已經是最後一個非休止拍點時，存入後離開歌詞模式。
 - 每存一個音節是一個 Command。32 字元以內。
+- **補充**（#50）：`Shift+Enter` 是 `bindings.ts` 的 `lyrics` 綁定（情境 `pitched`），在鼓與 fretted 聲部不是按鍵。`EditorSession` 用 `sungBeatFrom(doc, cursor, "here")` 找開框的拍點（游標拍點是休止或在附加位置時，往後找同一聲線的下一個非休止拍點；讀不懂的拍點略過），先把游標移過去（選取結束），再以 `onEditLyric` 送出 `{ cursor, lyric }`（`lyricAt`：現有的音節，沒有或延長時是空字串）；從那裡往後都沒有非休止拍點時不送。唯讀時和 `Enter` 一樣被拒絕。
+- **補充**（#50）：框裡的鍵在綁定表上，情境是 `lyricEntry`：`nextSyllable`（`Space`）、`joinSyllable`（`Minus`、`NumpadSubtract`）、`removeSyllable`（`Delete`）；另外沿用 `textEntry` 的 `saveEntry`（`Enter`）與 `cancelEntry`（`Esc`）。由 `lyricEntryEffectOf(key, platform)` 判斷；比對照第 1.1 節，`isComposing` 為真、或 `keyCode` 是 229 的鍵都不算，所以注音選字的 `Space` 不會存入、也不會跳拍點。`Shift+-` 等其他鍵是輸入框自己的；輸入框裡有字時的 `Delete` 也是輸入框自己的（刪字）。
+- **補充**（#50）：殼把框裡的每個鍵連同輸入框的內容交給 `EditorSession.pressLyric(request, typed, key)`，回傳下一個 `LyricRequest`（框移到那個拍點，游標跟著過去）、`"leave"`（離開歌詞模式，焦點回到譜面）、`"stay"`（音節超過 32 字元被拒，例如 32 個字再按 `-`；框不動，提示 `strings.score.lyricTooLong`）或 `null`（輸入框自己的鍵）。框是 `apps/web/src/components/LyricEntry.vue`，由 `apps/web/src/lyricEntry.ts` 的 `useLyricEntry` 管理（編輯視圖與樂句編輯器共用）；開在拍點下方（`overlay.ts` 的 `entryRect`，避開保留區域，同 6.1），每次重畫後依拍點的新位置重新放。焦點離開輸入框時當成 `Esc`。
 
 ## 7. 介面上的對應按鈕
 
