@@ -4,7 +4,7 @@
 import { type BarsFragment, blankFragment, PART_PRESETS } from "@studio/score-model";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { createPhraseSaver, type PhraseSaver, RETRY_DELAY_MS, SAVE_DELAY_MS, type SaveState } from "../src/phraseSaver";
+import { createPhraseSaver, MAX_RETRIES, MAX_RETRY_DELAY_MS, type PhraseSaver, RETRY_DELAY_MS, SAVE_DELAY_MS, type SaveState } from "../src/phraseSaver";
 
 /** A request the page sent, waiting for the test to answer it. */
 interface Sent {
@@ -12,7 +12,7 @@ interface Sent {
   path: string;
   body: Record<string, unknown> | undefined;
   answered: boolean;
-  answer(status: number, body?: unknown): void;
+  answer(status: number, body?: unknown, headers?: Record<string, string>): void;
   /** The network lost it: no answer at all. */
   lose(): void;
 }
@@ -26,9 +26,9 @@ function fakeFetch(path: string, init: RequestInit = {}): Promise<Response> {
       path,
       body: typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined,
       answered: false,
-      answer(status, body = {}) {
+      answer(status, body = {}, headers = {}) {
         request.answered = true;
-        resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
+        resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } }));
       },
       lose() {
         request.answered = true;
@@ -160,6 +160,27 @@ test("409 for what the server holds already (an answer lost on the way): the ser
   expect(last().body).toEqual({ fragment: fragmentOf(5), baseRevision: 2 });
 });
 
+test("409 for an earlier content whose answer was lost, sent again as a newer one: the server's revision is taken, nothing said, and the newer content follows", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  // The put of 3/4 reached the server, its answer did not; 5/4 is typed before it is tried again.
+  sent[0]!.lose();
+  await settle();
+  saver.edit(fragmentOf(5));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  expect(last().body).toEqual({ fragment: fragmentOf(5), baseRevision: 1 });
+  last().answer(409, { code: "revision_conflict" });
+  await settle();
+  last().answer(200, { id: ID, name: "主歌", fragment: fragmentOf(3), revision: 2, updatedAt: "2026-11-18T00:00:00.000Z" });
+  await settle();
+  expect(states).not.toContain("conflict");
+  expect(saver.revision).toBe(2);
+  expect(last()).toMatchObject({ method: "PUT", body: { fragment: fragmentOf(5), baseRevision: 2 } });
+  last().answer(200, { revision: 3 });
+  await settle();
+  expect(saver.state).toBe("saved");
+});
+
 test("409 for other content: the phrase was changed elsewhere, and nothing more is sent; the content here is kept", async () => {
   saver.edit(fragmentOf(3));
   await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
@@ -207,7 +228,7 @@ test("413: the phrase is too large, the content is kept here, and the next edit 
   expect(saver.state).toBe("saved");
 });
 
-test("a new name is patched at once, after the fragment waiting to go, both from the revision before them", async () => {
+test("a new name is patched at once, after the fragment waiting to go: each from the revision the answer before it gave", async () => {
   saver.edit(fragmentOf(3));
   saver.rename("副歌");
   expect(last().body).toEqual({ fragment: fragmentOf(3), baseRevision: 1 });
@@ -241,4 +262,135 @@ test("saving as a new phrase posts the content as it is here, under the name giv
   expect(post).toMatchObject({ path: "/api/phrases", body: { name: "主歌 2", fragment: fragmentOf(3) } });
   post.answer(201, { id: "22222222-2222-4222-8222-222222222222", revision: 1 });
   await expect(made).resolves.toBe("22222222-2222-4222-8222-222222222222");
+});
+
+/** The phrase as the server holds it, as `GET /api/phrases/:id` answers. */
+function details(beats: number, revision: number, name = "主歌") {
+  return { id: ID, name, fragment: fragmentOf(beats), revision, updatedAt: "2026-11-18T00:00:00.000Z" };
+}
+
+test("409 and the phrase cannot be read: not known to be changed elsewhere, nothing more sent until the member asks to check again", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  last().answer(409, { code: "revision_conflict" });
+  await settle();
+  last().lose();
+  await settle();
+  expect(saver.state).toBe("unchecked");
+  expect(saver.unsaved()).toBe(true);
+  expect(sent).toHaveLength(2);
+
+  saver.edit(fragmentOf(5));
+  await vi.advanceTimersByTimeAsync(20 * MAX_RETRY_DELAY_MS);
+  expect(sent).toHaveLength(2);
+  expect(saver.state).toBe("unchecked");
+
+  // Checked again: the server holds what was sent (its own revision), and the latest edit follows.
+  saver.retry();
+  expect(last()).toMatchObject({ method: "GET", path: `/api/phrases/${ID}` });
+  last().answer(200, details(3, 2));
+  await settle();
+  expect(last()).toMatchObject({ method: "PUT", body: { fragment: fragmentOf(5), baseRevision: 2 } });
+  last().answer(200, { revision: 3 });
+  await settle();
+  expect(saver.state).toBe("saved");
+});
+
+test("checked again after a 409 that could not be looked into, the phrase holds other content: changed elsewhere", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  last().answer(409, { code: "revision_conflict" });
+  await settle();
+  last().answer(503, { code: "internal_error" });
+  await settle();
+  expect(saver.state).toBe("unchecked");
+  saver.retry();
+  last().answer(200, details(6, 2));
+  await settle();
+  expect(saver.state).toBe("conflict");
+});
+
+test("tried again by itself after waiting twice as long each time, at most a minute, and no more than MAX_RETRIES times", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  const waits = [5_000, 10_000, 20_000, 40_000, 60_000];
+  expect(waits).toHaveLength(MAX_RETRIES);
+  for (const waited of waits) {
+    last().answer(503, { code: "internal_error" });
+    await settle();
+    expect(saver.retrying).toBe(true);
+    const before = sent.length;
+    await vi.advanceTimersByTimeAsync(waited - 1);
+    expect(sent).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent).toHaveLength(before + 1);
+  }
+  last().answer(503, { code: "internal_error" });
+  await settle();
+  expect(saver.state).toBe("failed");
+  expect(saver.retrying).toBe(false);
+  await vi.advanceTimersByTimeAsync(10 * MAX_RETRY_DELAY_MS);
+  expect(sent).toHaveLength(MAX_RETRIES + 1);
+
+  // The member asks: sent at once.
+  saver.retry();
+  expect(sent).toHaveLength(MAX_RETRIES + 2);
+  last().answer(200, { revision: 2 });
+  await settle();
+  expect(saver.state).toBe("saved");
+});
+
+test("429: tried again once as long as its Retry-After says has passed", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  last().answer(429, { code: "rate_limited" }, { "retry-after": "30" });
+  await settle();
+  expect(saver.state).toBe("failed");
+  expect(saver.error).toBe("rate_limited");
+  await vi.advanceTimersByTimeAsync(30_000 - 1);
+  expect(sent).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(last().body).toEqual({ fragment: fragmentOf(3), baseRevision: 1 });
+});
+
+test("a refusal that is not worth trying again (404) waits for the member or the next edit", async () => {
+  saver.edit(fragmentOf(3));
+  await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+  last().answer(404, { code: "not_found" });
+  await settle();
+  expect(saver.state).toBe("failed");
+  expect(saver.retrying).toBe(false);
+  expect(saver.error).toBe("not_found");
+  await vi.advanceTimersByTimeAsync(10 * MAX_RETRY_DELAY_MS);
+  expect(sent).toHaveLength(1);
+});
+
+test("flushing sends what waits for its second of quiet at once, and says when the server has it all", async () => {
+  saver.edit(fragmentOf(3));
+  const flushed = saver.flush();
+  expect(last()).toMatchObject({ method: "PUT", body: { fragment: fragmentOf(3), baseRevision: 1 } });
+  saver.edit(fragmentOf(5));
+  const again = saver.flush();
+  sent[0]!.answer(200, { revision: 2 });
+  await settle();
+  expect(last()).toMatchObject({ method: "PUT", body: { fragment: fragmentOf(5), baseRevision: 2 } });
+  last().answer(200, { revision: 3 });
+  await expect(flushed).resolves.toBe(true);
+  await expect(again).resolves.toBe(true);
+  await expect(saver.flush()).resolves.toBe(true);
+});
+
+test("flushing says false as soon as the content cannot be saved: changed elsewhere, or out of reach", async () => {
+  saver.edit(fragmentOf(3));
+  const lost = saver.flush();
+  last().lose();
+  await expect(lost).resolves.toBe(false);
+
+  const conflicting = saver.flush();
+  last().answer(409, { code: "revision_conflict" });
+  await settle();
+  last().answer(200, details(6, 2));
+  await expect(conflicting).resolves.toBe(false);
+  expect(saver.state).toBe("conflict");
+  await expect(saver.flush()).resolves.toBe(false);
 });

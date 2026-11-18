@@ -4,10 +4,11 @@
 // this page alone, not co-edited: the EditorSession types in it with the keys of the editable
 // view, the same projection draws and plays it, at 120 (a phrase has no tempo). Undo is this
 // page's, gone after a reload. Each change is saved as the whole fragment (phraseSaver.ts); a
-// phrase changed elsewhere since is reloaded or saved as a new phrase, never merged.
+// phrase changed elsewhere since is reloaded or saved as a new phrase, never merged. Leaving the
+// page sends what is left at once; what cannot be saved is asked about first.
 // On a device that cannot be typed on (`canType`), the phrase is only drawn and played: no key nor
 // click changes it, and nothing is ever saved.
-import { AppButton, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
+import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import { phraseDetails, type PhraseDetails, phraseLimits } from "@studio/contracts";
 import { createEditorSession, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest } from "@studio/score-editor";
 import {
@@ -24,9 +25,9 @@ import {
   scoreToFragment,
   type TimeSignature,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PlayerState, playerUsable, type Rect, type ScoreEngine } from "@studio/score-render";
+import { createAlphaTabEngine, type Rect, type ScoreEngine } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { onBeforeRouteLeave, onBeforeRouteUpdate, RouterLink, useRouter } from "vue-router";
 import * as Y from "yjs";
 
 import { ApiError, get, refusal } from "../api";
@@ -37,9 +38,10 @@ import InlineTextEntry from "../components/InlineTextEntry.vue";
 import PartPanel from "../components/PartPanel.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import { canType, keyPlatform } from "../device";
-import { clearOf, entryRect, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { createPhraseSaver, type PhraseSaver, type SaveState } from "../phraseSaver";
 import { selectionBoxes } from "../presence";
+import { useScorePlayback } from "../scorePlayback";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { errorText, strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -61,7 +63,8 @@ const name = ref<string | null>(null);
 /** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
 const saveState = ref<SaveState>("saved");
-/** What a refusal of the last save said, while `failed` for one. */
+/** While `failed`: tried again by itself, and what the server said when it answered. */
+const saveRetrying = ref(false);
 const saveError = ref<string | null>(null);
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
 const notice = ref<string | null>(null);
@@ -76,16 +79,6 @@ const reserved = shallowRef<Rect[]>([]);
 const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
 const panelOpen = ref(false);
 const partsOpen = ref(false);
-const playerState = ref<PlayerState>("loading");
-const stopped = ref(true);
-const playingBar = ref<number | null>(null);
-const playheadRect = shallowRef<Rect | null>(null);
-/** Paused by the member, the cursor not moved since: playing goes on from there. */
-let resumable = false;
-/** Playback is kept on screen: from pressing play until the member presses a key or scrolls. */
-let keepInSight = false;
-/** Where the page itself last scrolled to: a scroll anywhere else is the member's. */
-let ownScrollTop: number | null = null;
 const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
 
 const doc = new Y.Doc();
@@ -101,14 +94,31 @@ const hideFromTests = exposeForTests({
   player: () => engine?.player.settings() ?? null,
 });
 
+// Typing plays from the start of the cursor's bar; a device that only plays, from where playback is.
+const { playerState, stopped, playingBar, playheadRect, isFollowing, showPlayback, togglePlay, stop, retrySound, cursorMoved, stopFollowing, onScroll, reveal, attach } =
+  useScorePlayback({
+    scroller,
+    reserved: () => reserved.value,
+    startTick: (player) => {
+      if (session === undefined) return null;
+      const at = session.cursor;
+      return (at && player.tickOf(at.barId)) ?? 0;
+    },
+    reading: () => false,
+  });
+
 const kind = computed(() => score.value?.parts[0]?.kind ?? null);
 const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
-/** What the save says when it did not go through; null while it goes or went through. */
+/** What the save says when it did not go through and the page cannot do anything about it by itself; null otherwise. */
 const saveProblem = computed(() => {
   if (saveState.value === "tooLarge") return errorText("phrase_too_large");
-  if (saveState.value === "failed") return saveError.value ?? text.retrying;
-  return null;
+  if (saveState.value === "unchecked") return text.unchecked;
+  if (saveState.value !== "failed") return null;
+  if (saveRetrying.value) return text.retrying;
+  return text.notSaved(saveError.value ?? strings.unknownError);
 });
+/** The member can ask to try again: what the page will not try again by itself. */
+const canRetry = computed(() => saveState.value === "unchecked" || (saveState.value === "failed" && !saveRetrying.value));
 
 function focusScore(): void {
   scroller.value?.focus({ preventScroll: true });
@@ -162,87 +172,10 @@ function updateOverlay(): void {
   showPlayback(engine.player.position.tick);
 }
 
-// Playing ----------------------------------------------------------------------------------------
-
-const FOLLOW_MARGIN = 40;
-
-function showPlayback(tick: number): void {
-  if (engine === undefined || stopped.value) return;
-  const played = engine.player.barAt(tick);
-  if (played !== null) playingBar.value = played.index + 1;
-  const rect = engine.renderer.boundsAtTick(tick);
-  const placed = rect && clearOf(rect, reserved.value);
-  if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
-  const element = scroller.value;
-  if (!keepInSight || playerState.value !== "playing" || rect === null || element === undefined) return;
-  if (rect.y >= element.scrollTop && rect.y + rect.height <= element.scrollTop + element.clientHeight) return;
-  scrollTo(Math.max(rect.y - FOLLOW_MARGIN, 0));
-}
-
-/** From the start of the cursor's bar; after a pause, from where it was, unless the cursor moved since. */
-function play(): void {
-  const player = engine?.player;
-  if (player === undefined || player.state !== "paused") return;
-  if (!resumable && session !== undefined) {
-    const at = session.cursor;
-    player.seek((at && player.tickOf(at.barId)) ?? 0);
-  }
-  resumable = false;
-  stopped.value = false;
-  keepInSight = true;
-  player.play();
-}
-
-function pause(): void {
-  if (engine?.player.state !== "playing") return;
-  resumable = true;
-  engine.player.pause();
-}
-
-function showStopped(): void {
-  resumable = false;
-  stopped.value = true;
-  playingBar.value = null;
-  playheadRect.value = null;
-}
-
-function stop(): void {
-  if (engine === undefined || !playerUsable(engine.player.state)) return;
-  showStopped();
-  engine.player.stop();
-}
-
-function togglePlay(): void {
-  if (playerState.value === "playing") pause();
-  else play();
-}
-
+/** A button of the toolbar did its work: the phrase has the keyboard again. */
 function onToolbar(action: () => void): void {
   action();
   focusScore();
-}
-
-function scrollTo(top: number): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  element.scrollTop = top;
-  ownScrollTop = element.scrollTop;
-}
-
-function onScroll(): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  if (ownScrollTop !== null && Math.abs(element.scrollTop - ownScrollTop) < 1) return;
-  keepInSight = false;
-}
-
-function reveal(): void {
-  const element = scroller.value;
-  const box = cursorRect.value;
-  if (element === undefined || box === null) return;
-  const margin = 80;
-  if (box.y < element.scrollTop + margin) scrollTo(Math.max(box.y - margin, 0));
-  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) scrollTo(box.y + box.height - element.clientHeight + margin);
 }
 
 // Typing -----------------------------------------------------------------------------------------
@@ -259,7 +192,7 @@ function onKey(event: KeyboardEvent): void {
     togglePanel();
     return;
   }
-  keepInSight = false;
+  stopFollowing();
   // Without a session (a device that cannot be typed on), no key changes anything.
   if (session?.press(event)) event.preventDefault();
 }
@@ -338,8 +271,8 @@ function startEditing(json: ScoreJSON): void {
   session.onPresence((now) => {
     presence.value = now;
     placeCursor();
-    resumable = false;
-    if (!keepInSight || playerState.value !== "playing") reveal();
+    cursorMoved();
+    if (!isFollowing()) reveal(cursorRect.value);
   });
   session.onHint((hint) => {
     notice.value = strings.score.hints[hint];
@@ -400,9 +333,36 @@ async function saveAsNew(): Promise<void> {
   await router.push({ name: "phrase", params: { id: made } });
 }
 
-/** Leaving the page with changes the server does not have: the browser asks first. */
+/** While the page asks whether to leave with changes it could not save: how the answer goes back to the router. */
+const leaving = ref<((leave: boolean) => void) | null>(null);
+
+/**
+ * Before another page of the app takes this one's place: what waits for its second of quiet, or
+ * to be tried again, is sent at once. Leaving waits for it; what cannot be saved (changed
+ * elsewhere, too large, out of reach) is asked about first.
+ */
+async function mayLeave(): Promise<boolean> {
+  if (saver === undefined || !saver.unsaved()) return true;
+  if (await saver.flush()) return true;
+  return new Promise((resolve) => {
+    leaving.value = (leave) => {
+      leaving.value = null;
+      resolve(leave);
+    };
+  });
+}
+onBeforeRouteLeave(mayLeave);
+// Another phrase's address (back from a phrase saved as a new one): this one is left too.
+onBeforeRouteUpdate((to) => (to.params.id === props.id ? true : mayLeave()));
+
+/**
+ * Leaving the page itself (closing it, reloading, another site) with changes the server does not
+ * have: what waits is sent now, and the browser asks first (docs/spec/phrases.md, 5.1).
+ */
 function warnUnsaved(event: BeforeUnloadEvent): void {
-  if (saver?.unsaved()) event.preventDefault();
+  if (!saver?.unsaved()) return;
+  void saver.flush();
+  event.preventDefault();
 }
 window.addEventListener("beforeunload", warnUnsaved);
 
@@ -436,20 +396,16 @@ onMounted(async () => {
     ready.value = true;
     updateOverlay();
   });
-  playerState.value = engine.player.state;
-  engine.player.onState((state) => {
-    playerState.value = state;
-    if (engine) showPlayback(engine.player.position.tick);
-  });
-  engine.player.onFinished(showStopped);
-  engine.player.onPosition((position) => showPlayback(position.tick));
+  attach(engine);
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, onChange);
   if (editable && score.value !== null) {
-    saver = createPhraseSaver({ id: details.id, revision: details.revision, name: details.name, fragment: details.fragment });
-    saver.onState((state) => {
+    const made = createPhraseSaver({ id: details.id, revision: details.revision, name: details.name, fragment: details.fragment });
+    saver = made;
+    made.onState((state) => {
       saveState.value = state;
-      saveError.value = state === "failed" && saver?.error != null ? errorText(saver.error) : null;
+      saveRetrying.value = made.retrying;
+      saveError.value = made.error === null ? null : errorText(made.error);
     });
     startEditing(score.value);
   } else focusScore();
@@ -477,7 +433,7 @@ onBeforeUnmount(() => {
         <h1 class="phrase__title" data-title>{{ name ?? (loadError ? strings.unknownError : strings.loading) }}</h1>
         <AppButton v-if="editable && name !== null" variant="ghost" size="sm" data-rename @click="openDialog('rename')">{{ text.rename }}</AppButton>
         <span v-if="editable && name !== null" class="phrase__save" :data-save="saveState">{{ text.save[saveState] }}</span>
-        <PlayerControls v-if="name !== null" :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(() => engine?.player.retry())" />
+        <PlayerControls v-if="name !== null" :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
         <div v-if="editable && name !== null" class="phrase__bars">
           <AppButton variant="ghost" size="sm" data-insert-bar :title="strings.score.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
             {{ strings.score.bars.insert }}
@@ -504,7 +460,10 @@ onBeforeUnmount(() => {
         <AppButton variant="ghost" size="sm" data-reload @click="emit('reload')">{{ text.reload }}</AppButton>
         <AppButton variant="primary" size="sm" data-save-as-new @click="openDialog('saveAsNew')">{{ text.saveAsNew }}</AppButton>
       </div>
-      <p v-if="saveProblem" class="phrase__banner" role="alert" :data-save-problem="saveState">{{ saveProblem }}</p>
+      <div v-if="saveProblem" class="phrase__banner" role="alert" :data-save-problem="saveState">
+        <span>{{ saveProblem }}</span>
+        <AppButton v-if="canRetry" variant="ghost" size="sm" data-save-retry @click="onToolbar(() => saver?.retry())">{{ text.retry }}</AppButton>
+      </div>
       <div class="phrase__body">
         <div
           ref="scroller"
@@ -578,6 +537,18 @@ onBeforeUnmount(() => {
             </Stack>
           </form>
         </AppModal>
+        <AppConfirmDialog
+          :visible="leaving !== null"
+          :title="text.leave.title"
+          :message="text.leave.message"
+          :confirm-label="text.leave.confirm"
+          :cancel-label="text.leave.cancel"
+          :loading-label="strings.loading"
+          confirm-variant="danger"
+          data-confirm-leave
+          @close="leaving?.(false)"
+          @confirm="leaving?.(true)"
+        />
       </template>
     </main>
   </template>

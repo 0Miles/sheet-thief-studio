@@ -2,7 +2,7 @@
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
-import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test } from "@playwright/test";
 import type { Role } from "@studio/contracts";
 import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, PART_PRESETS, type PartKind, type ScoreJSON } from "@studio/score-model";
 
@@ -93,6 +93,11 @@ export async function createScore(page: Page, title: string): Promise<string> {
   const response = await page.request.post("/api/scores", { data: { title }, headers: { origin } });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { id: string }).id;
+}
+
+/** A name of this run only, for data the tests' database keeps from earlier runs (phrases). */
+export function runName(name: string): string {
+  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
 }
 
 /** Create a phrase through the API as the account logged in on the page (a blank 6-string guitar one unless given); returns its id. */

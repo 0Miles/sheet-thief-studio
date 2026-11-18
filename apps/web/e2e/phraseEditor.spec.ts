@@ -5,17 +5,12 @@ import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { beatsIn, createPhrase, loggedIn, logInFromStart, pageErrors, playerSettled, scoreOf } from "./pages";
+import { beatsIn, createPhrase, loggedIn, logInFromStart, pageErrors, playerSettled, runName, scoreOf } from "./pages";
 
 const text = strings.phraseEditor;
 
 /** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
 const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
-
-/** Names of this run only: the tests' database keeps the phrases of earlier runs. */
-function runName(name: string): string {
-  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
-}
 
 /** Open the phrase and wait until it is drawn. */
 async function openPhrase(page: Page, id: string): Promise<void> {
@@ -120,6 +115,26 @@ test("leaving the page with a change not saved yet asks first", async ({ page })
   // Staying: the page is still there.
   await dialog.dismiss();
   expect(page.isClosed()).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("going to the library right after typing saves what was typed first: back on the phrase, it is there", async ({ page }) => {
+  const errors = pageErrors(page);
+  const name = runName("換頁前存檔");
+  await logInFromStart(page, ADMIN);
+  const id = await createPhrase(page, name);
+  await openPhrase(page, id);
+
+  await typeFrets(page, [4, 6]);
+  // Well within the second the save waits for.
+  await page.locator("main").getByRole("link", { name: text.library }).click();
+  await expect(page).toHaveURL("/phrases");
+  await expect(page.locator("[data-confirm-leave]")).toHaveCount(0);
+
+  await page.getByRole("link", { name, exact: true }).click();
+  await expect(page).toHaveURL(`/phrases/${id}`);
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  expect(await fretsOf(page)).toEqual([4, 6]);
   expect(errors).toEqual([]);
 });
 

@@ -4,17 +4,12 @@ import { type BrowserContextOptions, expect, type Locator, type Page, test } fro
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { createPhrase, loggedIn, logInFromStart, pageErrors } from "./pages";
+import { createPhrase, loggedIn, logInFromStart, pageErrors, runName } from "./pages";
 
 const text = strings.phrases;
 
 /** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
 const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
-
-/** Names of this run only: the tests' database keeps the phrases of earlier runs. */
-function runName(name: string): string {
-  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
-}
 
 /** The row of the phrase with this name, exactly. */
 function rowOf(page: Page, name: string): Locator {
