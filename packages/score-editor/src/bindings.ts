@@ -54,7 +54,8 @@ export type SessionEffect =
   | "stroke"
   | "slapPop"
   | "dynamic"
-  | "text";
+  | "text"
+  | "lyrics";
 
 /**
  * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
@@ -77,14 +78,25 @@ export type PageEffect = "playPause" | "nextFlag" | "barPanel" | "phraseSidebar"
 export type TextEntryEffect = "saveEntry" | "cancelEntry";
 
 /**
- * Where a key works: on the score whatever the kind of the part, on parts of one kind only, or in
- * a text box of the score (`textEntryEffectOf`), where no key of the score works.
+ * What a key does in the box of lyrics mode (keymap.md, 6.2), besides Enter and Esc of every text
+ * box: the syllable typed is saved and the box goes on to the next sung beat, as it is (Space) or
+ * with a `-` at its end (the word goes on); in an empty box Delete takes the beat's lyric away.
  */
-export type KeyContext = "score" | PartKind | "textEntry";
+export type LyricEntryEffect = "nextSyllable" | "joinSyllable" | "removeSyllable";
+
+/**
+ * Where a key works: on the score whatever the kind of the part, on parts of one kind only, in
+ * a text box of the score (`textEntryEffectOf`), or in the box of lyrics mode, which has a text
+ * box's keys too (`lyricEntryEffectOf`). No key of the score works in either box.
+ */
+export type KeyContext = "score" | PartKind | EntryContext;
+
+/** The contexts of the boxes typed in over the score. */
+export type EntryContext = "textEntry" | "lyricEntry";
 
 interface BindingKeys {
-  /** Every binding but a text box's works on the score (`TextEntryBinding`). */
-  context: Exclude<KeyContext, "textEntry">;
+  /** Every binding but a box's works on the score (`TextEntryBinding`, `LyricEntryBinding`). */
+  context: Exclude<KeyContext, EntryContext>;
   /** The keys, on every platform unless `mac` says otherwise; the first is the one shown (`formatChord`). */
   keys: readonly Chord[];
   /**
@@ -149,7 +161,18 @@ export interface TextEntryBinding extends Omit<BindingKeys, "context"> {
   letter?: undefined;
 }
 
-export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding;
+/** A key of the box of lyrics mode: the page hands it to `EditorSession.pressLyric`. */
+export interface LyricEntryBinding extends Omit<BindingKeys, "context"> {
+  effect: LyricEntryEffect;
+  context: "lyricEntry";
+  native?: undefined;
+  page?: undefined;
+  fret?: undefined;
+  piece?: undefined;
+  letter?: undefined;
+}
+
+export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding | LyricEntryBinding;
 
 const DIGITS = [..."0123456789"];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -262,8 +285,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
   // Section 3: Shift and a letter turns a technique on and off, on a Mac as well. Tie also takes
-  // the fret of the note before; on staves it waits, as the other techniques do, for their keys
-  // to name the notes drawn on a line (keymap.md, section 3).
+  // the fret of the note before (on staves, below with the staff's keys).
   { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
   // A slide out steps through its kinds, a slide in through its own, each back to none.
   { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
@@ -292,12 +314,25 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "flatten", context: "pitched", keys: ["BracketLeft"], keymap: both("BracketLeft") },
   { effect: "octaveUp", context: "pitched", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "octaveDown", context: "pitched", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
+  // Section 3 on a staff (#49): tie, accent and staccato on the notes drawn on the cursor's line;
+  // tie on an empty line makes the notes the beat before draws there (`tieKeysAt`).
+  { effect: "tie", context: "pitched", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
+  { effect: "accent", context: "pitched", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
+  { effect: "staccato", context: "pitched", keys: ["Shift+KeyC"], keymap: both("Shift+KeyC") },
+  // Section 5: lyrics mode, on a staff only, in a box the page opens (`EditorSession.onEditLyric`).
+  { effect: "lyrics", context: "pitched", keys: ["Shift+Enter"], keymap: both("Shift+Enter") },
   // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
   // Section 6: in a text box. Return, on a Mac, is the same key.
   { effect: "saveEntry", context: "textEntry", keys: ["Enter", "NumpadEnter"], keymap: both("Enter", "NumpadEnter") },
   { effect: "cancelEntry", context: "textEntry", keys: ["Escape"], keymap: both("Escape") },
+  // Section 6.2: in the box of lyrics mode, which has Enter and Esc as well. `-` on the row of
+  // digits or on the numeric keypad; Delete is Fn+delete on a Mac, whose delete key is the box's
+  // Backspace.
+  { effect: "nextSyllable", context: "lyricEntry", keys: ["Space"], keymap: both("Space") },
+  { effect: "joinSyllable", context: "lyricEntry", keys: ["Minus", "NumpadSubtract"], keymap: both("Minus", "NumpadSubtract") },
+  { effect: "removeSyllable", context: "lyricEntry", keys: ["Delete"], keymap: both("Delete") },
 ];
 
 /**

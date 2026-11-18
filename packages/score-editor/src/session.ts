@@ -36,6 +36,7 @@ import {
   insertBeat,
   isRestAt,
   LOCAL,
+  lyricAt,
   metaOf,
   moveByBar,
   moveByBeat,
@@ -64,6 +65,7 @@ import {
   setClef,
   setFret,
   setKeySig,
+  setLyric,
   setPartName,
   type PitchedClef,
   setProgram,
@@ -82,8 +84,10 @@ import {
   slideOutCycle,
   startOfScore,
   strokeCycle,
+  sungBeatFrom,
   textAt,
   techniqueToggle,
+  tieKeysAt,
   tieToggle,
   type TimeSignature,
   toggleAnacrusis,
@@ -96,7 +100,7 @@ import {
 import * as Y from "yjs";
 
 import type { SessionBinding } from "./bindings";
-import { type Key, type KeyPlatform, matchKey } from "./keys";
+import { type Key, type KeyPlatform, lyricEntryEffectOf, matchKey } from "./keys";
 
 /** Two digits typed within this many milliseconds make one two-digit fret. */
 export const TWO_DIGIT_WINDOW = 600;
@@ -129,6 +133,23 @@ export interface TextRequest {
   cursor: Cursor;
   text: string;
 }
+
+/**
+ * Lyrics mode on a beat (docs/spec/keymap.md, 6.2): the shell keeps a box beside it, filled with
+ * the syllable the beat holds (empty for none or a melisma), and hands the box's keys to
+ * `pressLyric`.
+ */
+export interface LyricRequest {
+  cursor: Cursor;
+  lyric: string;
+}
+
+/**
+ * What a key of the box of lyrics mode did (`pressLyric`): the box goes on to the beat of that
+ * request, lyrics mode ends (`"leave"`), or the box stays as it is (`"stay"`: a syllable too long
+ * was refused). Null: the key is the box's own, typed in it.
+ */
+export type LyricStep = LyricRequest | "leave" | "stay" | null;
 
 export interface EditorSessionOptions {
   /** Whose keys the member types with: the shell tells it once, with `detectKeyPlatform`. */
@@ -189,6 +210,21 @@ export interface EditorSession {
    * than `MAX_BEAT_TEXT`. The selection ends, as after any command that does not work on it.
    */
   setText(cursor: Cursor, text: string): boolean;
+  /**
+   * Called each time Shift+Enter starts lyrics mode on a pitched part (docs/spec/keymap.md, 6.2):
+   * on the cursor's beat, or, on a rest or in the append slot, on the next sung beat of its voice,
+   * where the cursor goes first. Never when the voice sings no more from there, nor while read-only.
+   */
+  onEditLyric(listener: (request: LyricRequest) => void): () => void;
+  /**
+   * A key of the box of lyrics mode, with what is typed in it (`typed`), on the beat of `request`.
+   * Space saves the syllable, `-` saves it with a `-` at its end, Delete in an empty box takes the
+   * beat's lyric away: each one command, and the box goes on to the next sung beat of the voice,
+   * the cursor with it (on past the last, lyrics mode ends). Enter saves and ends lyrics mode, Esc
+   * ends it without saving. A syllable longer than `MAX_LYRIC` is refused: the box stays. A key
+   * that goes to an input method, as any other key, is the box's own (null). The selection ends.
+   */
+  pressLyric(request: LyricRequest, typed: string, key: Key): LyricStep;
   /*
    * The structural commands the toolbar's buttons and the panel of the cursor's bar run, without a
    * key (docs/spec/commands.md, section 6): each one command, one undo step, refused while
@@ -268,6 +304,8 @@ interface KeyCommand {
   /** It changes nothing itself, but asks for a change the member makes next (Enter's text box): refused while read-only all the same. */
   leadsToChange?: true;
   run(at: Cursor): Outcome;
+  /** What it does once the cursor is where it put it (Shift+Enter asks for the box of lyrics mode then). */
+  after?(): void;
   /**
    * What it does when there is no cursor: its part and every bar gone, as when two members each
    * delete one of the last two bars. Only undo, redo and +bar have it, so that such a score can
@@ -327,6 +365,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   const refusedListeners = new Set<() => void>();
   const hintListeners = new Set<(hint: SessionHint) => void>();
   const textListeners = new Set<(request: TextRequest) => void>();
+  const lyricListeners = new Set<(request: LyricRequest) => void>();
   let refused = false;
   /** Tell the member, the first time only, that a change was refused because the session is read-only. */
   function refuse(): void {
@@ -550,13 +589,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
    * else on the notes of the cursor's line (`noteKeysAt`: a string, or the drum pieces drawn on
-   * the line), where dead and tie may make a note, and a beat for it in the append slot.
+   * the line), where dead and tie may make a note, and a beat for it in the append slot. `keysAt`
+   * gives the keys at the cursor: a tie's (`tieKeysAt`) are, on an empty line of a staff, those of
+   * the notes the beat before draws there.
    */
-  function toggleNotes<D>(toggle: NoteToggle<D>): KeyCommand {
+  function toggleNotes<D>(toggle: NoteToggle<D>, keysAt: (doc: Y.Doc, at: Cursor) => string[] = noteKeysAt): KeyCommand {
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
       (at) => {
-        const keys = noteKeysAt(doc, at);
+        const keys = keysAt(doc, at);
         return keys.length === 0 ? at : markAppended(at, (here) => toggleKeysAt(doc, here, keys, toggle));
       },
     );
@@ -574,6 +615,28 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (text !== null) for (const listener of textListeners) listener({ cursor: at, text });
       return { cursor: at, selection };
     },
+  };
+
+  /**
+   * Shift+Enter: lyrics mode, from the cursor's beat or the next sung beat of its voice, where the
+   * cursor goes; the shell is asked for the box once the cursor is there. Nothing when the voice
+   * sings no more from there.
+   */
+  const askForLyric = (): KeyCommand => {
+    let request: LyricRequest | null = null;
+    return {
+      changes: false,
+      leadsToChange: true,
+      run: (at) => {
+        const sung = sungBeatFrom(doc, at, "here");
+        if (sung === null) return { cursor: at, selection, done: false };
+        request = { cursor: sung, lyric: lyricAt(doc, sung) ?? "" };
+        return { cursor: sung, selection: null };
+      },
+      after: () => {
+        if (request !== null) for (const listener of lyricListeners) listener(request);
+      },
+    };
   };
 
   /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1, 4.2, 4.3 and 5). */
@@ -653,7 +716,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "octaveDown":
         return change((at) => moveNotesByOctave(doc, at, effect === "octaveUp" ? 1 : -1));
       case "tie":
-        return toggleNotes(tieToggle);
+        return toggleNotes(tieToggle, tieKeysAt);
       case "slideOut":
         return toggleNotes(slideOutCycle);
       case "slideIn":
@@ -674,6 +737,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return changeBeats(dynamicCycle);
       case "text":
         return askForText;
+      case "lyrics":
+        return askForLyric();
       default:
         // What is left are the on/off techniques: a new effect without a case of its own fails to type here.
         return toggleNotes(techniqueToggle(effect));
@@ -702,6 +767,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       running = false;
     }
     putAt(next);
+    command.after?.();
     return next.done !== false;
   }
 
@@ -726,7 +792,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     press(key) {
       // A part whose kind cannot be read has no note keys (docs/spec/schema.md, section 11); nor has no cursor.
       const binding = matchKey(key, platform, cursor === null ? undefined : partKindOf(partsOf(doc).get(cursor.partId)));
-      if (binding === undefined || binding.native || binding.page || binding.context === "textEntry") return false;
+      if (binding === undefined || binding.native || binding.page || binding.context === "textEntry" || binding.context === "lyricEntry") return false;
       // Without a cursor, only what can bring one back runs (undo, redo): any other key is left alone.
       if (cursor === null && binding.effect !== "undo" && binding.effect !== "redo") return false;
       // Held down, only moves, + and - run again; the repeats of the others are still not the browser's.
@@ -764,6 +830,28 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       if (!setText(doc, at, text)) return false;
       putAt({ cursor, selection: null });
       return true;
+    },
+    onEditLyric(listener) {
+      lyricListeners.add(listener);
+      return () => lyricListeners.delete(listener);
+    },
+    pressLyric(request, typed, key) {
+      const effect = lyricEntryEffectOf(key, platform);
+      if (effect === null) return null;
+      if (effect === "cancelEntry") return "leave";
+      // Delete in a box with something in it deletes what is typed there.
+      if (effect === "removeSyllable" && typed !== "") return null;
+      if (readOnly) {
+        refuse();
+        return "leave";
+      }
+      // Not a key of the score: a digit typed before it waits for no second one.
+      lastDigit = null;
+      const lyric = effect === "removeSyllable" ? null : effect === "joinSyllable" ? `${typed}-` : typed;
+      if (!setLyric(doc, request.cursor, lyric)) return "stay";
+      const next = effect === "saveEntry" ? null : sungBeatFrom(doc, request.cursor, "next");
+      putAt({ cursor: next ?? cursor, selection: null });
+      return next === null ? "leave" : { cursor: next, lyric: lyricAt(doc, next) ?? "" };
     },
     insertBar(side) {
       return runWithoutKey(structural((at) => insertBarAt(doc, at, side)));
@@ -856,6 +944,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       refusedListeners.clear();
       hintListeners.clear();
       textListeners.clear();
+      lyricListeners.clear();
       presenceListeners.clear();
       undo.destroy();
     },

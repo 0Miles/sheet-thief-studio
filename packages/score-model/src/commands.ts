@@ -49,6 +49,7 @@ import {
   DYNAMICS,
   isVoiceKey,
   MAX_BEAT_TEXT,
+  MAX_LYRIC,
   MAX_TITLE,
   stringCountOf,
   contentMapOf,
@@ -905,26 +906,33 @@ function readerOf(doc: Y.Doc, partId: string): PartReader | undefined {
   return { kind, note: (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored)) };
 }
 
-/** The notes of the last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
-function lastReadNotes(reader: PartReader, voice: YVoice, end: number): Y.Map<NoteJSON> | undefined {
+/** The last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
+function lastReadBeat(reader: PartReader, voice: YVoice, end: number): YBeat | undefined {
   for (let index = end - 1; index >= 0; index--) {
     const beat = voice.get(index);
-    if (readsAsBeat(reader.kind, beat)) return notesOf(beat);
+    if (readsAsBeat(reader.kind, beat)) return beat;
   }
   return undefined;
 }
 
 /**
- * The notes of the beat before `index` in a voice, as the members see it: the last beat before it
- * that reading keeps, else the last such beat of the same voice in the bar before.
+ * The beat before `index` in a voice, as the members see it, and the bar it is in: the last beat
+ * before it that reading keeps, else the last such beat of the same voice in the bar before.
  */
-function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
-  const own = lastReadNotes(reader, voice, index);
-  if (own !== undefined) return own;
+function beatBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): { beat: YBeat; barId: string } | undefined {
+  const own = lastReadBeat(reader, voice, index);
+  if (own !== undefined) return { beat: own, barId: address.barId };
   const bars = ordered(barsOf(doc));
   const previous = bars[bars.indexOf(address.barId) - 1];
-  const before = previous === undefined ? undefined : voiceIn(doc, { ...address, barId: previous });
-  return before && lastReadNotes(reader, before, before.length);
+  if (previous === undefined) return undefined;
+  const before = voiceIn(doc, { ...address, barId: previous });
+  const last = before && lastReadBeat(reader, before, before.length);
+  return last && { beat: last, barId: previous };
+}
+
+/** The notes of the beat before `index` in a voice (`beatBefore`). */
+function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
+  return notesOf(beatBefore(doc, reader, address, voice, index)?.beat);
 }
 
 /**
@@ -1061,6 +1069,23 @@ function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
 function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const place = staffPlaceOf(doc, cursor);
   return place === undefined ? [] : notesOnLine(place, cursor.line).map(({ key }) => key);
+}
+
+/**
+ * The keys of the notes a tie changes at the cursor (docs/spec/commands.md, 5.4; #49): those of
+ * the cursor's line (`noteKeysAt`). On a staff whose line holds no note at the cursor (or in the
+ * append slot), those of the notes the beat before draws on that line, by the clef of the staff and
+ * the key in force in the bar of that beat: the tie makes them there, of the same pitch and
+ * spelling (`tieToggle`). None when that beat draws none there.
+ */
+export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const keys = noteKeysAt(doc, cursor);
+  const place = keys.length === 0 ? staffPlaceOf(doc, cursor) : undefined;
+  const at = place && placeFor(doc, cursor);
+  if (place === undefined || at === undefined) return keys;
+  const before = beatBefore(doc, place.reader, cursor, at.voice, at.index);
+  if (before === undefined) return [];
+  return notesOnLine({ ...place, keySig: keySigIn(doc, before.barId), beat: before.beat }, cursor.line).map(({ key }) => key);
 }
 
 /** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */
@@ -1329,7 +1354,7 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omi
  * The markings of a beat a key sets, its duration and notes apart (docs/spec/commands.md, 5.4 and
  * 5.5): stored in the score, unlike a flag (CONTEXT.md).
  */
-export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text">;
+export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text" | "lyric">;
 
 /** A beat as a `BeatChange` sees it: how long it lasts, whether it is a rest, and its markings as read. */
 export interface SeenBeat {
@@ -1547,6 +1572,62 @@ export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
   const beat = beatAt(doc, cursor);
   const read = reader && beat && seenBeat(reader, beat);
   return read ? (read.markings.text ?? "") : null;
+}
+
+/** The syllable on a beat (docs/spec/commands.md, 5.5): this one, the empty one of a melisma, or none (null). */
+function beatLyric(lyric: string | null): BeatChange<void> {
+  return {
+    decide: () => undefined,
+    turn: ({ markings }) => ((markings.lyric ?? null) === lyric ? null : { set: { lyric } }),
+  };
+}
+
+/**
+ * Put a syllable on the beat of the cursor, one command (lyrics mode, docs/spec/keymap.md, 6.2):
+ * as typed, a `-` at its end too (the word goes on); an empty one is a melisma, the syllable before
+ * held on; null takes the lyric away. False, and nothing set, for one longer than `MAX_LYRIC`
+ * (docs/spec/schema.md, section 13). Only a pitched part's beats hold a lyric: nothing is written
+ * on another's, nor in the append slot. The same syllable again writes nothing.
+ */
+export function setLyric(doc: Y.Doc, cursor: Cursor, lyric: string | null): boolean {
+  if (lyric !== null && lyric.length > MAX_LYRIC) return false;
+  changeBeatAt(doc, cursor, beatLyric(lyric));
+  return true;
+}
+
+/** The syllable on the beat of the cursor, empty for none or a melisma; null in the append slot, or on a beat reading leaves out. */
+export function lyricAt(doc: Y.Doc, cursor: Cursor): string | null {
+  const reader = readerOf(doc, cursor.partId);
+  const beat = beatAt(doc, cursor);
+  const read = reader && beat && seenBeat(reader, beat);
+  return read ? (read.markings.lyric ?? "") : null;
+}
+
+/**
+ * Where lyrics mode goes from the cursor (docs/spec/keymap.md, 6.2): the next beat of its voice
+ * that is sung (not a rest), in its bar or a later one; with `from` `"here"`, the cursor's own beat
+ * when it is sung. From the append slot, the beats after its anchor. Beats reading leaves out are
+ * passed over. Null when there is none, or the cursor's part or bar is gone: lyrics mode ends.
+ */
+export function sungBeatFrom(doc: Y.Doc, cursor: Cursor, from: "here" | "next"): Cursor | null {
+  const reader = readerOf(doc, cursor.partId);
+  const bars = ordered(barsOf(doc));
+  const first = bars.indexOf(cursor.barId);
+  if (reader === undefined || first < 0) return null;
+  const own = voiceAt(doc, cursor);
+  const index = own === undefined ? -1 : indexOfBeat(own, cursor.beatId);
+  // A beat or an anchor gone: on from the next bar.
+  let start = index >= 0 ? index + (cursor.at === "on" && from === "here" ? 0 : 1) : cursor.beatId === null ? 0 : Infinity;
+  for (let bar = first; bar < bars.length; bar++) {
+    const barId = bars[bar]!;
+    const voice = bar === first ? own : voiceIn(doc, { ...cursor, barId });
+    for (let at = start; voice !== undefined && at < voice.length; at++) {
+      const beat = voice.get(at);
+      if (!isRest(beat) && readsAsBeat(reader.kind, beat)) return { ...cursor, barId, beatId: beat.get("id") as string, at: "on" };
+    }
+    start = 0;
+  }
+  return null;
 }
 
 /**
