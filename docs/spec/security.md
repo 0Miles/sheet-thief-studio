@@ -52,7 +52,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 |---|---|---|
 | WebSocket 單則訊息 | 8 MB。2 MB 不夠：還原版本是客戶端送出整份內容的一筆交易，100 × 5 約 501 KB，約 125 bytes／拍點 | 設計決定 |
 | 匯入的 `ScoreJSON`（`POST /api/scores/import`） | 5 MB；請求的 body 上限 5 MB 加 64 KB | 設計決定；body 的餘量是補充 |
-| 樂句的 fragment（`POST`、`PUT /api/phrases*`） | 1 MB，超過回 413；請求的 body 上限 1 MB 加 64 KB | 設計決定；body 的餘量是補充 |
+| 樂句的 fragment（`POST`、`PUT /api/phrases*`；`POST /api/recognitions/:id/save`，補充，#64） | 1 MB，超過回 413；請求的 body 上限 1 MB 加 64 KB | 設計決定；body 的餘量是補充 |
 | 辨識的圖片（`POST /api/recognitions`） | 每張 10 MB、合計 40 MB、最多 15 張、每張最多 40 百萬像素（像素由辨識服務檢查，該頁回報 `image_too_large`）；請求的 body 上限 40 MB 加 64 KB | 補充：沿用前身 `app/config.py` 的預設值；body 的餘量是補充（#63） |
 | 其他 JSON 請求 | 64 KB | 補充 |
 | 文件裡 JSON 值的巢狀深度 | 64 層（score-model 的 `MAX_VALUE_DEPTH`）；`/collab` 收到含有更深的值、或解不開的更新時，關閉那條連線（[`collab.md`](collab.md) 第 9 節） | 補充（#102，使用者裁定） |
