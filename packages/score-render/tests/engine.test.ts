@@ -69,9 +69,21 @@ class StandIn {
   reportedState = AtState.Paused;
   reportedTick = 0;
 
+  /** The tracks drawn last (alphaTab's `tracks`): those of `renderScore`, or of `renderTracks`. */
+  tracks: alphaTab.model.Track[] = [];
+
   constructor(_element: unknown, settings: alphaTab.Settings) {
     this.settings = settings;
     standIns.push(this);
+    // alphaTab 1.9's own listener, added before any of the page's (`_setupPlayerWrapper`): every
+    // time the player is ready, each track drawn gets the volume written in its playback info.
+    this.playerReady.on(() => {
+      for (const track of this.tracks) {
+        const volume = track.playbackInfo.volume / 16;
+        this.player.setChannelVolume(track.playbackInfo.primaryChannel, volume);
+        this.player.setChannelVolume(track.playbackInfo.secondaryChannel, volume);
+      }
+    });
   }
 
   get playbackRange(): alphaTab.synth.PlaybackRange | null {
@@ -97,8 +109,9 @@ class StandIn {
     this.reportedTick = tick;
   }
 
-  renderScore(score: alphaTab.model.Score): void {
+  renderScore(score: alphaTab.model.Score, trackIndexes?: number[]): void {
     this.calls.push("renderScore");
+    this.tracks = trackIndexes ? trackIndexes.map((index) => score.tracks[index]!) : [...score.tracks];
     if (score === this.score) return;
     this.score = score;
     this.tickCache = null;
@@ -111,6 +124,7 @@ class StandIn {
 
   renderTracks(tracks: alphaTab.model.Track[]): void {
     this.calls.push(`renderTracks:${tracks.map((track) => track.index).join(",")}`);
+    this.tracks = tracks;
   }
 
   updateSettings(): void {
@@ -788,6 +802,33 @@ test("mute, solo and volume stay with their part when a part added before it mov
   newModel({ ...two, parts: [bass!, guitar!, added] });
   expect([...api.player.soloed].sort()).toEqual([0, 3]);
   expect(api.player.muted.size).toBe(0);
+});
+
+test("every new sound, the volume each part was given stays: alphaTab's own, set when the player is ready again, does not win", async () => {
+  const two = partsScore(["fretted", "fretted"]);
+  newModel(two);
+  const [guitar] = two.parts;
+  engine.player.setVolume(guitar!.id, 0.5);
+  // Channels: the guitar 0 and 2, the other part 1 and 3, at the volume written in the score.
+  const mixed = { 0: 0.5, 1: 1, 2: 0.5, 3: 1 };
+  expect(Object.fromEntries(api.player.volumes)).toEqual(mixed);
+  // The same score opened again: a new model.
+  newModel({ ...two });
+  expect(Object.fromEntries(api.player.volumes)).toEqual(mixed);
+  // A change in place, heard with `load()`.
+  engine.renderer.patchBars(two, [two.bars[1]!.id]);
+  api.postRenderFinished.emit();
+  const loaded = engine.player.load();
+  newSound();
+  await loaded;
+  expect(Object.fromEntries(api.player.volumes)).toEqual(mixed);
+});
+
+test("the sound font in late: the volume given before is kept once the player is ready", () => {
+  withoutSoundFont();
+  engine.player.setVolume(score.parts[0]!.id, 0.25);
+  soundFontIn();
+  expect(Object.fromEntries(api.player.volumes)).toEqual({ 0: 0.25, 1: 0.25 });
 });
 
 test("parts sharing a channel cannot be told apart: two drum parts, either muted, mute channel 9", () => {
