@@ -319,6 +319,8 @@ test("each of the 18 drum pieces is drawn on the line the table gives it, under 
  * clef an octave down; one bar of four quarters. Each note with the staff position it is drawn on,
  * worked out by hand from its clef (0 the top line, 8 the bottom one, a step a line or a space):
  * the treble staff's top line is F5, the bass staff's A3, that of the treble clef an octave down F4.
+ * The same notes as `STAVES_VOICES` in apps/web/e2e/measure/scores.ts, which the browser
+ * measurement (staves.spec.ts) uses: change both together.
  */
 function staves() {
   const doc = new Y.Doc();

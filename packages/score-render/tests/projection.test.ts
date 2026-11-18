@@ -99,7 +99,7 @@ test("bars and parts become master bars and tracks, in score order, each kind on
   expect(score.tracks.map((track) => track.playbackInfo.program)).toEqual([29, 0, 4]);
 });
 
-test("a part has the staves its `staves` say, each with its clef, though nothing is written on them yet (#47)", () => {
+test("each staff of a part has the clef its `staves` give it: treble G2, bass F4, treble an octave down G2 with an 8vb mark (#47)", () => {
   const { doc, barIds } = band();
   addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
   addPart(doc, { name: "Guitar 8vb", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
@@ -111,7 +111,7 @@ test("a part has the staves its `staves` say, each with its clef, though nothing
   expect(clefs(0)).toEqual([every(Clef.G2)]);
   expect(clefs(1)).toEqual([every(Clef.Neutral)]);
   expect(clefs(2)).toEqual([every(Clef.G2)]);
-  // Two staves for the piano, nothing written on the second; a treble clef an octave down for the other.
+  // Two staves for the piano, treble and bass; a treble clef an octave down for the other part.
   expect(clefs(3)).toEqual([every(Clef.G2), every(Clef.F4)]);
   expect(clefs(4)).toEqual([every(Clef.G2, Ottavia._8vb)]);
   expect(score.tracks[3]!.staves.map((staff) => [staff.showStandardNotation, staff.showTablature])).toEqual([
@@ -136,18 +136,23 @@ test("a beat written on the second staff of a part, or in a second voice, is in 
   expect(track.staves.map((staff) => staff.bars[0]!.voices.length)).toEqual([2, 1]);
 });
 
-test("the first beat written on an empty second staff replaces its bar: the staff is there already, so the score is not projected again (#47)", () => {
+test("a bar replaced on a bass staff, or on a staff an octave down, keeps its clef and its octave mark: as projecting the whole score again (#47)", () => {
   const { doc, barIds } = band();
   const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const guitar = addPart(doc, { name: "Guitar 8vb", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
   const projection = projectScore(docToJson(doc), settings);
-  const low = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[1]!), voice: "1:0" }, { value: 4 }), "n43", {});
+  setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[1]!), voice: "1:0" }, { value: 4 }), "n43", {});
+  setNote(doc, insertBeat(doc, cursorAt(doc, guitar, barIds[1]!), { value: 4 }), "n52", {});
   const json = docToJson(doc);
   expect(replaceBars(projection, json, [barIds[1]!], settings)).toBe(1);
   const whole = projectScore(json, settings);
-  const staffVoice = (of: Projection) => of.score.tracks[3]!.staves[1]!.bars[1]!.voices[0]!.beats.map((beat) => [beat.duration, beat.notes.map((note) => note.realValue)]);
-  expect(staffVoice(projection)).toEqual(staffVoice(whole));
-  expect(projection.addresses.get(low.beatId!)).toEqual({ track: 3, staff: 1, bar: 1, voice: 0, beat: 0 });
-  expect(projection.score.tracks[3]!.staves[1]!.bars[1]!.clef).toBe(alphaTab.model.Clef.F4);
+  const clefs = (of: Projection) => [of.score.tracks[3]!.staves[1]!.bars[1]!, of.score.tracks[4]!.staves[0]!.bars[1]!].map((bar) => [bar.clef, bar.clefOttava]);
+  const { Clef, Ottavia } = alphaTab.model;
+  expect(clefs(projection)).toEqual([
+    [Clef.F4, Ottavia.Regular],
+    [Clef.G2, Ottavia._8vb],
+  ]);
+  expect(clefs(projection)).toEqual(clefs(whole));
 });
 
 test("the tuning of each fretted part is written beside its own tablature, not listed above the score where those of several parts overlap", () => {

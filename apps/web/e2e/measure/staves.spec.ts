@@ -57,7 +57,7 @@ test("M3: the cursor on both staves of a piano and in the second voice, against 
   }
 
   // The append slot of each empty voice of the second bar, on the middle line: on its own staff.
-  const slots: Record<string, unknown>[] = [];
+  const slots: { voice: string; rect: Rect }[] = [];
   for (const voice of ["0:0", "0:1", "1:0", "1:1"]) {
     const { rect } = await measureAt(page, 0, -1, 4, voice);
     slots.push({ voice, rect });
@@ -87,4 +87,15 @@ test("M3: the cursor on both staves of a piano and in the second voice, against 
   expect(summary.maxDx).toBeLessThanOrEqual(1);
   expect(summary.maxDy).toBeLessThanOrEqual(1);
   expect(summary.maxEmptyDy).toBeLessThanOrEqual(1);
+  // An empty second voice has its append slot where the first voice of its staff has it; the second staff's is below the first's.
+  const [first, second, low, lowSecond] = slots.map((slot) => slot.rect) as [Rect, Rect, Rect, Rect];
+  for (const [rect, same, voice] of [
+    [second, first, "0:1"],
+    [lowSecond, low, "1:1"],
+  ] as const) {
+    expect(Math.abs(rect.x - same.x), `${voice}, x`).toBeLessThanOrEqual(1);
+    expect(Math.abs(rect.y - same.y), `${voice}, y`).toBeLessThanOrEqual(1);
+  }
+  expect(Math.abs(low.x - first.x)).toBeLessThanOrEqual(1);
+  expect(low.y).toBeGreaterThan(first.y + first.height);
 });
