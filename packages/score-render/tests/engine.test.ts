@@ -9,7 +9,7 @@ import { addPart, createScore, docToJson, insertBars, type PartKind, type ScoreJ
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAlphaTabEngine, type PlayerState, type ScoreEngine } from "../src/index";
+import { createAlphaTabEngine, type EngineOptions, type PlayerState, type ScoreEngine } from "../src/index";
 
 const { PlayerState: AtState } = alphaTab.synth;
 /** A bar of 4/4, in ticks. */
@@ -259,23 +259,30 @@ function asked(): string[] {
   return calls;
 }
 
+/** What the engine looks for in the browser to tell whether alphaTab 1.9 can make its player (`canPlaySound`). */
+const AUDIO_GLOBALS = ["AudioContext", "webkitAudioContext", "Worker", "ScriptProcessorNode", "AudioWorkletNode"];
+
 /**
- * A browser that can play: what alphaTab 1.9 needs to make its player (`createWorkerPlayer`).
- * Node has none of it; the engine looks for it when it is made.
+ * A browser with only these of what alphaTab's player needs, on a secure page or not; by default
+ * one that can play. Node has none of it; the engine looks for it when it is made.
  */
-function withWebAudio(): void {
-  vi.stubGlobal("AudioContext", class {});
-  vi.stubGlobal("Worker", class {});
-  vi.stubGlobal("ScriptProcessorNode", class {});
+function browserWith(present: readonly string[] = ["AudioContext", "Worker", "ScriptProcessorNode"], secure = false): void {
+  vi.unstubAllGlobals();
+  for (const name of AUDIO_GLOBALS) vi.stubGlobal(name, present.includes(name) ? class {} : undefined);
+  vi.stubGlobal("isSecureContext", secure);
+}
+
+/** A new engine on an element with nothing drawn in it (what the engine clears when it draws nothing), and the stand-in for its alphaTab API. */
+function makeEngine(options: Partial<EngineOptions> = {}): { made: ScoreEngine; stand: StandIn } {
+  standIns.length = 0;
+  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", ...options });
+  return { made, stand: standIns[0]! };
 }
 
 /** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
 function start(options: { seekOnClick?: boolean } = {}): void {
-  withWebAudio();
-  standIns.length = 0;
-  // An element with nothing drawn in it: what the engine clears when it draws nothing.
-  engine = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false, ...options });
-  api = standIns[0]!;
+  browserWith();
+  ({ made: engine, stand: api } = makeEngine({ useWorkers: false, ...options }));
   score = scoreOf(8);
   engine.renderer.setScore(score);
   api.postRenderFinished.emit();
@@ -314,14 +321,6 @@ test("the first sound makes the player ready, paused", () => {
   expect(engine.player.state).toBe("paused");
 });
 
-/** A browser with only these of what alphaTab's player needs, on a secure page or not. */
-function browserWith(present: readonly string[], secure: boolean): void {
-  vi.unstubAllGlobals();
-  for (const name of ["AudioContext", "webkitAudioContext", "Worker", "ScriptProcessorNode", "AudioWorkletNode"]) vi.stubGlobal(name, present.includes(name) ? class {} : undefined);
-  vi.stubGlobal("isSecureContext", secure);
-  standIns.length = 0;
-}
-
 test.each([
   ["no audio context", ["Worker", "ScriptProcessorNode", "AudioWorkletNode"], true],
   ["no worker", ["AudioContext", "ScriptProcessorNode", "AudioWorkletNode"], true],
@@ -329,8 +328,7 @@ test.each([
   ["audio worklets only, on a page that is not a secure context", ["AudioContext", "Worker", "AudioWorkletNode"], false],
 ])("a browser alphaTab cannot play in (%s): the player is left out, unavailable from the start, and asks nothing of alphaTab", async (_, present, secure) => {
   browserWith(present, secure);
-  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3" });
-  const stand = standIns[0]!;
+  const { made, stand } = makeEngine();
   expect(stand.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
   expect(made.player.state).toBe("unavailable");
   made.renderer.setScore(scoreOf(2));
@@ -354,15 +352,14 @@ test.each([
   ["the prefixed audio context of older Safari", ["webkitAudioContext", "Worker", "ScriptProcessorNode"], false],
 ])("a browser that can play with %s has the player, loading until its sound is in", (_, present, secure) => {
   browserWith(present, secure);
-  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3" });
-  expect(standIns[0]!.settings.player.playerMode).toBe(alphaTab.PlayerMode.EnabledSynthesizer);
+  const { made, stand } = makeEngine();
+  expect(stand.settings.player.playerMode).toBe(alphaTab.PlayerMode.EnabledSynthesizer);
   expect(made.player.state).toBe("loading");
 });
 
 test("with no sound font, the player is left out whatever the browser can do", () => {
-  standIns.length = 0;
-  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null });
-  expect(standIns[0]!.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
+  const { made, stand } = makeEngine({ soundFont: null });
+  expect(stand.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
   expect(made.player.state).toBe("loading");
 });
 

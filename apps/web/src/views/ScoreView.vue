@@ -42,7 +42,7 @@ import {
   type TimeSignature,
   voltaRepeatTimes,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PartMix, type PlayerState, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
+import { createAlphaTabEngine, type PartMix, type PlayerState, playerUsable, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
@@ -618,7 +618,7 @@ function showStopped(): void {
 }
 
 function stop(): void {
-  if (engine === undefined || engine.player.state === "loading" || engine.player.state === "unavailable") return;
+  if (engine === undefined || !playerUsable(engine.player.state)) return;
   showStopped();
   engine.player.stop();
 }
