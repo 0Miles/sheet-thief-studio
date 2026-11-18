@@ -18,6 +18,7 @@ import {
   type NoteJSON,
   ordered,
   parsePlain,
+  parsePlainFields,
   type PartJSON,
   type PartKind,
   partKindOf,
@@ -152,7 +153,7 @@ export type BeatFields = Omit<BeatJSON, "notes">;
  */
 export function readBeatFields(kind: PartKind, beat: unknown): BeatFields | undefined {
   if (!(beat instanceof Y.Map) || !(beat.get("notes") instanceof Y.Map)) return undefined;
-  const parsed = parsePlain(kindSchemas[kind].beat, beatFieldsOf(beat).fields);
+  const parsed = parsePlainFields(kindSchemas[kind].beat, beatFieldsOf(beat).fields);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -166,7 +167,7 @@ function checkBeat(beat: YBeat, { kind, strings }: Fit, place: Place): Omit<Chec
   const at: Place = typeof fields.id === "string" ? { ...place, beatId: fields.id } : place;
   const invalid: InvalidContentFlag[] = poppedOff ? [flag(at, "beat.pop")] : [];
   const notes = beat.get("notes");
-  const parsed = parsePlain(kindSchemas[kind].beat, fields);
+  const parsed = parsePlainFields(kindSchemas[kind].beat, fields);
   if (!parsed.success || !(notes instanceof Y.Map)) return { beat: null, invalid: [flag(at, "beat")] };
   const read: Record<string, NoteJSON> = {};
   // Keys in sorted order: members who put notes on a beat at the same time can hold its map in different orders.

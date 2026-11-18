@@ -244,6 +244,16 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 - 每個帳號同時最多一件；server 啟動時，把殘留的「執行中」標成失敗（code `interrupted`）。
 - 原圖以 `bytea` 存在 Postgres，跟著那筆辨識：存成樂句或捨棄時刪除，最多保留 7 天。**補充**：用子表 `recognition_images`（`recognition_id`、`page`、`mime`、`data bytea`，`ON DELETE CASCADE`），因為不確定 Sequelize 對 `bytea[]` 的支援；生命週期和「存在那一列」相同。超過 7 天的辨識整筆刪除，由每小時一次的定時工作處理（和刪除團譜的定時工作同一個）。
 - 只有發起辨識的帳號可以讀原圖與結果；其他人一律 404。
+- **補充**（#63）實作的細節：
+  - 辨識服務的網址是環境變數 `RECOGNIZER_URL`（開發時預設 `http://127.0.0.1:8000`，正式環境必填）。Node 端用 `node:http` 呼叫，不用 `fetch`：`fetch` 等回應標頭最多 300 秒，辨識可能跑到 900 秒。回應最多讀 32 MB（`limits.ts` 的 `RECOGNIZER_ANSWER_LIMIT`）。
+  - 上傳的 `multipart/form-data` 用 Node 內建的 `Response.formData()` 解析（lockfile 裡沒有 `@fastify/multipart`），只在 `POST /api/recognitions` 的封裝範圍裡註冊；body 上限是 40 MB 加 64 KB（`RECOGNITION_BODY_LIMIT`），照 Fastify 的做法先看 `Content-Length` 再累計。
+  - 檢查的順序：先看這個帳號（資料庫裡有它執行中的那一列，或這個行程已經接下它的一件、辨識服務還沒回答）→ 409；再看辨識服務是否正被別的帳號用 → 503。從資料庫回答到接下這一件之間沒有任何 `await`，所以同一個帳號同時到的兩個請求，一件 202、另一件 409（不是 503）。資料庫的部分唯一索引（`status = 'running'`）是最後一道保證，萬一兩件都通過，第二筆寫入失敗也回 409。
+  - 同樣的檢查在讀 body 之前（`preParsing`）先做一次：會被拒的請求不會先把最多 40 MB 讀進來。讀完、驗完圖片後再查一次，因為上傳的期間情況可能變了。
+  - 「伺服器上已經有一件在跑」指辨識服務還沒回答：服務一回答就讓出，不等結果寫進資料庫，所以看到上一件結束的人馬上可以再送一件。
+  - 失敗的 code：辨識服務回 503 → `busy`；回 422 → 它的 `error`；連不上、回其他狀態、或回答不符合契約 → `unavailable`（細節只進 log）；Node 端 930 秒沒有回答 → `timeout`；回答符合契約但轉出的片段過不了樂句的 zod（例如超過 1 MB）→ `recognition_failed`；server 關閉時正在跑的那件 → `interrupted`（和重新啟動時殘留的一樣）。
+  - 捨棄一件還在跑的辨識：那一列與原圖立刻刪除，辨識服務的回答到了也不寫回。
+  - 原圖的回應帶 `Cache-Control: private, no-store`：存成樂句或捨棄後就不存在，瀏覽器與中間的快取都不留。
+  - 測試與 e2e 用的假辨識服務在 `apps/server/tests/fakeRecognizer.ts`：同樣的 HTTP 介面，預設回契約 fixture；e2e 用 `pnpm --filter @studio/server recognizer:e2e` 啟動（`PORT` 預設 8000、`FIXTURE` 預設 `six-strings`）。
 
 ### 7.1 `recognitions` 表（補充：欄位草案）
 
@@ -251,6 +261,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 |---|---|
 | `id`、`account_id` | |
 | `status` | `'running'`、`'succeeded'`、`'failed'` |
+| `page_count` | 補充（#63）：原圖的張數，列表與審核頁不必讀子表 |
 | `error` | `jsonb`：`{ code, params, pages }`，失敗時才有 |
 | `fragment` | `jsonb`：轉換並以 zod 驗證過的 `PhraseFragment`（小節段） |
 | `report` | `jsonb`：偵測到的弦數、調弦（含來源、原因、原文）、capo，以及略過的項目 |
@@ -262,7 +273,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 
 | 中間模型 | `PhraseFragment` |
 |---|---|
-| `strings`、`tuning.midi` | `tuning`（第 1 弦在前）；讀不懂時是該弦數的標準調弦：4 弦 `[43, 38, 33, 28]`、5 弦 `[43, 38, 33, 28, 23]`、6 弦 `[64, 59, 55, 50, 45, 40]`、7 弦 `[64, 59, 55, 50, 45, 40, 35]`（補充：4、5 弦當成貝斯） |
+| `strings`、`tuning.midi` | `tuning`（第 1 弦在前）；讀不懂時（補充，#63：`source: "default"` 的兩種 `reason` 都算，不用辨識服務猜的值）是該弦數的標準調弦：4 弦 `[43, 38, 33, 28]`、5 弦 `[43, 38, 33, 28, 23]`、6 弦 `[64, 59, 55, 50, 45, 40]`、7 弦 `[64, 59, 55, 50, 45, 40, 35]`（補充：4、5 弦當成貝斯） |
 | 小節的 `timeSignature`（`null` 時沿用前一個；第一個用整首的） | `bars[].timeSig` |
 | `beats` | `voices["0:0"]` |
 | `units` | `value` 與 `dots`：1 → 32、2 → 16、3 → 16 加 1 個附點、4 → 8、6 → 8 加 1、7 → 8 加 2、8 → 4、12 → 4 加 1、14 → 4 加 2、16 → 2、24 → 2 加 1、28 → 2 加 2、32 → 1、48 → 1 加 1（補充：契約只接受這些值） |
@@ -274,14 +285,14 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 | `hammer` | `legato` |
 | `slide` | `slideOut: "legato"` |
 | `slideShift` | `slideOut: "shift"` |
-| `slideOut: "up"`、`"down"` | `slideOut: "outUp"`、`"outDown"`（補充：同時有 `slide`／`slideShift` 時，以後兩者為準） |
+| `slideOut: "up"`、`"down"` | `slideOut: "outUp"`、`"outDown"`（補充：同時有 `slide`／`slideShift` 時，以後兩者為準；`slide` 與 `slideShift` 同時為真時是 `shift`，#63） |
 | `slideIn: "below"`、`"above"` | `slideIn: "inBelow"`、`"inAbove"` |
 | `bendSemitones`、`bendRelease`、`bendPre` | `bend`：`bendSemitones` 是 0 就沒有；`bendPre` 加 `bendRelease` → `preBendRelease`，只有 `bendPre` → `preBend`，只有 `bendRelease` → `bendRelease`，都沒有 → `bend`。`semitones` 夾在 1–4，超過 4 時記一筆略過項目（補充） |
 | `graceFret`、`graceHammer` | 丟掉；數量列在略過項目裡（前身 `model.py:51-53`） |
 | 音符的 `stroke` | 聚合成拍點的 `stroke`（`down`、`up`） |
 | 音符的 `velocity` | 聚合成拍點的 `dynamic` |
 
-- 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。
+- 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。**補充**（#63）：`null` 的音不算票，有一個音有值就取那個值；力度先把每個音的 velocity 換成力度再聚合。
 - velocity → dynamic（補充，依前身 `app/extract/annotations.py:35` 的對照取最接近的）：≤ 39 → `pp`（含 ppp），40–55 → `p`，56–71 → `mp`，72–87 → `mf`，88–103 → `f`，≥ 104 → `ff`（含 fff）。
 - 小節層級的 `marker`、`tempo`、`repeatOpen`、`repeatTimes`、`endings`、`sign`、`jump` 不放進片段（樂句不帶這些），各自列在略過項目裡（補充）。
 - 略過項目（`report.skipped`，補充）：`{ code: "grace_notes", count }`、`{ code: "capo", fret }`（capo 不是 0 時）、`{ code: "tuning_unrecognized", raw }`、`{ code: "bend_clamped", count }`、`{ code: "sections" }`、`{ code: "tempo" }`、`{ code: "repeats" }`、`{ code: "jumps" }`。審核頁依 code 顯示。
