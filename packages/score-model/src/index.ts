@@ -3,6 +3,7 @@
 export * from "./build";
 export * from "./changes";
 export * from "./commands";
+export * from "./drop";
 export * from "./flags";
 export * from "./migrations";
 export * from "./navigation";
