@@ -185,9 +185,9 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 和 M1b 相同；`-g` 只跑其中一項：預設里程碑已改成 M3(#51),所以每一行都要帶 `MEASURE_MILESTONE=m2`,才會用 M2 的譜、存成 m2 的檔名。
 
 ```
-pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
 MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency   # 只量按鍵
-pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
 ```
 
 ### 做法
