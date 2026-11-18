@@ -6,18 +6,13 @@ import { expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { barsShown, loggedIn, oneAfterAnother, openScore, pageErrors, recordBarsShown, scoreOf, seedScore, soundReady, untilShown } from "./pages";
+import { barsShown, loggedIn, oneAfterAnother, openToPlay, pageErrors, recordBarsShown, scoreOf, seedScore, untilShown } from "./pages";
 
 const text = strings.score;
 
 /** A score of a guitar and a bass, the Editor a member of it. */
 function seed(bars?: number): string {
   return seedScore({ title: "混音測試", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], bars, parts: [{ name: "貝斯", kind: "fretted" }] });
-}
-
-async function openToPlay(page: Page, id: string): Promise<void> {
-  await openScore(page, id);
-  await soundReady(page);
 }
 
 /** The settings the player plays with, as it holds them. */

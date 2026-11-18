@@ -3,12 +3,12 @@
 // screen until the member presses a key. Every key and click goes through the real keyboard and
 // mouse; the page is read through the DOM and `window.__studioTest`. How it sounds is for a
 // person to judge (#41): here the positions and the states are checked.
-import { expect, type Page, test } from "./test";
+import { expect, test } from "./test";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { barsShown, cursorOf, loggedIn, oneAfterAnother, openScore, pageErrors, recordBarsShown, scoreOf, seedScore, soundReady, untilShown } from "./pages";
+import { barsShown, cursorOf, loggedIn, oneAfterAnother, openToPlay, pageErrors, recordBarsShown, scoreOf, seedScore, untilShown } from "./pages";
 
 const text = strings.score.player;
 
@@ -22,12 +22,6 @@ function seed(bars?: number): string {
     ],
     bars,
   });
-}
-
-/** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
-async function openToPlay(page: Page, id: string): Promise<void> {
-  await openScore(page, id);
-  await soundReady(page);
 }
 
 

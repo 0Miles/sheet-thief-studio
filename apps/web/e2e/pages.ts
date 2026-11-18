@@ -115,14 +115,19 @@ export interface ScoreFixture {
  * going through the pages (adding members has its own test, members.spec.ts). Returns its id.
  */
 export function seedScore(fixture: ScoreFixture): string {
-  const made = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "score:e2e"], {
+  return (JSON.parse(runServerScript("score:e2e", fixture, "the score")) as { id: string }).id;
+}
+
+/** Run one of the server's e2e scripts on the tests' database, the fixture as its input; returns what it printed. */
+function runServerScript(script: string, fixture: object, made: string): string {
+  const run = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", script], {
     input: JSON.stringify(fixture),
     env: { ...process.env, ...SERVER_ENV },
     encoding: "utf8",
     shell: process.platform === "win32",
   });
-  if (made.status !== 0) throw new Error(`Could not make the score: ${made.stderr}`);
-  return (JSON.parse(made.stdout) as { id: string }).id;
+  if (run.status !== 0) throw new Error(`Could not make ${made}: ${run.stderr}`);
+  return run.stdout;
 }
 
 /** An account as the server's script makes it (apps/server/tests/accountE2e.ts). */
@@ -139,13 +144,7 @@ export interface AccountFixture {
  * test uses up (it changes its temporary password), so each run, retry and browser makes another.
  */
 export function seedAccount(fixture: AccountFixture): void {
-  const made = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "account:e2e"], {
-    input: JSON.stringify(fixture),
-    env: { ...process.env, ...SERVER_ENV },
-    encoding: "utf8",
-    shell: process.platform === "win32",
-  });
-  if (made.status !== 0) throw new Error(`Could not make the account: ${made.stderr}`);
+  runServerScript("account:e2e", fixture, "the account");
 }
 
 /** Every change typed here has reached the server. */
@@ -167,6 +166,12 @@ export async function openScore(page: Page, id: string): Promise<void> {
 /** Wait until the score's sound is ready: the player is there, paused. */
 export async function soundReady(page: Page): Promise<void> {
   await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
+}
+
+/** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
+export async function openToPlay(page: Page, id: string): Promise<void> {
+  await openScore(page, id);
+  await soundReady(page);
 }
 
 export function scoreOf(page: Page): Promise<ScoreJSON> {
