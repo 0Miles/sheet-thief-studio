@@ -99,6 +99,8 @@
 | 8 | 聲道分配 | 用 `sound.test.ts` 的寫法，斷言 16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道 | — |
 | 9 | alphaTab 標記不被遮蓋 | e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽 | 移開疊層，不是遮住標記 |
 
+**補充**（#47 的結果）：確認檢查 6 通過，不必修正 `geometry.ts` 的公式。兩個譜表（高音、低音）、每個譜表的第二條聲線與高音譜號低八度上，游標中心和 alphaTab 回報的音符頭中心相差 0 px（取到 0.001 px），空位置（線與間）也是 0 px；數字與截圖在 [`../measurements.md`](../measurements.md) 的「M3：游標幾何」。量測是 `apps/web/e2e/measure/staves.spec.ts`，游標的聲線用 `__studioMeasure.placeCursor` 的第 5 個參數 `voice`（省略時是 `"0:0"`，#45 也用同一個）；同樣的比對也在 `packages/score-render/tests/geometry.test.ts` 以 Node 的 alphaTab 排版鎖住。
+
 **補充**（#52 的結果）：確認檢查 3 通過，焦點元素維持 `[data-scroller]`，不改用 `<textarea>`。三個瀏覽器都觸發 `copy`、`cut`、`paste`，`copy`、`cut` 寫入的 `text/plain` 在 `paste` 讀得到（Windows 上的 Playwright WebKit 例外：它不保留事件裡寫入的內容，焦點換成選取文字的 `<textarea>` 也一樣，不是焦點的問題；測試在那裡只斷言事件與空字串，round trip 以 CI 的 Linux WebKit 為準）。事件送到的元素不同：Chromium、WebKit 是 `[data-scroller]`，Firefox 是 `<body>`；所以頁面在 document 上聽，只在 `document.activeElement` 是 scroller 時處理（`apps/web/e2e/clipboard.spec.ts` 開頭的註解）。
 
 ## 6. 人工判定項目

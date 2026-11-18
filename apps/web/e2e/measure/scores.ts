@@ -291,3 +291,49 @@ function seedDrumVoices(doc: Y.Doc): void {
 export function drumVoicesScore(): SeededScore {
   return seeded(DRUM_VOICES_TITLE, seedDrumVoices);
 }
+
+/** A voice of the M3 cursor geometry score: its part (by index), voice key, note value, and each note's pitch and staff position. */
+export interface StavesVoice {
+  part: number;
+  voice: string;
+  value: NoteValue;
+  notes: [pitch: number, position: number][];
+}
+
+/**
+ * The voices of the M3 cursor geometry score (#47): a piano, a treble and a bass staff with two
+ * voices on each, and a guitar written on a treble clef an octave down. One bar of four quarters,
+ * then an empty bar. Each note has the staff position it is drawn on, worked out by hand from its
+ * clef (0 the top line, 8 the bottom one): the treble staff's top line is F5, the bass staff's A3,
+ * that of the treble clef an octave down F4. The same notes as `packages/score-render/tests/geometry.test.ts`.
+ */
+export const STAVES_VOICES: StavesVoice[] = [
+  // F5, C5, G5, D5.
+  { part: 0, voice: "0:0", value: 4, notes: [[77, 0], [72, 3], [79, -1], [74, 2]] },
+  // E4, D4, F4, C4: under the first voice, never a second from it.
+  { part: 0, voice: "0:1", value: 4, notes: [[64, 8], [62, 9], [65, 7], [60, 10]] },
+  // A3, F2, C4, E2.
+  { part: 0, voice: "1:0", value: 4, notes: [[57, 0], [41, 9], [60, -2], [40, 10]] },
+  // C2, C3: halves.
+  { part: 0, voice: "1:1", value: 2, notes: [[36, 12], [48, 5]] },
+  // E4, E3, B3, G3: drawn an octave over, E5, E4, B4, G4.
+  { part: 1, voice: "0:0", value: 4, notes: [[64, 1], [52, 8], [59, 4], [55, 6]] },
+];
+
+/** A new score of `STAVES_VOICES`. */
+export function stavesScore(): SeededScore {
+  return seeded("Staves", (doc) =>
+    doc.transact(() => {
+      createScore(doc, "Staves");
+      const [barId] = insertBars(doc, { after: null, count: 2 });
+      const partIds = [
+        addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] }),
+        addPart(doc, { name: "Guitar", kind: "pitched", program: 25, staves: [{ clef: "treble-8vb" }] }),
+      ];
+      for (const { part, voice, value, notes } of STAVES_VOICES) {
+        let cursor: Cursor = { ...cursorAt(doc, partIds[part]!, barId!), voice };
+        for (const [pitch] of notes) cursor = setNote(doc, insertBeat(doc, { ...cursor, at: "after" }, { value }), `n${pitch}`, {});
+      }
+    }, LOCAL),
+  );
+}
