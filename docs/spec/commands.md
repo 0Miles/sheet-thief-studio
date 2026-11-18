@@ -10,6 +10,7 @@
 - `EditorSession`（`packages/score-editor`）把按鍵對應到 Command，依聲部種類分派。它帶著唯讀旗標：唯讀時，任何會改動文件的 Command 都被拒絕（見 [`views.md`](views.md)）。
 - 不自動拆拍、不自動跨小節連結；超出拍號只標 Flag（ADR 0002）。
 - 指令改寫音符時，以儲存的原值為底，保留不認得的欄位（[`schema.md`](schema.md) 第 9 節）。**補充**（#103）：原值是它自己的欄位（`ownFields`，不算 `__proto__`），判斷與寫入都從這份複本來，所以每個成員做出相同的改寫。
+- **補充**（#102）：指令不寫出巢狀超過 `MAX_VALUE_DEPTH`（64 層，[`schema.md`](schema.md) 第 13 節）的值。改寫儲存的音符時，`ownFields` 丟掉會讓音符超過上限的欄位，所以改寫順便把它修好（例如在這樣的音符上打格號）；讀不懂的音符照舊不被技巧鍵改動（第 5.4 節）。呼叫端給的值經 `writableCopy` 複製（每一層去掉 `__proto__`），超過上限時不寫入，回傳值和其他「不做事」的情形相同：`setNote`、`setFret` 與 `NoteToggle`（游標不變、沒有交易；選取上任一音符超過上限就全部不寫）、`insertBeat` 的 tuplet（不建立拍點）、`BeatChange` 的 tuplet 與拍點記號（不寫入）、`insertBars` 的拍號（回傳空陣列）。`addPart` 沒有「不做事」的回傳值，調弦或譜表超過上限時丟 `RangeError`、不建立聲部。小節、聲部、團譜欄位的指令（`setKeySig`、`setTuning`、`setTimeSig` 等）寫入 zod 驗證後的值，深度本來就在上限內。`createScore` 的標題、`setTitle`、`setArtist`（只檢查長度）、`addPart` 的 `name`、`kind`、`capo`、`program`，以及 `setDuration` 的 `value`、`dots`，則是照型別直接寫入的字串或數字，執行期不再驗證：純值沒有巢狀，不會超過上限；它們的範圍與長度檢查是各自的指令的事，不是深度的事。萬一呼叫端傳了別的東西，伺服器的深度檢查（[`collab.md`](collab.md) 第 9 節）仍會擋下過深的值。
 
 Command 分三類：
 
@@ -403,3 +404,4 @@ owner 在 2026-11-13 確認了預設表與這些預設值（[`README.md`](README
 - 聲部：總共 16 個，其中非鼓聲部最多 15 個。
 - 小節：1000 個（補充：所有會增加小節的 Command 都檢查）。
 - 文字：見 [`schema.md`](schema.md) 第 13 節。
+- 值的巢狀深度：64 層（補充，#102；第 1 節、[`schema.md`](schema.md) 第 13 節）。
