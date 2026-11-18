@@ -152,6 +152,22 @@ export async function synced(page: Page): Promise<void> {
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();
 }
 
+/**
+ * Wait until the server has stored a score's title and artist in its row, which the list of scores
+ * reads (GET /api/scores). `synced` says only that the server has the change: it writes the row
+ * when it stores the document, a while later (`STORE_DEBOUNCE_MS`, apps/server/src/collab.ts). A
+ * page that reads the list before then shows the title as it was (#163).
+ */
+export async function storedAs(page: Page, id: string, row: { title: string; artist: string | null }): Promise<void> {
+  await expect
+    .poll(async () => {
+      const { scores } = (await (await page.request.get("/api/scores")).json()) as { scores: { id: string; title: string; artist: string | null }[] };
+      const listed = scores.find((score) => score.id === id);
+      return listed && { title: listed.title, artist: listed.artist };
+    })
+    .toEqual(row);
+}
+
 /** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
 export async function drawn(page: Page): Promise<void> {
   await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
