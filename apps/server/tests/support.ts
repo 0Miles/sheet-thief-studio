@@ -2,6 +2,7 @@
 // service containers on the same ports), in databases that belong to the tests only.
 import { spawn } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { HocuspocusProvider, MessageType } from "@hocuspocus/provider";
@@ -12,6 +13,7 @@ import type { Sequelize } from "sequelize";
 import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
+import { runCli } from "../src/cli";
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
 import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
@@ -94,8 +96,58 @@ export function testConfig(env: NodeJS.ProcessEnv = {}): Config {
   return readConfig({ NODE_ENV: "test", DATABASE_URL: TEST_DATABASE_URL, REDIS_URL: TEST_REDIS_URL, PUBLIC_ORIGIN: ORIGIN, RECOGNIZER_URL: NO_RECOGNIZER, ...env });
 }
 
-/** Run the CLI as the `cli` script does, with `input` piped to its stdin; returns its exit code and output. */
-export function cli(args: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
+/** What a run of the CLI ended with: its exit code (null when a signal ended its process) and output. */
+export interface CliResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * The environment the CLI gets in the test process: reading anything from it throws. Given a
+ * connection, the CLI has no reason to read its environment; one that did would connect to the
+ * database the environment names, by default the development one (#116).
+ */
+const UNREADABLE_ENV: NodeJS.ProcessEnv = new Proxy(
+  {},
+  {
+    get(_target, name) {
+      if (typeof name === "symbol") return undefined;
+      throw new Error(`the CLI in the test process read ${name} from its environment`);
+    },
+  },
+);
+
+/**
+ * Run the CLI in this process, on this connection (the one the models are bound to), with
+ * `input` as its stdin; returns its exit code and output. The connection stays open.
+ */
+export async function cli(sequelize: Sequelize, args: string[], input = ""): Promise<CliResult> {
+  const stdout = textCollector();
+  const stderr = textCollector();
+  const io = { stdin: Readable.from([input]), stdout: stdout.stream, stderr: stderr.stream, env: UNREADABLE_ENV };
+  const code = await runCli(args, io, { sequelize });
+  return { code, stdout: stdout.text(), stderr: stderr.text() };
+}
+
+/** A stream that keeps what is written to it, as text. */
+function textCollector(): { stream: Writable; text: () => string } {
+  const chunks: string[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, done) {
+      chunks.push(String(chunk));
+      done();
+    },
+  });
+  return { stream, text: () => chunks.join("") };
+}
+
+/**
+ * Run the CLI as the `cli` script does, in a process of its own, with `input` piped to its
+ * stdin; returns its exit code and output. A process takes seconds to start on a busy machine:
+ * one test runs it so, the others call `cli` (#116).
+ */
+export function cliProcess(args: string[], input = ""): Promise<CliResult> {
   const child = spawn(process.execPath, ["--import", "tsx", "src/cliMain.ts", ...args], {
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
