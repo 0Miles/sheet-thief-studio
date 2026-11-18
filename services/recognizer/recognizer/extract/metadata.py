@@ -233,9 +233,70 @@ def _read_tuning(texts: list[str]) -> tuple[tuple[str, ...], str | None]:
         tokens = [n for t in tokens for n in (re.findall(r"[A-G][#b]?", t) if _JOINED_NOTES.fullmatch(t) else [t])]
         if 4 <= len(tokens) <= 7 and all(_NOTE_TOKEN.match(t) for t in tokens):
             return tuple(t[0].upper() + t[1:] for t in reversed(tokens)), None
-        if match.group("sep"):  # "Tuning: …" names a tuning; "Tuning is great" is just text
-            unreadable = unreadable or match.group("v").strip()[:40]
+        if not match.group("sep"):  # "Tuning: …" names a tuning; "Tuning is great" is just text
+            continue
+        named = _named_with_note(match.group("v").strip())
+        if named:
+            return named, None
+        unreadable = unreadable or match.group("v").strip()[:40]
     return (), unreadable
+
+
+# What may follow the name of a tuning on a "Tuning:" line (docs/spec/recognizer.md, section 6):
+# a separator after the name, then only parts of the whitelist, in any order, between separators.
+_NOTE_SEPARATORS = r"()\[\]\-–—,;:/"
+_NOTE = r"[A-G](?:#|b|♯|♭)?"
+_NOTE_PARTS = re.compile(
+    rf"[\s{_NOTE_SEPARATORS}]*(?:"
+    r"A\s*=\s*\d{3}(?:\s*(?i:hz))?"  # "A = 440", "A = 432 Hz" (before the notes: it starts with one)
+    r"|(?i:no\s+capo|capo\s*:?\s*\d{1,2})"  # "No capo", "capo 2"
+    rf"|(?i:key)\s*(?:(?i:of)\s+|:\s*)?{_NOTE}(?:\s*(?i:major|minor|maj|min|m))?"  # "Key: D", "key of E minor"
+    # note letters, with the order they are written in or not: "low to high: E A D G B E", "EADGBE"
+    rf"|(?:(?P<order>(?i:low\s+to\s+high|high\s+to\s+low))\s*:?\s*)?(?P<notes>{_NOTE}(?:\s*{_NOTE})*)"
+    rf")(?![^\s{_NOTE_SEPARATORS}])"
+)
+_ONLY_SEPARATORS = re.compile(rf"[\s{_NOTE_SEPARATORS}]*")
+
+
+def _named_with_note(value: str) -> tuple[str, ...] | None:
+    """Labels (string 1 first) of a tuning named with a note after it ("Standard (E A D G B E)",
+    "Drop D - Key: D"), or None when the note says anything outside the whitelist. Note letters
+    that agree with the name, written either way round, read as the name; others win over it,
+    in the order labelled, else written from the lowest string."""
+    from ..tunings import TUNING_NAMES, TUNINGS, label_pitch_class
+
+    lowered = value.lower()
+    name = next(
+        (
+            name
+            for name in sorted(TUNING_NAMES, key=len, reverse=True)
+            if lowered.startswith(name) and re.match(rf"\s*[{_NOTE_SEPARATORS}]", value[len(name) :])
+        ),
+        None,
+    )
+    if name is None:
+        return None
+    named = _NOTE_NAMES_OF(TUNINGS[TUNING_NAMES[name]])
+    written: list[tuple[str | None, list[str]]] = []  # (order label, notes as written)
+    position = len(name)
+    while not _ONLY_SEPARATORS.fullmatch(value, position):
+        part = _NOTE_PARTS.match(value, position)
+        if not part:
+            return None
+        if part.group("notes"):
+            notes = [n.replace("♯", "#").replace("♭", "b") for n in re.findall(_NOTE, part.group("notes"))]
+            written.append(((part.group("order") or "").lower() or None, notes))
+        position = part.end()
+    if not written:
+        return named
+    if len(written) > 1 or not 4 <= len(written[0][1]) <= 7:
+        return None
+    order, notes = written[0]
+    readings = [notes] if order == "high to low" else [notes[::-1]] if order else [notes[::-1], notes]
+    named_classes = [label_pitch_class(label) for label in named]
+    if any([label_pitch_class(note) for note in reading] == named_classes for reading in readings):
+        return named
+    return tuple(readings[0])
 
 
 def _NOTE_NAMES_OF(midi: tuple[int, ...]) -> tuple[str, ...]:
