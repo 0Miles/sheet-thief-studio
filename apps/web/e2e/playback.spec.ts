@@ -287,6 +287,10 @@ test("a sound font that could not be had: the toolbar says so, asks again once b
   await soundReady(page);
   await page.getByRole("button", { name: text.play }).click();
   await expect(page.locator('[data-player="playing"]')).toBeVisible();
-  // What the browser and alphaTab log of the downloads cut short, and nothing else.
-  expect(errors.filter((error) => !/sonivox\.sf3|ERR_INTERNET_DISCONNECTED|Loading failed|\[score-render\]/.test(error))).toEqual([]);
+  // What the browser, alphaTab and the engine log of each download cut short, and nothing else:
+  // alphaTab tells the API of the failure as an error (with no message), which it logs.
+  const ofDownloads = /sonivox\.sf3|ERR_INTERNET_DISCONNECTED|\[AlphaSynth\] Loading failed|\[score-render\]/;
+  const apiErrors = errors.filter((error) => error.startsWith("[AlphaTab][API] An unexpected error occurred Error: "));
+  expect(apiErrors).toHaveLength(cut);
+  expect(errors.filter((error) => !ofDownloads.test(error) && !apiErrors.includes(error))).toEqual([]);
 });
