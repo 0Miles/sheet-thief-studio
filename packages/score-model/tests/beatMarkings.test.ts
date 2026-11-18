@@ -14,15 +14,18 @@ import {
   docToJson,
   dynamicCycle,
   insertBars,
+  lyricAt,
   type PartKind,
   partsOf,
   readScore,
   type Selection,
   setFret,
+  setLyric,
   setNote,
   setText,
   slapPopCycle,
   strokeCycle,
+  sungBeatFrom,
 } from "../src/index";
 import { appendBeat, transactionsOf, undoOf } from "./support";
 
@@ -167,6 +170,61 @@ test("a text goes over the cursor's beat in one undo step, an empty one takes it
   expect(beats()[1]).toMatchObject({ text: "Am7" });
   undo.undo();
   expect(beats().map((beat) => beat.text ?? null)).toEqual([null, null, null]);
+});
+
+test("a syllable goes on the cursor's beat in one undo step: with its -, empty for a melisma, null takes it away, and one of 33 characters is refused", () => {
+  const { doc, beats, on } = part("pitched");
+  const undo = undoOf(doc);
+  const lyrics = () => beats().map((beat) => beat.lyric ?? null);
+  expect(setLyric(doc, on(0), "Hel-")).toBe(true);
+  expect(setLyric(doc, on(1), "lo")).toBe(true);
+  expect(setLyric(doc, on(2), "")).toBe(true);
+  expect(lyrics()).toEqual(["Hel-", "lo", ""]);
+  expect([0, 1, 2].map((index) => lyricAt(doc, on(index)))).toEqual(["Hel-", "lo", ""]);
+  const transactions = transactionsOf(doc);
+  expect(setLyric(doc, on(1), "a".repeat(33))).toBe(false);
+  // The same syllable again: nothing to write.
+  expect(setLyric(doc, on(1), "lo")).toBe(true);
+  expect(transactions.count).toBe(0);
+  expect(setLyric(doc, on(1), "a".repeat(32))).toBe(true);
+  expect(setLyric(doc, on(1), null)).toBe(true);
+  expect("lyric" in beats()[1]!).toBe(false);
+  expect(lyricAt(doc, on(1))).toBe("");
+  undo.undo();
+  expect(beats()[1]!.lyric).toHaveLength(32);
+  undo.undo();
+  undo.undo();
+  undo.undo();
+  expect(lyrics()).toEqual(["Hel-", null, null]);
+});
+
+test("a syllable goes on a pitched part's beats only, and never in the append slot", () => {
+  const { doc, on } = part("fretted");
+  const transactions = transactionsOf(doc);
+  expect(setLyric(doc, on(0), "la")).toBe(true);
+  expect(lyricAt(doc, { ...on(2), at: "after" })).toBeNull();
+  const keys = part("pitched");
+  const written = transactionsOf(keys.doc);
+  setLyric(keys.doc, { ...keys.on(2), at: "after" }, "la");
+  expect(transactions.count + written.count).toBe(0);
+});
+
+test("lyrics mode goes on to the next sung beat of the voice, past rests and on into later bars; none after the last", () => {
+  const { doc, ids, on, partId, barIds, stored } = part("pitched", 4);
+  (stored(1).get("notes") as Y.Map<unknown>).clear();
+  // The second bar: a rest, then a note.
+  let cursor = appendBeat(doc, cursorAt(doc, partId, barIds[1]!, 2), { value: 4 });
+  cursor = appendBeat(doc, cursor, { value: 4 });
+  setNote(doc, cursor, "n62", {});
+  const later = cursor.beatId!;
+  expect(sungBeatFrom(doc, on(0), "next")).toMatchObject({ beatId: ids[2], at: "on" });
+  expect(sungBeatFrom(doc, on(0), "here")).toMatchObject({ beatId: ids[0] });
+  // From a rest: the next sung beat, itself not.
+  expect(sungBeatFrom(doc, on(1), "here")).toMatchObject({ beatId: ids[2] });
+  expect(sungBeatFrom(doc, on(3), "next")).toMatchObject({ barId: barIds[1], beatId: later, at: "on" });
+  expect(sungBeatFrom(doc, { ...on(3), at: "after" }, "here")).toMatchObject({ barId: barIds[1], beatId: later });
+  expect(sungBeatFrom(doc, { ...cursor, at: "on" }, "next")).toBeNull();
+  expect(sungBeatFrom(doc, { ...cursor, at: "on" }, "here")).toMatchObject({ beatId: later });
 });
 
 test("in the append slot there is no beat for a marking or a text; an empty text on a beat without one writes nothing", () => {

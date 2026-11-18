@@ -12,6 +12,7 @@ import {
   deleteNote,
   docToJson,
   enterNote,
+  flagsOf,
   insertBars,
   insertBeat,
   type KeySignature,
@@ -22,9 +23,12 @@ import {
   setClef,
   setKeySig,
   setNote,
+  tieKeysAt,
+  tieToggle,
+  toggleKeysAt,
   voiceIn,
 } from "../src/index";
-import { transactionsOf, undoOf } from "./support";
+import { appendBeat, transactionsOf, undoOf } from "./support";
 
 /** A keyboard part (treble and bass staves) in two empty bars, the cursor in the append slot of the first bar's treble staff, on its middle line (B4). */
 function keyboard(keySig?: KeySignature) {
@@ -207,4 +211,70 @@ test("Delete takes off every note drawn on the cursor's line, in one transaction
   deleteNote(doc, cursor);
   expect(transactions.count).toBe(1);
   expect(notes()).toEqual([{ n64: { spell: "E" } }]);
+});
+
+// Tie on a staff (#49; docs/spec/commands.md, 5.4): the notes of the cursor's line, or, on an
+// empty line, the notes the beat before draws on that line, made there of the same pitch.
+const tieAt = (doc: Y.Doc, cursor: Cursor) => toggleKeysAt(doc, cursor, tieKeysAt(doc, cursor), tieToggle);
+
+test("on an empty line a tie makes there every note the beat before draws on it, D and D♯ alike, of their pitch and spelling; again, it takes the ties off", () => {
+  const { doc, start, notes } = keyboard();
+  // D5 and D♯5 on line 2, F5 on line 0.
+  const first = enterNote(doc, { ...start, line: 2 }, "D");
+  setNote(doc, first, "n75", { spell: "D#", accent: true });
+  setNote(doc, first, "n77", { spell: "F" });
+  const second = appendBeat(doc, first);
+  expect(tieKeysAt(doc, second).sort()).toEqual(["n74", "n75"]);
+  const transactions = transactionsOf(doc);
+  expect(tieAt(doc, second)).toEqual(second);
+  expect(transactions.count).toBe(1);
+  expect(notes()[1]).toEqual({ n74: { spell: "D", tie: true }, n75: { spell: "D#", tie: true } });
+  expect(flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie")).toEqual([]);
+  // The line holds the notes now: the tie key is on them, and off when they all have it.
+  expect(tieKeysAt(doc, second).sort()).toEqual(["n74", "n75"]);
+  tieAt(doc, second);
+  expect(notes()[1]).toEqual({ n74: { spell: "D" }, n75: { spell: "D#" } });
+});
+
+test("on a line with a note a tie ties the notes there, whatever the beat before holds; a line the beat before has nothing on is left alone", () => {
+  const { doc, start, notes } = keyboard();
+  const first = enterNote(doc, { ...start, line: 2 }, "D");
+  const second = enterNote(doc, appendBeat(doc, first), "E");
+  // E5 on line 1: the D before is on another line, so the tie dangles.
+  tieAt(doc, second);
+  expect(notes()[1]).toEqual({ n76: { spell: "E", tie: true } });
+  expect(flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie").map((flag) => "noteKey" in flag && flag.noteKey)).toEqual(["n76"]);
+  const transactions = transactionsOf(doc);
+  const empty = { ...second, line: 6 };
+  expect(tieKeysAt(doc, empty)).toEqual([]);
+  expect(tieAt(doc, empty)).toEqual(empty);
+  expect(transactions.count).toBe(0);
+});
+
+test("in the append slot of the next bar's bass staff, a tie makes a beat with the last note of that staff's voice in the bar before", () => {
+  const { doc, notes, barIds, partId } = keyboard();
+  // On the bass staff, from D3 (its middle line), F is F3 on line 2.
+  const bass = { ...cursorAt(doc, partId, barIds[0]!, 4), voice: "1:0" };
+  const entered = enterNote(doc, bass, "F");
+  expect(entered.line).toBe(2);
+  const next: Cursor = { ...bass, barId: barIds[1]!, beatId: null, at: "after", line: 2 };
+  expect(tieKeysAt(doc, next)).toEqual(["n53"]);
+  // Nothing of the treble staff is looked at: its voice in the bar before is empty.
+  expect(tieKeysAt(doc, { ...next, voice: "0:0" })).toEqual([]);
+  const tied = tieAt(doc, next);
+  expect(tied).toMatchObject({ at: "on", voice: "1:0", line: 2 });
+  expect(notes("1:0", 1)).toEqual([{ n53: { spell: "F", tie: true } }]);
+  expect(flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie")).toEqual([]);
+});
+
+test("the beat before draws its notes in the key of its own bar: an unspelled B♭ in F major is on B's line for a tie in the next bar", () => {
+  const { doc, start, barIds, notes } = keyboard({ fifths: -1, mode: "major" });
+  const first = setNote(doc, insertBeat(doc, start), "n70", {});
+  // The next bar in C major, where n70 unspelled would be A♯, on A's line.
+  setKeySig(doc, { ...first, barId: barIds[1]! }, { fifths: 0, mode: "major" });
+  const next: Cursor = { ...first, barId: barIds[1]!, beatId: null, at: "after", line: 4 };
+  expect(tieKeysAt(doc, next)).toEqual(["n70"]);
+  expect(tieKeysAt(doc, { ...next, line: 5 })).toEqual([]);
+  tieAt(doc, next);
+  expect(notes("0:0", 1)).toEqual([{ n70: { tie: true } }]);
 });
