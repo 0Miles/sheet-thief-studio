@@ -91,8 +91,12 @@ export interface ScoreRenderer {
   destroy(): void;
 }
 
-/** "loading" until the soundfont and the sound of the score are in place. */
-export type PlayerState = "loading" | "paused" | "playing";
+/**
+ * "loading" until the soundfont and the sound of the score are in place. "unavailable" from the
+ * start, and for good, in a browser that cannot play (no Web Audio): nothing plays, the score is
+ * still drawn (docs/spec/playback.md, 4.1).
+ */
+export type PlayerState = "loading" | "paused" | "playing" | "unavailable";
 
 /** A bar as playback finds it: its id, and its index in the score as the sound has it. */
 export interface PlayedBar {

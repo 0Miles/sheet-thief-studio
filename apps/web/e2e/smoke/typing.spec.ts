@@ -6,10 +6,6 @@ import { ADMIN } from "../environment";
 import { beatsIn, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "../pages";
 import { expect, test } from "../test";
 
-// Playwright's WebKit for Windows has no Web Audio, so alphaTab's player logs that the browser is
-// unsupported and never gets to paused; CI runs WebKit on Linux, which has it (#129).
-test.skip(({ browserName }) => browserName === "webkit" && process.platform === "win32", "Playwright's WebKit for Windows has no Web Audio (#129)");
-
 test("a member logs in, types a fret, and after reloading the score still holds it", async ({ browser, browserName }) => {
   const id = seedScore({ title: "瀏覽器打譜測試", owner: ADMIN.username });
   const page = await loggedIn(browser, ADMIN);

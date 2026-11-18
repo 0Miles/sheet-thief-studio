@@ -212,6 +212,7 @@ export const strings = {
     versions: VERSIONS,
     player: {
       loading: "音色載入中…",
+      unavailable: "這個瀏覽器無法播放聲音",
       play: "播放",
       pause: "暫停",
       stop: "停止",
