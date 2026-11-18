@@ -1,15 +1,13 @@
 // The Read view smoke test of WebKit (#38; docs/spec/testing.md, section 3): a guest, with no
 // cookie, opens a read-only link, sees the score drawn, and the player gets to paused (section 5,
-// check 2). Only the `webkit` project runs it.
+// check 2). Only the `webkit` project runs it. Playwright's WebKit for Windows has no Web Audio:
+// there the player says it cannot play instead, with no error either (#129). Everywhere else, CI's
+// Linux included, it must get to paused.
 import { ADMIN } from "../environment";
-import { drawn, loggedIn, pageErrors, seedScore, soundReady } from "../pages";
+import { drawn, loggedIn, pageErrors, playerSettled, seedScore } from "../pages";
 import { expect, test } from "../test";
 
-// Playwright's WebKit for Windows has no Web Audio, so alphaTab's player logs that the browser is
-// unsupported and never gets to paused; CI runs WebKit on Linux, which has it (#129).
-test.skip(({ browserName }) => browserName === "webkit" && process.platform === "win32", "Playwright's WebKit for Windows has no Web Audio (#129)");
-
-test("a guest opens a read-only link: the score is drawn and the player is paused", async ({ browser }) => {
+test("a guest opens a read-only link: the score is drawn and the player is paused, or says it cannot play without Web Audio", async ({ browser, browserName }) => {
   const id = seedScore({ title: "瀏覽器看譜測試", owner: ADMIN.username });
   const owner = await loggedIn(browser, ADMIN);
   const made = await owner.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(owner.url()).origin } });
@@ -22,7 +20,7 @@ test("a guest opens a read-only link: the score is drawn and the player is pause
   await guest.goto(`/s/${token}`);
   await drawn(guest);
   await expect(guest.locator("main")).toHaveAttribute("data-view", "read");
-  await soundReady(guest);
+  expect(await playerSettled(guest)).toBe(browserName === "webkit" && process.platform === "win32" ? "unavailable" : "paused");
   expect(await guestContext.cookies()).toEqual([]);
   expect(errors).toEqual([]);
 });

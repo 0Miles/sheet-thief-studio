@@ -18,6 +18,7 @@
 - spike 的 `apps/web/src/spike/typing.ts` 與 `apps/web/tests/typing.test.ts` 已經搬進 `packages/score-editor`（`src/session.ts`、`tests/typing.test.ts`，#9）。
 - `eslint.config.js:18` 禁止 import alphaTab 的清單已經包含 `packages/score-editor/**`。
 - **補充**（#31）：`packages/score-render/tests/engine.test.ts` 測播放器在重新產生聲音前後的行為（[`playback.md`](playback.md) 4.1）。瀏覽器裡碰不到那十幾毫秒，所以把 alphaTab 的 `AlphaTabApi` 換成替身（`vi.mock`），其他都是 alphaTab 自己的：設定、模型、投影，以及用 `MidiFileGenerator` 建的 tick lookup。替身不會自己回報任何事；worker 的回報由測試照 alphaTab 1.9 的順序送出（位置 0、paused、ready、midiLoaded、ready、位置 0），替身的 `playerState`、`tickPosition` 也只在這些回報時改變，和 alphaTab 的快取一樣。範圍只到引擎怎麼回應這些回報；alphaTab 實際的順序、聲音本身與跟隨仍由 Playwright e2e 與人工試聽確認。升 alphaTab 版本時要重新核對這個順序。
+  - **補充**（#129）：引擎建立時讀瀏覽器的全域（`Worker`、`AudioContext`／`webkitAudioContext`、`ScriptProcessorNode`、`AudioWorkletNode`、`isSecureContext`）判斷能不能播（[`playback.md`](playback.md) 4.1）。Node 沒有這些，所以測試用 `vi.stubGlobal` 換掉它們再建引擎（`engine.test.ts` 的 `browserWith`：預設是能播的瀏覽器，`afterEach` 用 `vi.unstubAllGlobals` 還原）；缺件的各種組合也這樣測。這是這個檔案的第二個 seam：瀏覽器能力由全域決定，引擎不另外開 option。
 - **補充**：`compose.dev.yaml` 的 Postgres 與 Redis 是 M1a 第一張 server 票建立的；伺服器測試用獨立的資料庫名稱，每個測試檔自己清資料。
   - **補充**（#114）：遷移只在 vitest 的 `globalSetup`（`apps/server/tests/globalSetup.ts`）跑一次，每個測試檔開頭用 `TRUNCATE ... RESTART IDENTITY CASCADE` 清空（`tests/support.ts` 的 `freshDatabase`），不再每檔重建 schema（CPU 忙碌時重建會超過 hook 的 10 秒上限）。測試檔共用一個資料庫與一個 Redis database，所以 server 的測試檔依序執行（`fileParallelism: false`）。`migrations.test.ts` 在自己的資料庫（`<測試資料庫>_migrations`，跑完刪掉）從零遷移，不影響其他檔。等待「之後不會再寫入」的測試用 fake timer 推過去，不用真的 sleep。
 
@@ -54,7 +55,7 @@
 - 瀏覽器支援：打譜是最新版的 Chromium 系（Chrome、Edge）、Firefox 與桌面 Safari（owner 在 2026-11-13 裁定）；Read view 另外支援 iOS Safari 與 Android Chrome。
 - CI 的瀏覽器用 `playwright install --with-deps <瀏覽器>` 安裝（只在 CI；本機第一次要自己裝，見 `README.md`）。
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project、只安裝自己的瀏覽器；`~/.cache/ms-playwright` 以 Playwright 版本為鍵快取，系統套件每次由 `--with-deps` 安裝。
-  - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在），alphaTab 的播放器只會記錯誤、進不了 paused，所以 WebKit 的 smoke 在 Windows 本機跳過，以 CI（Linux）的結果為準（#129）。
+  - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
