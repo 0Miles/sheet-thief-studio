@@ -79,12 +79,12 @@ test("strokes and dynamics of the notes become the beat's; grace notes are count
   const recognized = fixture("grace-and-strokes") as RecognizerResult;
   const { fragment, report } = fragmentOfRecognition(recognized);
   const [first, second] = fragment.bars.map((each) => each.voices["0:0"]!);
-  // Six notes down at 95; three up at 95; no stroke at 79, twice.
+  // Six notes down at 95; three up at 95, still f; no stroke at 79, twice: mf once.
   expect(first!.map(({ stroke, dynamic }) => ({ stroke, dynamic }))).toEqual([
     { stroke: "down", dynamic: "f" },
-    { stroke: "up", dynamic: "f" },
+    { stroke: "up", dynamic: undefined },
     { stroke: undefined, dynamic: "mf" },
-    { stroke: undefined, dynamic: "mf" },
+    { stroke: undefined, dynamic: undefined },
   ]);
   // Two notes down and one up, one with none; two at 111 and two at 47, string 2 the lowest
   // numbered of them: p. Then a note with neither.
@@ -130,12 +130,32 @@ test.each([
   expect(only!.dynamic).toBe(dynamic);
 });
 
-test("every beat whose notes have a velocity has a dynamic, the same one again too; a rest has none", () => {
-  const [first, second] = beatsOf(
-    result([bar([beat([note({ velocity: 80 })]), beat([])]), bar([beat([note({ velocity: 80 })]), beat([note({ velocity: 100 })]), beat([note({ velocity: 100 })])])]),
+test("a dynamic is written on the first beat that has one, and not again while it stays the same", () => {
+  const [only] = beatsOf(result([bar([beat([note({ velocity: 80 })]), beat([note({ velocity: 75 })]), beat([note({ velocity: 87 })]), beat([note({ velocity: 72 })])])]));
+  expect(only!.map((each) => each.dynamic)).toEqual(["mf", undefined, undefined, undefined]);
+});
+
+test("a dynamic is written again where it changes, back to an earlier one too", () => {
+  const [only] = beatsOf(result([bar([beat([note({ velocity: 80 })]), beat([note({ velocity: 100 })]), beat([note({ velocity: 100 })]), beat([note({ velocity: 80 })])])]));
+  expect(only!.map((each) => each.dynamic)).toEqual(["mf", "f", undefined, "mf"]);
+});
+
+test("the dynamic in force carries across bars and past rests and beats with no velocity", () => {
+  const [first, second, third] = beatsOf(
+    result([
+      bar([beat([note({ velocity: 80 })]), beat([])]),
+      bar([beat([note({ velocity: 80 })]), beat([note()]), beat([note({ velocity: 100 })])]),
+      bar([beat([]), beat([note({ velocity: 100 })])]),
+    ]),
   );
   expect(first!.map((each) => each.dynamic)).toEqual(["mf", undefined]);
-  expect(second!.map((each) => each.dynamic)).toEqual(["mf", "f", "f"]);
+  expect(second!.map((each) => each.dynamic)).toEqual([undefined, undefined, "f"]);
+  expect(third!.map((each) => each.dynamic)).toEqual([undefined, undefined]);
+});
+
+test("a rest before the first velocity writes none; the first beat with one writes it", () => {
+  const [only] = beatsOf(result([bar([beat([]), beat([note()]), beat([note({ velocity: 30 })])])]));
+  expect(only!.map((each) => each.dynamic)).toEqual([undefined, undefined, "pp"]);
 });
 
 test.each([
