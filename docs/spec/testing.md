@@ -88,6 +88,8 @@
 
 ## 5. 票裡必須執行的確認檢查
 
+**補充**（#69 的結果）：確認檢查 4 通過，但對照有幾處照 alphaTab 1.9 的實際行為修正，寫在 [`import-export.md`](import-export.md) 2.2 與 3.1：判定 fretted 要看 `showTablature`（GP6–8 匯入會替只有五線譜的譜表補上吉他調弦）、GP7 匯出鼓的 articulation 要先登記到 track（alphaTab 的寫法會把 id 當成索引）、旋律的空音節匯出時寫成 `[""]`。測試是 `packages/score-render/tests/importExport.test.ts`，樣本在 `packages/score-render/tests/fixtures/`。
+
 每一項寫進對應的票，結果寫進 PR。
 
 | # | 檢查 | 怎麼做 | 失敗時 |
