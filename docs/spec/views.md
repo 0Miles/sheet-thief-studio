@@ -63,7 +63,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 ## 5. Read view（看譜檢視）
 
 - 點譜面就跳到那裡播放。**補充**：點擊只移動播放位置；正在播放就從那裡接著播，暫停中則停在新位置，等按播放才開始（避免一點譜面就突然出聲；iOS 也要在使用者的手勢裡啟動音訊）。在這個視圖裡 `enableSeekToClick` 是 `true`（補充：真正跳過去的是引擎，見第 2 節 #32 的補充）。
-- 沒有 Selection、沒有 Cursor。
+- 沒有 Selection、沒有 Cursor。**補充**（#68）：Owner、Editor 的 Read view 有一個沒有游標的 `EditorSession`（`cursorless`），只為了還原版本（[`collab.md`](collab.md) 8.5）：只有復原與重做鍵有作用，不產生游標。
 - 播放時一直自動跟隨。**補充**（#32）：手動捲動不會停止跟隨；正在播的 system 沒有整個在畫面上時，照 [`playback.md`](playback.md) 4.1 的規則捲回去。
 - **補充**（#32）：播放的起點是目前的播放位置；工具列一直顯示播放位置所在的小節（一開始是第 1 小節），疊層畫出播放位置。停止回到開頭，仍然顯示第 1 小節。`Space` 一樣是播放／暫停。
 - **補充**（#32）：其他成員的修改照 [`playback.md`](playback.md) 第 3 節的 (a) 重新產生聲音，和編輯視圖相同。
@@ -165,6 +165,8 @@ interface PresenceState {
   - **補充**（#35）：判斷是 `apps/web/src/access.ts` 的 `readOnlyReasonOf`（文件的 `meta.schemaVersion` 比 `SCHEMA_VERSION` 新）與 `openedView`（可編輯視圖變成唯讀編輯視圖，另外兩種不變）。每次畫譜時都檢查：同步後第一次畫就發現的，以唯讀編輯視圖開始；已經在可編輯視圖打譜時才變新的（新版伺服器遷移過），丟掉本機文件、以唯讀重新開啟。伺服器的 `readOnly` 通知（#109）走同一個入口（`ScoreView.vue` 的 `lockReadOnly`，理由是通知的 `reason`）。
   - **補充**（#35）：被鎖成唯讀的 Owner 或 Editor 按了會修改的鍵時，提示的是鎖住的理由，不是「檢視者無法修改」。
 - **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 或 `"migrationFailed"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
+  - **補充**（#109）：只鎖 Owner 與 Editor（Viewer、訪客本來就唯讀，不提示）。已在可編輯視圖才收到通知時，以唯讀重新開啟，而且重新開啟的團譜一開始就是唯讀。鎖住之後分頁內不自動解除，到頁面重新載入為止；`strings.score.readOnly` 的三則文字都說明要重新整理頁面。Read 視圖（無法打字的裝置）被鎖時不建立還原用的無游標 session；已經建立的，鎖住時收掉（`destroy`），復原、重做不再寫進本機文件。丟掉本機修改時重新開啟的說明寫明這件事。已鎖的 Editor 被降成 Viewer 時，按會修改的鍵提示「檢視者無法修改」，不沿用鎖的理由（`access.ts` 的 `whyRefused`）。版本頁在已鎖時按「還原」，顯示鎖住的理由（`restore.ts` 的 `{ locked }`），不顯示「團譜還在載入」。細節在 [`collab.md`](collab.md) 2.1。e2e 在 `apps/web/e2e/readOnly.spec.ts`（`seedScore` 的 `schemaVersion: 0`：沒有任何遷移步驟從 schema 0 出發）。
+- **補充**（#102）：**伺服器不再接受這個分頁**：伺服器送來 `closed` 通知（`reason: "tooDeep"`，[`collab.md`](collab.md) 2.1、第 9 節）時，分頁停止重連，同步指示器停在「離線」，在譜面上方顯示 `strings.score.closed` 的說明（`data-closed`，取代離線橫幅：恢復連線也不會合併），說明之後的修改不會儲存，並給「重新載入」按鈕：以伺服器上的內容重新開啟團譜，這個分頁沒儲存的修改全部丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
   - **補充**（#33）：和離線橫幅一樣在譜面上方（`data-behind`），聲音換好就消失。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。

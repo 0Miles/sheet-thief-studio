@@ -79,9 +79,10 @@ export default defineConfig({
   projects: [
     { name: "chromium", testIgnore: ["**/measure/**", "**/served.spec.ts", "**/smoke/**"], use: { ...devices["Desktop Chrome"] } },
     { name: "served", testMatch: "**/served.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: SERVED_ORIGIN } },
-    // The whole suite runs in Chromium; the other browsers run smoke tests (docs/spec/testing.md, section 3).
-    { name: "firefox", testMatch: "**/smoke/typing.spec.ts", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", testMatch: "**/smoke/*.spec.ts", use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
+    // The whole suite runs in Chromium; the other browsers run smoke tests, and the clipboard check
+    // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5).
+    { name: "firefox", testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", testMatch: ["**/smoke/*.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
   ],
   webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages],
 });

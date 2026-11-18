@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -17,6 +17,7 @@ const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}�
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
 const VERSIONS = "版本記錄";
+const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -80,11 +81,24 @@ export const strings = {
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
     // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).
+    // Locked until the page is loaded again: each says so.
     readOnly: {
       newerSchema: "這份團譜由較新的版本建立，請重新整理頁面。",
-      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
-      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
+      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視；伺服器更新後請重新整理頁面。",
+      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視；問題排除後請重新整理頁面。",
     } satisfies Record<ReadOnlyReason, string>,
+    // Locked while open for typing, the score opened anew from the server's document: what this
+    // tab wrote and the server never took went with the old one (docs/spec/collab.md, 2.1).
+    readOnlyDropped: (why: string) => `已改用伺服器上的版本，這個分頁沒同步到伺服器的修改已經丟掉。${why}`,
+    // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
+    // holds would be refused again at every reconnection. Opening the score anew drops it.
+    closed: {
+      reasons: {
+        tooDeep: "這個分頁裡有伺服器不接受的內容（巢狀太深的資料），已停止同步，之後的修改也不會儲存。重新載入會改用伺服器上的版本，這個分頁還沒儲存的修改會全部丟掉。",
+      } satisfies Record<ClosedNotice["reason"], string>,
+      reload: "重新載入",
+      reloaded: "已重新載入伺服器上的版本，先前那個分頁沒儲存的修改已丟掉。",
+    },
     // The 404 page of a member removed from the score, or of a score deleted, while it was open.
     removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
@@ -382,7 +396,7 @@ export const strings = {
     reasons: {
       last_disconnect: "自動（所有人離開時）",
       interval: "自動（每 10 分鐘）",
-      before_restore: "還原前",
+      before_restore: BEFORE_RESTORE,
       manual: "手動存下",
     } satisfies Record<VersionReason, string>,
     named: "已命名",
@@ -402,6 +416,16 @@ export const strings = {
       title: "把目前的內容存成版本",
       help: "存下伺服器上目前的內容，並替它命名。",
       submit: "存成版本",
+    },
+    // Restoring a version in place (docs/spec/collab.md, 8.5): Owners and Editors.
+    restore: {
+      action: "還原",
+      title: "還原這個版本",
+      message: (when: string, undoKey: string) =>
+        `這會以 ${when} 的版本取代你這個分頁目前看到的內容；伺服器上目前的內容會先存成一個版本（「${BEFORE_RESTORE}」）。其他人在同一時間所做的修改會被取代，需要時可以從那個版本找回；他們剛新增、還沒同步到這裡的小節與聲部則會保留下來。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+      confirm: "還原",
+      notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
+      notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",
     },
   },
   // A guest's page, opened with a read-only link (/s/:token).

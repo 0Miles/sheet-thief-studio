@@ -1,4 +1,5 @@
 import io
+import json
 import threading
 import time
 
@@ -144,3 +145,28 @@ def test_a_cancelled_job_stops_at_once(monkeypatch):
     with pytest.raises(ConversionCancelled):
         run_isolated(b"x", ConversionOptions(), timeout_s=20, memory_mb=1024, cancel=cancel)
     assert time.monotonic() - started < 5  # the child (asleep for 30 s) was killed
+
+
+@pytest.mark.ocr
+def test_what_the_child_logs_is_written_by_the_parent(caplog):
+    # the warnings' sentences are logged in the forkserver child, where logging is not set up
+    with caplog.at_level("INFO", logger="recognizer"):
+        result = run_isolated([tab_picture()], PROJECT, 60, 3072, "recognize")
+    assert result["contract"] == "sheet-thief-studio/recognition"
+    child = [r.getMessage() for r in caplog.records if r.name == "recognizer.contract"]
+    assert any(m.startswith("(recognition child) warning") and "OCR" in m for m in child), child
+
+
+def test_only_well_formed_records_of_the_package_are_replayed(caplog):
+    logs = [
+        [20, "recognizer.contract", "kept"],
+        [20, "somebody.else", "dropped: another package"],
+        [20, "recognizerx", "dropped: not the package"],
+        ["20", "recognizer.contract", "dropped: no level"],
+        [20, "recognizer.contract"],
+        "dropped: not a record",
+    ]
+    with caplog.at_level("INFO"):
+        report = _decode_reply(json.dumps({"status": "ok", "report": {"notes": 0}, "logs": logs}).encode())
+    assert report == {"notes": 0}
+    assert [(r.name, r.getMessage()) for r in caplog.records] == [("recognizer.contract", "(recognition child) kept")]

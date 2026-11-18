@@ -46,20 +46,24 @@ test("the fixtures hold the cases the contract names: six, four and seven string
 });
 
 /**
- * The predecessor warns of estimated rhythm when some bar of the part read its printed rhythm
- * (converter.py:671, stats.notated), and only bars with notes other than ties count as read or
- * estimated (rhythm.py:418-432): a rest bar or a bar of ties counts for neither.
+ * The recognizer warns of estimated rhythm when some bar of the part read its printed rhythm: the
+ * predecessor's `rhythm_from_notation` (rhythm.py, `stats.notated`) is above 0. It counts the bars
+ * with notes whose durations were not estimated, a bar of ties included; a rest bar counts for
+ * neither, nor does an empty bar a tie runs through (its tied notes come later). The JSON cannot
+ * tell such a bar from a read one, so: a warning needs a bar not estimated that has notes (ties
+ * included), and a bar not estimated with a note other than a tie, always a read one, needs it.
  */
 function expectRhythmWarningAsRead(result: RecognizerResult) {
   const estimated = result.bars.flatMap((bar, index) => (bar.rhythmEstimated ? [index + 1] : []));
-  const read = result.bars.some((bar) => !bar.rhythmEstimated && bar.beats.some((beat) => beat.notes.some((note) => !note.tie)));
+  const mayHaveRead = result.bars.some((bar) => !bar.rhythmEstimated && bar.beats.some((beat) => beat.notes.length > 0));
+  const surelyRead = result.bars.some((bar) => !bar.rhythmEstimated && bar.beats.some((beat) => beat.notes.some((note) => !note.tie)));
   const warned = result.warnings.flatMap((warning) => (warning.code === "rhythm_estimated" ? [warning.params.bars] : []));
   expect(warned.length).toBeLessThanOrEqual(1);
   if (warned.length > 0) {
     expect(warned[0]).toEqual(estimated);
-    expect(read).toBe(true);
+    expect(mayHaveRead).toBe(true);
   }
-  if (estimated.length > 0 && read) expect(warned).toHaveLength(1);
+  if (estimated.length > 0 && surelyRead) expect(warned).toHaveLength(1);
 }
 
 test.each([...fixtures].filter(([, fixture]) => recognizerResult.safeParse(fixture).success))("the fixture %s warns of estimated rhythm as the recognizer would", (_, fixture) => {
@@ -71,6 +75,17 @@ test("every bar with notes estimated and one rest bar: no bar read its rhythm, s
   result.bars.forEach((bar) => (bar.rhythmEstimated = true));
   result.bars.push({ ...result.bars[0], rhythmEstimated: false, beats: [{ units: 32, tuplet: false, notes: [] }] });
   result.warnings = result.warnings.filter((warning) => warning.code !== "rhythm_estimated");
+  expect(recognizerResult.safeParse(result).error).toBeUndefined();
+  expectRhythmWarningAsRead(result);
+});
+
+test("every bar with notes estimated but one of ties: that bar may have read its rhythm, so the warning may come", () => {
+  const result = structuredClone(fixtures.get("tuning-unrecognized")) as RecognizerResult;
+  result.bars.forEach((bar) => (bar.rhythmEstimated = true));
+  const ties = result.bars[0].beats.map((beat) => ({ ...beat, notes: beat.notes.map((note) => ({ ...note, tie: true })) }));
+  result.bars.push({ ...result.bars[0], rhythmEstimated: false, beats: ties });
+  const estimated = result.bars.flatMap((bar, index) => (bar.rhythmEstimated ? [index + 1] : []));
+  result.warnings = [...result.warnings.filter((warning) => warning.code !== "rhythm_estimated"), { code: "rhythm_estimated", params: { bars: estimated } }];
   expect(recognizerResult.safeParse(result).error).toBeUndefined();
   expectRhythmWarningAsRead(result);
 });
@@ -107,6 +122,7 @@ test.each<[string, string, (json: Json) => void]>([
   ["a song in 17/4", "six-strings", (json) => (json.timeSignature.numerator = 17)],
   ["a song in 4/32", "six-strings", (json) => (json.timeSignature.denominator = 32)],
   ["a bar in 33/8", "four-strings", (json) => (json.bars[1].timeSignature = { numerator: 33, denominator: 8 })],
+  ["a bar in 4/3", "four-strings", (json) => (json.bars[1].timeSignature = { numerator: 4, denominator: 3 })],
   ["a tempo past 400", "six-strings", (json) => (json.bars[0].tempo = 401)],
   ["a tempo in fractions of a beat", "six-strings", (json) => (json.bars[0].tempo = 96.5)],
   ["a repeat played 33 times", "six-strings", (json) => (json.bars[1].repeatTimes = 33)],
