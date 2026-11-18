@@ -1,8 +1,9 @@
 // The versions of a score (docs/spec/collab.md, section 8): the whole score at one moment, as
 // `docToJson` reads it, one row each. Here: making one, keeping at most 200 automatic ones, and
 // what a member does with them (docs/spec/routes.md, 3.6): listing, reading one brought to the
-// current schema, naming one, and making a named one now. When the server makes one on its own
-// is the collab server's business (collab.ts); restoring one, and the version made before, #68's.
+// current schema, naming one, making a named one now, and the one a restore makes first. When
+// the server makes one on its own is the collab server's business (collab.ts); the restore itself
+// is the member's tab's (score-model's `replaceScore`).
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
@@ -234,9 +235,10 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
     }),
   );
 
-  // A member's own version, named as it is made, of the content the server has now
-  // (`Collab.saveVersion`). The one a restore makes first, without a name, is #68's
-  // (docs/spec/collab.md, 8.5): a request without a name is refused here.
+  // A version of the content the server has now (`Collab.saveVersion`): a member's own, named as
+  // it is made; or, without a name, the one a restore makes first (docs/spec/collab.md, 8.5),
+  // which is the latest one when that holds the same already (200 then, 201 when made). Either
+  // way the role and the score are checked again once its row is locked (`admitWriter`).
   app.post<ScoreParams>("/api/scores/:id/versions", (request, reply) =>
     answered(reply, async () => {
       const scoreId = request.params.id;
@@ -244,11 +246,12 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
       await checkMember(scoreId, accountId, true);
       const body = createVersionRequest.safeParse(request.body);
       if (!body.success) return invalidRequest(reply, body.error);
-      const made = await collab.saveVersion(scoreId, { name: body.data.name, createdBy: accountId, admit: (row, transaction) => admitWriter(row, accountId, transaction) });
+      const name = body.data.name ?? null;
+      const made = await collab.saveVersion(scoreId, { name, createdBy: accountId, admit: (row, transaction) => admitWriter(row, accountId, transaction) });
       if (made === "readOnly") throw new Refusal(409, "score_read_only");
       // Deleted meanwhile.
       if (made === null) throw new Refusal(404, "not_found");
-      return reply.code(201).send(createdVersion.parse({ versionId: made.id }));
+      return reply.code(made.created ? 201 : 200).send(createdVersion.parse({ versionId: made.id }));
     }),
   );
 

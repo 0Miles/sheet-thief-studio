@@ -3,10 +3,14 @@
 // may do with it changed while it was open (docs/spec/collab.md, section 7). It is then opened
 // anew, as a new ScoreView with a new document, the old one and what was typed in it dropped; or
 // the 404 page takes its place; or /login, the session over.
-import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+// A member's versions page (`/scores/:id/versions`) is a page of this one: the score stays open
+// under it, hidden, with its document, connection and undo, and a version is restored in that
+// document; back on the score, Ctrl+Z undoes the restore (docs/spec/collab.md, 8.5).
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
+import { RouterView, useRoute, useRouter } from "vue-router";
 
 import type { Closing } from "../access";
+import type { RestoreTarget } from "../restore";
 import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 import NotFoundView from "./NotFoundView.vue";
@@ -22,6 +26,26 @@ const opened = ref(0);
 /** What the score opened anew says first. */
 const notice = ref<string | undefined>();
 const removed = ref(false);
+/** The score open now: the ScoreView of this time it was opened. */
+const scoreView = shallowRef<InstanceType<typeof ScoreView> | null>(null);
+/** The versions page is shown, the score under it. */
+const aside = computed(() => route.name === "score-versions");
+
+/** What the versions page restores a version in: whichever ScoreView holds the score now. */
+const restoreTarget: RestoreTarget = {
+  canRestore: () => scoreView.value?.restoreTarget.canRestore() ?? false,
+  replace: (version) => scoreView.value?.restoreTarget.replace(version) ?? false,
+};
+
+watch(aside, async (now) => {
+  if (now) {
+    scoreView.value?.stepAside();
+    return;
+  }
+  // Once the score is shown again: a hidden element takes no focus.
+  await nextTick();
+  scoreView.value?.focus();
+});
 
 async function onClosed(closing: Closing): Promise<void> {
   if (closing.kind === "reopen") {
@@ -38,5 +62,28 @@ async function onClosed(closing: Closing): Promise<void> {
 
 <template>
   <NotFoundView v-if="removed" :notice="strings.score.removed" />
-  <ScoreView v-else :key="`${id ?? token}:${opened}`" :id="id" :token="token" :notice="notice" @closed="onClosed" />
+  <template v-else>
+    <div :class="{ 'score-page__behind': aside }" :inert="aside || undefined" :aria-hidden="aside || undefined">
+      <ScoreView :key="`${id ?? token}:${opened}`" ref="scoreView" :id="id" :token="token" :notice="notice" @closed="onClosed" />
+    </div>
+    <RouterView v-slot="{ Component }">
+      <!-- The score's own child route draws nothing: the score above is the page. -->
+      <component :is="Component" v-if="Component && aside" :restore-target="restoreTarget" />
+    </RouterView>
+  </template>
 </template>
+
+<style scoped>
+/*
+ * Under the versions page: laid out still, as wide as the window, so that the score drawn in it
+ * keeps its width; but unseen, out of the keyboard's and the mouse's way.
+ */
+.score-page__behind {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+</style>

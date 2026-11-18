@@ -64,6 +64,8 @@ import {
   voiceKeys,
   withinPartLimits,
 } from "./schema";
+import { jsonToDoc } from "./build";
+import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
@@ -1269,6 +1271,17 @@ export function setArtist(doc: Y.Doc, artist: string): boolean {
   if (artist.length > MAX_TITLE) return false;
   writeField(metaOf(doc), "artist", artistSchema, artist === "" ? undefined : artist);
   return true;
+}
+
+/**
+ * Restore a version in place (docs/spec/collab.md, 8.5): one command, one transaction of this
+ * member's, that writes the version over the score (title, artist, every bar and part), its ids
+ * kept (`jsonToDoc`). A version of an older schema is brought up to date first (`migrateJson`).
+ * Throws, changing nothing, when it cannot be: newer than this code, missing a step, or not a
+ * score. What others were typing meanwhile goes; the version made before the restore keeps it.
+ */
+export function replaceScore(doc: Y.Doc, version: unknown, migrations: readonly Migration[] = MIGRATIONS): void {
+  jsonToDoc(migrateJson(version, migrations), doc);
 }
 
 // Parts (docs/spec/commands.md, 7.1 and 7.2) ------------------------------------------------------

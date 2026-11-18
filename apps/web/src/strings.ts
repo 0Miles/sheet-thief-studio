@@ -352,6 +352,16 @@ export const strings = {
       help: "存下伺服器上目前的內容，並替它命名。",
       submit: "存成版本",
     },
+    // Restoring a version in place (docs/spec/collab.md, 8.5): Owners and Editors.
+    restore: {
+      action: "還原",
+      title: "還原這個版本",
+      message: (when: string, undoKey: string) =>
+        `這會以 ${when} 的版本取代目前的內容；目前的內容會先存成一個版本（「還原前」）。其他人在同一時間所做的修改也會被取代，需要時可以從那個版本找回。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+      confirm: "還原",
+      notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
+      notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",
+    },
   },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {

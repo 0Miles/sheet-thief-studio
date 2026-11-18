@@ -20,11 +20,24 @@ declare global {
   }
 }
 
-/** Put the hook on `window` for the tests, in an end-to-end build only; returns the function that takes it off. */
+/** The hooks put on, the latest last: the versions page's above the score's, which stays open under it. */
+const exposed: StudioTestHook[] = [];
+
+/**
+ * Put the hook on `window` for the tests, in an end-to-end build only; returns the function that
+ * takes it off. The latest hook put on is the one on `window`; once it is taken off, the one put
+ * on before it, still on, is there again (the score's, back from its versions page).
+ */
 export function exposeForTests(hook: StudioTestHook): () => void {
   if (import.meta.env.VITE_E2E !== "1") return () => {};
+  exposed.push(hook);
   window.__studioTest = hook;
   return () => {
-    if (window.__studioTest === hook) delete window.__studioTest;
+    const at = exposed.indexOf(hook);
+    if (at !== -1) exposed.splice(at, 1);
+    if (window.__studioTest !== hook) return;
+    const before = exposed.at(-1);
+    if (before === undefined) delete window.__studioTest;
+    else window.__studioTest = before;
   };
 }

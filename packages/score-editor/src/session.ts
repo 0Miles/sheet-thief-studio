@@ -43,6 +43,7 @@ import {
   noteKeyAt,
   type NoteToggle,
   type RepeatChange,
+  replaceScore,
   type PartPresetId,
   type PartRefusal,
   partKindOf,
@@ -223,6 +224,13 @@ export interface EditorSession {
   setTitle(title: string): boolean;
   /** An empty artist takes it away. */
   setArtist(artist: string): boolean;
+  /**
+   * Restore a version in place (docs/spec/collab.md, 8.5): the score becomes the version, its ids
+   * kept, one undo step like any other command. The cursor stays where the version has its place,
+   * else goes to the start of the score. False, nothing changed, when the version cannot be read
+   * here (newer than this code, or not a score), or read-only.
+   */
+  replaceScore(version: unknown): boolean;
   destroy(): void;
 }
 
@@ -781,6 +789,19 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
     setArtist(artist) {
       return runWithoutKey(setting(() => setArtist(doc, artist)));
+    },
+    replaceScore(version) {
+      return runWithoutKey(
+        setting(() => {
+          try {
+            replaceScore(doc, version);
+            return true;
+          } catch {
+            // Brought to this schema by the server already: a version that still cannot be read changes nothing.
+            return false;
+          }
+        }),
+      );
     },
     destroy() {
       doc.off("afterTransaction", settle);

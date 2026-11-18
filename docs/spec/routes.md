@@ -24,7 +24,7 @@
 - `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。**補充**（#7）：原本要去的頁面帶在 `redirect` 參數裡，改完密碼後回到那一頁（沒有就是 `/`）；不必改密碼的人打開 `/account/password` 會被導到 `/account`。
 - `/admin`：非 admin 看到 404 頁（補充）。**補充**（#8）：網址維持 `/admin`；admin 的頁首有「後台」連結。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
-- `/scores/:id/versions` 和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider（[`collab.md`](collab.md) 8.5），供還原使用。**補充**（#67）：目前（#67）版本頁是獨立的頁面，不開 `Y.Doc` 與 provider，只做列表、預覽與命名；共用文件由還原的 ticket（#68）接上（collab.md 8.6）。
+- `/scores/:id/versions` 和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider（[`collab.md`](collab.md) 8.5），供還原使用。**補充**（#68）：`versions` 是 `/scores/:id`（`ScorePage.vue`）的子路由；版本頁顯示時，譜頁的 `ScoreView` 留在底下、不顯示（collab.md 8.5 的實作方式）。
 
 `/` 的內容：
 
@@ -134,7 +134,7 @@
 
 - **補充**（#67）：`GET /api/scores/:id/versions` 回 `{ versions: [...] }`，每一筆是 `id`、`createdAt`、`reason`、`name`（自動版本是 null）、`byteSize`，依 `createdAt`（再依 `id`）由新到舊；形狀在 contracts 的 `versionList`。不分頁：自動版本最多 200 個。
 - **補充**（#67）：`GET /api/scores/:id/versions/:versionId` 直接回遷移後的 `ScoreJSON`（`scoreSchema`）。版本比伺服器新、缺遷移步驟、步驟失敗、或內容壞掉（解壓以 `MAX_VERSION_BYTES` 為上限）時回 409 `version_unreadable`，並寫 error log。
-- **補充**（#67）：`POST /api/scores/:id/versions` 目前只收 `{ name: string }`（1–100 字元，去掉前後空白），沒有 `name` 回 400：成員「把目前內容存成命名版本」，`reason = 'manual'`，不論內容是否和最新版本相同都建立新的一筆，回 201 `{ versionId }`，`created_by` 是發起的帳號。內容是伺服器當下的：伺服器以 direct connection 開啟文件（記憶體裡有就用那一份，沒有就照 `onLoadDocument` 載入、遷移），在 `createVersion` 鎖住團譜列之後讀 `docToJson`（`collab.saveVersion`）。鎖住之後、讀內容之前（`createVersion` 的 `admit`）再確認一次：團譜沒有被軟刪除（否則 404）、發起者仍是 Owner 或 Editor（被移除 404、被降成 Viewer 403）；文件不在記憶體、而團譜在請求進來之後被刪除時，載入失敗也回 404。文件被凍結（collab.md 2.1）時回 409 `score_read_only`，不建立。表中「還原前存下伺服器當下的內容」（不帶 `name`、`before_restore`）由 #68 加到同一條 route。
+- **補充**（#67）：`POST /api/scores/:id/versions` 目前只收 `{ name: string }`（1–100 字元，去掉前後空白），沒有 `name` 回 400：成員「把目前內容存成命名版本」，`reason = 'manual'`，不論內容是否和最新版本相同都建立新的一筆，回 201 `{ versionId }`，`created_by` 是發起的帳號。內容是伺服器當下的：伺服器以 direct connection 開啟文件（記憶體裡有就用那一份，沒有就照 `onLoadDocument` 載入、遷移），在 `createVersion` 鎖住團譜列之後讀 `docToJson`（`collab.saveVersion`）。鎖住之後、讀內容之前（`createVersion` 的 `admit`）再確認一次：團譜沒有被軟刪除（否則 404）、發起者仍是 Owner 或 Editor（被移除 404、被降成 Viewer 403）；文件不在記憶體、而團譜在請求進來之後被刪除時，載入失敗也回 404。文件被凍結（collab.md 2.1）時回 409 `score_read_only`，不建立。**補充**（#68）：不帶 `name`（body 是 `{}`）是還原前的版本：`reason = 'before_restore'`、`name` 是 null、`created_by` 是發起的帳號，內容同樣由 `collab.saveVersion` 讀伺服器當下的內容，角色與刪除同樣在鎖內再確認一次（`admit`），凍結的文件同樣回 409 `score_read_only`。和最新版本相同時不另建，回 200 與最新版本的 `{ versionId }`；建立時回 201。沒有 body 或 `name: null` 仍是 400。
 - **補充**（#67）：`PATCH` 的 `name` 是 1–100 字元（去掉前後空白）或 null（取消命名），回這個版本（`versionSummary` 的形狀）。在鎖住團譜列的交易裡寫入，並在鎖內再確認一次團譜未刪除與角色，所以和建立版本時的保留刪除不會交錯。取消命名不立刻套用保留規則，下一次建立版本時才算進 200 個。`manual` 版本不能取消命名（409 `version_name_required`），只能改名（collab.md 8.4）。
 - **補充**（#67）：四個 route 都先檢查角色再檢查內容：非成員（含已刪除的團譜）一律 404 `not_found`，Viewer 對 `POST`、`PATCH` 一律 403 `forbidden`。版本不屬於這份團譜、不存在、`:versionId` 不是 UUID 都是 404。
 

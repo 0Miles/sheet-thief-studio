@@ -35,6 +35,7 @@ import {
   type PitchedClef,
   readScore,
   type RepeatChange,
+  replaceScore,
   type ScoreChange,
   type ScoreJSON,
   stillAt,
@@ -67,6 +68,7 @@ import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMa
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
+import type { RestoreTarget } from "../restore";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
@@ -1055,6 +1057,43 @@ onMounted(async () => {
 
 // The view can turn read-only after the score opened (a newer schema): the mode follows it.
 watch(view, tellPresence);
+
+/**
+ * Restore a version in this tab's document (docs/spec/collab.md, 8.5), for the versions page, which
+ * shares it: in the edit view one types in, one command of the session, undone with Ctrl+Z like any
+ * other; in the Read view of an Owner or an Editor (a device that cannot type), written straight.
+ * Not before the score is open, in step with the server: written over a document still empty,
+ * the score would come in afterwards beside the version.
+ */
+const restoreTarget: RestoreTarget = {
+  canRestore() {
+    if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null) return false;
+    if (view.value === "editable") return session !== undefined;
+    return view.value === "read" && opening.value?.role != null && opening.value.role !== "viewer";
+  },
+  replace(version) {
+    if (!restoreTarget.canRestore()) return false;
+    if (session !== undefined) return session.replaceScore(version);
+    try {
+      replaceScore(doc, version);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+defineExpose({
+  restoreTarget,
+  /** The versions page is shown over the score: playback stops, as it would were the page left. */
+  stepAside(): void {
+    stop();
+  },
+  /** Back from the versions page: the score has the keyboard again. */
+  focus(): void {
+    focusScore();
+  },
+});
 
 onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
