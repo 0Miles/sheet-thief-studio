@@ -5,7 +5,7 @@ import { expect, type Page } from "@playwright/test";
 
 import { type DisplayOptions, displayKey } from "../../src/display";
 import { ADMIN } from "../environment";
-import { logInFromStart, soundReady } from "../pages";
+import { logInFromStart, playerSettled } from "../pages";
 import type { SeededScore } from "./scores";
 
 /** Log the page in as the admin, who owns every score the measurements make. */
@@ -28,14 +28,9 @@ export async function openEditView(page: Page, score: SeededScore, only?: number
   await page.waitForFunction(() => window.__studioMeasure?.ready === true && window.__studioMeasure.synced(), null, { timeout: 60_000 });
   const shown = only === undefined ? score.partIds : [score.partIds[only]!];
   await expect(page.locator(`[data-parts="${shown.join(",")}"]`)).toBeAttached();
-  // Playwright's WebKit for Windows has no Web Audio: its player never gets ready (#129), and the
-  // page makes no sound after a change either. Measured without, as the report says.
-  if (await hasWebAudio(page)) await soundReady(page);
-}
-
-/** Whether the browser has Web Audio, which alphaTab's player needs. */
-export function hasWebAudio(page: Page): Promise<boolean> {
-  return page.evaluate(() => typeof AudioContext !== "undefined");
+  // Playwright's WebKit for Windows has no Web Audio: the page has no player there (#129), and
+  // makes no sound after a change either. Measured without, as the report says.
+  await playerSettled(page);
 }
 
 /** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, and give the score the keyboard. */

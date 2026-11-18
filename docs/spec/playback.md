@@ -26,6 +26,7 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 
 - `setMetronome(on: boolean)`：對應 alphaTab 的 `metronomeVolume`（`AlphaTabApiBase`，`alphaTab.d.ts:1118-1150`；預設關閉）。**補充**：開是 1，關是 0。
 - `setCountIn(on: boolean)`：對應 `countInVolume`（同上；預設關閉）。**補充**：開是 1，關是 0。
+- **補充**（#129）：`ScorePlayer.state` 是 `"loading" | "paused" | "playing" | "unavailable"`。`"unavailable"` 只出現在瀏覽器沒有 Web Audio 時，建立時就是這個值、之後不變（不會經過 `onState`，殼建好引擎要先讀一次 `state`）；細節見 4.1。能不能按播放、停止由 score-render 的 `playerUsable(state)` 判斷（paused 或 playing），殼不自己列狀態。
 - 預備拍是一小節；從游標小節開始播放時，預備拍用不用起點小節的拍號，由人工試聽判定（[`testing.md`](testing.md) 的人工項目）。
 
 ## 3. 播放中修改
@@ -71,6 +72,7 @@ Mixer 只存在每個成員的本機（localStorage），不屬於團譜（`CONT
 - **補充**：換新模型時，alphaTab 在拿到模型的同時就建好新的 tick lookup（聲音由 worker 之後才產生），所以第一次的聲音產生之後，`tickOf`、`barAt` 不會再回傳 null。
 - **補充**：播放位置由殼畫在疊層裡（`data-playhead`），和其他疊層一樣避開保留區域；alphaTab 自己的播放游標關掉（`enableCursor = false`）。
 - **補充**：工具列有「播放／暫停」（同一個按鈕）、「停止」，載入音色時顯示「音色載入中…」，播放或暫停中顯示「第 N 小節」（小節序號從 1 起算，`data-bar`）。按完工具列的按鈕，鍵盤焦點回到譜面。
+- **補充**（#129）：瀏覽器沒有 alphaTab 1.9 建播放器需要的東西時（沒有 `Worker`、沒有 `AudioContext`／`webkitAudioContext`，或既沒有 `ScriptProcessorNode`、也不是「安全來源加 `AudioWorkletNode`」；輸出節點的條件照 alphaTab 的 `createWorkerPlayer`；`Worker` 與 audio context 是多檢查的兩項，少了它們 alphaTab 也會失敗，只是較晚、而且記錯誤，所以判斷結果一致；`alphaTabEngine.ts` 的 `canPlaySound`，升 alphaTab 版本時要重新核對），引擎不交給 alphaTab 建播放器（`PlayerMode.Disabled`，alphaTab 因此不記錯誤），`ScorePlayer.state` 從一開始就是 `"unavailable"`，之後不變；`load()` 立即完成，播放、暫停、停止、跳位都不做事。譜面照常畫、照常打譜。工具列（編輯視圖與 Read view）的「播放」「停止」停用，顯示「這個瀏覽器無法播放聲音」（`data-player="unavailable"`）。真實的 Safari、Chrome、Firefox 都有 Web Audio；目前碰得到的是 Windows 上的 Playwright WebKit。樂句預覽本來就不建播放器（`soundFont: null`，第 7 節），不受影響。
 - **補充**：暫停之後再按播放，游標沒有移動過就從暫停的地方接著播；游標移動過（包含被別人的修改移動）就從游標所在小節的開頭播。停止之後一律從游標所在小節開始，工具列不再顯示小節。
 - **補充**：跟隨：正在播的拍點所在的 system 沒有整個在畫面上時，捲到它上方留 40 px 的位置。「手動捲動」是頁面自己沒有做的任何捲動（滾輪、觸控、捲軸、鍵盤都算）：殼記下自己捲到的位置，`scroll` 事件停在別的位置就是成員捲的；但譜面變短或檢視變高、瀏覽器把位置拉回能捲到的範圍內（停在最底端）時，不算手動捲動，殼改記這個位置。macOS 的捲軸疊在內容上、不佔版面，從點擊的位置分不出來，所以不看點擊。譜面關掉 scroll anchoring（`overflow-anchor: none`），排版改變時瀏覽器不會自己捲。點譜面不算（播放中點譜面只移動游標，畫面不跟著游標捲動）。
 - **補充**：(a) 的計時只算內容操作（`patchBars`）；結構操作會換一份新的 alphaTab 模型，alphaTab 自己重新產生聲音。內容操作沒辦法就地換小節、改成整份重新投影時也一樣；這時 `load()` 不再產生第二次，只等 alphaTab 那一次完成。
