@@ -1,9 +1,17 @@
 // The end-to-end tests' own database and Redis database (of compose.dev.yaml, or of CI's service
-// containers), and the accounts global-setup.ts creates there before the tests run.
+// containers), the stand-in recognizer the servers call, and the accounts global-setup.ts creates
+// there before the tests run.
+
+/**
+ * The stand-in for the recognizer service (apps/server/tests/recognizerE2e.ts), on a port of its
+ * own: never a real recognizer on 8000. A test picks its answer with `PUT /fixture/<name>`.
+ */
+export const RECOGNIZER_URL = "http://127.0.0.1:8034";
 
 export const SERVER_ENV = {
   DATABASE_URL: "postgres://studio:studio@localhost:5438/studio_e2e",
   REDIS_URL: "redis://localhost:6388/2",
+  RECOGNIZER_URL,
 };
 
 export const ADMIN = {

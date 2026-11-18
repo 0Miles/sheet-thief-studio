@@ -1,8 +1,10 @@
 // The web app's build served by the server itself, as in production, with the Content Security
 // Policy on every answer (docs/spec/security.md, sections 6 and 7). The only spec of the `served`
 // project (playwright.config.ts); every other one gets its pages from `vite preview`.
+import { fileURLToPath } from "node:url";
+
 import { strings } from "../src/strings";
-import { ADMIN } from "./environment";
+import { ADMIN, RECOGNIZER_URL } from "./environment";
 import { createPhrase, createScore, logInFromStart, openScore, pageErrors, soundReady } from "./pages";
 import { expect, test } from "./test";
 
@@ -53,6 +55,14 @@ test("served by the server, a score opens, is drawn and gets its sound, and so d
   await page.goto(`/phrases/${phraseId}`);
   await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
   await soundReady(page);
+  // The review page of a recognition: its result drawn with its sound, and its image loaded.
+  expect((await page.request.put(`${RECOGNIZER_URL}/fixture/six-strings`)).status()).toBe(204);
+  await page.goto("/phrases");
+  await page.locator("[data-recognize-input]").setInputFiles(fileURLToPath(new URL("../../../services/recognizer/tests/fixtures/single-page.png", import.meta.url)));
+  await expect(page).toHaveURL(/\/recognitions\/[0-9a-f-]{36}$/);
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await soundReady(page);
+  await expect.poll(() => page.locator("[data-original]").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 
   // The page of a read-only link, in a browser that never logged in: drawn, and its sound ready.
   const made = await page.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(page.url()).origin } });

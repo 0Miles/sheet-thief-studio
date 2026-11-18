@@ -1,5 +1,18 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
+import {
+  accountLimits,
+  type ClosedNotice,
+  DELETED_SCORE_DAYS,
+  type ErrorCode,
+  type RecognitionError,
+  recognitionLimits,
+  type RecognitionSkipped,
+  type RecognitionStatus,
+  type RecognizerPageError,
+  type RecognizerWarning,
+  versionLimits,
+  type VersionReason,
+} from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -303,6 +316,112 @@ export const strings = {
     rename: "改名",
     duplicate: "複製",
     delete: "刪除",
+    /** Recognizing images of a TAB (docs/spec/phrases.md, sections 4 and 7): on every device. */
+    recognize: "從圖片辨識",
+    recognizeHelp: `PNG、JPEG 或 WebP，一次最多 ${recognitionLimits.images.max} 張，依頁序選取。`,
+    uploading: "上傳中…",
+    tooManyImages: `一次最多 ${recognitionLimits.images.max} 張圖片。`,
+    /** Refused for its size (413): the limits of docs/spec/recognizer.md, section 4. */
+    imagesTooLarge: "檔案太大：每張最多 10 MB，合計最多 40 MB。",
+    /** Refused for its type (415): which image, from 1. */
+    unsupportedImage: (page: number) => `第 ${page} 張不是 PNG、JPEG 或 WebP 圖片（例如 HEIC 要先轉檔）。`,
+    /** The recognitions not yet saved nor discarded. */
+    pending: "待審核",
+    pendingItem: (pages: number, at: string) => `${at} · ${pages} 張圖片`,
+    pendingStatus: { running: "辨識中", succeeded: "可以審核", failed: "辨識失敗" } satisfies Record<RecognitionStatus, string>,
+  },
+  // The review page of a recognition (/recognitions/:id; docs/spec/phrases.md, section 7, and
+  // docs/spec/recognizer.md): progress, why it failed, and the result opened in the phrase editor.
+  recognition: {
+    title: "辨識結果",
+    library: "樂句庫",
+    running: "辨識中，完成後會自動顯示結果。辨識一份 TAB 可能要幾分鐘。",
+    failed: "辨識失敗",
+    /** Why a recognition failed, and what to try (docs/spec/recognizer.md, 5.2). */
+    failures: {
+      recognition_failed: { reason: "沒有辨識出 TAB。", advice: "請確認圖片是吉他或貝斯的 TAB，拍得清楚、沒有歪斜，再試一次。" },
+      timeout: { reason: "辨識超過時間上限。", advice: "請減少一次上傳的張數，或把圖片裁成只有 TAB 的部分再試一次。" },
+      unavailable: { reason: "辨識服務暫時無法使用。", advice: "請稍後再試一次。" },
+      busy: { reason: "辨識服務正在處理別人的圖片。", advice: "請稍後再試一次。" },
+      interrupted: { reason: "伺服器在辨識途中重新啟動，這次辨識沒有完成。", advice: "請重新上傳一次。" },
+    } satisfies Record<RecognitionError["code"], { reason: string; advice: string }>,
+    /** A page's own reason (docs/spec/recognizer.md, 5.2). */
+    pageFailure: (page: number, code: RecognizerPageError["code"]) =>
+      `第 ${page} 張：${
+        {
+          no_staff: "找不到譜表的線，請確認這張是 TAB。",
+          no_notes: "找到譜表，但讀不到格號，請拍得更清楚一些。",
+          invalid_image: "圖片無法讀取，檔案可能損壞。",
+          image_too_large: "圖片太大（超過 40 百萬像素），請縮小後再試。",
+        }[code]
+      }`,
+    /** What the fragment leaves out of what was read (docs/spec/recognizer.md, 7.2). */
+    skippedTitle: "略過的項目",
+    noneSkipped: "沒有略過任何項目。",
+    skipped: (item: RecognitionSkipped): string => {
+      switch (item.code) {
+        case "grace_notes":
+          return `裝飾音 ${item.count} 個（樂句不帶裝飾音）`;
+        case "capo":
+          return `移調夾第 ${item.fret} 格（樂句不帶移調夾）`;
+        case "tuning_unrecognized":
+          return `讀不懂的調弦「${item.raw}」`;
+        case "bend_clamped":
+          return `超過 4 個半音的推弦 ${item.count} 個，改成 4 個半音`;
+        case "sections":
+          return "段落名稱";
+        case "tempo":
+          return "速度";
+        case "repeats":
+          return "反覆記號與跳房子";
+        case "jumps":
+          return "反覆指示（Segno、Coda 等）";
+      }
+    },
+    warningsTitle: "提醒",
+    warning: (item: RecognizerWarning): string => {
+      switch (item.code) {
+        case "rhythm_estimated":
+          return `${item.params.bars.map(barLabel).join("、")}的時值是從音符間距估出來的，請檢查`;
+        case "overlapping_notes":
+          return `第 ${item.params.page} 張有 ${item.params.count} 個同一條弦上重疊的音符被略過`;
+        case "staves_ignored":
+          return `${item.params.count} 行弦數和其他行不同的譜表被略過`;
+        case "bar_too_dense":
+          return `第 ${item.params.page} 張有個小節的音太多，這個小節的音都當成 32 分音符`;
+        case "fixed_durations":
+          return "不是每一行都有小節線，時值用固定長度，請檢查";
+        case "other":
+          return "辨識時有其他提醒，請仔細檢查結果";
+      }
+    },
+    /** The tuning as read (docs/spec/recognizer.md, section 6). */
+    tuningNotFound: "圖片上沒有讀到調弦，先用標準調弦。",
+    tuningUnrecognized: (raw: string) => `讀不懂圖片上的調弦「${raw}」，先用標準調弦。請確認調弦，需要時手動選擇。`,
+    chooseTuning: "選擇調弦",
+    images: "原圖",
+    imageAlt: (page: number) => `第 ${page} 張原圖`,
+    save: "存成樂句",
+    discard: "捨棄",
+    /** The name a phrase saved from a recognition starts with: the day it was recognized. */
+    defaultName: (day: string) => `辨識結果 ${day}`,
+    edited: "有修改尚未存成樂句",
+    /** On a phone or a tablet the result is only looked at and played (`canType`). */
+    desktopOnly: "請在電腦上審核並存成樂句",
+    saveDialog: { title: "存成樂句", name: "名稱", save: "儲存", cancel: "取消", close: "關閉" },
+    discardDialog: {
+      title: "捨棄辨識結果",
+      message: "要捨棄這次辨識嗎？辨識結果與原圖都會刪除，無法復原。",
+      confirm: "捨棄",
+      cancel: "取消",
+    },
+    /** Leaving for another page of the app with changes not saved as a phrase. */
+    leave: {
+      title: "修改還沒有存成樂句",
+      message: "辨識結果的修改還沒有存成樂句，離開之後就沒有了（辨識結果本身會保留）。要離開嗎？",
+      confirm: "離開",
+      cancel: "留下",
+    },
   },
   newPhrase: {
     title: "新增樂句",
@@ -594,6 +713,10 @@ export const strings = {
     score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
     version_unreadable: "伺服器讀不了這個版本，無法預覽。",
     version_name_required: "手動存下的版本一定要有名稱。",
+    recognition_in_progress: "你已經有一件辨識在進行，請等它完成再上傳。",
+    recognizer_busy: "辨識服務正在處理別人的圖片，請稍後再試。",
+    recognition_not_succeeded: "這次辨識沒有結果可以存成樂句。",
+    unsupported_image: "只能上傳 PNG、JPEG 或 WebP 圖片。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",
