@@ -198,13 +198,16 @@ test("a body past 5 MB and 64 KB is refused with 413 before it is read, and noth
   expect(await Score.count()).toBe(0);
 });
 
-test("a score zod refuses is refused with 400 and nothing is made: not legal, of another schema version, with a __proto__ key, nested too deep", async () => {
+test("a score zod refuses is refused with 400 and nothing is made: not legal, untitled, of another schema version, with a __proto__ key, nested too deep", async () => {
   const made = vi.spyOn(Score, "create");
   let deep: unknown = 1;
   for (let level = 0; level < MAX_VALUE_DEPTH + 1; level++) deep = [deep];
   for (const payload of [
     {},
     { score: null },
+    // A title of 1 to 100 characters, not white space only, as a new score has.
+    { score: { ...BAND, title: "" } },
+    { score: { ...BAND, title: "   " } },
     { score: { ...BAND, title: "x".repeat(101) } },
     { score: { ...BAND, schemaVersion: SCHEMA_VERSION + 1 } },
     { score: { ...BAND, schemaVersion: SCHEMA_VERSION - 1 } },

@@ -22,18 +22,23 @@ import {
   type KeySignature,
   MAX_BARS,
   MAX_BEAT_TEXT,
+  MAX_FRET,
   MAX_IMPORT_BYTES,
   MAX_IMPORT_FILE_BYTES,
   MAX_LYRIC,
   MAX_NON_PERCUSSION_PARTS,
   MAX_PART_NAME,
   MAX_PARTS,
+  MAX_REPEAT,
   MAX_SECTION_NAME,
+  MAX_STAVES,
   MAX_TITLE,
   type PartKind,
   type PartPresetId,
   type PasteRefusal,
   type PitchedClef,
+  STRING_COUNTS,
+  TEMPO_RANGE,
   type TimeSignature,
   type TuningOption,
 } from "@studio/score-model";
@@ -74,6 +79,8 @@ const IMAGE_TYPES = "PNG、JPEG 或 WebP";
 const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
 const RECOGNITION_FAILED = "辨識失敗";
 const megabytes = (bytes: number) => bytes / (1024 * 1024);
+/** The bars an import report names, the first 8 of many and how many in all. */
+const importedBars = (bars: readonly number[]) => (bars.length <= 8 ? `第 ${bars.join("、")} 小節` : `第 ${bars.slice(0, 8).join("、")} 小節等 ${bars.length} 個小節`);
 
 export const strings = {
   app: {
@@ -121,14 +128,13 @@ export const strings = {
   // import report, and why a file makes no score.
   importScore: {
     title: "匯入檔案",
-    formats: "Guitar Pro（GP3、GP4、GP5、GPX、GP7）或 MusicXML",
     reading: (file: string) => `正在讀取「${file}」…`,
     summary: (parts: number, bars: number) => `${parts} 個聲部，${bars} 個小節`,
     reportTitle: "匯入報告",
     reportHelp: "下列內容無法完整轉換，建立後會省略或改成最接近的寫法：",
     nothingLost: "所有內容都能轉換。",
-    times: (count: number) => `${count} 處`,
-    bars: (bars: readonly number[]) => (bars.length <= 8 ? `第 ${bars.join("、")} 小節` : `第 ${bars.slice(0, 8).join("、")} 小節等 ${bars.length} 個小節`),
+    /** How many times a loss happens, and in which bars when it happens in some. */
+    times: (count: number, bars: readonly number[]) => (bars.length === 0 ? `${count} 處` : `${count} 處（${importedBars(bars)}）`),
     create: "建立團譜",
     cancel: "取消",
     close: "關閉",
@@ -151,16 +157,16 @@ export const strings = {
       jump: "D.S.、D.C.、Coda、Fine 等跳躍記號，已省略",
       tempoInBar: "小節中途的速度變化，已省略",
       tempoText: "速度文字，已省略",
-      tempoOutOfRange: "速度超出 20–400，已改成範圍內最接近的值",
+      tempoOutOfRange: `速度超出 ${TEMPO_RANGE.min}–${TEMPO_RANGE.max}，已改成範圍內最接近的值`,
       timeSignature: "不支援的拍號，已改成 4/4",
       swing: "Swing 等搖擺節奏，已省略",
       fermata: "延長記號，已省略",
-      repeatCount: "反覆超過 32 次，已改成 32 次",
-      strings: "弦數不在 4–7 的弦樂器，已改成五線譜聲部",
+      repeatCount: `反覆超過 ${MAX_REPEAT} 次，已改成 ${MAX_REPEAT} 次`,
+      strings: `弦數不在 ${STRING_COUNTS.min}–${STRING_COUNTS.max} 的弦樂器，已改成五線譜聲部`,
       tablatureHidden: "只顯示五線譜的吉他或貝斯，已改成五線譜聲部，不保留調弦與格號",
       capo: "移調夾超出範圍，已改成範圍內最接近的值",
       clef: "不支援的譜號或中途換譜號，已改用第一個譜號或高音譜號",
-      staves: "超過 2 個譜表的聲部，只保留前 2 個",
+      staves: `超過 ${MAX_STAVES} 個譜表的聲部，只保留前 ${MAX_STAVES} 個`,
       voices: "第 3 條以後的聲線，已省略",
       transposition: "移調樂器的移調，已省略",
       duration: "短於六十四分音符或長於全音符的拍點，已省略",
@@ -178,7 +184,7 @@ export const strings = {
       whammy: "搖桿，已省略",
       tremolo: "Tremolo picking，已省略",
       arpeggio: "琶音，已省略",
-      fret: "超過第 36 格的音，已省略",
+      fret: `超過第 ${MAX_FRET} 格的音，已省略`,
       pitch: "音高超出範圍或重複的音，已省略",
       drum: "不認得的鼓件，已省略",
       bend: "推弦曲線，已改成最接近的推弦",

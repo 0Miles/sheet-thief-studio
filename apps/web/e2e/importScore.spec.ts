@@ -55,7 +55,7 @@ test("what a file cannot keep is listed with its bars before anything is made; a
   const dialog = page.getByRole("dialog", { name: text.title });
   const jump = dialog.locator('[data-loss="jump"]');
   await expect(jump).toContainText(text.losses.jump, { timeout: 30_000 });
-  await expect(jump).toContainText(text.bars([3, 4]));
+  await expect(jump).toContainText(text.times(2, [3, 4]));
   await dialog.getByRole("button", { name: text.cancel }).click();
   await expect(dialog).toBeHidden();
 

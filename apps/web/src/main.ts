@@ -1,4 +1,4 @@
-// zod parses without eval: vite.config.ts resolves "zod" to @studio/contracts/without-eval.
+// zod parses without eval: vite.config.ts resolves "zod" to packages/contracts/src/withoutEval.ts.
 import "@karyl-chan/ui/tokens.css";
 import "./styles/app.css";
 import "./icons";

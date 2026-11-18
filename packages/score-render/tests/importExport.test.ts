@@ -141,6 +141,21 @@ describe("the import report", () => {
     expect(imported(importScore(musicXml({}), "My Song.musicxml")).score.title).toBe("My Song");
   });
 
+  test("a title is trimmed, and one of white space only is the file's name: trimmed, cut to 100 characters, the whole name when it is all extension; none at all is no score (#70)", () => {
+    // Guitar Pro keeps the white space of a title as written; alphaTab trims that of MusicXML.
+    const fromGp7 = (title: string, fileName: string) => imported(importScore(exportGp7({ ...GP7_SAMPLE, title }), fileName)).score.title;
+    expect(fromGp7("  Song  ", "x.gp")).toBe("Song");
+    expect(fromGp7("   ", "  My Song .gp")).toBe("My Song");
+    const titleOf = (title: string | undefined, fileName: string) => imported(importScore(musicXml({ title }), fileName));
+    expect(titleOf(undefined, ".musicxml").score.title).toBe(".musicxml");
+    expect(titleOf("   ", "   .musicxml").score.title).toBe(".musicxml");
+    const long = titleOf("   ", `${"名".repeat(120)}.musicxml`);
+    expect(long.score.title).toBe("名".repeat(100));
+    expect(long.report).toContainEqual({ loss: "titleTruncated", count: 1, bars: [] });
+    // A name of white space only: the caller gives none such (ImportScoreDialog.vue).
+    expect(importScore(musicXml({ title: "   " }), "   ")).toEqual({ ok: false, failure: "invalid" });
+  });
+
   test("a grace note, a third staff, a third voice and a fermata are left out and reported", () => {
     const notes = `
       <note><grace/><pitch><step>D</step><octave>5</octave></pitch><voice>1</voice><type>eighth</type><staff>1</staff></note>

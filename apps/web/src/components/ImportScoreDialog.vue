@@ -33,7 +33,8 @@ let reads = 0;
 async function read(file: File): Promise<Reading> {
   if (file.size > MAX_IMPORT_FILE_BYTES) return { state: "failed", message: text.failures.fileTooLarge };
   const [{ importScore }, bytes] = await Promise.all([import("@studio/score-render"), file.arrayBuffer()]);
-  const result = importScore(new Uint8Array(bytes), file.name);
+  // A name of white space only gives no title: the score is untitled, as one read with none is shown.
+  const result = importScore(new Uint8Array(bytes), file.name.trim() === "" ? strings.score.untitled : file.name);
   return result.ok ? { state: "read", score: result.score, report: result.report } : { state: "failed", message: text.failures[result.failure] };
 }
 
@@ -93,7 +94,7 @@ async function create(): Promise<void> {
             <ul class="import-score__report" data-import-report>
               <li v-for="item in ready.report" :key="item.loss" :data-loss="item.loss">
                 <span>{{ text.losses[item.loss] }}</span>
-                <span class="import-score__muted">{{ text.times(item.count) }}<template v-if="item.bars.length > 0">（{{ text.bars(item.bars) }}）</template></span>
+                <span class="import-score__muted">{{ text.times(item.count, item.bars) }}</span>
               </li>
             </ul>
           </template>
