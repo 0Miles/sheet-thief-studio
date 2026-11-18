@@ -1,6 +1,6 @@
 // `window.__studioTest`: what the end-to-end tests read from the page (docs/spec/testing.md,
-// section 2). Read-only functions, only in a build made with VITE_E2E=1: in any other build the
-// code below is dead, and the bundle does not even hold the name.
+// section 2). Read-only functions but one, `writeMeta`, only in a build made with VITE_E2E=1: in
+// any other build the code below is dead, and the bundle does not even hold the name.
 import type { Cursor, Flag, ScoreJSON } from "@studio/score-model";
 import type { PlayerSettings } from "@studio/score-render";
 
@@ -12,6 +12,13 @@ export interface StudioTestHook {
   flags(): Flag[];
   /** The settings the player plays with (#33); null before there is one. */
   player(): PlayerSettings | null;
+  /**
+   * Write a value straight into the page's document, past the commands, as an older tab or data
+   * kept offline may hold it (#102): `json` parsed, as the field `field` of the meta. The only
+   * write of the hook: no command or key writes what a test needs here (a value nested deeper
+   * than a value of the document may be).
+   */
+  writeMeta(field: string, json: string): void;
 }
 
 declare global {

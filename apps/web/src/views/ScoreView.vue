@@ -28,6 +28,7 @@ import {
   type KeySignature,
   keySigAt,
   MAX_BEAT_TEXT,
+  metaOf,
   nextFlag,
   observeScore,
   type PartKind,
@@ -264,6 +265,7 @@ const hideFromTests = exposeForTests({
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
   player: () => engine?.player.settings() ?? null,
+  writeMeta: (field, json) => metaOf(doc).set(field, JSON.parse(json)),
 });
 const measurement = measureEditView({
   doc,
