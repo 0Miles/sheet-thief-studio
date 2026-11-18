@@ -21,7 +21,7 @@ M1a–M5 的規格細節。詞彙見 [`CONTEXT.md`](../../CONTEXT.md)，設計�
 | [`phrases.md`](phrases.md) | Phrase fragment 的兩種形狀、剪貼簿格式、樂句庫、樂句編輯器的儲存（`baseRevision`、409、413）、樂句側欄、審核頁 |
 | [`recognizer.md`](recognizer.md) | 辨識服務：範圍、要複製的模組、授權聲明、HTTP 介面、限制與逾時、契約大綱、#27 的規則與案例、server 這一側與轉換 |
 | [`import-export.md`](import-export.md) | 匯入（alphaTab 模型 → `ScoreJSON`）的對照與報告、匯出（GP7、MIDI）、round-trip 測試 |
-| [`karyl-login.md`](karyl-login.md) | karyl-chan bot 登入：流程、驗證步驟、設定、綁定、失敗畫面、測試 |
+| [`karyl-login.md`](karyl-login.md) | karyl-chan plugin 與登入：流程、驗證、plugin 與設定、綁定、Bearer session、base path、失敗畫面、測試 |
 | [`testing.md`](testing.md) | 測試 seam、測試掛鉤與 build、CI 的 job、量測、確認檢查、人工判定項目 |
 
 ## 怎麼修改這些文件
