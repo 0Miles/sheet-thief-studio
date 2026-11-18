@@ -294,6 +294,49 @@ export type ScoreLink = z.infer<typeof scoreLink>;
 export const guestTicket = z.object({ scoreId: z.string(), title: z.string(), ticket: z.string() });
 export type GuestTicket = z.infer<typeof guestTicket>;
 
+// Versions (docs/spec/routes.md, 3.6; docs/spec/collab.md, section 8).
+/**
+ * Why a version was made: as the last member left, every 10 minutes while the score is open,
+ * before a restore, or by a member who named it as they made it.
+ */
+export const versionReason = z.enum(["last_disconnect", "interval", "before_restore", "manual"]);
+export type VersionReason = z.infer<typeof versionReason>;
+
+/** The lengths a version's name may have, in characters (docs/spec/collab.md, 8.4). */
+export const versionLimits = { name: { min: 1, max: 100 } } as const;
+/** Trimmed. */
+export const versionName = z.string().trim().min(versionLimits.name.min).max(versionLimits.name.max);
+
+/** A version as the versions page lists them (`GET /api/scores/:id/versions`): a named one is never deleted on its own. */
+export const versionSummary = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  reason: versionReason,
+  /** Null for an automatic version. */
+  name: z.string().nullable(),
+  /** Of its JSON. */
+  byteSize: z.int(),
+});
+export type VersionSummary = z.infer<typeof versionSummary>;
+
+/** The versions of a score, the latest first. */
+export const versionList = z.object({ versions: z.array(versionSummary) });
+export type VersionList = z.infer<typeof versionList>;
+
+/**
+ * A version made now of the server's content (`POST /api/scores/:id/versions`): with a name, a
+ * member's own, always a new one; without, the one made before a restore.
+ */
+export const createVersionRequest = z.object({ name: versionName.optional() });
+export type CreateVersionRequest = z.infer<typeof createVersionRequest>;
+
+export const createdVersion = z.object({ versionId: z.string() });
+export type CreatedVersion = z.infer<typeof createdVersion>;
+
+/** A version named, or its name taken away: an automatic version again (`PATCH /api/scores/:id/versions/:versionId`). */
+export const renameVersionRequest = z.object({ name: versionName.nullable() });
+export type RenameVersionRequest = z.infer<typeof renameVersionRequest>;
+
 // Phrases (docs/spec/routes.md, 3.7; docs/spec/phrases.md, section 4).
 /** The lengths a phrase's name may have, in characters. */
 export const phraseLimits = { name: { min: 1, max: 100 } } as const;
@@ -367,6 +410,8 @@ export const errorCode = z.enum([
   "cannot_disable_self",
   "owner_cannot_leave",
   "revision_conflict",
+  "score_read_only",
+  "version_unreadable",
   "recognition_in_progress",
   "payload_too_large",
   "phrase_too_large",

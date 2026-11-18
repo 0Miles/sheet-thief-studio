@@ -21,7 +21,7 @@ import { scoreOfLink } from "./links";
 import { screenAwareness } from "./presence";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
-import { createVersion, VERSION_INTERVAL_MS } from "./versions";
+import { createVersion, type MadeVersion, VERSION_INTERVAL_MS } from "./versions";
 
 export const COLLAB_PATH = "/collab";
 
@@ -55,6 +55,9 @@ type FrozenReason = CollabNotice["reason"];
  */
 export type CollabContext = (Member & { displayName: string }) | Guest;
 
+/** A version a member asks for: the one a restore makes first, or one they name as it is made. */
+export type SavedVersion = { reason: "before_restore"; createdBy: string } | { reason: "manual"; createdBy: string; name: string };
+
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
   scoreId?: string;
@@ -70,6 +73,13 @@ export interface Collab {
    * changing nothing, when the document is frozen (docs/spec/schema.md, sections 9 and 10).
    */
   change(scoreId: string, transaction: (doc: Y.Doc) => void): Promise<void>;
+  /**
+   * Make a version, asked for by a member, of what the score is now on this server: the document
+   * the members have open, or the stored one brought up to date as any load does
+   * (docs/spec/collab.md, 8.3 and 8.5). `readOnly`, with none made, when the document is frozen:
+   * this server cannot read it for sure. Null when the score is gone for good.
+   */
+  saveVersion(scoreId: string, made: SavedVersion): Promise<MadeVersion | "readOnly" | null>;
   /**
    * Close the connections that match, and only those (never `closeConnections(documentName)`,
    * which closes everyone's). Their providers reconnect, each with a new ticket of its own. A
@@ -470,6 +480,18 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       try {
         if (frozen.has(scoreId)) throw new Error(`score ${scoreId} is read-only (${frozen.get(scoreId)}): not changed`);
         await direct.transact(transaction);
+      } finally {
+        await direct.disconnect();
+      }
+    },
+    async saveVersion(scoreId, made) {
+      // Loaded as a member's connection loads it, or the one in memory: migrated, frozen or not.
+      // Held in memory until the version is made: the content is read once the row is locked.
+      const direct = await hocuspocus.openDirectConnection(scoreId);
+      try {
+        if (frozen.has(scoreId)) return "readOnly";
+        const document = direct.document!;
+        return await createVersion(scoreId, () => docToJson(document), made.reason, made.createdBy, made.reason === "manual" ? made.name : null);
       } finally {
         await direct.disconnect();
       }

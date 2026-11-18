@@ -441,11 +441,11 @@ test("the database refuses a version with a reason it does not know", async () =
   const id = await createScore(started.app, started.session, "原因測試");
   const row = { scoreId: id, schemaVersion: SCHEMA_VERSION, content: Buffer.from("x"), contentHash: "0".repeat(64), byteSize: 1 };
 
-  await expect(Version.create({ ...row, reason: "manual" as never })).rejects.toThrow(/versions_reason_check/);
+  await expect(Version.create({ ...row, reason: "restored" as never })).rejects.toThrow(/versions_reason_check/);
 
   expect(await Version.count({ where: { scoreId: id } })).toBe(0);
-  for (const reason of ["last_disconnect", "interval", "before_restore"] as const) await Version.create({ ...row, reason });
-  expect(await Version.count({ where: { scoreId: id } })).toBe(3);
+  for (const reason of ["last_disconnect", "interval", "before_restore", "manual"] as const) await Version.create({ ...row, reason });
+  expect(await Version.count({ where: { scoreId: id } })).toBe(4);
 });
 
 test("content of more than 8 MB of JSON makes no version, and one of exactly as much does", async () => {
