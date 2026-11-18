@@ -1,9 +1,13 @@
 // The end-to-end tests' own database and Redis database (of compose.dev.yaml, or of CI's service
 // containers), and the accounts global-setup.ts creates there before the tests run.
 
+/**
+ * Those of compose.dev.yaml by default. CI's e2e jobs run in a container, where the service
+ * containers answer to their own names and ports (E2E_DATABASE_URL, E2E_REDIS_URL in ci.yml).
+ */
 export const SERVER_ENV = {
-  DATABASE_URL: "postgres://studio:studio@localhost:5438/studio_e2e",
-  REDIS_URL: "redis://localhost:6388/2",
+  DATABASE_URL: process.env.E2E_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_e2e",
+  REDIS_URL: process.env.E2E_REDIS_URL ?? "redis://localhost:6388/2",
 };
 
 export const ADMIN = {
