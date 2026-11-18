@@ -86,7 +86,7 @@ MEASURE_RUNS=3 pnpm --filter @studio/web measure --project=webkit latency
 | WebKit | 同時修改（plain） | 1 個聲部 | 62 / **90** | 62 / 77 | 60 / 77 |
 | WebKit | 同時修改（plain） | 5 個聲部 | 100 / **151** | 108 / **169** | 94 / 139 |
 
-每一格的 50 個按鍵都等到了重畫，沒有丟掉任何樣本。完整的表（handler 開始、指令做完、rendered、小節畫上去、第一個 frame）在 [`s2-keys-*-headless.md`](measurements/data/) 與 [`s2-concurrent-*-headless.md`](measurements/data/)。
+每一格的 50 個按鍵都等到了重畫，沒有丟掉任何樣本。完整的表（handler 開始、指令做完、rendered、小節畫上去、第一個 frame）在 [`m1b-s2-keys-*-headless.md`](measurements/data/) 與 [`m1b-s2-concurrent-*-headless.md`](measurements/data/)。
 
 **和門檻比較**（p95 的最差值，取第二個 frame；括號內是取第一個 frame）
 
@@ -122,7 +122,7 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 | Firefox | 2–3 / 6–10 | 2–3 / 3–12 | 57 / 71、80 / 94 | 109 |
 | WebKit | 3 / 6–9 | 1–2 / 3–6 | 23 / 35、32 / 41 | 55 |
 
-完整的表在 [`s2-stages-*-headless.md`](measurements/data/)。
+完整的表在 [`m1b-s2-stages-*-headless.md`](measurements/data/)。
 
 ### 怎麼讀這些數字
 
@@ -147,12 +147,12 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 - 在 60 Hz（或更高）的螢幕上開視窗量 Firefox，確認沒達標是否來自 headless 的 32 Hz frame：
   `HEADED=1 pnpm --filter @studio/web measure --project=firefox latency`
-  （會開瀏覽器視窗約 11 分鐘；結果寫成 `s2-*-firefox-headed.*`）
+  （會開瀏覽器視窗約 11 分鐘；結果寫成 `<里程碑>-s2-*-firefox-headed.*`）
 - WebKit 的可信數字要在 macOS 的 Safari（或有 Web Audio 的 Linux WebKit）上量：在 Mac 上 `pnpm --filter @studio/web measure --project=webkit latency`。在 Windows 上沒有辦法補上 Web Audio（#129）。
 
 ### 資料檔
 
-[`measurements/data/`](measurements/data/)：每個瀏覽器三組，`s2-stages-<瀏覽器>-headless`、`s2-keys-<瀏覽器>-headless`、`s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。
+[`measurements/data/`](measurements/data/)：每個瀏覽器三組，`m1b-s2-stages-<瀏覽器>-headless`、`m1b-s2-keys-<瀏覽器>-headless`、`m1b-s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。
 
 ## M2：鼓的第二聲線
 
