@@ -16,6 +16,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
 import { Score, ScoreMember } from "../src/db/models";
+import { newToken } from "../src/tokens";
 import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -111,6 +112,12 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   const accountId = (await whoAmI(app, session)).json().accountId as string;
   for (const nowhere of [randomUUID(), "not-a-score"]) {
     await refusal(nowhere, await new CollabTickets(redis).issue({ kind: "member", scoreId: nowhere, accountId, sessionId: session, role: "owner" }));
+  }
+  // What Redis holds is no ticket (an older server's, or changed by hand): refused as none.
+  for (const stored of ["not JSON", JSON.stringify({ kind: "member", scoreId: mine, accountId, role: "owner" })]) {
+    const unreadable = newToken();
+    await redis.set(`collab-ticket:${unreadable}`, stored, "EX", TICKET_TTL_SECONDS);
+    await refusal(mine, unreadable);
   }
   const beforeDeletion = await ticketFor(app, deleted, session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted } });
