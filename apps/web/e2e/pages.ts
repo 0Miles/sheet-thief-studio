@@ -107,6 +107,8 @@ export interface ScoreFixture {
   bars?: number;
   parts?: { name: string; kind: PartKind }[];
   state?: string;
+  /** The schema version the score says it is of: the current one when left out. */
+  schemaVersion?: number;
 }
 
 /**

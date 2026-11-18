@@ -1,7 +1,8 @@
 // What the collab server tells a tab about its connection, as a stateless message
-// (docs/spec/collab.md, sections 2.1 and 9). The `readOnly` notice is #109's; this one is the
-// `closed` notice: the server closes the connection for good, and the tab must not connect again.
-import { type ClosedNotice, collabNotice, type CollabNotice } from "@studio/contracts";
+// (docs/spec/collab.md, sections 2.1 and 9): `readOnly`, the server takes nothing this tab sends
+// to the score; `closed`, the server closes the connection for good, and the tab must not
+// connect again.
+import { type ClosedNotice, collabNotice, type CollabNotice, type ReadOnlyNotice } from "@studio/contracts";
 
 /** The server's notice a stateless message carries; null for any other payload. */
 export function noticeOf(payload: string): CollabNotice | null {
@@ -34,5 +35,18 @@ export function stopWhenClosed(provider: NoticedProvider, closed: (reason: Close
     if (notice?.type !== "closed") return;
     provider.configuration.websocketProvider.disconnect();
     closed(notice.reason);
+  });
+}
+
+/**
+ * `lock` is told why when the server says it takes nothing this tab sends to the score
+ * (`readOnly`, #109): a newer schema, or one it cannot migrate. It says so at every connection,
+ * as the connection is made, before or after the document is synced: the order is not given.
+ * The connection is kept, the score still read from it.
+ */
+export function lockWhenReadOnly(provider: Pick<NoticedProvider, "on">, lock: (reason: ReadOnlyNotice["reason"]) => void): void {
+  provider.on("stateless", ({ payload }) => {
+    const notice = noticeOf(payload);
+    if (notice?.type === "readOnly") lock(notice.reason);
   });
 }

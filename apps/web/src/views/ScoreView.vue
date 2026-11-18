@@ -62,7 +62,7 @@ import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { stopWhenClosed } from "../notices";
+import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
@@ -74,7 +74,8 @@ import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
 /** One of the two: a member's score id, or a guest's link token; and what to say first, when the score was opened anew. */
-const props = defineProps<{ id?: string; token?: string; notice?: string }>();
+/** `readOnly`: why the score opens read-only from the start, locked on this page before it was opened anew. */
+const props = defineProps<{ id?: string; token?: string; notice?: string; readOnly?: ReadOnlyReason }>();
 /** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
 const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
@@ -164,7 +165,7 @@ const online = ref(navigator.onLine);
 /** What the indicator shows (`data-sync`): offline throughout, while the browser is, and not only between the provider's attempts. */
 const shownSync = computed(() => (online.value ? sync.value : "offline"));
 /** Why nobody may change the score here, whatever their role; null while they may (access.ts). */
-let readOnlyBecause: ReadOnlyReason | null = null;
+let readOnlyBecause: ReadOnlyReason | null = props.readOnly ?? null;
 const view = ref<View | null>(null);
 /** One of the two edit views: the cursor and the keys of the score are there. */
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
@@ -857,7 +858,7 @@ function start(): void {
   }
   // The Read view of an Owner or an Editor (a device that cannot be typed on): a session with no
   // cursor, for a version restored here to be undone and done again by key (docs/spec/collab.md, 8.5).
-  if (mayChange()) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
+  if (mayChange() && readOnlyBecause === null) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
   // Space plays and pauses in the Read view too.
   focusScore();
 }
@@ -917,8 +918,9 @@ function updateSync(): void {
 
 /**
  * Nobody may change the score here: a newer schema (docs/spec/schema.md, section 9), or the
- * server's `readOnly` notice (#109 hands its reason here). The edit view opens read-only, saying
- * why; one open for typing already is closed and opened anew, read-only, from the server's document.
+ * server's `readOnly` notice (docs/spec/collab.md, 2.1). The edit view opens read-only, saying
+ * why; one open for typing already is closed and opened anew, read-only from the start (`close`
+ * hands the reason on), from the server's document. Locked until the page is loaded again.
  */
 function lockReadOnly(reason: ReadOnlyReason): void {
   if (readOnlyBecause !== null) return;
@@ -947,7 +949,8 @@ function close(closing: Closing): void {
   peers.value = [];
   peerMarks.value = [];
   dropProvider();
-  emit("closed", closing);
+  // A score locked here is opened anew locked: the server's notice may come again only once it has synced.
+  emit("closed", closing.kind === "reopen" && readOnlyBecause !== null ? { ...closing, readOnly: readOnlyBecause } : closing);
 }
 
 /**
@@ -1084,6 +1087,11 @@ onMounted(async () => {
     },
   });
   stopWhenClosed(provider, closedByServer);
+  // The server takes nothing of this tab's (docs/spec/collab.md, 2.1): an Owner's or an Editor's
+  // score turns read-only, saying why. A Viewer or a guest reads only anyway.
+  lockWhenReadOnly(provider, (reason) => {
+    if (mayChange()) lockReadOnly(reason);
+  });
   // A member's tab is in the presence from now on, in "read" mode with no cursor until the
   // score is open; a guest's provider has no awareness.
   if (provider.awareness !== null) {

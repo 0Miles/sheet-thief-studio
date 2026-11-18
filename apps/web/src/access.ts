@@ -39,9 +39,11 @@ export function afterRoleChange(opened: Role, now: Role): "carryOn" | "reopen" {
 
 /**
  * Why the page closes the score it has open. `reopen`: its document is dropped and the score
- * opened anew, saying why. `removed`: the 404 page, saying why. `loggedOut`: /login.
+ * opened anew, saying why; read-only from the start when `readOnly` says why (the score was
+ * locked here: it stays locked until the page is loaded again). `removed`: the 404 page, saying
+ * why. `loggedOut`: /login.
  */
-export type Closing = { kind: "reopen"; notice: string } | { kind: "removed" } | { kind: "loggedOut" };
+export type Closing = { kind: "reopen"; notice: string; readOnly?: ReadOnlyReason } | { kind: "removed" } | { kind: "loggedOut" };
 
 /**
  * Asking for a new ticket failed for good: `loggedOut` when the session has ended (401),

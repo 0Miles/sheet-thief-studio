@@ -81,10 +81,11 @@ export const strings = {
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
     // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).
+    // Locked until the page is loaded again: each says so.
     readOnly: {
       newerSchema: "這份團譜由較新的版本建立，請重新整理頁面。",
-      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
-      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
+      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視；伺服器更新後請重新整理頁面。",
+      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視；問題排除後請重新整理頁面。",
     } satisfies Record<ReadOnlyReason, string>,
     // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
     // holds would be refused again at every reconnection. Opening the score anew drops it.
