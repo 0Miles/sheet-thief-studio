@@ -32,7 +32,7 @@ M0（技術驗證）已完成，接下來是 M1a；目前還不能使用。計�
 
 ```bash
 pnpm install
-docker compose -f compose.dev.yaml up -d         # Postgres（127.0.0.1:5438）與 Redis（127.0.0.1:6388）
+docker compose -f compose.dev.yaml up -d         # Postgres（127.0.0.1:5438）、Redis（127.0.0.1:6388）與辨識服務（127.0.0.1:8000）
 pnpm --filter @studio/server cli migrate         # 建立或更新資料表；每次拉下新的遷移後再跑一次
 pnpm --filter @studio/server cli create-admin <帳號名稱> <顯示名稱>   # 第一個管理者，只需要做一次
 pnpm --filter @studio/server dev   # http://localhost:8031
