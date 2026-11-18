@@ -387,6 +387,9 @@ export const partSchemas = {
   }),
 };
 
+/** A clef a staff of a pitched part can have. */
+export type PitchedClef = z.output<typeof partSchemas.pitched.shape.staves>[number]["clef"];
+
 /**
  * Check beats against the kind of the part they belong to, one with `strings` strings: their own
  * fields, and their notes (keys and fields). A phrase fragment's beats are checked the same way.
@@ -469,7 +472,7 @@ export function keySigAt(score: ScoreJSON, barId: string): KeySignature | undefi
  * The key in force in each bar, in order: from the bar that changes it on, `DEFAULT_KEY_SIG` before
  * any does. Each a copy of its own: changing one changes neither the score nor another bar's.
  */
-export function keySigsOf(bars: readonly BarJSON[]): KeySignature[] {
+export function keySigsOf(bars: readonly Pick<BarJSON, "keySig">[]): KeySignature[] {
   let key: Readonly<KeySignature> = DEFAULT_KEY_SIG;
   return bars.map((bar) => {
     key = bar.keySig ?? key;
