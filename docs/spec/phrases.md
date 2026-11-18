@@ -126,7 +126,7 @@ interface BeatsFragment {
   - 樂句內容（`GET /api/phrases/:id`）依 `id` 與 `revision` 快取，讀不到的下次重讀。
   - 拖曳用 HTML5 drag and drop：`dragover` 時以 `hitTest` 找小節，`dropSpotOf` 算出要取代的小節（譜裡有的那些）；種類相同時畫成可以放（`data-drop="ok"`），種類不同時只畫游標下那個小節、標成「不能放」（`data-drop="refused"`、`data-drop-label`），不接受放下。弦數、譜表數等其他拒絕由 `dropFragment` 判斷，放下後以提示告知。
   - 放置走 `EditorSession.drop(target, fragment)`：一個 Command、一個復原步驟；唯讀時拒絕（同其他會改動文件的鍵）；游標以 `settleCursor` 留在原處（原本的拍點被取代時移到最近的位置），選取結束。拖曳放下後焦點回到譜面，`Ctrl+Z` 直接復原。
-  - 放置的提示（`DropHint`）與拒絕（`DropRefusal`）顯示在譜頁工具列的提示（`role="status"`），**不是** issue #57 寫的 toast。理由：app 沒有掛 `@karyl-chan/ui` 的 `AppToast`；工具列的提示在譜面上方，不疊在譜面上，所以不會蓋到保留區域；session 的其他提示也在這裡。這個 `role="status"` 容器一直在頁面上，只換裡面的文字；放置的提示先清空再寫入，所以連續兩次相同的提示，螢幕閱讀器也會再念一次；成功而沒有提示的放置會清掉上一次的提示。文字在 `strings.score.phraseSidebar`。
+  - 放置的提示（`DropHint`）與拒絕（`DropRefusal`）顯示在譜頁工具列的提示（`role="status"`），**不是** issue #57 寫的 toast。理由：app 沒有掛 `@karyl-chan/ui` 的 `AppToast`；工具列的提示在譜面上方，不疊在譜面上，所以不會蓋到保留區域；session 的其他提示也在這裡。這個 `role="status"` 容器（`.score__status`）一直在頁面上，只換裡面的內容；提示本身（`.score__notice`）只在有提示時才在容器裡，所以「沒有提示」仍是沒有這個元素（#109 的 `readOnly.spec.ts` 這樣判斷）；放置的提示先清空再寫入，所以連續兩次相同的提示，螢幕閱讀器也會再念一次；成功而沒有提示的放置會清掉上一次的提示。文字在 `strings.score.phraseSidebar`。
 
 ## 7. 審核頁（`/recognitions/:id`）
 

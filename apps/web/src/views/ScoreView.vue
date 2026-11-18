@@ -1227,13 +1227,17 @@ onBeforeUnmount(() => {
         </ul>
         <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
-        <!-- Always in the page, only its words change: a live region inserted with them is not read out everywhere. -->
-        <p class="score__notice" role="status" :data-empty="notice === null">
-          <template v-if="notice">
+        <!--
+          The live region is always in the page, only what is in it changes: one inserted with its
+          words is not read out everywhere. The notice itself (`.score__notice`) is in it only while
+          there is one, so that "no notice" is no element, as before.
+        -->
+        <div class="score__status" role="status">
+          <p v-if="notice" class="score__notice">
             <span>{{ notice }}</span>
             <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
-          </template>
-        </p>
+          </p>
+        </div>
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
@@ -1537,11 +1541,14 @@ onBeforeUnmount(() => {
 .score__sync[data-sync="offline"] {
   color: var(--danger);
 }
+.score__status {
+  margin: 0 0 0 auto;
+}
 .score__notice {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin: 0 0 0 auto;
+  margin: 0;
   font-size: 0.875rem;
 }
 .score__error {
