@@ -121,15 +121,6 @@ watch(
   },
 );
 
-/** What the list says of a phrase besides its name: its kind, its strings or staves, its bars. */
-function detailsOf(phrase: PhraseSummary): string {
-  const parts = [text.kinds[phrase.kind]];
-  if (phrase.stringCount !== null) parts.push(text.strings(phrase.stringCount));
-  if (phrase.staffCount !== null && phrase.staffCount > 1) parts.push(text.staves(phrase.staffCount));
-  parts.push(text.bars(phrase.barCount));
-  return parts.join(" · ");
-}
-
 // Every dialog of the page: which one is open, on which phrase, and what it is sending.
 type Dialog = "create" | "rename" | "delete";
 const dialog = ref<Dialog | null>(null);
@@ -227,7 +218,7 @@ function remove(): Promise<void> {
     <ul v-else class="phrases__list">
       <li v-for="phrase in phrases" :key="phrase.id" class="phrases__item" :data-phrase="phrase.id">
         <RouterLink class="phrases__name" :to="{ name: 'phrase', params: { id: phrase.id } }">{{ phrase.name }}</RouterLink>
-        <span class="phrases__muted">{{ detailsOf(phrase) }}</span>
+        <span class="phrases__muted">{{ text.details(phrase) }}</span>
         <Cluster v-if="editable" gap="1" :wrap="false">
           <AppButton variant="ghost" size="sm" @click="open('rename', phrase)">{{ text.rename }}</AppButton>
           <AppButton variant="ghost" size="sm" :disabled="sending" @click="duplicate(phrase)">{{ text.duplicate }}</AppButton>
