@@ -2,8 +2,7 @@
 // 5.8; docs/spec/schema.md, 8.1). A pitched note is keyed by its MIDI pitch ("n61"); where it is
 // drawn depends on the clef of its staff and on how it is spelled ("C#" on C's position, "Db" on
 // D's). Pure functions: the commands that enter and move notes read the document and call these.
-import type { PitchedClef } from "./commands";
-import type { KeySignature } from "./schema";
+import type { KeySignature, PitchedClef } from "./schema";
 
 /** The note names, in the order of a scale from C. */
 export const NOTE_LETTERS = ["C", "D", "E", "F", "G", "A", "B"] as const;
@@ -92,6 +91,20 @@ export function defaultSpelling(pitch: number, keySig: KeySignature): string {
  */
 export function semitoneSpelling(pitch: number, step: 1 | -1): string {
   return spellOf(plainSpelling(pitch, step === 1));
+}
+
+/**
+ * The accidental a note must be drawn with for it to stand where `lineOfPitch` puts it, whatever
+ * the renderer would choose in the key (alphaTab spells a white key E♯ or C♭ in a key of six or
+ * seven sharps or flats): that of its own spelling when it names its pitch (0 for a natural), else
+ * 0 on a white key, which the default spelling writes natural in every key; none for a black key
+ * without a spelling of its own, whose sharp or flat the key decides alike in the renderer and in
+ * `defaultSpelling` (docs/spec/schema.md, 8.1).
+ */
+export function drawnAccidentalOf(pitch: number, spell: string | undefined): number | undefined {
+  const own = spell === undefined ? undefined : spellingOf(spell);
+  if (own !== undefined && spells(own, pitch)) return own.alter;
+  return plainSpelling(pitch, true).alter === 0 ? 0 : undefined;
 }
 
 /** The spelling a note is drawn with: its own when it names its pitch, else the key's default (docs/spec/schema.md, 8.1). */

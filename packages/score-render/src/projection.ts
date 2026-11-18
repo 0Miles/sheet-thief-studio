@@ -3,6 +3,7 @@
 import * as alphaTab from "@coderline/alphatab";
 import {
   DEFAULT_TEMPO,
+  drawnAccidentalOf,
   type BarJSON,
   barTicks,
   beatAfter,
@@ -116,21 +117,25 @@ export function restsFilling(from: number, to: number): NoteValue[] {
   return rests;
 }
 
-function accidentalModeOf(spell: string | undefined): alphaTab.model.NoteAccidentalMode {
-  const accidental = spell?.slice(1) ?? "";
-  switch (accidental) {
-    case "#":
-      return model.NoteAccidentalMode.ForceSharp;
-    case "b":
-      return model.NoteAccidentalMode.ForceFlat;
-    case "##":
-    case "x":
-      return model.NoteAccidentalMode.ForceDoubleSharp;
-    case "bb":
-      return model.NoteAccidentalMode.ForceDoubleFlat;
-    default:
-      return model.NoteAccidentalMode.Default;
-  }
+/** The mode that draws each accidental `drawnAccidentalOf` asks for; none asked, alphaTab's own. */
+const ACCIDENTAL_MODES: Record<number, alphaTab.model.NoteAccidentalMode> = {
+  [-2]: model.NoteAccidentalMode.ForceDoubleFlat,
+  [-1]: model.NoteAccidentalMode.ForceFlat,
+  0: model.NoteAccidentalMode.ForceNatural,
+  1: model.NoteAccidentalMode.ForceSharp,
+  2: model.NoteAccidentalMode.ForceDoubleSharp,
+};
+
+/**
+ * How alphaTab is to spell a pitched note so that it is drawn where the editor finds it
+ * (score-model's `lineOfPitch`, docs/spec/schema.md 8.1, #48): as its own spelling when that names
+ * its pitch, a natural forced too, else a white key natural, which alphaTab left to itself spells
+ * E♯ or C♭ in a key of six or seven sharps or flats; a black key without a spelling of its own as
+ * the key has it (`Default`).
+ */
+function accidentalModeOf(spell: string | undefined, pitch: number): alphaTab.model.NoteAccidentalMode {
+  const accidental = drawnAccidentalOf(pitch, spell);
+  return accidental === undefined ? model.NoteAccidentalMode.Default : (ACCIDENTAL_MODES[accidental] ?? model.NoteAccidentalMode.Default);
 }
 
 const SLIDE_OUT_TYPES: Record<SlideOut, alphaTab.model.SlideOutType> = {
@@ -211,7 +216,7 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   } else if (key.startsWith("n") && part.kind === "pitched") {
     note.octave = Math.floor(number / 12);
     note.tone = number % 12;
-    note.accidentalMode = accidentalModeOf(json.spell);
+    note.accidentalMode = accidentalModeOf(json.spell, number);
   } else {
     return null;
   }

@@ -80,9 +80,33 @@ test.each(PLATFORMS)("on %s, Shift+↑ and Shift+↓ move the notes of the line 
   undoEach(press, platform, () => notesOf(beats()), [[{ n63: { spell: "Eb" } }], [{ n75: { spell: "Eb" } }]]);
 });
 
+test("with a selection, a letter, ], [ and the octave work at the cursor and end the selection", () => {
+  const { session, press, beats } = sessionOn("pitched");
+  press("c");
+  press("ArrowRight");
+  press("e");
+  for (const [key, modifiers] of [
+    ["BracketRight", {}],
+    ["BracketLeft", {}],
+    ["ArrowUp", shift],
+    ["d", {}],
+  ] as const) {
+    // Both beats selected, the cursor on the second, on its note's line.
+    press("ArrowLeft");
+    press("ArrowRight", 1000, shift);
+    expect(session.selection, key).not.toBeNull();
+    press(key, 1000, modifiers);
+    expect(session.selection, key).toBeNull();
+  }
+  // The first beat, in the selection but not under the cursor, is as it was.
+  expect(notesOf(beats())[0]).toEqual({ n72: { spell: "C" } });
+  expect(notesOf(beats())[1]).toEqual({ n88: { spell: "E" }, n86: { spell: "D" } });
+});
+
 test("the letter keys, ], [ and the octave are not repeated when held, and are not keys on other parts", () => {
   const { press, beats } = sessionOn("pitched");
   expect(press("c", 1000, { repeat: true })).toBe(true);
+  expect(press("BracketRight", 1000, { repeat: true })).toBe(true);
   expect(beats()).toEqual([]);
   const guitar = sessionOn("fretted");
   for (const key of ["c", "BracketRight", "BracketLeft"]) expect(guitar.press(key), key).toBe(false);

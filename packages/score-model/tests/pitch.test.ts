@@ -3,7 +3,7 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 
-import { defaultSpelling, enteredPitch, type KeySignature, lineOfPitch, naturalAt, NOTE_LETTERS, PITCHED_CLEFS, type PitchedClef, semitoneSpelling } from "../src/index";
+import { defaultSpelling, drawnAccidentalOf, enteredPitch, type KeySignature, lineOfPitch, naturalAt, NOTE_LETTERS, PITCHED_CLEFS, type PitchedClef, semitoneSpelling } from "../src/index";
 
 const C_MAJOR: KeySignature = { fifths: 0, mode: "major" };
 const PITCH_CLASSES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 } as const;
@@ -72,6 +72,26 @@ test("the key's sharps and flats are put on the letter: F in D major is F♯, B 
   expect(enteredPitch("treble", 4, "B", { fifths: 7, mode: "major" })).toEqual({ pitch: midiOf("C5"), spell: "B#", line: 4 });
   expect(enteredPitch("treble", 4, "F", { fifths: -7, mode: "major" })).toEqual({ pitch: midiOf("E4"), spell: "Fb", line: 7 });
   expect(enteredPitch("bass", 12, "C", { fifths: -7, mode: "major" })).toEqual({ pitch: midiOf("C2") - 1, spell: "Cb", line: 12 });
+});
+
+test("the lowest note a letter enters is G♭1, three steps below C2 on the bass staff's lowest position; the highest F♯6, three above C6", () => {
+  expect(enteredPitch("bass", 12, "G", { fifths: -7, mode: "major" })).toEqual({ pitch: 30, spell: "Gb", line: 15 });
+  // F is nearer above: F2.
+  expect(enteredPitch("bass", 12, "F", C_MAJOR)?.pitch).toBe(midiOf("F2"));
+  expect(enteredPitch("treble", -4, "F", { fifths: 7, mode: "major" })).toEqual({ pitch: 90, spell: "F#", line: -7 });
+});
+
+test("the accidental a note is drawn with: its own spelling's when that names its pitch, a white key's natural else, a black key's left to the key", () => {
+  expect(drawnAccidentalOf(65, "F")).toBe(0);
+  expect(drawnAccidentalOf(65, undefined)).toBe(0);
+  expect(drawnAccidentalOf(65, "E#")).toBe(1);
+  expect(drawnAccidentalOf(62, "C##")).toBe(2);
+  expect(drawnAccidentalOf(62, "Ebb")).toBe(-2);
+  expect(drawnAccidentalOf(61, "Db")).toBe(-1);
+  // A spelling of another pitch is not the note's: as if it had none.
+  expect(drawnAccidentalOf(61, "C")).toBeUndefined();
+  expect(drawnAccidentalOf(61, undefined)).toBeUndefined();
+  expect(drawnAccidentalOf(64, "D#")).toBe(0);
 });
 
 test("a black key is spelled sharp in a key of sharps and in C major, flat in a key of flats; a white key is natural", () => {

@@ -125,7 +125,8 @@ test("strings count from the highest, drum pieces are articulation ids, pitches 
   expect([sharp!.notes[0]!.realValue, sharp!.notes[0]!.accidentalMode]).toEqual([61, NoteAccidentalMode.ForceSharp]);
   const spelledFlat = flat!.notes.find((note) => note.realValue === 61)!;
   expect(spelledFlat.accidentalMode).toBe(NoteAccidentalMode.ForceFlat);
-  expect(flat!.notes.find((note) => note.realValue === 72)!.accidentalMode).toBe(NoteAccidentalMode.Default);
+  // A white key without a spelling is forced natural, as the editor finds it (#48: spelling.test.ts).
+  expect(flat!.notes.find((note) => note.realValue === 72)!.accidentalMode).toBe(NoteAccidentalMode.ForceNatural);
 });
 
 test("an empty bar is a whole-bar rest and a short voice is completed with rests, in the projection only", () => {
