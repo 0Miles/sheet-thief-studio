@@ -25,9 +25,27 @@ export function uploadRefusal(failure: unknown): string {
   const page = failure.params?.page;
   if (failure.code === "unsupported_image" && typeof page === "number") return strings.phrases.unsupportedImage(page);
   if (failure.code === "payload_too_large") return strings.phrases.imagesTooLarge;
-  // The only field of an upload: none, or too many images.
-  if (failure.code === "invalid_request") return strings.phrases.tooManyImages;
+  if (failure.code === "invalid_request") {
+    // The field `images`: none, or too many (docs/spec/routes.md, 3.8); no field named, a body
+    // that could not be read as images.
+    const issue = imagesIssueOf(failure.params);
+    if (issue === "too_big") return strings.phrases.tooManyImages;
+    if (issue === "too_small") return strings.phrases.noImages;
+    return strings.phrases.uploadUnreadable;
+  }
   return refusal(failure);
+}
+
+/** What a 400 says is wrong with the field `images`; null when it names no such field. */
+function imagesIssueOf(params: Record<string, unknown> | null): string | null {
+  const issues = params?.issues;
+  if (!Array.isArray(issues)) return null;
+  for (const issue of issues as unknown[]) {
+    if (typeof issue !== "object" || issue === null) continue;
+    const { path, code } = issue as { path?: unknown; code?: unknown };
+    if (Array.isArray(path) && path.length === 1 && path[0] === "images" && typeof code === "string") return code;
+  }
+  return null;
 }
 
 /** 「辨識結果 YYYY-MM-DD」, the day it was recognized as the browser counts days. */

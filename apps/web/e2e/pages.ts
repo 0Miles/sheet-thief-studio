@@ -1,13 +1,14 @@
 // Helpers for the end-to-end tests that go through the real pages: logging in, creating a score,
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
 import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, PART_PRESETS, type PartKind, type ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
-import { SERVER_ENV } from "./environment";
+import { RECOGNIZER_URL, SERVER_ENV } from "./environment";
 
 /** An answer the test expects the server to refuse: the browser logs it as an error, which it is not here. */
 export interface Refusal {
@@ -275,4 +276,30 @@ export function oneAfterAnother(bars: number[]): boolean {
 /** Wait until the toolbar has shown this bar playing (a 4/4 bar lasts 2 seconds at 120). */
 export async function untilShown(page: Page, bar: number): Promise<void> {
   await expect.poll(() => barsShown(page), { timeout: 15_000 }).toContain(bar);
+}
+
+/** A TAB on one page, one of the recognizer's own test images. */
+const TAB_IMAGE = fileURLToPath(new URL("../../../services/recognizer/tests/fixtures/single-page.png", import.meta.url));
+
+/**
+ * Have the stand-in recognizer answer this contract fixture, then upload a TAB image from the
+ * library as the account logged in on the page: the review page opens, and once recognized,
+ * draws the result. The recognition's id.
+ */
+export async function recognizeImage(page: Page, fixture: string): Promise<string> {
+  const answer = await page.request.put(`${RECOGNIZER_URL}/fixture/${fixture}`);
+  expect(answer.status()).toBe(204);
+  await page.goto("/phrases");
+  await page.locator("[data-recognize-input]").setInputFiles(TAB_IMAGE);
+  await expect(page).toHaveURL(/\/recognitions\/[0-9a-f-]{36}$/);
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  return new URL(page.url()).pathname.split("/").at(-1)!;
+}
+
+/** The original image of a one-page recognition is shown, loaded. */
+export async function originalShown(page: Page): Promise<void> {
+  const image = page.locator("[data-original]");
+  await expect(image).toHaveCount(1);
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 }

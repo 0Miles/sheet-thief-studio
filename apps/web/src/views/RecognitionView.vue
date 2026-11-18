@@ -18,6 +18,7 @@ import { ApiError, del, get, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PhraseEditor from "../components/PhraseEditor.vue";
 import { canType } from "../device";
+import { useLeaveQuestion, warnBeforeUnload } from "../leaving";
 import { defaultRecognitionName, failureOf, pollRecognition, tuningNote } from "../recognition";
 import { strings } from "../strings";
 import NotFoundView from "./NotFoundView.vue";
@@ -125,25 +126,12 @@ function discard(): Promise<void> {
 
 // Leaving ----------------------------------------------------------------------------------------
 
-/** While the page asks whether to leave with changes not saved: how the answer goes back to the router. */
-const leaving = ref<((leave: boolean) => void) | null>(null);
-
-onBeforeRouteLeave(() => {
-  if (done || !edited.value) return true;
-  return new Promise<boolean>((resolve) => {
-    leaving.value = (leave) => {
-      leaving.value = null;
-      resolve(leave);
-    };
-  });
-});
-
-/** Closing or reloading the page with changes: the browser asks first (docs/spec/phrases.md, section 7). */
-function warnEdited(event: BeforeUnloadEvent): void {
-  if (done || !edited.value) return;
-  event.preventDefault();
-}
-window.addEventListener("beforeunload", warnEdited);
+/** Changes that leaving would lose. */
+const losesChanges = () => !done && edited.value;
+const { leaving, ask } = useLeaveQuestion();
+onBeforeRouteLeave(() => (losesChanges() ? ask() : true));
+// Closing or reloading the page with changes: the browser asks first (docs/spec/phrases.md, section 7).
+warnBeforeUnload(losesChanges);
 
 let stopPolling: (() => void) | undefined;
 onMounted(() => {
@@ -152,7 +140,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPolling?.();
-  window.removeEventListener("beforeunload", warnEdited);
 });
 </script>
 
@@ -178,7 +165,7 @@ onBeforeUnmount(() => {
         <p v-if="details === null && loadError === null" class="review__banner">{{ strings.loading }}</p>
         <p v-else-if="details?.status === 'running'" class="review__banner" role="status" data-running>{{ text.running }}</p>
         <div v-else-if="failure" class="review__banner review__banner--danger" role="alert" data-failed>
-          <strong>{{ text.failed }}：{{ failure.reason }}</strong>
+          <strong>{{ text.failed(failure.reason) }}</strong>
           <ul v-if="failure.pages.length > 0" class="review__list">
             <li v-for="line in failure.pages" :key="line">{{ line }}</li>
           </ul>

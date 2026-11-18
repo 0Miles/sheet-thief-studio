@@ -57,7 +57,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | 其他 JSON 請求 | 64 KB | 補充 |
 | 文件裡 JSON 值的巢狀深度 | 64 層（score-model 的 `MAX_VALUE_DEPTH`）；`/collab` 收到含有更深的值、或解不開的更新時，關閉那條連線（[`collab.md`](collab.md) 第 9 節） | 補充（#102，使用者裁定） |
 
-- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出；辨識的 15 張來自 contracts 的 `recognitionLimits`，同樣由這裡轉出成 `MAX_RECOGNITION_IMAGES`，#63）。
+- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出；辨識的 15 張來自 contracts 的 `recognitionLimits`，同樣由這裡轉出成 `MAX_RECOGNITION_IMAGES`，#63；每張 10 MB、合計 40 MB 也是 `recognitionLimits` 的 `imageBytes`、`imagesBytes`，網頁的提示文字從同一處取，#64）。
 - body 上限的做法沿用前身 `app/security.py` 的 `BodySizeLimitMiddleware`：先看 `Content-Length`，再在讀取時累計，不先整個讀進記憶體。超過時回 413 `payload_too_large`。
 
 ## 6. 回應標頭

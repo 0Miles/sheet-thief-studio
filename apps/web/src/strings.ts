@@ -33,6 +33,11 @@ const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+/** The images a recognition takes (docs/spec/recognizer.md, section 1), and how many at once. */
+const IMAGE_TYPES = "PNG、JPEG 或 WebP";
+const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
+const RECOGNITION_FAILED = "辨識失敗";
+const megabytes = (bytes: number) => bytes / (1024 * 1024);
 
 export const strings = {
   app: {
@@ -318,17 +323,21 @@ export const strings = {
     delete: "刪除",
     /** Recognizing images of a TAB (docs/spec/phrases.md, sections 4 and 7): on every device. */
     recognize: "從圖片辨識",
-    recognizeHelp: `PNG、JPEG 或 WebP，一次最多 ${recognitionLimits.images.max} 張，依頁序選取。`,
+    recognizeHelp: `${IMAGE_TYPES}，${MOST_IMAGES}，依頁序選取。`,
     uploading: "上傳中…",
-    tooManyImages: `一次最多 ${recognitionLimits.images.max} 張圖片。`,
+    tooManyImages: `${MOST_IMAGES}圖片。`,
+    /** Refused for an upload with no image in it (400 on `images`). */
+    noImages: "請至少選擇一張圖片。",
+    /** Refused for a body the server could not read as images (400 without fields): the files could not be sent as they are. */
+    uploadUnreadable: "無法讀取上傳的檔案，請重新選擇圖片再試一次。",
     /** Refused for its size (413): the limits of docs/spec/recognizer.md, section 4. */
-    imagesTooLarge: "檔案太大：每張最多 10 MB，合計最多 40 MB。",
+    imagesTooLarge: `檔案太大：每張最多 ${megabytes(recognitionLimits.imageBytes)} MB，合計最多 ${megabytes(recognitionLimits.imagesBytes)} MB。`,
     /** Refused for its type (415): which image, from 1. */
-    unsupportedImage: (page: number) => `第 ${page} 張不是 PNG、JPEG 或 WebP 圖片（例如 HEIC 要先轉檔）。`,
+    unsupportedImage: (page: number) => `第 ${page} 張不是 ${IMAGE_TYPES} 圖片（例如 HEIC 要先轉檔）。`,
     /** The recognitions not yet saved nor discarded. */
     pending: "待審核",
     pendingItem: (pages: number, at: string) => `${at} · ${pages} 張圖片`,
-    pendingStatus: { running: "辨識中", succeeded: "可以審核", failed: "辨識失敗" } satisfies Record<RecognitionStatus, string>,
+    pendingStatus: { running: "辨識中", succeeded: "可以審核", failed: RECOGNITION_FAILED } satisfies Record<RecognitionStatus, string>,
   },
   // The review page of a recognition (/recognitions/:id; docs/spec/phrases.md, section 7, and
   // docs/spec/recognizer.md): progress, why it failed, and the result opened in the phrase editor.
@@ -336,7 +345,8 @@ export const strings = {
     title: "辨識結果",
     library: "樂句庫",
     running: "辨識中，完成後會自動顯示結果。辨識一份 TAB 可能要幾分鐘。",
-    failed: "辨識失敗",
+    /** The headline of a failure: that it failed, and why. */
+    failed: (reason: string) => `${RECOGNITION_FAILED}：${reason}`,
     /** Why a recognition failed, and what to try (docs/spec/recognizer.md, 5.2). */
     failures: {
       recognition_failed: { reason: "沒有辨識出 TAB。", advice: "請確認圖片是吉他或貝斯的 TAB，拍得清楚、沒有歪斜，再試一次。" },
@@ -716,7 +726,7 @@ export const strings = {
     recognition_in_progress: "你已經有一件辨識在進行，請等它完成再上傳。",
     recognizer_busy: "辨識服務正在處理別人的圖片，請稍後再試。",
     recognition_not_succeeded: "這次辨識沒有結果可以存成樂句。",
-    unsupported_image: "只能上傳 PNG、JPEG 或 WebP 圖片。",
+    unsupported_image: `只能上傳 ${IMAGE_TYPES} 圖片。`,
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",

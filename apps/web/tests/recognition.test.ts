@@ -21,11 +21,18 @@ test("the images go in the field images, in the order they were chosen", () => {
   expect([...form.keys()]).toEqual(["images", "images"]);
 });
 
-test("a refused upload says which image is not of the three types, that the files are too large, or what its code says", () => {
+test("a refused upload says which image is not of the three types, that the files are too large, how many it takes, or what its code says", () => {
   expect(uploadRefusal(new ApiError(415, "unsupported_image", null, { page: 2 }))).toBe(strings.phrases.unsupportedImage(2));
   expect(uploadRefusal(new ApiError(415, "unsupported_image"))).toBe(strings.errors.unsupported_image);
   expect(uploadRefusal(new ApiError(413, "payload_too_large"))).toBe(strings.phrases.imagesTooLarge);
-  expect(uploadRefusal(new ApiError(400, "invalid_request"))).toBe(strings.phrases.tooManyImages);
+  expect(strings.phrases.imagesTooLarge).toContain("10 MB");
+  expect(strings.phrases.imagesTooLarge).toContain("40 MB");
+  // The server's 400s (recognitions.ts): the field images named, or a body it could not read.
+  const images = (code: string) => new ApiError(400, "invalid_request", null, { issues: [{ path: ["images"], code }] });
+  expect(uploadRefusal(images("too_big"))).toBe(strings.phrases.tooManyImages);
+  expect(uploadRefusal(images("too_small"))).toBe(strings.phrases.noImages);
+  expect(uploadRefusal(new ApiError(400, "invalid_request"))).toBe(strings.phrases.uploadUnreadable);
+  expect(uploadRefusal(new ApiError(400, "invalid_request", null, { issues: [{ path: ["other"], code: "too_big" }] }))).toBe(strings.phrases.uploadUnreadable);
   expect(uploadRefusal(new ApiError(409, "recognition_in_progress"))).toBe(strings.errors.recognition_in_progress);
   expect(uploadRefusal(new ApiError(503, "recognizer_busy"))).toBe(strings.errors.recognizer_busy);
   expect(uploadRefusal(new TypeError("Failed to fetch"))).toBe(strings.unknownError);

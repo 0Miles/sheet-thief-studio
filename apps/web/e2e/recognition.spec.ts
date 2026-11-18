@@ -3,45 +3,20 @@
 // left out; edited, it is saved as a phrase and the recognition goes with its image, or discarded.
 // A tuning not understood is warned of and chosen by hand. On a phone the review page only shows.
 // The server calls the stand-in recognizer (e2e/environment.ts), told which fixture to answer.
-import { fileURLToPath } from "node:url";
-
 import { tuningFor } from "@studio/score-model";
 
 import { strings } from "../src/strings";
-import { ADMIN, RECOGNIZER_URL } from "./environment";
-import { beatsIn, cursorOf, loggedIn, logInFromStart, pageErrors, runName, scoreOf } from "./pages";
+import { ADMIN } from "./environment";
+import { beatsIn, cursorOf, loggedIn, logInFromStart, originalShown, pageErrors, recognizeImage, runName, scoreOf } from "./pages";
 import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 const text = strings.recognition;
 
-/** A TAB on one page, one of the recognizer's own test images. */
-const IMAGE = fileURLToPath(new URL("../../../services/recognizer/tests/fixtures/single-page.png", import.meta.url));
-
 /** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
 const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
 
-/** The stand-in answers this contract fixture from now on. */
-async function answering(page: Page, fixture: string): Promise<void> {
-  const answer = await page.request.put(`${RECOGNIZER_URL}/fixture/${fixture}`);
-  expect(answer.status()).toBe(204);
-}
-
-/** Upload the image from the library: the review page opens, and once recognized, draws the result. Its id. */
-async function recognize(page: Page): Promise<string> {
-  await page.goto("/phrases");
-  await page.locator("[data-recognize-input]").setInputFiles(IMAGE);
-  await expect(page).toHaveURL(/\/recognitions\/[0-9a-f-]{36}$/);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  return new URL(page.url()).pathname.split("/").at(-1)!;
-}
-
-/** The original image is shown, loaded. */
-async function imageShown(page: Page): Promise<void> {
-  const image = page.locator("[data-original]");
-  await expect(image).toHaveCount(1);
-  await expect(image).toBeVisible();
-  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-}
+/** The name the save dialog starts with: the day of the recognition. */
+const DEFAULT_NAME = new RegExp(`^${text.defaultName(String.raw`\d{4}-\d{2}-\d{2}`)}$`);
 
 /** The fret on the cursor's string of the beat the cursor is on, in the editor. */
 async function fretAtCursor(page: Page): Promise<number | undefined> {
@@ -54,7 +29,7 @@ async function fretAtCursor(page: Page): Promise<number | undefined> {
 async function saveAs(page: Page, name: string): Promise<string> {
   await page.locator("[data-save-phrase]").click();
   const dialog = page.getByRole("dialog", { name: text.saveDialog.title });
-  await expect(dialog.getByLabel(text.saveDialog.name)).toHaveValue(/^辨識結果 \d{4}-\d{2}-\d{2}$/);
+  await expect(dialog.getByLabel(text.saveDialog.name)).toHaveValue(DEFAULT_NAME);
   await dialog.getByLabel(text.saveDialog.name).fill(name);
   await dialog.getByRole("button", { name: text.saveDialog.save }).click();
   await expect(page).toHaveURL("/phrases");
@@ -83,9 +58,8 @@ test("the library's picker takes several images of any type a phone offers, came
 test("an image uploaded is reviewed beside the result and what was left out, a fret changed, and saved as a phrase: the image is gone", async ({ page }) => {
   const errors = pageErrors(page);
   await logInFromStart(page, ADMIN);
-  await answering(page, "grace-and-strokes");
-  const id = await recognize(page);
-  await imageShown(page);
+  const id = await recognizeImage(page, "grace-and-strokes");
+  await originalShown(page);
   await expect(page.locator('[data-skipped-item="grace_notes"]')).toBeVisible();
   await expect(page.locator("[data-save-phrase]")).toBeVisible();
 
@@ -114,8 +88,7 @@ test("an image uploaded is reviewed beside the result and what was left out, a f
 test("a recognition discarded is gone with its image", async ({ page }) => {
   const errors = pageErrors(page);
   await logInFromStart(page, ADMIN);
-  await answering(page, "six-strings");
-  const id = await recognize(page);
+  const id = await recognizeImage(page, "six-strings");
   await page.locator("[data-discard]").click();
   const question = page.getByRole("dialog", { name: text.discardDialog.title });
   await question.getByRole("button", { name: text.discardDialog.confirm }).click();
@@ -128,8 +101,7 @@ test("a recognition discarded is gone with its image", async ({ page }) => {
 test("a tuning not understood is warned of; drop D chosen by hand is the tuning of the phrase saved", async ({ page }) => {
   const errors = pageErrors(page);
   await logInFromStart(page, ADMIN);
-  await answering(page, "tuning-unrecognized");
-  await recognize(page);
+  await recognizeImage(page, "tuning-unrecognized");
   const warning = page.locator('[data-tuning-note="warning"]');
   await expect(warning).toContainText("Standard, down 1/2 step");
   await expect(page.locator('[data-skipped-item="tuning_unrecognized"]')).toBeVisible();
@@ -149,8 +121,7 @@ test("a tuning not understood is warned of; drop D chosen by hand is the tuning 
 test("closing the review page with a change not saved as a phrase asks first", async ({ page }) => {
   const errors = pageErrors(page);
   await logInFromStart(page, ADMIN);
-  await answering(page, "six-strings");
-  await recognize(page);
+  await recognizeImage(page, "six-strings");
   await page.keyboard.press("7");
   await expect(page.locator("[data-edited]")).toBeVisible();
   const asked = page.waitForEvent("dialog", { timeout: 10_000 });
@@ -165,12 +136,11 @@ test("closing the review page with a change not saved as a phrase asks first", a
 test("on a phone an image is uploaded and its result looked at, not changed nor saved; on a computer the same recognition is saved", async ({ browser }) => {
   const phone = await loggedIn(browser, ADMIN, PHONE);
   const phoneErrors = pageErrors(phone);
-  await answering(phone, "grace-and-strokes");
   await phone.goto("/phrases");
   await expect(phone.getByRole("button", { name: strings.phrases.recognize })).toBeVisible();
-  const id = await recognize(phone);
+  const id = await recognizeImage(phone, "grace-and-strokes");
   await expect(phone.locator('main[data-view="read"]')).toBeVisible();
-  await imageShown(phone);
+  await originalShown(phone);
   await expect(phone.locator('[data-skipped-item="grace_notes"]')).toBeVisible();
   await expect(phone.locator("[data-desktop-only]")).toHaveText(text.desktopOnly);
   await expect(phone.getByRole("button", { name: text.save })).toHaveCount(0);

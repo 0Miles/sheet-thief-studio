@@ -15,6 +15,7 @@ import { ApiError, get, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PhraseEditor from "../components/PhraseEditor.vue";
 import { canType } from "../device";
+import { useLeaveQuestion, warnBeforeUnload } from "../leaving";
 import { createPhraseSaver, type PhraseSaver, type SaveState } from "../phraseSaver";
 import { errorText, strings } from "../strings";
 import NotFoundView from "./NotFoundView.vue";
@@ -118,8 +119,7 @@ async function saveAsNew(): Promise<void> {
   await router.push({ name: "phrase", params: { id: made } });
 }
 
-/** While the page asks whether to leave with changes it could not save: how the answer goes back to the router. */
-const leaving = ref<((leave: boolean) => void) | null>(null);
+const { leaving, ask } = useLeaveQuestion();
 
 /**
  * Before another page of the app takes this one's place: what waits for its second of quiet, or
@@ -129,27 +129,19 @@ const leaving = ref<((leave: boolean) => void) | null>(null);
 async function mayLeave(): Promise<boolean> {
   if (saver === undefined || !saver.unsaved()) return true;
   if (await saver.flush()) return true;
-  return new Promise((resolve) => {
-    leaving.value = (leave) => {
-      leaving.value = null;
-      resolve(leave);
-    };
-  });
+  return ask();
 }
 onBeforeRouteLeave(mayLeave);
 // Another phrase's address (back from a phrase saved as a new one): this one is left too.
 onBeforeRouteUpdate((to) => (to.params.id === props.id ? true : mayLeave()));
 
-/**
- * Leaving the page itself (closing it, reloading, another site) with changes the server does not
- * have: what waits is sent now, and the browser asks first (docs/spec/phrases.md, 5.1).
- */
-function warnUnsaved(event: BeforeUnloadEvent): void {
-  if (!saver?.unsaved()) return;
+// Leaving the page itself (closing it, reloading, another site) with changes the server does not
+// have: what waits is sent now, and the browser asks first (docs/spec/phrases.md, 5.1).
+warnBeforeUnload(() => {
+  if (!saver?.unsaved()) return false;
   void saver.flush();
-  event.preventDefault();
-}
-window.addEventListener("beforeunload", warnUnsaved);
+  return true;
+});
 
 onMounted(async () => {
   let details: PhraseDetails;
@@ -178,7 +170,6 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("beforeunload", warnUnsaved);
   saver?.destroy();
 });
 </script>
