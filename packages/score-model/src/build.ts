@@ -23,7 +23,8 @@ function setFields(map: Y.Map<unknown>, fields: object): void {
   for (const [field, value] of Object.entries(fields)) if (value !== undefined) map.set(field, value);
 }
 
-function beatToY({ notes, ...fields }: BeatJSON): YBeat {
+/** A beat as the document holds it: its fields, and its notes in a map of their own. Not in a document yet. */
+export function beatToY({ notes, ...fields }: BeatJSON): YBeat {
   const beat: YBeat = new Y.Map();
   setFields(beat, fields);
   const map = new Y.Map();
