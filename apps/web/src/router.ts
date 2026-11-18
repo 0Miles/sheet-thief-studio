@@ -22,7 +22,17 @@ export const router = createRouter({
     { path: "/admin", name: "admin", component: () => import("./views/AdminView.vue"), meta: { admin: true } },
     { path: "/", name: "home", component: HomeView },
     { path: "/phrases", name: "phrases", component: () => import("./views/PhrasesView.vue") },
-    { path: "/scores/:id", name: "score", component: () => import("./views/ScorePage.vue"), props: true },
+    // The score's page holds the score open (its document and connection) under its versions
+    // page too, which restores a version in that document (docs/spec/collab.md, 8.5).
+    {
+      path: "/scores/:id",
+      component: () => import("./views/ScorePage.vue"),
+      props: true,
+      children: [
+        { path: "", name: "score", component: { render: () => null } },
+        { path: "versions", name: "score-versions", component: () => import("./views/VersionsView.vue"), props: true },
+      ],
+    },
     { path: "/scores/:id/settings", name: "score-settings", component: () => import("./views/SettingsView.vue"), props: true },
     // A guest's score, by its read-only link: no login, and the address stays the link's.
     { path: "/s/:token", name: "guest", component: () => import("./views/ScorePage.vue"), props: true, meta: { public: true } },

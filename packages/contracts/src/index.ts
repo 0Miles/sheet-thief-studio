@@ -43,6 +43,9 @@ export {
 // The recognizer's answers (docs/spec/recognizer.md, section 5).
 export * from "./recognizer";
 
+// What the server keeps of a recognition and answers about it (docs/spec/routes.md, 3.8).
+export * from "./recognitions";
+
 // The presence of the members on a score (docs/spec/views.md, section 8).
 export * from "./presence";
 
@@ -282,7 +285,18 @@ export type OrphanedScoreList = z.infer<typeof orphanedScoreList>;
  * every change to this score, whatever the role, because the score is of a newer schema than the
  * server, misses a migration step, or has one that failed on it; sent once, as the connection is made.
  */
-export const collabNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration", "migrationFailed"]) });
+export const readOnlyNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration", "migrationFailed"]) });
+export type ReadOnlyNotice = z.infer<typeof readOnlyNotice>;
+
+/**
+ * `closed`: the server closes this connection for good, just after it sends this: its tab is not
+ * to connect again with what it holds (docs/spec/collab.md, section 9). `tooDeep`: it sent a
+ * value nested deeper than a value of the document may be (#102), which it would send again.
+ */
+export const closedNotice = z.object({ type: z.literal("closed"), reason: z.enum(["tooDeep"]) });
+export type ClosedNotice = z.infer<typeof closedNotice>;
+
+export const collabNotice = z.discriminatedUnion("type", [readOnlyNotice, closedNotice]);
 export type CollabNotice = z.infer<typeof collabNotice>;
 
 // Read-only links (docs/spec/routes.md, 3.5; docs/spec/accounts.md, section 7).
@@ -293,6 +307,54 @@ export type ScoreLink = z.infer<typeof scoreLink>;
 /** What a guest gets for a read-only link (`POST /api/s/:token`): the score to open, its title, and a collab ticket for it. */
 export const guestTicket = z.object({ scoreId: z.string(), title: z.string(), ticket: z.string() });
 export type GuestTicket = z.infer<typeof guestTicket>;
+
+// Versions (docs/spec/routes.md, 3.6; docs/spec/collab.md, section 8).
+/**
+ * Why a version was made: as the last member left, every 10 minutes while the score is open,
+ * before a restore, or by a member who named it as they made it.
+ */
+export const versionReason = z.enum(["last_disconnect", "interval", "before_restore", "manual"]);
+export type VersionReason = z.infer<typeof versionReason>;
+
+/** The lengths a version's name may have, in characters (docs/spec/collab.md, 8.4). */
+export const versionLimits = { name: { min: 1, max: 100 } } as const;
+/** Trimmed. */
+export const versionName = z.string().trim().min(versionLimits.name.min).max(versionLimits.name.max);
+
+/** A version as the versions page lists them (`GET /api/scores/:id/versions`): a named one is never deleted on its own. */
+export const versionSummary = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  reason: versionReason,
+  /** Null for an automatic version. */
+  name: z.string().nullable(),
+  /** Of its JSON. */
+  byteSize: z.int(),
+});
+export type VersionSummary = z.infer<typeof versionSummary>;
+
+/** The versions of a score, the latest first. */
+export const versionList = z.object({ versions: z.array(versionSummary) });
+export type VersionList = z.infer<typeof versionList>;
+
+/**
+ * A version of the content the server has now (`POST /api/scores/:id/versions`). With a name, a
+ * member's own (`manual`): always a new one, whatever the latest version holds. Without one, the
+ * version a restore makes first (`before_restore`, docs/spec/collab.md, 8.5): none is made when
+ * the latest version holds the same, which is then the one answered.
+ */
+export const createVersionRequest = z.object({ name: versionName.optional() });
+export type CreateVersionRequest = z.infer<typeof createVersionRequest>;
+
+export const createdVersion = z.object({ versionId: z.string() });
+export type CreatedVersion = z.infer<typeof createdVersion>;
+
+/**
+ * A version named, or its name taken away (`PATCH /api/scores/:id/versions/:versionId`): an
+ * automatic version again; a member's own (`manual`) keeps one (409 `version_name_required`).
+ */
+export const renameVersionRequest = z.object({ name: versionName.nullable() });
+export type RenameVersionRequest = z.infer<typeof renameVersionRequest>;
 
 // Phrases (docs/spec/routes.md, 3.7; docs/spec/phrases.md, section 4).
 /** The lengths a phrase's name may have, in characters. */
@@ -367,6 +429,9 @@ export const errorCode = z.enum([
   "cannot_disable_self",
   "owner_cannot_leave",
   "revision_conflict",
+  "score_read_only",
+  "version_unreadable",
+  "version_name_required",
   "recognition_in_progress",
   "payload_too_large",
   "phrase_too_large",

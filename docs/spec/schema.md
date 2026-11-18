@@ -26,6 +26,7 @@ Y.Doc
   - **補充**（#22）：fractional-indexing 在兩個鍵之間產生的鍵是確定的，兩個人同時插在同一個地方（例如都在同一個小節按 `Ctrl+Insert`、同時新增聲部）會拿到相同的鍵，而兩個相同的鍵之間產生不出鍵。所以指令產生的鍵一律經過 `commands.ts` 的 `keysAfter`，在產生的鍵後面加 5 個隨機的 base-62 字元（`withSuffix`；最後一個字元不是 `0`，因為鍵的小數部分不能以 `0` 結尾）。加了之後仍嚴格介於前後兩個鍵之間。產生的鍵是後一個鍵的前綴時（例如 `a1` 在 `a1Y…` 之下；後一個鍵帶後綴時常見），加了後綴可能超過後一個鍵：這時先在兩者之間再產生一個鍵，直到加上後綴放得下，所以每個鍵都帶後綴。指令不改寫其他項目的 `order`。
     - 舊的資料裡同鍵的項目照樣依 id 排：插在其中一個之後時，新項目排在這一群同鍵的項目之後，不丟例外。
     - `jsonToDoc` 從零依序產生鍵，不加後綴。
+    - **補充**（#68）：還原版本（`replaceScore`）的小節與聲部各用一串連續的鍵（`keysOfARun`）：先像 `keysAfter` 一樣產生第一個鍵再加上隨機後綴當作「字根」（`a0` 加 5 個隨機字元），每個鍵是字根接上 `a0` 與 `a1` 之間依序產生的鍵的小數部分。整串都排在字根之後、任何別的字根之前，所以兩人同時還原的兩串不會交錯。直接用 `keysAfter` 不行：它的每個鍵各有自己的後綴，兩串從零產生的鍵會輪流排列（`a0x`、`a0y`、`a1x`、`a1y`…）。
     - 測試在 `packages/score-model/tests/bars.test.ts`：兩人同時插在同一處；一人插在 X 之後、另一人同時插在 Y 之後，跑 200 次；三人同時插在同一處，抵達順序不同；產生的鍵是後一個鍵的前綴，跑 50 次；舊的同鍵資料；同時新增聲部。每個測試都斷言插入落在指定的位置、各份文件順序一致，之後在任何位置插入都不丟例外。
 - id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
@@ -239,7 +240,7 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 - 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts` 的 `SCHEMA_VERSION`）照用。
 - 新增 optional 欄位屬於加法改動，**不升** `schemaVersion`。條件：同一個 PR 也改本檔、ADR 0002 的增補（形狀有變時）與 zod schema。
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
-  - **補充**（#103）：「原值」指它自己的欄位，和第 11 節的 `parsePlain` 一樣不算名為 `__proto__` 的欄位。做法是 score-model 的 `ownFields`：指令先把原值複製成只有這些欄位的新物件，再從它判斷（例如「已經是 ghost 了嗎」）、以它為底寫入。理由：寫入者手上 `__proto__` 是普通的鍵，其他成員解碼後它是 prototype，直接讀原值時兩邊的判斷不同（接收者以為已經是 ghost 而不寫入），寫入者還會把 `__proto__` 寫回去。複製是有界的遞迴：音符本身，以及它裡面的物件與陣列往下 `PLAIN_DEPTH`（2）層（例如 `later.x`、`list[0]`），每一層都去掉 `__proto__`；再往下的值原樣保留，所以巢狀再深也不會丟例外。在這個範圍內，`__proto__` 欄位改寫後消失，不論誰寫，存下的值都相同；更深處的 `__proto__` 只可能出現在不認得的欄位裡，讀取不會讀到它。不認得的欄位照樣保留：`__proto__` 本來就不算欄位（#78），丟掉它不違反上面的「原樣保留」。原值不是物件（數字、字串、陣列、Y 型別）時沒有欄位可保留，`setFret` 寫成 `{ fret }`。
+  - **補充**（#103）：「原值」指它自己的欄位，和第 11 節的 `parsePlain` 一樣不算名為 `__proto__` 的欄位。做法是 score-model 的 `ownFields`：指令先把原值複製成只有這些欄位的新物件，再從它判斷（例如「已經是 ghost 了嗎」）、以它為底寫入。理由：寫入者手上 `__proto__` 是普通的鍵，其他成員解碼後它是 prototype，直接讀原值時兩邊的判斷不同（接收者以為已經是 ghost 而不寫入），寫入者還會把 `__proto__` 寫回去。複製是有界的遞迴，每一層都去掉 `__proto__`，所以 `__proto__` 欄位改寫後消失，不論誰寫，存下的值都相同。**更正**（#102）：原本只複製到 `PLAIN_DEPTH`（2）層、再往下原樣保留；現在複製到底，因為值的深度有上限（第 13 節），複製最多走 `MAX_VALUE_DEPTH` 層，巢狀再深也不會丟例外。會讓音符超過上限的欄位（不論認不認得）改寫時丟掉，所以指令寫出的音符一律在上限內。不認得的欄位照樣保留：`__proto__` 本來就不算欄位（#78），丟掉它不違反上面的「原樣保留」。原值不是物件（數字、字串、陣列、Y 型別）時沒有欄位可保留，`setFret` 寫成 `{ fret }`。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
 - 客戶端遇到比自己新的 `schemaVersion`：以唯讀開啟（`EditorSession` 的唯讀旗標），並顯示「這份團譜由較新的版本建立，請重新整理頁面」（ADR 0002:22）。
 - **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。伺服器怎麼做、怎麼告訴客戶端，見 [`collab.md`](collab.md) 2.1。
@@ -258,7 +259,7 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 
 ## 11. 讀取時容錯
 
-伺服器不做語意驗證（Editor 視為可信任，見 ADR 0002 增補）。容錯在讀取時做：
+伺服器不做語意驗證（Editor 視為可信任，見 ADR 0002 增補）；**補充**（#102）：唯一的例外是值的巢狀深度（第 13 節），這是結構而不是語意。容錯在讀取時做：
 
 - `docToJson` 對每個拍點、每個音符用 zod 的 `safeParse`：讀不懂的跳過，記成 `invalidContent` Flag，永遠不丟例外。
 - 小節：
@@ -274,7 +275,8 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
-- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。複製只做到合法值的深度（兩層：帶 `bend` 的音符、`staves` 的陣列與物件、帶 `tuplet` 的拍點欄位）；更深的陣列或物件，落在認得的欄位上就是讀不懂（照上面各條標記），落在不認得的欄位下則照樣忽略、不標記、原樣保留，所以巢狀再深也不會丟例外，也不妨礙日後的加法欄位。
+- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。
+- **補充**（#102，取代 #78 原本「更深的值落在不認得的欄位下照樣忽略」的寫法）：巢狀超過 `MAX_VALUE_DEPTH`（64 層，第 13 節）的值讀不懂，不論深度落在認得或不認得的欄位下，照上面各條標記（音符、拍點、`timeSig` 等）。`parsePlain` 的複製每一層都去掉 `__proto__`，最多走 65 層，所以巢狀再深（實測 20000 層）也不丟例外。拍點的欄位（`readBeatFields`、`durationOf`）各自是一個值，各自算深度（`parsePlainFields`：收集欄位那一層不算）；任一欄位超過上限，整個拍點讀不懂。上限內的不認得欄位照樣忽略、不標記、原樣保留。理由：lib0 的 `readAny` 解碼時每一層遞迴一次，幾千層的值寫入者讀得到，其他成員的 `Y.applyUpdate` 卻丟 `RangeError`，而且門檻隨瀏覽器的 stack 大小而不同；上限讓所有成員對「讀得懂」的判斷一致，伺服器也不放行、不送出這樣的值（[`collab.md`](collab.md) 第 2、9 節）。
 - **補充**（#78）：`ScoreJSON` 與 phrase fragment 裡的 record（聲部的 `content`、小節的聲線、拍點的 `notes`、fragment 的 `voices`）帶有自有的 `__proto__` 鍵時，驗證不通過（匯入與儲存樂句會被拒絕）；zod 的 `z.record` 本來會不經驗證就把這個鍵丟掉。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
@@ -356,5 +358,8 @@ interface BeatJSON {
 | 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後；`importedScoreSchema`） |
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |
+| 文件裡 JSON 值的巢狀深度（補充，#102） | 64 層（`MAX_VALUE_DEPTH`）：每一個陣列或物件算一層，數字、字串、bytes 不算一層，`{"a":[1]}` 是兩層。合法的值最多兩層（帶 `bend` 的音符），其餘留給日後的加法欄位 |
 
+- **補充**（#102，使用者裁定：寫入端限制深度）：深度上限由 score-model `depth.ts` 定義，所有入口一起守：讀取（`parsePlain`，第 11 節）讀不懂超過上限的值；指令不寫出超過上限的值（[`commands.md`](commands.md) 第 1 節）；伺服器不放行含有這種值的更新，載入時把儲存的狀態裡這種值拿掉（[`collab.md`](collab.md) 第 2、9 節）。zod 驗證過的入口（`jsonToDoc` 的匯入與還原、phrase fragment、awareness）只留下 schema 認得的欄位，深度本來就在上限內，不另外檢查。名為 `__proto__` 的欄位不算深度，在每一個檢查都一樣（`parsePlain`、`ownFields`、`writableCopy` 複製時去掉它；伺服器檢查更新的 `updateWithinDepth` 也不算它），也不會被寫出（第 11 節 #78）：其他成員與伺服器解碼後它是 prototype，不是欄位，重新編碼時也不會帶出去。
+- **補充**（#102）：值裡面的 shared type（`Y.Map` 等）不是值。`writableCopy`（指令寫入呼叫端給的值）遇到它就不寫入；`ownFields`（改寫儲存的音符）丟掉含有它的欄位；`parsePlain` 把它讀成沒有 schema 讀得懂的東西（在認得的欄位上就是讀不懂）。bytes（`Uint8Array` 等 ArrayBuffer view）是純值、不算一層，也不是「欄位物件」：`ownFields` 對它回傳沒有欄位，和數字、字串、陣列一樣。
 - **補充**（host 在 2026-11-13 的裁定）：**聲部與小節的數量上限只約束指令與匯入**。兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

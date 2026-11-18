@@ -13,7 +13,7 @@
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
-import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
+import { type ClosedNotice, type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   barsWithContent,
@@ -28,6 +28,7 @@ import {
   type KeySignature,
   keySigAt,
   MAX_BEAT_TEXT,
+  metaOf,
   nextFlag,
   observeScore,
   type PartKind,
@@ -47,7 +48,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
-import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
+import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
@@ -61,18 +62,21 @@ import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
+import { stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
+import type { RestoreTarget } from "../restore";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
 /** One of the two: a member's score id, or a guest's link token; and what to say first, when the score was opened anew. */
 const props = defineProps<{ id?: string; token?: string; notice?: string }>();
-const emit = defineEmits<{ closed: [closing: Closing] }>();
+/** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
+const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
 const isGuest = props.token !== undefined;
 /** Who is logged in here: their own other tabs are not listed among the members present. */
@@ -123,6 +127,8 @@ async function asMember(id: string): Promise<Opening> {
 const opening = ref<Opening | null>(null);
 /** A guest's link stopped opening the score (revoked, or made anew) while the page was open. */
 const gone = ref(false);
+/** Why the server closed this tab's connection for good (its `closed` notice); null while it has not. */
+const closedBecause = ref<ClosedNotice["reason"] | null>(null);
 
 /**
  * A guest's: the link gives the score's id with a first ticket; every later connection asks the
@@ -252,6 +258,10 @@ const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
+/** The versions page is shown over this score, hidden under it (ScorePage). */
+let aside = false;
+/** An Owner or an Editor, whatever the view: they may restore a version here. */
+const mayChange = (): boolean => opening.value?.role != null && roleCanType(opening.value.role);
 /** This tab in the presence: a member's, once the provider is made. */
 let presenceLink: PresenceLink | null = null;
 let stopObserving: (() => void) | undefined;
@@ -261,6 +271,7 @@ const hideFromTests = exposeForTests({
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
   player: () => engine?.player.settings() ?? null,
+  writeMeta: (field, json) => metaOf(doc).set(field, JSON.parse(json)),
 });
 const measurement = measureEditView({
   doc,
@@ -294,7 +305,8 @@ function placePeers(): void {
 /** Tell the other tabs where this one is: the view's mode, and in the edit views the cursor and the selection. */
 function tellPresence(): void {
   if (presenceLink === null || view.value === null) return;
-  presenceLink.tell(localStateOf(view.value, session?.presence() ?? { cursor: null, selection: null }));
+  // On the versions page, the score under it: reading, with no cursor (docs/spec/collab.md, 8.5).
+  presenceLink.tell(localStateOf(aside ? "read" : view.value, session?.presence() ?? { cursor: null, selection: null }));
 }
 
 /**
@@ -623,6 +635,11 @@ function stop(): void {
   engine.player.stop();
 }
 
+/** Ask again for the sound font that could not be had (docs/spec/playback.md, 4.1). */
+function retrySound(): void {
+  engine?.player.retry();
+}
+
 function togglePlay(): void {
   if (playerState.value === "playing") pause();
   else play();
@@ -834,9 +851,15 @@ function start(): void {
   if (stopObserving !== undefined || engine === undefined) return;
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, draw);
-  if (editing.value && score.value) startEditing(score.value);
+  if (editing.value && score.value) {
+    startEditing(score.value);
+    return;
+  }
+  // The Read view of an Owner or an Editor (a device that cannot be typed on): a session with no
+  // cursor, for a version restored here to be undone and done again by key (docs/spec/collab.md, 8.5).
+  if (mayChange()) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
   // Space plays and pauses in the Read view too.
-  else focusScore();
+  focusScore();
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -870,7 +893,7 @@ function onPointer(event: PointerEvent): void {
   if (event.button !== 0 || event.target === scroller.value) return;
   // A button on the page (+bar) is not the score.
   if (event.target instanceof Element && event.target.closest("button") !== null) return;
-  if (session === undefined || engine === undefined || host.value === undefined) return;
+  if (!editing.value || session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
   if (hit) session.moveTo(hit);
@@ -925,6 +948,24 @@ function close(closing: Closing): void {
   peerMarks.value = [];
   dropProvider();
   emit("closed", closing);
+}
+
+/**
+ * The server closed the connection for good (`stopWhenClosed`): the provider goes and no other
+ * connects; the page says why and offers the score anew from the server, dropping what this tab
+ * holds and the server never took.
+ */
+function closedByServer(reason: ClosedNotice["reason"]): void {
+  closedBecause.value = reason;
+  sync.value = "offline";
+  dropProvider();
+  // The versions page over the score can restore nothing any more: ScorePage shows the score, which says why.
+  emit("stopped");
+}
+
+/** The score opened anew from the server's document, this tab's own dropped. */
+function reloadFromServer(): void {
+  close({ kind: "reopen", notice: text.closed.reloaded });
 }
 
 /**
@@ -1042,6 +1083,7 @@ onMounted(async () => {
       else if (status === "connecting") sync.value = "syncing";
     },
   });
+  stopWhenClosed(provider, closedByServer);
   // A member's tab is in the presence from now on, in "read" mode with no cursor until the
   // score is open; a guest's provider has no awareness.
   if (provider.awareness !== null) {
@@ -1055,6 +1097,45 @@ onMounted(async () => {
 
 // The view can turn read-only after the score opened (a newer schema): the mode follows it.
 watch(view, tellPresence);
+
+/**
+ * Restore a version in this tab's document (docs/spec/collab.md, 8.5), for the versions page, which
+ * shares it: in the edit view one types in, one command of the session, undone with Ctrl+Z like any
+ * other; in the Read view of an Owner or an Editor (a device that cannot type), written straight.
+ * Not before the score is open, in step with the server: written over a document still empty,
+ * the score would come in afterwards beside the version.
+ */
+const restoreTarget: RestoreTarget = {
+  canRestore() {
+    if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null || session === undefined) return false;
+    return view.value === "editable" || (view.value === "read" && mayChange());
+  },
+  replace(version) {
+    return restoreTarget.canRestore() && session!.replaceScore(version);
+  },
+};
+
+defineExpose({
+  restoreTarget,
+  /**
+   * The versions page is shown over the score: playback stops and the question of a part's
+   * deletion goes, as they would were the page left (the question is teleported to the body, out
+   * of the hidden score); the others see this tab reading.
+   */
+  stepAside(): void {
+    aside = true;
+    stop();
+    deleting.value = null;
+    textEntry.value = null;
+    tellPresence();
+  },
+  /** Back from the versions page: in the presence as before, and the score has the keyboard again. */
+  stepBack(): void {
+    aside = false;
+    tellPresence();
+    focusScore();
+  },
+});
 
 onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
@@ -1089,7 +1170,7 @@ onBeforeUnmount(() => {
         </template>
         <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
         <template v-if="view && !narrow">
-          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
           <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
             {{ text.mixer.open }}
@@ -1130,6 +1211,7 @@ onBeforeUnmount(() => {
             <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
           </li>
         </ul>
+        <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
@@ -1138,6 +1220,10 @@ onBeforeUnmount(() => {
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
+      <p v-else-if="closedBecause" class="score__error" role="alert" data-closed>
+        <span>{{ text.closed.reasons[closedBecause] }}</span>
+        <button type="button" class="score__dismiss" @click="reloadFromServer">{{ text.closed.reload }}</button>
+      </p>
       <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
         {{ view === "editable" ? text.offline.editing : text.offline.reading }}
@@ -1314,7 +1400,7 @@ onBeforeUnmount(() => {
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="null" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
       </section>
       <footer v-if="narrow" class="score__playbar" data-playbar>
-        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
         <AppButton variant="ghost" size="sm" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
           {{ drawerOpen ? text.display.closeOptions : text.display.options }}
         </AppButton>

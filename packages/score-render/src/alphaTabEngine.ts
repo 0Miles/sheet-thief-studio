@@ -4,6 +4,7 @@ import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model
 
 import { channelMixOf, NEUTRAL_MIX, type PartMix } from "./channels";
 import { barRangeRects, cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { playerUsable } from "./playerState";
 import { beatOf, type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick, placeAtTick, tickAtPlace } from "./ticks";
 import type { NoteHead, PlayedBar, PlayerPosition, PlayerSettings, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
@@ -47,6 +48,10 @@ class Listeners<T> {
 
   emit(value: T): void {
     for (const listener of this.items) listener(value);
+  }
+
+  clear(): void {
+    this.items.clear();
   }
 }
 
@@ -150,6 +155,19 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private destroyed = false;
   /** There is a player: a sound font asked for, and a browser alphaTab can play in. */
   private readonly hasPlayer: boolean;
+  /** Where the sound font is downloaded from, again after it could not be had. */
+  private readonly soundFont: string | null;
+  /**
+   * The browser came back online while the sound font was being downloaded: should that download
+   * fail after all (its failure reported after the browser was online again), it is asked for again
+   * at once, not on the next time the browser comes back online.
+   */
+  private onlineWhileLoading = false;
+  /** Back online: a sound font that could not be had is asked for again; one coming, should it fail. */
+  private readonly onOnline = () => {
+    if (this.playerState === "loading") this.onlineWhileLoading = true;
+    else this.retry();
+  };
 
   constructor(
     private element: HTMLElement,
@@ -157,6 +175,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   ) {
     this.scale = options.scale ?? 1;
     const soundFont = options.soundFont;
+    this.soundFont = soundFont;
     this.hasPlayer = soundFont !== null && canPlaySound();
     // A browser that cannot play: alphaTab is not asked to try (it would log an error), and the
     // page is told so from the start (docs/spec/playback.md, 4.1).
@@ -201,7 +220,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       // Said again after every new sound: only the first time is news.
       if (this.playerIsReady) return;
       this.playerIsReady = true;
+      this.onlineWhileLoading = false;
       this.setState("paused");
+      // The bars changed in place while there was no player (`load()` had nothing to do then, the
+      // sound font long in coming, or not had at first): their sound is made now.
+      if (this.soundStale) void this.load();
     });
     api.playerStateChanged.on((event) => {
       // Not before the player can play (alphaTab reports "paused" as soon as a listener is
@@ -241,6 +264,14 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // A sound the worker could not take is over too (alphaTab tells the API only as an error):
     // nothing is to wait for it, and playback goes back to where it was.
     api.player?.midiLoadFailed.on(() => this.onSoundSettled());
+    // The sound font could not be had: the download failed (the network went), the server answered
+    // with an error, or the worker could not read what came (alphaTab 1.9 reports all three so, and
+    // tells the API only as an error). It is asked for again on `retry()`, or once the browser is
+    // back online; alphaTab itself never asks again (docs/spec/playback.md, 4.1).
+    if (this.hasPlayer) {
+      api.player?.soundFontLoadFailed.on(() => this.soundFontFailed());
+      window.addEventListener("online", this.onOnline);
+    }
     // alphaTab seeks on a click only with its own cursor, which is off: the engine does it.
     if (options.seekOnClick) {
       api.beatMouseUp.on((beat) => {
@@ -352,6 +383,9 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   destroy(): void {
     this.destroyed = true;
+    window.removeEventListener("online", this.onOnline);
+    // What alphaTab's workers report after this is told to no one.
+    for (const listeners of [this.rendered, this.painted, this.states, this.positions, this.finished]) listeners.clear();
     this.api.destroy();
   }
 
@@ -394,9 +428,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     this.api.loadMidiForScore();
   }
 
+  retry(): void {
+    if (this.playerState !== "failed" || this.soundFont === null || this.destroyed) return;
+    this.onlineWhileLoading = false;
+    this.setState("loading");
+    this.api.loadSoundFont(this.soundFont, false);
+  }
+
   play(): void {
     // A score with no bars or no parts plays nothing; alphaTab still holds an older score's sound.
-    if (!this.hasPlayer || this.projection === null) return;
+    // Nor does a player with no sound font in.
+    if (!playerUsable(this.playerState) || this.projection === null) return;
     this.intendsToPlay = true;
     // While a new sound is made, it plays once that is in place.
     if (this.reload === null) this.api.play();
@@ -765,8 +807,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return { ...rect, x: rect.x + origin.x, y: rect.y + origin.y };
   }
 
+  /** The sound font could not be had; asked for again at once when the browser came back online meanwhile. */
+  private soundFontFailed(): void {
+    this.setState("failed");
+    if (!this.onlineWhileLoading) return;
+    this.onlineWhileLoading = false;
+    this.retry();
+  }
+
   private setState(state: PlayerState): void {
-    if (state === this.playerState) return;
+    // Destroyed, the engine tells the page nothing more (alphaTab's worker may still report).
+    if (this.destroyed || state === this.playerState) return;
     this.playerState = state;
     this.states.emit(state);
   }

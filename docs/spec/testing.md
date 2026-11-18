@@ -19,9 +19,11 @@
 - `eslint.config.js:18` 禁止 import alphaTab 的清單已經包含 `packages/score-editor/**`。
 - **補充**（#31）：`packages/score-render/tests/engine.test.ts` 測播放器在重新產生聲音前後的行為（[`playback.md`](playback.md) 4.1）。瀏覽器裡碰不到那十幾毫秒，所以把 alphaTab 的 `AlphaTabApi` 換成替身（`vi.mock`），其他都是 alphaTab 自己的：設定、模型、投影，以及用 `MidiFileGenerator` 建的 tick lookup。替身不會自己回報任何事；worker 的回報由測試照 alphaTab 1.9 的順序送出（位置 0、paused、ready、midiLoaded、ready、位置 0），替身的 `playerState`、`tickPosition` 也只在這些回報時改變，和 alphaTab 的快取一樣。範圍只到引擎怎麼回應這些回報；alphaTab 實際的順序、聲音本身與跟隨仍由 Playwright e2e 與人工試聽確認。升 alphaTab 版本時要重新核對這個順序。
   - **補充**（#129）：引擎建立時讀瀏覽器的全域（`Worker`、`AudioContext`／`webkitAudioContext`、`ScriptProcessorNode`、`AudioWorkletNode`、`isSecureContext`）判斷能不能播（[`playback.md`](playback.md) 4.1）。Node 沒有這些，所以測試用 `vi.stubGlobal` 換掉它們再建引擎（`engine.test.ts` 的 `browserWith`：預設是能播的瀏覽器，`afterEach` 用 `vi.unstubAllGlobals` 還原）；缺件的各種組合也這樣測。這是這個檔案的第二個 seam：瀏覽器能力由全域決定，引擎不另外開 option。
+  - **補充**（#132）：替身的播放器多了 `soundFontLoadFailed`（音色檔拿不到，alphaTab 1.9 只由播放器回報），替身的 API 多了 `loadSoundFont`（記下 `loadSoundFont:<網址>:<append>`，不自己回報結果）。測試的起點除了「第一個聲音已經好、paused」（`start`），還有「worker 已經起來、第一個聲音已經產生，但音色檔還沒到」（`withoutSoundFont`，狀態 loading）；之後由測試送出 `soundFontFailed`（失敗）或 `soundFontIn`（alphaTab 的 `readyForPlayback`，即 `playerReady`）。`browserWith` 也把 `window` 換成一個 `EventTarget`，`backOnline` 在上面送 `online`。
 - **補充**：`compose.dev.yaml` 的 Postgres 與 Redis 是 M1a 第一張 server 票建立的；伺服器測試用獨立的資料庫名稱，每個測試檔自己清資料。
   - **補充**（#114）：遷移只在 vitest 的 `globalSetup`（`apps/server/tests/globalSetup.ts`）跑一次，每個測試檔開頭用 `TRUNCATE ... RESTART IDENTITY CASCADE` 清空（`tests/support.ts` 的 `freshDatabase`），不再每檔重建 schema（CPU 忙碌時重建會超過 hook 的 10 秒上限）。測試檔共用一個資料庫與一個 Redis database，所以 server 的測試檔依序執行（`fileParallelism: false`）。`migrations.test.ts` 在自己的資料庫（`<測試資料庫>_migrations`，跑完刪掉）從零遷移，不影響其他檔。等待「之後不會再寫入」的測試用 fake timer 推過去，不用真的 sleep。
   - **補充**（#116）：CLI（`apps/server/src/cli.ts`）的 seam 是 `runCli(args, io, { sequelize })`：給了連線就直接用（models 必須已綁到它），不讀環境變數、不另外連線、不關閉。測試平常用 `tests/support.ts` 的 `cli(sequelize, args, input)`，在測試行程內、用測試檔自己的連線跑；它給 CLI 的環境變數一讀就丟例外，以免測試連到開發用的資料庫。只有要確認「以 `cli` script 啟動的行程」本身（argv、`DATABASE_URL`、管線 stdin、exit code）時才用 `cliProcess(args, input)` 開子行程；每個子行程都要冷啟動 Node 與 tsx，CPU 忙碌時要好幾秒，所以 `cli.test.ts` 只留一個這樣的測試，而且不同時開兩個。
+  - **補充**（PR 150 的紅燈）：速率限制是依牆鐘時間切的固定時間窗（[`security.md`](security.md) 第 4 節），計數 key 的 Redis TTL 則照真實時間倒數。所以凡是要數到上限的測試，開頭都要呼叫 `apps/server/tests/clock.ts` 的 `holdClock()`：它只 fake `Date`，把時鐘對齊到時間窗的開頭並停住，直到測試結束。不這樣做，請求跨過窗的邊界、或 TTL 在窗尾提早到期時，超過上限的那一次都會被放行。時鐘停住時，用 `while (Date.now() < until)` 等待的 helper 永遠不會結束，同一個測試不要用。這個 helper 不放在 `tests/support.ts`，因為 e2e 腳本會在 vitest 外 import 那個檔。
 
 ## 2. 測試掛鉤與 build
 
@@ -29,12 +31,13 @@
 
 | 掛鉤 | 何時存在 | 內容 |
 |---|---|---|
-| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器 |
+| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器。**補充**（#102）：加上唯一會寫入的 `writeMeta(field, json)`：繞過指令，把 JSON 直接寫進這一頁文件的 `meta`，模擬舊版分頁或離線資料手上的值（巢狀超過 `MAX_VALUE_DEPTH` 的值沒有任何指令或按鍵寫得出來）；只有團譜頁有（版本頁沒有文件可寫），只有 `e2e/depth.spec.ts` 用 |
 | `window.__studioMeasure` | 只在 `VITE_MEASURE=1` 的 build | 只給 measure 套件用：`placeCursor`、`editBar`、`bulkEdit`、`renders`、`keys`、`player.reload`、`player.trace`，以及 measure 套件讀的 `ready`、`synced`、`json`、`stateSize`、`cursorRect`、`noteHeads`（游標所在拍點的音符頭，alphaTab 回報的位置，給游標幾何檢查用）、`errors`、`player.state`、`player.position`（補充）。在 `apps/web/src/measureHook.ts`，掛在編輯視圖上 |
 
 - 正式 build 兩者都沒有。加一個檢查，確認打包結果（`apps/web/dist`）不含 `__studio` 這個字串；CI 的 `check` job 跑它。
   - `__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷；`__studioMeasure` 只在 `apps/web/src/measureHook.ts`，以 `import.meta.env.VITE_MEASURE` 判斷。其他 build 裡兩者都是死碼，打包時整段移除。CI 的檢查用 `grep -rq "__studio" apps/web/dist`（#37；#6 到 #37 之間檢查的是 `__studioTest`，因為 spike 頁的 `window.__studio` 還在正式 build 裡）。
-- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
+- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果（例外是上表的 `writeMeta`，只用來放進介面做不出來的前置資料）。
+- **補充**（#68）：版本頁顯示時，譜頁的 `ScoreView` 還掛在底下（[`collab.md`](collab.md) 8.5），兩者都掛 `__studioTest`。`exposeForTests` 因此是一個堆疊：最後掛上的在 `window` 上（版本頁上 `scoreJson()` 是預覽中的版本），它卸下時換回前一個仍掛著的（回到譜頁就是譜頁的）。`writeMeta` 跟著堆疊最上層的 hook：版本頁的 hook 沒有它（版本頁上 `window.__studioTest.writeMeta` 是 `undefined`，底下譜頁的那個拿不到），回到譜頁才又有。同樣因為兩者並存，版本頁的 e2e 找元素時要限定在版本頁裡（例如 `[data-preview-pane] [data-player]`），隱藏的譜頁也有同名的元素。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
   - **補充**（#19）：還沒有介面或 API 可以建立的前置資料（帶 Editor、Viewer 成員的團譜、超過 8 小節的團譜，或多聲部的團譜），由 server 自己的腳本直接寫進 e2e 資料庫（`apps/server/tests/scoreE2e.ts`，`e2e/pages.ts` 的 `seedScore`）。腳本只接受名稱以 `_e2e` 結尾的資料庫，而且只建立新的團譜，所以不會和 server 記憶體裡的文件衝突。#13 有了加入成員的頁面之後，成員本身的行為仍然要經由介面驗證。
   - **補充**（#7）：會被測試用掉的帳號（例如要改掉暫時密碼的帳號）不放進 `e2e/environment.ts` 的固定帳號，由測試自己用 `apps/server/tests/accountE2e.ts`（`e2e/pages.ts` 的 `seedAccount`）建立一個名稱帶亂數的新帳號，所以同一個測試可以重跑，也可以在別的瀏覽器 project 再跑一次。
@@ -56,6 +59,7 @@
 - 瀏覽器支援：打譜是最新版的 Chromium 系（Chrome、Edge）、Firefox 與桌面 Safari（owner 在 2026-11-13 裁定）；Read view 另外支援 iOS Safari 與 Android Chrome。
 - CI 的瀏覽器用 `playwright install --with-deps <瀏覽器>` 安裝（只在 CI；本機第一次要自己裝，見 `README.md`）。
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project、只安裝自己的瀏覽器；`~/.cache/ms-playwright` 以 Playwright 版本為鍵快取，系統套件每次由 `--with-deps` 安裝。
+  - **補充**（#52）：第 5 節確認檢查 3 的 `apps/web/e2e/clipboard.spec.ts` 不是 smoke，三個 project 都跑：`chromium` 照常收進完整的 e2e，`firefox`、`webkit` 的 `testMatch` 另外列出它。
   - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
@@ -93,6 +97,8 @@
 | 7 | 刪除小節的復原行為 | vitest 鎖住「刪除當下的內容會回來、之後別人同時送到的不保證」，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」 | — |
 | 8 | 聲道分配 | 用 `sound.test.ts` 的寫法，斷言 16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道 | — |
 | 9 | alphaTab 標記不被遮蓋 | e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽 | 移開疊層，不是遮住標記 |
+
+**補充**（#52 的結果）：確認檢查 3 通過，焦點元素維持 `[data-scroller]`，不改用 `<textarea>`。三個瀏覽器都觸發 `copy`、`cut`、`paste`，`copy`、`cut` 寫入的 `text/plain` 在 `paste` 讀得到（Windows 上的 Playwright WebKit 例外：它不保留事件裡寫入的內容，焦點換成選取文字的 `<textarea>` 也一樣，不是焦點的問題；測試在那裡只斷言事件與空字串，round trip 以 CI 的 Linux WebKit 為準）。事件送到的元素不同：Chromium、WebKit 是 `[data-scroller]`，Firefox 是 `<body>`；所以頁面在 document 上聽，只在 `document.activeElement` 是 scroller 時處理（`apps/web/e2e/clipboard.spec.ts` 開頭的註解）。
 
 ## 6. 人工判定項目
 

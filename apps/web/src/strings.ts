@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -16,6 +16,8 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const VERSIONS = "版本記錄";
+const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -84,6 +86,15 @@ export const strings = {
       missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
       migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
     } satisfies Record<ReadOnlyReason, string>,
+    // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
+    // holds would be refused again at every reconnection. Opening the score anew drops it.
+    closed: {
+      reasons: {
+        tooDeep: "這個分頁裡有伺服器不接受的內容（巢狀太深的資料），已停止同步，之後的修改也不會儲存。重新載入會改用伺服器上的版本，這個分頁還沒儲存的修改會全部丟掉。",
+      } satisfies Record<ClosedNotice["reason"], string>,
+      reload: "重新載入",
+      reloaded: "已重新載入伺服器上的版本，先前那個分頁沒儲存的修改已丟掉。",
+    },
     // The 404 page of a member removed from the score, or of a score deleted, while it was open.
     removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
@@ -208,9 +219,12 @@ export const strings = {
     },
     dismiss: "關閉",
     settings: "設定",
+    versions: VERSIONS,
     player: {
       loading: "音色載入中…",
       unavailable: "這個瀏覽器無法播放聲音",
+      failed: "音色載入失敗",
+      retry: "重試",
       play: "播放",
       pause: "暫停",
       stop: "停止",
@@ -318,6 +332,49 @@ export const strings = {
     keys: "鍵盤",
     vocals: "人聲",
   } satisfies Record<PartPresetId, string>,
+  // A score's versions (/scores/:id/versions; docs/spec/collab.md, section 8): every member looks
+  // at them, an Owner or an Editor names them.
+  versions: {
+    title: VERSIONS,
+    back: "回到團譜",
+    help: "系統會在所有人離開團譜時、以及編輯中每 10 分鐘自動存一個版本，最多保留 200 個自動版本。命名的版本不會被自動刪除。",
+    empty: "還沒有版本。",
+    list: "版本",
+    reasons: {
+      last_disconnect: "自動（所有人離開時）",
+      interval: "自動（每 10 分鐘）",
+      before_restore: BEFORE_RESTORE,
+      manual: "手動存下",
+    } satisfies Record<VersionReason, string>,
+    named: "已命名",
+    size: (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    preview: "預覽",
+    previewOf: (when: string) => `${when} 的版本`,
+    previewHelp: "預覽只供檢視與播放，不會改動團譜。",
+    choose: "選一個版本來預覽。",
+    name: "版本名稱",
+    nameRule: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
+    nameRuleManual: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元。手動存下的版本一定要有名稱。`,
+    rename: "命名",
+    renameOf: (when: string) => `替 ${when} 的版本命名`,
+    saveName: "儲存",
+    cancel: "取消",
+    save: {
+      title: "把目前的內容存成版本",
+      help: "存下伺服器上目前的內容，並替它命名。",
+      submit: "存成版本",
+    },
+    // Restoring a version in place (docs/spec/collab.md, 8.5): Owners and Editors.
+    restore: {
+      action: "還原",
+      title: "還原這個版本",
+      message: (when: string, undoKey: string) =>
+        `這會以 ${when} 的版本取代你這個分頁目前看到的內容；伺服器上目前的內容會先存成一個版本（「${BEFORE_RESTORE}」）。其他人在同一時間所做的修改會被取代，需要時可以從那個版本找回；他們剛新增、還沒同步到這裡的小節與聲部則會保留下來。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+      confirm: "還原",
+      notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
+      notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",
+    },
+  },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
@@ -496,6 +553,9 @@ export const strings = {
     cannot_disable_self: "不能停用自己的帳號。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",
+    score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
+    version_unreadable: "伺服器讀不了這個版本，無法預覽。",
+    version_name_required: "手動存下的版本一定要有名稱。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",
