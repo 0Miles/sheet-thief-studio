@@ -57,7 +57,7 @@ MEASURE_RUNS=3 pnpm --filter @studio/web measure --project=webkit latency
 
 1. **量的是編輯視圖**（#37），以 admin 登入、開著播放器，和成員實際使用相同。
 2. **兩份譜**：`plain` 是 M0 那份；`techniques` 是同樣的音符加上 M1b 的技巧——搥勾弦、滑音（shift、inBelow）、推弦加顫音、點弦、泛音、ghost、staccato、accent、let ring、palm mute、dead、刷弦、slap / pop、每小節開頭的力度、每四小節一個和弦名稱，Keys 每小節一個 tie。其中一部分搥勾弦、滑音與 tie 接不到下一個音，整份譜有 324 個 Flag（`danglingLink`、`danglingTie`）。
-3. **各階段多了 `flagsOf`**：`readScore`（讀文件、zod 驗證、`WeakMap` 快取已驗證的拍點）之後，頁面對**整份譜**重算 Flag，這段時間單獨記錄（`RenderSample.flags`）。
+3. **各階段多了 `flagsOf`**：`readScore`（讀文件、zod 驗證、`WeakMap` 快取已驗證的拍點）之後，頁面對**整份譜**重算 Flag，這段時間單獨記錄（`RenderSample.flags`；它也包含之前把資料交給頁面的 `score.value = json`，一個 shallow ref 的指定）。
 4. **另一位成員同時修改**：同一個瀏覽器的另一個 context 以 Editor 帳號開同一份譜（只顯示 Guitar 1），每 250 ms 改一次 Guitar 1 某個小節第一個拍點的格號（小節隨機，避開正在打字的那一小節），實際約每秒 3.6–3.7 次。打字的頁面在每格 50 個按鍵期間收到並畫了 138–152 次（自己的按鍵加對方的修改）。另一個客戶端和打字的頁面在同一台機器上，它自己的排版也占 CPU，所以這是偏悲觀的情況。
 5. **按鍵到畫面**：Playwright 送出真的按鍵，間隔 150–650 ms 變動；記錄事件的 `timeStamp`、指令做完、rendered、游標所在小節那一塊畫上去，以及之後第一、第二個 animation frame。和 M0 一樣以**第二個 frame**（frame after）和門檻比較，這比實際多算最多一個 frame。按鍵樣本先依按下的時間排序再去掉前 3 個暖身（#37 審查留下的修正）。
 
@@ -126,8 +126,11 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 ### 怎麼讀這些數字
 
-- **`docToJson` 加 zod 驗證與 `WeakMap` 快取**（現在是 `readScore`）：中位數和 M0 沒有驗證時的 `docToJson` 一樣（1.8 ms），快取讓每次修改只重新驗證改到的那一小節。p95 從 M0 的 2–3 ms 變成 6–8 ms，多出來的 4–5 ms 在三個瀏覽器都看得到；可能是回收記憶體或快取失效的那幾次，這次沒有追。和門檻比起來不大。
-- **Flag 全部重算不是瓶頸**：每次修改都對整份譜重算 Flag，Chromium 0.8 ms（沒有 Flag）到 1.2 ms（324 個 Flag），p95 ≤ 4.5 ms；Firefox 與 WebKit 中位數 1–3 ms。按鍵到畫面的中位數是 35–135 ms，`flagsOf` 約占 5% 以內；就算降到 0，也不會讓任何一格從沒達標變成達標（最接近的是 Firefox 五個聲部技巧譜第 3 小節，差 8 ms，而那格的 `flagsOf` 中位數 2 ms）。依 `spec/testing.md`「只有證明是瓶頸時，才把 Flag 改成增量計算」，**不開**改成增量的票。
+- **`docToJson` 加 zod 驗證與 `WeakMap` 快取**（現在是 `readScore`）：中位數和 M0 沒有驗證時的 `docToJson` 一樣（1.8 ms），快取讓每次修改只重新驗證改到的那一小節。Chromium 的 p95 是 6.3–7.7 ms，M0 是 2.1–3.4 ms；Firefox 與 WebKit 是 6–10 ms，但這兩個瀏覽器沒有 M0 的基準可比。兩次的條件不同：M0 在鷹架頁量、各階段不開播放器，這次在編輯視圖量、開著播放器，頁面上還有游標、presence 與 Flag 的畫面要更新。所以 p95 變長的可能原因包括條件不同、回收記憶體，以及快取失效的那幾次，這次沒有追。和門檻比起來不大。
+- **Flag 全部重算不是瓶頸**：每次修改都對整份譜重算 Flag，Chromium 0.8 ms（沒有 Flag）到 1.2 ms（324 個 Flag），p95 ≤ 4.5 ms；Firefox 與 WebKit 中位數 1–3 ms。按鍵到畫面的中位數是 31–135 ms，`flagsOf` 約占 5% 以內。
+  - 超過門檻最少的三格：Firefox 同時修改五個聲部第 50 小節 151 ms、WebKit 同時修改五個聲部第 3 小節 151 ms（都只差 1 ms），以及 WebKit 技巧譜一個聲部第 3 小節 83 ms（差 3 ms）。這三格的 `flagsOf` 中位數都是 2 ms；同時修改的兩格沒有自己的各階段資料，用的是同一瀏覽器、同一格 plain 譜的各階段數字。差 1–3 ms 在這次量測的雜訊範圍內：計時精度是 1 ms，而 p95 是 50 個樣本中第 48 小的值，多一兩個慢的樣本就會讓它移動好幾 ms。`flagsOf` 降到 0 可能讓這三格跨進門檻，但不改變各瀏覽器的整體判定。
+  - 其他沒達標的格子都超過 8 ms 以上，遠大於 `flagsOf` 的 1–3 ms：Firefox 一個聲部最差 93 ms（差 13）、五個聲部技巧譜第 3 小節 158 ms（差 8）、同時修改一個聲部第 50 小節 96 ms（差 16）、同時修改五個聲部第 3 小節 169 ms（差 19）；WebKit 一個聲部技巧譜第 50 小節 88 ms（差 8）、同時修改一個聲部第 3 小節 90 ms（差 10）、同時修改五個聲部第 50 小節 169 ms（差 19）。就算 Flag 不花時間，Firefox 與 WebKit 也仍然沒達標，Chromium 本來就達標。
+  - 依 `spec/testing.md`「只有證明是瓶頸時，才把 Flag 改成增量計算」，**不開**改成增量的票。
 - **技巧的成本在排版**：同樣的修改，技巧譜比 plain 譜的排版多 30–60%（Chromium 五個聲部第 3 小節 27.0 → 36.8 ms，Firefox 57 → 80 ms）；投影只多 0.1 ms。
 - **另一位成員同時修改**：在 Chromium 讓 p95 多 0–12 ms（五個聲部第 3 小節 77 → 89 ms），仍在門檻內；在 Firefox 與 WebKit 讓五個聲部的 p95 多 30–60 ms（Firefox 第 3 小節 139 → 169 ms、WebKit 第 50 小節 108 → 169 ms）。原因是按鍵碰上剛開始的對方修改的排版，要等它做完；五個聲部時「handler 開始」的 p95 從 1 ms 變成 10–25 ms（Chromium / WebKit）就是這件事。對方的客戶端也在同一台機器上排版，會比真實情況更糟。
 - **瀏覽器的 frame 時序占了很大一塊**：
@@ -138,7 +141,7 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
   - 頁面沒有 Web Audio，alphaTab 的播放器永遠不會 ready，修改後 400 ms 重新產生聲音的那一步（`player.load()`）什麼都不做，所以 WebKit 少了 Chromium / Firefox 有的那份負擔（M0 量過是 9–15 ms，在按鍵之間發生）。
   - 這是 Windows 上的 WebKit，不是 macOS 的 Safari：圖形後端、frame 排程與 JIT 設定都不同，`navigator.hardwareConcurrency` 只回報 8。
   - DPR 設成 1；Mac 的 Retina 螢幕是 2，繪製量是四倍，這次沒有量。
-- **和 M0 比較（Chromium）**：M0 的 `replace+hint, no worker` 一個聲部 p95 39–44 ms、五個聲部 39–67 ms；這次 plain 譜 50–53 / 55–77 ms。多出的 10 ms 左右來自編輯視圖本身（`readScore` 的 p95、`flagsOf`、游標與 presence 的重畫、播放器），和 M0 用的鷹架頁不同；排版本身（27.0 vs 27.3 ms）沒有變。
+- **和 M0 比較（Chromium）**：M0 的 `replace+hint, no worker` 一個聲部 p95 41–44 ms、五個聲部 39–67 ms；這次 plain 譜 50–53 / 55–77 ms。同一小節相比多了 6–16 ms，來自編輯視圖本身（`readScore` 的 p95、`flagsOf`、游標與 presence 的重畫、播放器），和 M0 用的鷹架頁不同；排版本身（27.0 vs 27.3 ms）沒有變。
 
 ### 需要人做的事
 

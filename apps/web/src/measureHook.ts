@@ -10,7 +10,10 @@ import * as Y from "yjs";
 export interface RenderSample extends RenderTimings {
   /** Reading the document into plain data, checked against the schema (`readScore`). */
   toJson: number;
-  /** Finding the flags of the whole score from that data (`flagsOf`). */
+  /**
+   * Finding the flags of the whole score from that data (`flagsOf`). It also takes in handing
+   * the data to the page (`score.value = json` in ScoreView.vue, just before), a shallow ref.
+   */
   flags: number;
   partial: boolean;
   /** From the change to the layout being ready (`onRendered`). */
