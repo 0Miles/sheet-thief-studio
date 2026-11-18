@@ -14,6 +14,8 @@ export const LOGIN_BY_IP: Limit = { name: "login-ip", max: 10, windowSeconds: 15
 export const OWN_PASSWORD_BY_ACCOUNT: Limit = { name: "own-password-account", max: 10, windowSeconds: 15 * 60 };
 /** The usernames an Owner asks for when adding members: each one tells whether an account exists. */
 export const ADD_MEMBER_BY_ACCOUNT: Limit = { name: "add-member-account", max: 20, windowSeconds: 15 * 60 };
+/** The links of the karyl-chan bot that log nobody in (docs/spec/security.md, section 4). */
+export const KARYL_LOGIN_BY_IP: Limit = { name: "karyl-login-ip", max: 10, windowSeconds: 15 * 60 };
 export const GUEST_TICKET_BY_IP: Limit = { name: "guest-ticket-ip", max: 30, windowSeconds: 60 };
 export const MEMBER_TICKET_BY_ACCOUNT: Limit = { name: "member-ticket-account", max: 60, windowSeconds: 60 };
 

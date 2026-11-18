@@ -44,6 +44,9 @@ importers:
       '@hocuspocus/server':
         specifier: ^4.8.0
         version: 4.8.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
+      '@karyl-chan/plugin-sdk':
+        specifier: 1.2.0
+        version: 1.2.0(discord-api-types@0.38.59)(ioredis@5.11.1)(vue@3.5.45(typescript@6.0.3))
       '@node-rs/argon2':
         specifier: ^2.2.2
         version: 2.2.2
@@ -56,6 +59,9 @@ importers:
       crossws:
         specifier: ^0.4.17
         version: 0.4.17
+      discord-api-types:
+        specifier: ^0.38.59
+        version: 0.38.59
       fastify:
         specifier: ^5.12.8
         version: 5.12.8
@@ -577,6 +583,19 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@karyl-chan/plugin-sdk@1.2.0':
+    resolution: {integrity: sha512-vXbtmZaTB+NDS+6EThuB5jVFvW7vQJJiaj+K+GYLdqULAQXfAl0syVzFRxp4ZeY1zpmM2tMY2OlvyCNeXlypcg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      discord-api-types: '>=0.38.0 <0.39.0'
+      ioredis: ^5.4.1
+      vue: ^3.5.0
+    peerDependenciesMeta:
+      ioredis:
+        optional: true
+      vue:
+        optional: true
 
   '@karyl-chan/ui@0.5.0':
     resolution: {integrity: sha512-nErDSVPUpEDoa+TgGXrpdQKvDAhhlfonvUoRUmsT5f8Bgz7ZgyFsrld2lUYX5BxAaOYg+1tykJ4MaU6846YsrQ==}
@@ -1199,6 +1218,9 @@ packages:
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
+
+  discord-api-types@0.38.59:
+    resolution: {integrity: sha512-LZqh8gvWU/Bhl9qEVIRLeLJuaPGO7rA26IXLrXnMcjXxofh/h5UhP6notfCTj4X5kR1ogMvVgcrVYIuynY/CxQ==}
 
   dottie@2.0.7:
     resolution: {integrity: sha512-7lAK2A0b3zZr3UC5aE69CPdCFR4RHW1o2Dr74TqFykxkUCBXSRJum/yPc7g8zRHJqWKomPLHwFLLoUnn8PXXRg==}
@@ -2661,6 +2683,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  '@karyl-chan/plugin-sdk@1.2.0(discord-api-types@0.38.59)(ioredis@5.11.1)(vue@3.5.45(typescript@6.0.3))':
+    dependencies:
+      discord-api-types: 0.38.59
+      fastify: 5.12.8
+    optionalDependencies:
+      ioredis: 5.11.1
+      vue: 3.5.45(typescript@6.0.3)
+
   '@karyl-chan/ui@0.5.0(@iconify/vue@5.0.5(vue@3.5.45(typescript@6.0.3)))(@popperjs/core@2.11.8)(nanoid@6.0.2)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.45(typescript@6.0.3)))(vue-router@5.5.0(@vue/compiler-sfc@3.5.45)(esbuild@0.28.2)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.45(typescript@6.0.3)))(rolldown@1.2.19)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))(vue@3.5.45(typescript@6.0.3)))(vue@3.5.45(typescript@6.0.3))':
     dependencies:
       '@iconify/vue': 5.0.5(vue@3.5.45(typescript@6.0.3))
@@ -3254,6 +3284,8 @@ snapshots:
   dequal@2.0.3: {}
 
   detect-libc@2.1.2: {}
+
+  discord-api-types@0.38.59: {}
 
   dottie@2.0.7: {}
 

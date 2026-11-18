@@ -321,3 +321,42 @@ test("two members dropping phrases on the same bar at once both keep theirs, one
   ]).toContainEqual(fretsThere);
   expect(flagsOf(score)).toContainEqual({ kind: "overfull", partId: guitar, barId: barIds[0], voice: "0:0" });
 });
+
+test("two members dropping past the end of the score at once append each their bars together, one run after the other", () => {
+  const { doc: a, barIds, guitar } = band(2);
+  const b = new Y.Doc();
+  send(a, b);
+  const last = barIds[1]!;
+  // Five bars each from the last: four appended by each, at the same place at once.
+  const anna = dropped(dropFragment(a, { partId: guitar, barId: last }, guitarPhrase([1], [2], [3], [4], [5]))).barIds.slice(1);
+  const ben = dropped(dropFragment(b, { partId: guitar, barId: last }, guitarPhrase([6], [7], [8], [9], [10]))).barIds.slice(1);
+  expect(anna).toHaveLength(4);
+  send(a, b);
+  send(b, a);
+
+  const order = docToJson(a).bars.map((bar) => bar.id);
+  expect(docToJson(b).bars.map((bar) => bar.id)).toEqual(order);
+  expect(order.slice(0, 2)).toEqual(barIds);
+  // Each run in a row, in the order made, one after the other: never in turns.
+  expect([
+    [...anna, ...ben],
+    [...ben, ...anna],
+  ]).toContainEqual(order.slice(2));
+});
+
+test("bars inserted one after another at the same place by two members at once stay together too", () => {
+  const { doc: a, barIds } = band(2);
+  const b = new Y.Doc();
+  send(a, b);
+  const anna = insertBars(a, { after: barIds[0]!, count: 3 });
+  const ben = insertBars(b, { after: barIds[0]!, count: 3 });
+  send(a, b);
+  send(b, a);
+  const order = docToJson(a).bars.map((bar) => bar.id);
+  expect(order[0]).toBe(barIds[0]);
+  expect(order.at(-1)).toBe(barIds[1]);
+  expect([
+    [...anna, ...ben],
+    [...ben, ...anna],
+  ]).toContainEqual(order.slice(1, -1));
+});

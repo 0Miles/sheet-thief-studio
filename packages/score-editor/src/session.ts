@@ -15,6 +15,13 @@ import {
   changeBeatAt,
   changeBeatsOnSelection,
   clearNotes,
+  clipboardText,
+  type DropHint,
+  fragmentOfClipboard,
+  fragmentOfSelection,
+  isBarsFragment,
+  pasteBeats,
+  type PasteRefusal,
   type Cursor,
   type KeySignature,
   deleteBarsAt,
@@ -151,6 +158,13 @@ export interface LyricRequest {
  */
 export type LyricStep = LyricRequest | "leave" | "stay" | null;
 
+/**
+ * What a paste did (docs/spec/commands.md, 5.6): done, with what to tell the member (the tuning
+ * differs, bars were appended); refused, and why; or null, refused while read-only (`onRefused`
+ * tells it) or with no cursor to paste at.
+ */
+export type PasteOutcome = { hints: DropHint[] } | PasteRefusal | null;
+
 export interface EditorSessionOptions {
   /** Whose keys the member types with: the shell tells it once, with `detectKeyPlatform`. */
   platform: KeyPlatform;
@@ -225,6 +239,22 @@ export interface EditorSession {
    * that goes to an input method, as any other key, is the box's own (null). The selection ends.
    */
   pressLyric(request: LyricRequest, typed: string, key: Key): LyricStep;
+  /*
+   * The clipboard (docs/spec/commands.md, 5.6; docs/spec/phrases.md, section 2): the shell calls
+   * these from the DOM's copy, cut and paste events and writes or reads their `text/plain`.
+   */
+  /** The clipboard's text of the selection (a fragment of its beats or bars); null without one. Changes nothing, read-only too. */
+  copy(): string | null;
+  /**
+   * Copy, and clear the selection as Delete does, one command, one undo step; the selection stays.
+   * Null, nothing changed, without a selection, or while read-only (refused: the member is told).
+   */
+  cut(): string | null;
+  /**
+   * Paste the clipboard's text at the cursor, one command, one undo step: bars replace the bars
+   * from the cursor's as a drop does, beats are inserted at the cursor. The selection ends.
+   */
+  paste(text: string): PasteOutcome;
   /*
    * The structural commands the toolbar's buttons and the panel of the cursor's bar run, without a
    * key (docs/spec/commands.md, section 6): each one command, one undo step, refused while
@@ -777,6 +807,20 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return execute(command);
   }
 
+  /** `EditorSession.drop`: a phrase from the sidebar, and bars pasted. */
+  function drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null {
+    let result: Dropped | DropRefusal | null = null;
+    const done = runWithoutKey({
+      changes: true,
+      run: (at) => {
+        result = dropFragment(doc, target, fragment);
+        if (typeof result === "string") return { cursor: at, selection, done: false };
+        return { cursor: settled(at), selection: null };
+      },
+    });
+    return done || typeof result === "string" ? result : null;
+  }
+
   return {
     get cursor() {
       return cursor;
@@ -853,6 +897,50 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       putAt({ cursor: next ?? cursor, selection: null });
       return next === null ? "leave" : { cursor: next, lyric: lyricAt(doc, next) ?? "" };
     },
+    copy() {
+      const fragment = selection && fragmentOfSelection(doc, selection);
+      return fragment ? clipboardText(fragment) : null;
+    },
+    cut() {
+      const selected = selection;
+      if (selected === null || cursor === null) return null;
+      if (readOnly) {
+        refuse();
+        return null;
+      }
+      const fragment = fragmentOfSelection(doc, selected);
+      if (fragment === undefined) return null;
+      runWithoutKey(onSelection(selected, (at) => deleteSelection(doc, selected, at)));
+      return clipboardText(fragment);
+    },
+    paste(text) {
+      if (cursor === null) return null;
+      // A Viewer is told they cannot change the score, whatever the clipboard holds.
+      if (readOnly) {
+        refuse();
+        return null;
+      }
+      const fragment = fragmentOfClipboard(text);
+      if (fragment === undefined) return "nothing";
+      // Bars replace bars as a drop does, from the cursor's bar of its part.
+      if (isBarsFragment(fragment)) {
+        const dropped = drop({ partId: cursor.partId, barId: cursor.barId }, fragment);
+        return dropped === null || typeof dropped === "string" ? dropped : { hints: dropped.hints };
+      }
+      // What the command did, heard from inside it.
+      const outcome: { result: ReturnType<typeof pasteBeats> } = { result: "gone" };
+      runWithoutKey({
+        changes: true,
+        run: (at) => {
+          const result = pasteBeats(doc, at, fragment);
+          outcome.result = result;
+          // The cursor goes on the last beat pasted.
+          return typeof result === "string" ? { cursor: at, selection, done: false } : { cursor: { ...at, beatId: result.beatIds.at(-1)!, at: "on" }, selection: null };
+        },
+      });
+      const { result } = outcome;
+      return typeof result === "string" ? result : { hints: result.hints };
+    },
     insertBar(side) {
       return runWithoutKey(structural((at) => insertBarAt(doc, at, side)));
     },
@@ -926,18 +1014,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         }),
       );
     },
-    drop(target, fragment) {
-      let result: Dropped | DropRefusal | null = null;
-      const done = runWithoutKey({
-        changes: true,
-        run: (at) => {
-          result = dropFragment(doc, target, fragment);
-          if (typeof result === "string") return { cursor: at, selection, done: false };
-          return { cursor: settled(at), selection: null };
-        },
-      });
-      return done || typeof result === "string" ? result : null;
-    },
+    drop,
     destroy() {
       doc.off("afterTransaction", settle);
       doc.off("beforeTransaction", separate);
