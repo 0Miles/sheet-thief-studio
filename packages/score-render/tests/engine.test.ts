@@ -139,6 +139,12 @@ class StandIn {
     this.calls.push("stop");
   }
 
+  /** alphaTab downloads the sound font again; the worker reports how that went, as the test sends it. */
+  loadSoundFont(data: unknown, append = false): boolean {
+    this.calls.push(`loadSoundFont:${String(data)}:${append}`);
+    return true;
+  }
+
   destroy(): void {}
 }
 
@@ -148,6 +154,8 @@ class StandIn {
  */
 class StandInPlayer {
   readonly midiLoadFailed = new Event<Error>();
+  /** The sound font could not be had: the download failed, the server refused it, or its bytes were not one. */
+  readonly soundFontLoadFailed = new Event<Error>();
   readonly muted = new Set<number>();
   readonly soloed = new Set<number>();
   readonly volumes = new Map<number, number>();
@@ -270,6 +278,13 @@ function browserWith(present: readonly string[] = ["AudioContext", "Worker", "Sc
   vi.unstubAllGlobals();
   for (const name of AUDIO_GLOBALS) vi.stubGlobal(name, present.includes(name) ? class {} : undefined);
   vi.stubGlobal("isSecureContext", secure);
+  // Where the browser says it is back online.
+  vi.stubGlobal("window", new EventTarget());
+}
+
+/** The browser is back online. */
+function backOnline(): void {
+  window.dispatchEvent(new globalThis.Event("online"));
 }
 
 /** A new engine on an element with nothing drawn in it (what the engine clears when it draws nothing), and the stand-in for its alphaTab API. */
@@ -279,22 +294,53 @@ function makeEngine(options: Partial<EngineOptions> = {}): { made: ScoreEngine; 
   return { made, stand: standIns[0]! };
 }
 
-/** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
-function start(options: { seekOnClick?: boolean } = {}): void {
+/** An engine drawing an 8-bar score, its worker up: alphaTab makes the first sound itself. */
+function open(options: { seekOnClick?: boolean } = {}): void {
   browserWith();
   ({ made: engine, stand: api } = makeEngine({ useWorkers: false, ...options }));
   score = scoreOf(8);
   engine.renderer.setScore(score);
   api.postRenderFinished.emit();
-  // The sound font is in: alphaTab makes the first sound itself.
   api.ready = true;
   api.loadMidiForScore();
-  newSound();
+}
+
+/** From now on, what the engine tells and asks is recorded. */
+function listen(): void {
   states = [];
   positions = [];
   engine.player.onState((state) => states.push(state));
   engine.player.onPosition((position) => positions.push(position.tick));
   seen = api.calls.length;
+}
+
+/** An engine drawing an 8-bar score, its first sound in place, paused at the start; clicks seek with `seekOnClick`. */
+function start(options: { seekOnClick?: boolean } = {}): void {
+  open(options);
+  // The sound font is in, and so the player with the first sound.
+  newSound();
+  listen();
+}
+
+/** An engine drawing an 8-bar score whose worker has its first sound, but not the sound font yet: loading. */
+function withoutSoundFont(): void {
+  open();
+  api.midiLoaded.emit();
+  listen();
+}
+
+/**
+ * The sound font could not be had, reported as alphaTab 1.9 does (the player's
+ * `soundFontLoadFailed`, the API telling it as an error): the download failed, the server answered
+ * with an error, or the worker could not read what came.
+ */
+function soundFontFailed(): void {
+  api.player.soundFontLoadFailed.emit(new Error("Loading failed"));
+}
+
+/** The worker has the sound font, and so the player can play (alphaTab's `readyForPlayback`). */
+function soundFontIn(): void {
+  api.playerReady.emit();
 }
 
 beforeEach(() => start());
@@ -361,6 +407,72 @@ test("with no sound font, the player is left out whatever the browser can do", (
   const { made, stand } = makeEngine({ soundFont: null });
   expect(stand.settings.player.playerMode).toBe(alphaTab.PlayerMode.Disabled);
   expect(made.player.state).toBe("loading");
+});
+
+test("a sound font that could not be had: the player says it failed, and plays nothing", () => {
+  withoutSoundFont();
+  expect(engine.player.state).toBe("loading");
+  soundFontFailed();
+  expect(engine.player.state).toBe("failed");
+  expect(states).toEqual(["failed"]);
+  engine.player.play();
+  expect(asked()).toEqual([]);
+});
+
+test("back online, a sound font that could not be had is downloaded again: loading meanwhile, then it plays", () => {
+  withoutSoundFont();
+  soundFontFailed();
+  backOnline();
+  expect(asked()).toEqual(["loadSoundFont:/soundfont/test.sf3:false"]);
+  expect(engine.player.state).toBe("loading");
+  soundFontIn();
+  expect(states).toEqual(["failed", "loading", "paused"]);
+  engine.player.play();
+  expect(asked()).toEqual(["play"]);
+});
+
+test("retried, it is downloaded again, as often as it fails; never while it loads or once it is in", () => {
+  withoutSoundFont();
+  engine.player.retry();
+  backOnline();
+  expect(asked()).toEqual([]);
+  soundFontFailed();
+  engine.player.retry();
+  // Asked for once: the retry under way is not asked again.
+  engine.player.retry();
+  backOnline();
+  soundFontFailed();
+  engine.player.retry();
+  expect(asked()).toEqual(["loadSoundFont:/soundfont/test.sf3:false", "loadSoundFont:/soundfont/test.sf3:false"]);
+  soundFontIn();
+  engine.player.retry();
+  backOnline();
+  expect(asked()).toEqual([]);
+  expect(states).toEqual(["failed", "loading", "failed", "loading", "paused"]);
+});
+
+test("destroyed, the engine does not hear the browser come back online", () => {
+  withoutSoundFont();
+  soundFontFailed();
+  engine.destroy();
+  backOnline();
+  expect(asked()).toEqual([]);
+});
+
+test("changed in place while the sound font was not in: the sound is made again once it is, and nothing older is heard", async () => {
+  withoutSoundFont();
+  soundFontFailed();
+  changeInPlace();
+  // Nothing to make the sound with yet.
+  await engine.player.load();
+  expect(asked()).toEqual([]);
+  engine.player.retry();
+  expect(asked()).toEqual(["loadSoundFont:/soundfont/test.sf3:false"]);
+  soundFontIn();
+  expect(asked()).toEqual(["loadMidi"]);
+  newSound();
+  expect(asked()).toEqual(["seek:0"]);
+  expect(engine.player.state).toBe("paused");
 });
 
 test("while it plays, a new sound: never paused, the start it went back to is never told, and it plays on from where it was", async () => {

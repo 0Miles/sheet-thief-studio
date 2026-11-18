@@ -211,6 +211,8 @@ export const strings = {
     player: {
       loading: "音色載入中…",
       unavailable: "這個瀏覽器無法播放聲音",
+      failed: "音色載入失敗",
+      retry: "重試",
       play: "播放",
       pause: "暫停",
       stop: "停止",

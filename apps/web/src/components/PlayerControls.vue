@@ -14,7 +14,7 @@ const props = defineProps<{
   /** The bar playback is in, counted from 1; null when none is shown. */
   bar: number | null;
 }>();
-const emit = defineEmits<{ toggle: []; stop: [] }>();
+const emit = defineEmits<{ toggle: []; stop: []; retry: [] }>();
 const text = strings.score.player;
 const usable = computed(() => playerUsable(props.state));
 </script>
@@ -26,6 +26,10 @@ const usable = computed(() => playerUsable(props.state));
     </AppButton>
     <AppButton variant="ghost" size="sm" :disabled="!usable || stopped" @click="emit('stop')">{{ text.stop }}</AppButton>
     <span v-if="state === 'loading'" class="player__status">{{ text.loading }}</span>
+    <template v-else-if="state === 'failed'">
+      <span class="player__status">{{ text.failed }}</span>
+      <AppButton variant="ghost" size="sm" data-retry-sound @click="emit('retry')">{{ text.retry }}</AppButton>
+    </template>
     <span v-else-if="state === 'unavailable'" class="player__status">{{ text.unavailable }}</span>
     <span v-else-if="bar !== null" class="player__status" data-playing-bar :data-bar="bar">{{ text.bar(bar) }}</span>
   </div>
