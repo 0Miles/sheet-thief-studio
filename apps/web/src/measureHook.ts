@@ -8,8 +8,10 @@ import * as Y from "yjs";
 
 /** One drawing of the score after a change, in milliseconds. */
 export interface RenderSample extends RenderTimings {
-  /** Reading the document into plain data (`docToJson`). */
+  /** Reading the document into plain data, checked against the schema (`readScore`). */
   toJson: number;
+  /** Finding the flags of the whole score from that data (`flagsOf`). */
+  flags: number;
   partial: boolean;
   /** From the change to the layout being ready (`onRendered`). */
   total: number;
@@ -88,8 +90,11 @@ export interface MeasuredView {
 export interface Measurement {
   /** The engine is made: its drawings, paintings and positions are watched from now on. */
   watch(engine: ScoreEngine): void;
-  /** A change goes to the renderer; reading the document for it began at `startedAt`. */
-  drawing(startedAt: number): void;
+  /**
+   * A change goes to the renderer: reading the document for it began at `startedAt` and ended at
+   * `readAt`, its flags were found since.
+   */
+  drawing(startedAt: number, readAt: number): void;
   /** A key of the score is about to be handled; returns what to call once it was, saying whether it did anything. */
   key(event: KeyboardEvent): (handled: boolean) => void;
   stop(): void;
@@ -117,7 +122,7 @@ function measuring(view: MeasuredView): Measurement {
   let engine: ScoreEngine | undefined;
   let drawnOnce = false;
   /** Changes handed to the renderer and not drawn yet, oldest first, numbered in order. */
-  const awaiting: { toJson: number; startedAt: number; number: number }[] = [];
+  const awaiting: { toJson: number; flags: number; startedAt: number; number: number }[] = [];
   let drawings = 0;
   let onNextRender: ((sample: RenderSample) => void) | undefined;
   const pendingKeys = new Set<PendingKey>();
@@ -229,7 +234,7 @@ function measuring(view: MeasuredView): Measurement {
     for (const pending of pendingKeys) {
       if (pending.sample.rendered === null && pending.drawing <= first.number) pending.sample.rendered = performance.now();
     }
-    const sample: RenderSample = { ...event.timings, toJson: first.toJson, partial: event.partial, total: performance.now() - first.startedAt };
+    const sample: RenderSample = { ...event.timings, toJson: first.toJson, flags: first.flags, partial: event.partial, total: performance.now() - first.startedAt };
     hook.renders.push(sample);
     const resolve = onNextRender;
     onNextRender = undefined;
@@ -261,8 +266,8 @@ function measuring(view: MeasuredView): Measurement {
         }),
       );
     },
-    drawing(startedAt) {
-      awaiting.push({ toJson: performance.now() - startedAt, startedAt, number: ++drawings });
+    drawing(startedAt, readAt) {
+      awaiting.push({ toJson: readAt - startedAt, flags: performance.now() - readAt, startedAt, number: ++drawings });
     },
     key(event) {
       const at = view.cursor();

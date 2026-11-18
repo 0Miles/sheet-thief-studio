@@ -680,10 +680,11 @@ function draw(change: ScoreChange): void {
   if (lockedBy !== null) lockReadOnly(lockedBy);
   const startedAt = performance.now();
   const { score: json, invalid } = readScore(doc);
-  measurement.drawing(startedAt);
+  const readAt = performance.now();
   score.value = json;
   // From the whole score: a tie can be dangling for a change in the bar before (docs/spec/flags.md, section 3).
   flags.value = flagsOf(json, invalid);
+  measurement.drawing(startedAt, readAt);
   forgetStaleStop();
   if (change.kind === "structure") {
     // A new set of bars or parts is a new model for the engine, which makes its sound itself.

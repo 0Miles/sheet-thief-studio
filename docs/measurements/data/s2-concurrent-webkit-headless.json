@@ -1,0 +1,3082 @@
+{
+ "environment": {
+  "mode": "headless",
+  "browser": "webkit 27.2",
+  "node": "v24.10.0",
+  "os": "Windows_NT 10.0.26200 x64",
+  "cpu": "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
+  "logicalCpus": 16,
+  "memoryGb": 128,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+  "hardwareConcurrency": 8,
+  "devicePixelRatio": 1,
+  "viewport": "1280x720",
+  "webAudio": false,
+  "timerStepMs": 1,
+  "measuredAt": "2026-11-18T00:08:14.944Z"
+ },
+ "runs": 50,
+ "otherEveryMs": 250,
+ "cells": [
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 3,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 2774,
+     "started": 2774,
+     "handled": 2792,
+     "rendered": 2792,
+     "painted": 2796,
+     "frame": 2821,
+     "nextFrame": 2835
+    },
+    {
+     "key": "8",
+     "pressed": 3057,
+     "started": 3058,
+     "handled": 3088,
+     "rendered": 3088,
+     "painted": 3091,
+     "frame": 3115,
+     "nextFrame": 3131
+    },
+    {
+     "key": "9",
+     "pressed": 3536,
+     "started": 3536,
+     "handled": 3548,
+     "rendered": 3548,
+     "painted": 3551,
+     "frame": 3581,
+     "nextFrame": 3596
+    },
+    {
+     "key": "7",
+     "pressed": 4114,
+     "started": 4114,
+     "handled": 4127,
+     "rendered": 4126,
+     "painted": 4129,
+     "frame": 4160,
+     "nextFrame": 4176
+    },
+    {
+     "key": "8",
+     "pressed": 4477,
+     "started": 4479,
+     "handled": 4492,
+     "rendered": 4492,
+     "painted": 4495,
+     "frame": 4521,
+     "nextFrame": 4538
+    },
+    {
+     "key": "9",
+     "pressed": 4821,
+     "started": 4822,
+     "handled": 4843,
+     "rendered": 4843,
+     "painted": 4849,
+     "frame": 4891,
+     "nextFrame": 4911
+    },
+    {
+     "key": "7",
+     "pressed": 5056,
+     "started": 5057,
+     "handled": 5072,
+     "rendered": 5072,
+     "painted": 5075,
+     "frame": 5102,
+     "nextFrame": 5115
+    },
+    {
+     "key": "8",
+     "pressed": 5289,
+     "started": 5290,
+     "handled": 5304,
+     "rendered": 5304,
+     "painted": 5308,
+     "frame": 5331,
+     "nextFrame": 5346
+    },
+    {
+     "key": "9",
+     "pressed": 5974,
+     "started": 5974,
+     "handled": 5985,
+     "rendered": 5985,
+     "painted": 5988,
+     "frame": 6020,
+     "nextFrame": 6036
+    },
+    {
+     "key": "7",
+     "pressed": 6518,
+     "started": 6519,
+     "handled": 6531,
+     "rendered": 6531,
+     "painted": 6543,
+     "frame": 6565,
+     "nextFrame": 6579
+    },
+    {
+     "key": "8",
+     "pressed": 7030,
+     "started": 7030,
+     "handled": 7042,
+     "rendered": 7041,
+     "painted": 7045,
+     "frame": 7076,
+     "nextFrame": 7092
+    },
+    {
+     "key": "9",
+     "pressed": 7557,
+     "started": 7557,
+     "handled": 7569,
+     "rendered": 7568,
+     "painted": 7571,
+     "frame": 7602,
+     "nextFrame": 7618
+    },
+    {
+     "key": "7",
+     "pressed": 7745,
+     "started": 7745,
+     "handled": 7756,
+     "rendered": 7755,
+     "painted": 7759,
+     "frame": 7791,
+     "nextFrame": 7807
+    },
+    {
+     "key": "8",
+     "pressed": 8228,
+     "started": 8228,
+     "handled": 8239,
+     "rendered": 8239,
+     "painted": 8242,
+     "frame": 8283,
+     "nextFrame": 8305
+    },
+    {
+     "key": "9",
+     "pressed": 8572,
+     "started": 8572,
+     "handled": 8582,
+     "rendered": 8582,
+     "painted": 8585,
+     "frame": 8603,
+     "nextFrame": 8618
+    },
+    {
+     "key": "7",
+     "pressed": 8758,
+     "started": 8758,
+     "handled": 8769,
+     "rendered": 8769,
+     "painted": 8771,
+     "frame": 8814,
+     "nextFrame": 8836
+    },
+    {
+     "key": "8",
+     "pressed": 9216,
+     "started": 9232,
+     "handled": 9245,
+     "rendered": 9245,
+     "painted": 9248,
+     "frame": 9276,
+     "nextFrame": 9290
+    },
+    {
+     "key": "9",
+     "pressed": 9510,
+     "started": 9510,
+     "handled": 9520,
+     "rendered": 9520,
+     "painted": 9522,
+     "frame": 9540,
+     "nextFrame": 9556
+    },
+    {
+     "key": "7",
+     "pressed": 9946,
+     "started": 9946,
+     "handled": 9956,
+     "rendered": 9956,
+     "painted": 9962,
+     "frame": 9992,
+     "nextFrame": 10008
+    },
+    {
+     "key": "8",
+     "pressed": 10225,
+     "started": 10225,
+     "handled": 10236,
+     "rendered": 10236,
+     "painted": 10239,
+     "frame": 10257,
+     "nextFrame": 10272
+    },
+    {
+     "key": "9",
+     "pressed": 10459,
+     "started": 10459,
+     "handled": 10469,
+     "rendered": 10469,
+     "painted": 10472,
+     "frame": 10505,
+     "nextFrame": 10522
+    },
+    {
+     "key": "7",
+     "pressed": 11037,
+     "started": 11037,
+     "handled": 11046,
+     "rendered": 11046,
+     "painted": 11049,
+     "frame": 11082,
+     "nextFrame": 11103
+    },
+    {
+     "key": "8",
+     "pressed": 11241,
+     "started": 11242,
+     "handled": 11263,
+     "rendered": 11263,
+     "painted": 11267,
+     "frame": 11300,
+     "nextFrame": 11320
+    },
+    {
+     "key": "9",
+     "pressed": 11894,
+     "started": 11894,
+     "handled": 11905,
+     "rendered": 11904,
+     "painted": 11908,
+     "frame": 11941,
+     "nextFrame": 11957
+    },
+    {
+     "key": "7",
+     "pressed": 12269,
+     "started": 12269,
+     "handled": 12279,
+     "rendered": 12279,
+     "painted": 12284,
+     "frame": 12315,
+     "nextFrame": 12332
+    },
+    {
+     "key": "8",
+     "pressed": 12596,
+     "started": 12596,
+     "handled": 12606,
+     "rendered": 12606,
+     "painted": 12613,
+     "frame": 12642,
+     "nextFrame": 12665
+    },
+    {
+     "key": "9",
+     "pressed": 12799,
+     "started": 12799,
+     "handled": 12810,
+     "rendered": 12810,
+     "painted": 12814,
+     "frame": 12844,
+     "nextFrame": 12861
+    },
+    {
+     "key": "7",
+     "pressed": 13017,
+     "started": 13018,
+     "handled": 13037,
+     "rendered": 13037,
+     "painted": 13042,
+     "frame": 13078,
+     "nextFrame": 13099
+    },
+    {
+     "key": "8",
+     "pressed": 13419,
+     "started": 13420,
+     "handled": 13430,
+     "rendered": 13429,
+     "painted": 13433,
+     "frame": 13476,
+     "nextFrame": 13499
+    },
+    {
+     "key": "9",
+     "pressed": 14078,
+     "started": 14078,
+     "handled": 14088,
+     "rendered": 14088,
+     "painted": 14091,
+     "frame": 14124,
+     "nextFrame": 14140
+    },
+    {
+     "key": "7",
+     "pressed": 14267,
+     "started": 14268,
+     "handled": 14292,
+     "rendered": 14291,
+     "painted": 14296,
+     "frame": 14326,
+     "nextFrame": 14345
+    },
+    {
+     "key": "8",
+     "pressed": 14764,
+     "started": 14766,
+     "handled": 14796,
+     "rendered": 14795,
+     "painted": 14801,
+     "frame": 14839,
+     "nextFrame": 14868
+    },
+    {
+     "key": "9",
+     "pressed": 15259,
+     "started": 15259,
+     "handled": 15272,
+     "rendered": 15271,
+     "painted": 15274,
+     "frame": 15305,
+     "nextFrame": 15321
+    },
+    {
+     "key": "7",
+     "pressed": 15757,
+     "started": 15757,
+     "handled": 15787,
+     "rendered": 15787,
+     "painted": 15792,
+     "frame": 15816,
+     "nextFrame": 15831
+    },
+    {
+     "key": "8",
+     "pressed": 16084,
+     "started": 16084,
+     "handled": 16100,
+     "rendered": 16097,
+     "painted": 16103,
+     "frame": 16127,
+     "nextFrame": 16143
+    },
+    {
+     "key": "9",
+     "pressed": 16704,
+     "started": 16705,
+     "handled": 16738,
+     "rendered": 16738,
+     "painted": 16743,
+     "frame": 16780,
+     "nextFrame": 16811
+    },
+    {
+     "key": "7",
+     "pressed": 17049,
+     "started": 17050,
+     "handled": 17062,
+     "rendered": 17062,
+     "painted": 17065,
+     "frame": 17097,
+     "nextFrame": 17120
+    },
+    {
+     "key": "8",
+     "pressed": 17294,
+     "started": 17294,
+     "handled": 17305,
+     "rendered": 17305,
+     "painted": 17308,
+     "frame": 17340,
+     "nextFrame": 17371
+    },
+    {
+     "key": "9",
+     "pressed": 17669,
+     "started": 17669,
+     "handled": 17679,
+     "rendered": 17679,
+     "painted": 17685,
+     "frame": 17715,
+     "nextFrame": 17731
+    },
+    {
+     "key": "7",
+     "pressed": 18276,
+     "started": 18276,
+     "handled": 18289,
+     "rendered": 18289,
+     "painted": 18294,
+     "frame": 18322,
+     "nextFrame": 18336
+    },
+    {
+     "key": "8",
+     "pressed": 18757,
+     "started": 18757,
+     "handled": 18767,
+     "rendered": 18767,
+     "painted": 18770,
+     "frame": 18804,
+     "nextFrame": 18821
+    },
+    {
+     "key": "9",
+     "pressed": 19397,
+     "started": 19397,
+     "handled": 19407,
+     "rendered": 19407,
+     "painted": 19412,
+     "frame": 19444,
+     "nextFrame": 19460
+    },
+    {
+     "key": "7",
+     "pressed": 19928,
+     "started": 19929,
+     "handled": 19941,
+     "rendered": 19940,
+     "painted": 19950,
+     "frame": 19977,
+     "nextFrame": 19989
+    },
+    {
+     "key": "8",
+     "pressed": 20441,
+     "started": 20441,
+     "handled": 20450,
+     "rendered": 20450,
+     "painted": 20453,
+     "frame": 20486,
+     "nextFrame": 20503
+    },
+    {
+     "key": "9",
+     "pressed": 20635,
+     "started": 20637,
+     "handled": 20650,
+     "rendered": 20650,
+     "painted": 20653,
+     "frame": 20675,
+     "nextFrame": 20691
+    },
+    {
+     "key": "7",
+     "pressed": 21114,
+     "started": 21114,
+     "handled": 21126,
+     "rendered": 21125,
+     "painted": 21129,
+     "frame": 21160,
+     "nextFrame": 21177
+    },
+    {
+     "key": "8",
+     "pressed": 21769,
+     "started": 21769,
+     "handled": 21779,
+     "rendered": 21779,
+     "painted": 21782,
+     "frame": 21814,
+     "nextFrame": 21830
+    },
+    {
+     "key": "9",
+     "pressed": 22434,
+     "started": 22434,
+     "handled": 22444,
+     "rendered": 22443,
+     "painted": 22446,
+     "frame": 22480,
+     "nextFrame": 22496
+    },
+    {
+     "key": "7",
+     "pressed": 22700,
+     "started": 22700,
+     "handled": 22711,
+     "rendered": 22711,
+     "painted": 22713,
+     "frame": 22746,
+     "nextFrame": 22762
+    },
+    {
+     "key": "8",
+     "pressed": 23104,
+     "started": 23104,
+     "handled": 23115,
+     "rendered": 23115,
+     "painted": 23118,
+     "frame": 23150,
+     "nextFrame": 23172
+    }
+   ],
+   "otherEdits": 89,
+   "otherEditsPerSecond": 3.6020722033349526,
+   "drawingsSeen": 142
+  },
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 50,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 27487,
+     "started": 27487,
+     "handled": 27496,
+     "rendered": 27496,
+     "painted": 27509,
+     "frame": 27534,
+     "nextFrame": 27549
+    },
+    {
+     "key": "8",
+     "pressed": 27767,
+     "started": 27767,
+     "handled": 27776,
+     "rendered": 27775,
+     "painted": 27784,
+     "frame": 27812,
+     "nextFrame": 27829
+    },
+    {
+     "key": "9",
+     "pressed": 28215,
+     "started": 28215,
+     "handled": 28223,
+     "rendered": 28223,
+     "painted": 28230,
+     "frame": 28245,
+     "nextFrame": 28261
+    },
+    {
+     "key": "7",
+     "pressed": 28777,
+     "started": 28776,
+     "handled": 28784,
+     "rendered": 28784,
+     "painted": 28793,
+     "frame": 28823,
+     "nextFrame": 28839
+    },
+    {
+     "key": "8",
+     "pressed": 29137,
+     "started": 29137,
+     "handled": 29146,
+     "rendered": 29145,
+     "painted": 29153,
+     "frame": 29182,
+     "nextFrame": 29212
+    },
+    {
+     "key": "9",
+     "pressed": 29463,
+     "started": 29473,
+     "handled": 29481,
+     "rendered": 29481,
+     "painted": 29489,
+     "frame": 29510,
+     "nextFrame": 29524
+    },
+    {
+     "key": "7",
+     "pressed": 29697,
+     "started": 29697,
+     "handled": 29704,
+     "rendered": 29704,
+     "painted": 29711,
+     "frame": 29742,
+     "nextFrame": 29773
+    },
+    {
+     "key": "8",
+     "pressed": 29930,
+     "started": 29930,
+     "handled": 29938,
+     "rendered": 29938,
+     "painted": 29945,
+     "frame": 29975,
+     "nextFrame": 30006
+    },
+    {
+     "key": "9",
+     "pressed": 30599,
+     "started": 30599,
+     "handled": 30607,
+     "rendered": 30607,
+     "painted": 30615,
+     "frame": 30645,
+     "nextFrame": 30661
+    },
+    {
+     "key": "7",
+     "pressed": 31146,
+     "started": 31146,
+     "handled": 31154,
+     "rendered": 31153,
+     "painted": 31160,
+     "frame": 31176,
+     "nextFrame": 31192
+    },
+    {
+     "key": "8",
+     "pressed": 31631,
+     "started": 31638,
+     "handled": 31645,
+     "rendered": 31645,
+     "painted": 31653,
+     "frame": 31678,
+     "nextFrame": 31692
+    },
+    {
+     "key": "9",
+     "pressed": 32159,
+     "started": 32159,
+     "handled": 32168,
+     "rendered": 32167,
+     "painted": 32175,
+     "frame": 32205,
+     "nextFrame": 32226
+    },
+    {
+     "key": "7",
+     "pressed": 32349,
+     "started": 32350,
+     "handled": 32375,
+     "rendered": 32374,
+     "painted": 32389,
+     "frame": 32423,
+     "nextFrame": 32439
+    },
+    {
+     "key": "8",
+     "pressed": 32859,
+     "started": 32859,
+     "handled": 32867,
+     "rendered": 32867,
+     "painted": 32874,
+     "frame": 32905,
+     "nextFrame": 32921
+    },
+    {
+     "key": "9",
+     "pressed": 33201,
+     "started": 33201,
+     "handled": 33209,
+     "rendered": 33209,
+     "painted": 33217,
+     "frame": 33247,
+     "nextFrame": 33263
+    },
+    {
+     "key": "7",
+     "pressed": 33389,
+     "started": 33389,
+     "handled": 33406,
+     "rendered": 33405,
+     "painted": 33419,
+     "frame": 33450,
+     "nextFrame": 33466
+    },
+    {
+     "key": "8",
+     "pressed": 33857,
+     "started": 33857,
+     "handled": 33865,
+     "rendered": 33865,
+     "painted": 33872,
+     "frame": 33902,
+     "nextFrame": 33918
+    },
+    {
+     "key": "9",
+     "pressed": 34133,
+     "started": 34133,
+     "handled": 34143,
+     "rendered": 34143,
+     "painted": 34150,
+     "frame": 34183,
+     "nextFrame": 34205
+    },
+    {
+     "key": "7",
+     "pressed": 34575,
+     "started": 34575,
+     "handled": 34585,
+     "rendered": 34584,
+     "painted": 34592,
+     "frame": 34620,
+     "nextFrame": 34636
+    },
+    {
+     "key": "8",
+     "pressed": 34857,
+     "started": 34857,
+     "handled": 34865,
+     "rendered": 34865,
+     "painted": 34872,
+     "frame": 34889,
+     "nextFrame": 34904
+    },
+    {
+     "key": "9",
+     "pressed": 35091,
+     "started": 35091,
+     "handled": 35100,
+     "rendered": 35100,
+     "painted": 35108,
+     "frame": 35136,
+     "nextFrame": 35152
+    },
+    {
+     "key": "7",
+     "pressed": 35667,
+     "started": 35667,
+     "handled": 35675,
+     "rendered": 35675,
+     "painted": 35683,
+     "frame": 35699,
+     "nextFrame": 35713
+    },
+    {
+     "key": "8",
+     "pressed": 35871,
+     "started": 35871,
+     "handled": 35880,
+     "rendered": 35880,
+     "painted": 35888,
+     "frame": 35916,
+     "nextFrame": 35933
+    },
+    {
+     "key": "9",
+     "pressed": 36508,
+     "started": 36508,
+     "handled": 36516,
+     "rendered": 36516,
+     "painted": 36524,
+     "frame": 36555,
+     "nextFrame": 36570
+    },
+    {
+     "key": "7",
+     "pressed": 36881,
+     "started": 36881,
+     "handled": 36894,
+     "rendered": 36893,
+     "painted": 36904,
+     "frame": 36935,
+     "nextFrame": 36957
+    },
+    {
+     "key": "8",
+     "pressed": 37210,
+     "started": 37215,
+     "handled": 37223,
+     "rendered": 37223,
+     "painted": 37246,
+     "frame": 37271,
+     "nextFrame": 37287
+    },
+    {
+     "key": "9",
+     "pressed": 37414,
+     "started": 37414,
+     "handled": 37421,
+     "rendered": 37421,
+     "painted": 37433,
+     "frame": 37458,
+     "nextFrame": 37482
+    },
+    {
+     "key": "7",
+     "pressed": 37615,
+     "started": 37615,
+     "handled": 37622,
+     "rendered": 37622,
+     "painted": 37630,
+     "frame": 37645,
+     "nextFrame": 37660
+    },
+    {
+     "key": "8",
+     "pressed": 38001,
+     "started": 38001,
+     "handled": 38009,
+     "rendered": 38009,
+     "painted": 38016,
+     "frame": 38047,
+     "nextFrame": 38063
+    },
+    {
+     "key": "9",
+     "pressed": 38654,
+     "started": 38654,
+     "handled": 38663,
+     "rendered": 38663,
+     "painted": 38674,
+     "frame": 38701,
+     "nextFrame": 38715
+    },
+    {
+     "key": "7",
+     "pressed": 38839,
+     "started": 38839,
+     "handled": 38847,
+     "rendered": 38847,
+     "painted": 38855,
+     "frame": 38880,
+     "nextFrame": 38901
+    },
+    {
+     "key": "8",
+     "pressed": 39320,
+     "started": 39320,
+     "handled": 39332,
+     "rendered": 39332,
+     "painted": 39340,
+     "frame": 39365,
+     "nextFrame": 39382
+    },
+    {
+     "key": "9",
+     "pressed": 39789,
+     "started": 39789,
+     "handled": 39808,
+     "rendered": 39808,
+     "painted": 39822,
+     "frame": 39849,
+     "nextFrame": 39865
+    },
+    {
+     "key": "7",
+     "pressed": 40304,
+     "started": 40303,
+     "handled": 40311,
+     "rendered": 40311,
+     "painted": 40319,
+     "frame": 40349,
+     "nextFrame": 40365
+    },
+    {
+     "key": "8",
+     "pressed": 40599,
+     "started": 40599,
+     "handled": 40607,
+     "rendered": 40607,
+     "painted": 40615,
+     "frame": 40646,
+     "nextFrame": 40663
+    },
+    {
+     "key": "9",
+     "pressed": 41208,
+     "started": 41210,
+     "handled": 41238,
+     "rendered": 41238,
+     "painted": 41245,
+     "frame": 41266,
+     "nextFrame": 41281
+    },
+    {
+     "key": "7",
+     "pressed": 41547,
+     "started": 41547,
+     "handled": 41556,
+     "rendered": 41556,
+     "painted": 41563,
+     "frame": 41593,
+     "nextFrame": 41615
+    },
+    {
+     "key": "8",
+     "pressed": 41798,
+     "started": 41798,
+     "handled": 41807,
+     "rendered": 41807,
+     "painted": 41814,
+     "frame": 41844,
+     "nextFrame": 41875
+    },
+    {
+     "key": "9",
+     "pressed": 42170,
+     "started": 42170,
+     "handled": 42177,
+     "rendered": 42177,
+     "painted": 42186,
+     "frame": 42201,
+     "nextFrame": 42217
+    },
+    {
+     "key": "7",
+     "pressed": 42767,
+     "started": 42767,
+     "handled": 42785,
+     "rendered": 42784,
+     "painted": 42797,
+     "frame": 42827,
+     "nextFrame": 42843
+    },
+    {
+     "key": "8",
+     "pressed": 43250,
+     "started": 43250,
+     "handled": 43258,
+     "rendered": 43258,
+     "painted": 43265,
+     "frame": 43282,
+     "nextFrame": 43297
+    },
+    {
+     "key": "9",
+     "pressed": 43884,
+     "started": 43884,
+     "handled": 43891,
+     "rendered": 43891,
+     "painted": 43898,
+     "frame": 43915,
+     "nextFrame": 43931
+    },
+    {
+     "key": "7",
+     "pressed": 44414,
+     "started": 44414,
+     "handled": 44423,
+     "rendered": 44422,
+     "painted": 44431,
+     "frame": 44460,
+     "nextFrame": 44477
+    },
+    {
+     "key": "8",
+     "pressed": 44930,
+     "started": 44930,
+     "handled": 44943,
+     "rendered": 44942,
+     "painted": 44956,
+     "frame": 44989,
+     "nextFrame": 45006
+    },
+    {
+     "key": "9",
+     "pressed": 45133,
+     "started": 45138,
+     "handled": 45145,
+     "rendered": 45145,
+     "painted": 45167,
+     "frame": 45192,
+     "nextFrame": 45209
+    },
+    {
+     "key": "7",
+     "pressed": 45600,
+     "started": 45601,
+     "handled": 45624,
+     "rendered": 45624,
+     "painted": 45633,
+     "frame": 45660,
+     "nextFrame": 45682
+    },
+    {
+     "key": "8",
+     "pressed": 46269,
+     "started": 46269,
+     "handled": 46277,
+     "rendered": 46277,
+     "painted": 46284,
+     "frame": 46301,
+     "nextFrame": 46316
+    },
+    {
+     "key": "9",
+     "pressed": 46936,
+     "started": 46936,
+     "handled": 46944,
+     "rendered": 46943,
+     "painted": 46950,
+     "frame": 46966,
+     "nextFrame": 46982
+    },
+    {
+     "key": "7",
+     "pressed": 47198,
+     "started": 47198,
+     "handled": 47205,
+     "rendered": 47205,
+     "painted": 47213,
+     "frame": 47230,
+     "nextFrame": 47244
+    },
+    {
+     "key": "8",
+     "pressed": 47604,
+     "started": 47605,
+     "handled": 47630,
+     "rendered": 47630,
+     "painted": 47640,
+     "frame": 47664,
+     "nextFrame": 47678
+    }
+   ],
+   "otherEdits": 89,
+   "otherEditsPerSecond": 3.658035347307851,
+   "drawingsSeen": 142
+  },
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 98,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 51807,
+     "started": 51807,
+     "handled": 51814,
+     "rendered": 51814,
+     "painted": 51822,
+     "frame": 51853,
+     "nextFrame": 51869
+    },
+    {
+     "key": "8",
+     "pressed": 52077,
+     "started": 52078,
+     "handled": 52097,
+     "rendered": 52096,
+     "painted": 52111,
+     "frame": 52137,
+     "nextFrame": 52151
+    },
+    {
+     "key": "9",
+     "pressed": 52554,
+     "started": 52554,
+     "handled": 52561,
+     "rendered": 52561,
+     "painted": 52569,
+     "frame": 52584,
+     "nextFrame": 52599
+    },
+    {
+     "key": "7",
+     "pressed": 53115,
+     "started": 53115,
+     "handled": 53121,
+     "rendered": 53121,
+     "painted": 53128,
+     "frame": 53148,
+     "nextFrame": 53162
+    },
+    {
+     "key": "8",
+     "pressed": 53475,
+     "started": 53475,
+     "handled": 53481,
+     "rendered": 53481,
+     "painted": 53488,
+     "frame": 53506,
+     "nextFrame": 53521
+    },
+    {
+     "key": "9",
+     "pressed": 53803,
+     "started": 53803,
+     "handled": 53809,
+     "rendered": 53809,
+     "painted": 53816,
+     "frame": 53833,
+     "nextFrame": 53857
+    },
+    {
+     "key": "7",
+     "pressed": 54023,
+     "started": 54023,
+     "handled": 54037,
+     "rendered": 54037,
+     "painted": 54057,
+     "frame": 54084,
+     "nextFrame": 54107
+    },
+    {
+     "key": "8",
+     "pressed": 54288,
+     "started": 54288,
+     "handled": 54293,
+     "rendered": 54293,
+     "painted": 54300,
+     "frame": 54318,
+     "nextFrame": 54332
+    },
+    {
+     "key": "9",
+     "pressed": 54960,
+     "started": 54966,
+     "handled": 54972,
+     "rendered": 54972,
+     "painted": 54995,
+     "frame": 55021,
+     "nextFrame": 55037
+    },
+    {
+     "key": "7",
+     "pressed": 55490,
+     "started": 55497,
+     "handled": 55503,
+     "rendered": 55503,
+     "painted": 55511,
+     "frame": 55536,
+     "nextFrame": 55551
+    },
+    {
+     "key": "8",
+     "pressed": 55999,
+     "started": 56002,
+     "handled": 56012,
+     "rendered": 56012,
+     "painted": 56020,
+     "frame": 56051,
+     "nextFrame": 56073
+    },
+    {
+     "key": "9",
+     "pressed": 56538,
+     "started": 56538,
+     "handled": 56546,
+     "rendered": 56546,
+     "painted": 56555,
+     "frame": 56583,
+     "nextFrame": 56613
+    },
+    {
+     "key": "7",
+     "pressed": 56724,
+     "started": 56724,
+     "handled": 56731,
+     "rendered": 56731,
+     "painted": 56741,
+     "frame": 56769,
+     "nextFrame": 56784
+    },
+    {
+     "key": "8",
+     "pressed": 57210,
+     "started": 57210,
+     "handled": 57221,
+     "rendered": 57220,
+     "painted": 57232,
+     "frame": 57255,
+     "nextFrame": 57270
+    },
+    {
+     "key": "9",
+     "pressed": 57553,
+     "started": 57554,
+     "handled": 57572,
+     "rendered": 57572,
+     "painted": 57587,
+     "frame": 57614,
+     "nextFrame": 57628
+    },
+    {
+     "key": "7",
+     "pressed": 57770,
+     "started": 57773,
+     "handled": 57779,
+     "rendered": 57779,
+     "painted": 57795,
+     "frame": 57818,
+     "nextFrame": 57833
+    },
+    {
+     "key": "8",
+     "pressed": 58237,
+     "started": 58237,
+     "handled": 58243,
+     "rendered": 58243,
+     "painted": 58250,
+     "frame": 58268,
+     "nextFrame": 58284
+    },
+    {
+     "key": "9",
+     "pressed": 58518,
+     "started": 58518,
+     "handled": 58524,
+     "rendered": 58524,
+     "painted": 58532,
+     "frame": 58548,
+     "nextFrame": 58564
+    },
+    {
+     "key": "7",
+     "pressed": 58952,
+     "started": 58952,
+     "handled": 58959,
+     "rendered": 58959,
+     "painted": 58966,
+     "frame": 58981,
+     "nextFrame": 58997
+    },
+    {
+     "key": "8",
+     "pressed": 59234,
+     "started": 59235,
+     "handled": 59255,
+     "rendered": 59255,
+     "painted": 59262,
+     "frame": 59292,
+     "nextFrame": 59324
+    },
+    {
+     "key": "9",
+     "pressed": 59482,
+     "started": 59482,
+     "handled": 59488,
+     "rendered": 59487,
+     "painted": 59494,
+     "frame": 59513,
+     "nextFrame": 59529
+    },
+    {
+     "key": "7",
+     "pressed": 60046,
+     "started": 60045,
+     "handled": 60052,
+     "rendered": 60052,
+     "painted": 60059,
+     "frame": 60076,
+     "nextFrame": 60099
+    },
+    {
+     "key": "8",
+     "pressed": 60249,
+     "started": 60249,
+     "handled": 60257,
+     "rendered": 60257,
+     "painted": 60265,
+     "frame": 60295,
+     "nextFrame": 60311
+    },
+    {
+     "key": "9",
+     "pressed": 60892,
+     "started": 60893,
+     "handled": 60901,
+     "rendered": 60901,
+     "painted": 60908,
+     "frame": 60944,
+     "nextFrame": 60968
+    },
+    {
+     "key": "7",
+     "pressed": 61266,
+     "started": 61266,
+     "handled": 61272,
+     "rendered": 61272,
+     "painted": 61279,
+     "frame": 61296,
+     "nextFrame": 61312
+    },
+    {
+     "key": "8",
+     "pressed": 61580,
+     "started": 61580,
+     "handled": 61586,
+     "rendered": 61586,
+     "painted": 61594,
+     "frame": 61612,
+     "nextFrame": 61628
+    },
+    {
+     "key": "9",
+     "pressed": 61801,
+     "started": 61801,
+     "handled": 61811,
+     "rendered": 61811,
+     "painted": 61823,
+     "frame": 61846,
+     "nextFrame": 61861
+    },
+    {
+     "key": "7",
+     "pressed": 62019,
+     "started": 62024,
+     "handled": 62030,
+     "rendered": 62030,
+     "painted": 62054,
+     "frame": 62079,
+     "nextFrame": 62095
+    },
+    {
+     "key": "8",
+     "pressed": 62407,
+     "started": 62407,
+     "handled": 62415,
+     "rendered": 62415,
+     "painted": 62426,
+     "frame": 62453,
+     "nextFrame": 62468
+    },
+    {
+     "key": "9",
+     "pressed": 63061,
+     "started": 63061,
+     "handled": 63068,
+     "rendered": 63067,
+     "painted": 63075,
+     "frame": 63103,
+     "nextFrame": 63131
+    },
+    {
+     "key": "7",
+     "pressed": 63252,
+     "started": 63252,
+     "handled": 63258,
+     "rendered": 63258,
+     "painted": 63265,
+     "frame": 63282,
+     "nextFrame": 63299
+    },
+    {
+     "key": "8",
+     "pressed": 63721,
+     "started": 63721,
+     "handled": 63727,
+     "rendered": 63727,
+     "painted": 63735,
+     "frame": 63751,
+     "nextFrame": 63767
+    },
+    {
+     "key": "9",
+     "pressed": 64190,
+     "started": 64194,
+     "handled": 64200,
+     "rendered": 64200,
+     "painted": 64211,
+     "frame": 64235,
+     "nextFrame": 64249
+    },
+    {
+     "key": "7",
+     "pressed": 64676,
+     "started": 64676,
+     "handled": 64683,
+     "rendered": 64683,
+     "painted": 64691,
+     "frame": 64721,
+     "nextFrame": 64742
+    },
+    {
+     "key": "8",
+     "pressed": 64970,
+     "started": 64971,
+     "handled": 64977,
+     "rendered": 64976,
+     "painted": 64984,
+     "frame": 65011,
+     "nextFrame": 65034
+    },
+    {
+     "key": "9",
+     "pressed": 65582,
+     "started": 65582,
+     "handled": 65589,
+     "rendered": 65588,
+     "painted": 65596,
+     "frame": 65613,
+     "nextFrame": 65628
+    },
+    {
+     "key": "7",
+     "pressed": 65897,
+     "started": 65898,
+     "handled": 65918,
+     "rendered": 65917,
+     "painted": 65929,
+     "frame": 65957,
+     "nextFrame": 65973
+    },
+    {
+     "key": "8",
+     "pressed": 66161,
+     "started": 66161,
+     "handled": 66169,
+     "rendered": 66169,
+     "painted": 66180,
+     "frame": 66206,
+     "nextFrame": 66221
+    },
+    {
+     "key": "9",
+     "pressed": 66548,
+     "started": 66548,
+     "handled": 66556,
+     "rendered": 66556,
+     "painted": 66565,
+     "frame": 66594,
+     "nextFrame": 66624
+    },
+    {
+     "key": "7",
+     "pressed": 67143,
+     "started": 67148,
+     "handled": 67155,
+     "rendered": 67155,
+     "painted": 67162,
+     "frame": 67185,
+     "nextFrame": 67201
+    },
+    {
+     "key": "8",
+     "pressed": 67610,
+     "started": 67609,
+     "handled": 67615,
+     "rendered": 67615,
+     "painted": 67622,
+     "frame": 67640,
+     "nextFrame": 67655
+    },
+    {
+     "key": "9",
+     "pressed": 68232,
+     "started": 68232,
+     "handled": 68238,
+     "rendered": 68238,
+     "painted": 68245,
+     "frame": 68263,
+     "nextFrame": 68277
+    },
+    {
+     "key": "7",
+     "pressed": 68761,
+     "started": 68761,
+     "handled": 68768,
+     "rendered": 68768,
+     "painted": 68776,
+     "frame": 68807,
+     "nextFrame": 68837
+    },
+    {
+     "key": "8",
+     "pressed": 69278,
+     "started": 69279,
+     "handled": 69296,
+     "rendered": 69296,
+     "painted": 69303,
+     "frame": 69321,
+     "nextFrame": 69336
+    },
+    {
+     "key": "9",
+     "pressed": 69479,
+     "started": 69480,
+     "handled": 69489,
+     "rendered": 69488,
+     "painted": 69496,
+     "frame": 69522,
+     "nextFrame": 69538
+    },
+    {
+     "key": "7",
+     "pressed": 69960,
+     "started": 69960,
+     "handled": 69966,
+     "rendered": 69966,
+     "painted": 69973,
+     "frame": 70005,
+     "nextFrame": 70022
+    },
+    {
+     "key": "8",
+     "pressed": 70629,
+     "started": 70629,
+     "handled": 70634,
+     "rendered": 70634,
+     "painted": 70641,
+     "frame": 70660,
+     "nextFrame": 70675
+    },
+    {
+     "key": "9",
+     "pressed": 71296,
+     "started": 71296,
+     "handled": 71302,
+     "rendered": 71302,
+     "painted": 71309,
+     "frame": 71326,
+     "nextFrame": 71342
+    },
+    {
+     "key": "7",
+     "pressed": 71547,
+     "started": 71553,
+     "handled": 71560,
+     "rendered": 71559,
+     "painted": 71568,
+     "frame": 71591,
+     "nextFrame": 71607
+    },
+    {
+     "key": "8",
+     "pressed": 71969,
+     "started": 71970,
+     "handled": 71990,
+     "rendered": 71990,
+     "painted": 72008,
+     "frame": 72029,
+     "nextFrame": 72043
+    }
+   ],
+   "otherEdits": 89,
+   "otherEditsPerSecond": 3.657133464825773,
+   "drawingsSeen": 142
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 3,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 2874,
+     "started": 2874,
+     "handled": 2907,
+     "rendered": 2907,
+     "painted": 2913,
+     "frame": 2951,
+     "nextFrame": 2965
+    },
+    {
+     "key": "8",
+     "pressed": 3170,
+     "started": 3182,
+     "handled": 3215,
+     "rendered": 3214,
+     "painted": 3220,
+     "frame": 3252,
+     "nextFrame": 3263
+    },
+    {
+     "key": "9",
+     "pressed": 3668,
+     "started": 3668,
+     "handled": 3700,
+     "rendered": 3700,
+     "painted": 3706,
+     "frame": 3745,
+     "nextFrame": 3775
+    },
+    {
+     "key": "7",
+     "pressed": 4273,
+     "started": 4277,
+     "handled": 4309,
+     "rendered": 4309,
+     "painted": 4323,
+     "frame": 4351,
+     "nextFrame": 4367
+    },
+    {
+     "key": "8",
+     "pressed": 4649,
+     "started": 4660,
+     "handled": 4694,
+     "rendered": 4694,
+     "painted": 4709,
+     "frame": 4743,
+     "nextFrame": 4757
+    },
+    {
+     "key": "9",
+     "pressed": 5039,
+     "started": 5039,
+     "handled": 5071,
+     "rendered": 5070,
+     "painted": 5076,
+     "frame": 5131,
+     "nextFrame": 5162
+    },
+    {
+     "key": "7",
+     "pressed": 5287,
+     "started": 5287,
+     "handled": 5324,
+     "rendered": 5323,
+     "painted": 5333,
+     "frame": 5395,
+     "nextFrame": 5428
+    },
+    {
+     "key": "8",
+     "pressed": 5567,
+     "started": 5567,
+     "handled": 5596,
+     "rendered": 5596,
+     "painted": 5604,
+     "frame": 5677,
+     "nextFrame": 5710
+    },
+    {
+     "key": "9",
+     "pressed": 6273,
+     "started": 6273,
+     "handled": 6308,
+     "rendered": 6308,
+     "painted": 6314,
+     "frame": 6349,
+     "nextFrame": 6366
+    },
+    {
+     "key": "7",
+     "pressed": 6849,
+     "started": 6849,
+     "handled": 6880,
+     "rendered": 6879,
+     "painted": 6892,
+     "frame": 6927,
+     "nextFrame": 6943
+    },
+    {
+     "key": "8",
+     "pressed": 7381,
+     "started": 7381,
+     "handled": 7417,
+     "rendered": 7417,
+     "painted": 7423,
+     "frame": 7458,
+     "nextFrame": 7474
+    },
+    {
+     "key": "9",
+     "pressed": 7944,
+     "started": 7969,
+     "handled": 8009,
+     "rendered": 8009,
+     "painted": 8015,
+     "frame": 8049,
+     "nextFrame": 8064
+    },
+    {
+     "key": "7",
+     "pressed": 8191,
+     "started": 8191,
+     "handled": 8221,
+     "rendered": 8220,
+     "painted": 8226,
+     "frame": 8252,
+     "nextFrame": 8268
+    },
+    {
+     "key": "8",
+     "pressed": 8707,
+     "started": 8707,
+     "handled": 8739,
+     "rendered": 8739,
+     "painted": 8745,
+     "frame": 8785,
+     "nextFrame": 8801
+    },
+    {
+     "key": "9",
+     "pressed": 9080,
+     "started": 9080,
+     "handled": 9114,
+     "rendered": 9114,
+     "painted": 9121,
+     "frame": 9187,
+     "nextFrame": 9217
+    },
+    {
+     "key": "7",
+     "pressed": 9314,
+     "started": 9314,
+     "handled": 9355,
+     "rendered": 9355,
+     "painted": 9373,
+     "frame": 9408,
+     "nextFrame": 9422
+    },
+    {
+     "key": "8",
+     "pressed": 9814,
+     "started": 9814,
+     "handled": 9841,
+     "rendered": 9841,
+     "painted": 9848,
+     "frame": 9875,
+     "nextFrame": 9890
+    },
+    {
+     "key": "9",
+     "pressed": 10126,
+     "started": 10125,
+     "handled": 10153,
+     "rendered": 10153,
+     "painted": 10160,
+     "frame": 10189,
+     "nextFrame": 10203
+    },
+    {
+     "key": "7",
+     "pressed": 10595,
+     "started": 10619,
+     "handled": 10647,
+     "rendered": 10647,
+     "painted": 10663,
+     "frame": 10703,
+     "nextFrame": 10719
+    },
+    {
+     "key": "8",
+     "pressed": 10904,
+     "started": 10931,
+     "handled": 10958,
+     "rendered": 10958,
+     "painted": 10972,
+     "frame": 11013,
+     "nextFrame": 11029
+    },
+    {
+     "key": "9",
+     "pressed": 11168,
+     "started": 11170,
+     "handled": 11197,
+     "rendered": 11196,
+     "painted": 11204,
+     "frame": 11231,
+     "nextFrame": 11246
+    },
+    {
+     "key": "7",
+     "pressed": 11762,
+     "started": 11772,
+     "handled": 11799,
+     "rendered": 11798,
+     "painted": 11814,
+     "frame": 11855,
+     "nextFrame": 11871
+    },
+    {
+     "key": "8",
+     "pressed": 11980,
+     "started": 11980,
+     "handled": 12007,
+     "rendered": 12007,
+     "painted": 12015,
+     "frame": 12073,
+     "nextFrame": 12120
+    },
+    {
+     "key": "9",
+     "pressed": 12645,
+     "started": 12645,
+     "handled": 12672,
+     "rendered": 12671,
+     "painted": 12679,
+     "frame": 12707,
+     "nextFrame": 12722
+    },
+    {
+     "key": "7",
+     "pressed": 13053,
+     "started": 13053,
+     "handled": 13088,
+     "rendered": 13088,
+     "painted": 13123,
+     "frame": 13191,
+     "nextFrame": 13224
+    },
+    {
+     "key": "8",
+     "pressed": 13442,
+     "started": 13455,
+     "handled": 13482,
+     "rendered": 13482,
+     "painted": 13496,
+     "frame": 13534,
+     "nextFrame": 13547
+    },
+    {
+     "key": "9",
+     "pressed": 13674,
+     "started": 13711,
+     "handled": 13741,
+     "rendered": 13741,
+     "painted": 13749,
+     "frame": 13782,
+     "nextFrame": 13797
+    },
+    {
+     "key": "7",
+     "pressed": 13955,
+     "started": 13979,
+     "handled": 14005,
+     "rendered": 14005,
+     "painted": 14012,
+     "frame": 14048,
+     "nextFrame": 14062
+    },
+    {
+     "key": "8",
+     "pressed": 14394,
+     "started": 14417,
+     "handled": 14446,
+     "rendered": 14446,
+     "painted": 14454,
+     "frame": 14487,
+     "nextFrame": 14533
+    },
+    {
+     "key": "9",
+     "pressed": 15108,
+     "started": 15108,
+     "handled": 15136,
+     "rendered": 15136,
+     "painted": 15142,
+     "frame": 15184,
+     "nextFrame": 15199
+    },
+    {
+     "key": "7",
+     "pressed": 15323,
+     "started": 15323,
+     "handled": 15351,
+     "rendered": 15351,
+     "painted": 15358,
+     "frame": 15417,
+     "nextFrame": 15466
+    },
+    {
+     "key": "8",
+     "pressed": 15829,
+     "started": 15829,
+     "handled": 15875,
+     "rendered": 15875,
+     "painted": 15894,
+     "frame": 15950,
+     "nextFrame": 15980
+    },
+    {
+     "key": "9",
+     "pressed": 16358,
+     "started": 16358,
+     "handled": 16385,
+     "rendered": 16385,
+     "painted": 16392,
+     "frame": 16421,
+     "nextFrame": 16468
+    },
+    {
+     "key": "7",
+     "pressed": 16890,
+     "started": 16891,
+     "handled": 16940,
+     "rendered": 16939,
+     "painted": 16947,
+     "frame": 16981,
+     "nextFrame": 17026
+    },
+    {
+     "key": "8",
+     "pressed": 17227,
+     "started": 17227,
+     "handled": 17256,
+     "rendered": 17256,
+     "painted": 17264,
+     "frame": 17324,
+     "nextFrame": 17356
+    },
+    {
+     "key": "9",
+     "pressed": 17871,
+     "started": 17871,
+     "handled": 17898,
+     "rendered": 17898,
+     "painted": 17905,
+     "frame": 17934,
+     "nextFrame": 17948
+    },
+    {
+     "key": "7",
+     "pressed": 18215,
+     "started": 18215,
+     "handled": 18243,
+     "rendered": 18243,
+     "painted": 18250,
+     "frame": 18292,
+     "nextFrame": 18308
+    },
+    {
+     "key": "8",
+     "pressed": 18499,
+     "started": 18500,
+     "handled": 18533,
+     "rendered": 18533,
+     "painted": 18540,
+     "frame": 18575,
+     "nextFrame": 18588
+    },
+    {
+     "key": "9",
+     "pressed": 18916,
+     "started": 18916,
+     "handled": 18945,
+     "rendered": 18945,
+     "painted": 18952,
+     "frame": 18992,
+     "nextFrame": 19008
+    },
+    {
+     "key": "7",
+     "pressed": 19537,
+     "started": 19536,
+     "handled": 19564,
+     "rendered": 19564,
+     "painted": 19571,
+     "frame": 19599,
+     "nextFrame": 19614
+    },
+    {
+     "key": "8",
+     "pressed": 20040,
+     "started": 20040,
+     "handled": 20067,
+     "rendered": 20067,
+     "painted": 20074,
+     "frame": 20115,
+     "nextFrame": 20131
+    },
+    {
+     "key": "9",
+     "pressed": 20697,
+     "started": 20697,
+     "handled": 20725,
+     "rendered": 20725,
+     "painted": 20740,
+     "frame": 20775,
+     "nextFrame": 20790
+    },
+    {
+     "key": "7",
+     "pressed": 21260,
+     "started": 21261,
+     "handled": 21292,
+     "rendered": 21292,
+     "painted": 21299,
+     "frame": 21335,
+     "nextFrame": 21352
+    },
+    {
+     "key": "8",
+     "pressed": 21810,
+     "started": 21811,
+     "handled": 21870,
+     "rendered": 21870,
+     "painted": 21877,
+     "frame": 21931,
+     "nextFrame": 21962
+    },
+    {
+     "key": "9",
+     "pressed": 22057,
+     "started": 22057,
+     "handled": 22097,
+     "rendered": 22096,
+     "painted": 22104,
+     "frame": 22136,
+     "nextFrame": 22151
+    },
+    {
+     "key": "7",
+     "pressed": 22573,
+     "started": 22573,
+     "handled": 22604,
+     "rendered": 22603,
+     "painted": 22611,
+     "frame": 22648,
+     "nextFrame": 22665
+    },
+    {
+     "key": "8",
+     "pressed": 23273,
+     "started": 23274,
+     "handled": 23327,
+     "rendered": 23327,
+     "painted": 23335,
+     "frame": 23393,
+     "nextFrame": 23423
+    },
+    {
+     "key": "9",
+     "pressed": 24002,
+     "started": 24002,
+     "handled": 24041,
+     "rendered": 24041,
+     "painted": 24050,
+     "frame": 24078,
+     "nextFrame": 24093
+    },
+    {
+     "key": "7",
+     "pressed": 24312,
+     "started": 24312,
+     "handled": 24340,
+     "rendered": 24339,
+     "painted": 24347,
+     "frame": 24373,
+     "nextFrame": 24388
+    },
+    {
+     "key": "8",
+     "pressed": 24744,
+     "started": 24752,
+     "handled": 24780,
+     "rendered": 24780,
+     "painted": 24797,
+     "frame": 24838,
+     "nextFrame": 24854
+    }
+   ],
+   "otherEdits": 95,
+   "otherEditsPerSecond": 3.6161546952913857,
+   "drawingsSeen": 148
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 50,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 29142,
+     "started": 29156,
+     "handled": 29174,
+     "rendered": 29174,
+     "painted": 29200,
+     "frame": 29246,
+     "nextFrame": 29262
+    },
+    {
+     "key": "8",
+     "pressed": 29418,
+     "started": 29438,
+     "handled": 29455,
+     "rendered": 29455,
+     "painted": 29488,
+     "frame": 29527,
+     "nextFrame": 29544
+    },
+    {
+     "key": "9",
+     "pressed": 29890,
+     "started": 29890,
+     "handled": 29908,
+     "rendered": 29908,
+     "painted": 29925,
+     "frame": 29963,
+     "nextFrame": 30009
+    },
+    {
+     "key": "7",
+     "pressed": 30491,
+     "started": 30501,
+     "handled": 30518,
+     "rendered": 30518,
+     "painted": 30534,
+     "frame": 30569,
+     "nextFrame": 30584
+    },
+    {
+     "key": "8",
+     "pressed": 30882,
+     "started": 30882,
+     "handled": 30899,
+     "rendered": 30899,
+     "painted": 30915,
+     "frame": 30959,
+     "nextFrame": 30975
+    },
+    {
+     "key": "9",
+     "pressed": 31242,
+     "started": 31242,
+     "handled": 31276,
+     "rendered": 31275,
+     "painted": 31294,
+     "frame": 31364,
+     "nextFrame": 31411
+    },
+    {
+     "key": "7",
+     "pressed": 31506,
+     "started": 31505,
+     "handled": 31526,
+     "rendered": 31526,
+     "painted": 31545,
+     "frame": 31583,
+     "nextFrame": 31613
+    },
+    {
+     "key": "8",
+     "pressed": 31774,
+     "started": 31775,
+     "handled": 31815,
+     "rendered": 31815,
+     "painted": 31831,
+     "frame": 31866,
+     "nextFrame": 31880
+    },
+    {
+     "key": "9",
+     "pressed": 32499,
+     "started": 32507,
+     "handled": 32529,
+     "rendered": 32529,
+     "painted": 32571,
+     "frame": 32607,
+     "nextFrame": 32622
+    },
+    {
+     "key": "7",
+     "pressed": 33061,
+     "started": 33063,
+     "handled": 33081,
+     "rendered": 33081,
+     "painted": 33105,
+     "frame": 33141,
+     "nextFrame": 33153
+    },
+    {
+     "key": "8",
+     "pressed": 33550,
+     "started": 33552,
+     "handled": 33586,
+     "rendered": 33586,
+     "painted": 33606,
+     "frame": 33664,
+     "nextFrame": 33714
+    },
+    {
+     "key": "9",
+     "pressed": 34132,
+     "started": 34137,
+     "handled": 34161,
+     "rendered": 34161,
+     "painted": 34176,
+     "frame": 34239,
+     "nextFrame": 34287
+    },
+    {
+     "key": "7",
+     "pressed": 34367,
+     "started": 34368,
+     "handled": 34404,
+     "rendered": 34404,
+     "painted": 34421,
+     "frame": 34474,
+     "nextFrame": 34523
+    },
+    {
+     "key": "8",
+     "pressed": 34895,
+     "started": 34895,
+     "handled": 34913,
+     "rendered": 34913,
+     "painted": 34951,
+     "frame": 34987,
+     "nextFrame": 35017
+    },
+    {
+     "key": "9",
+     "pressed": 35283,
+     "started": 35285,
+     "handled": 35302,
+     "rendered": 35302,
+     "painted": 35317,
+     "frame": 35361,
+     "nextFrame": 35377
+    },
+    {
+     "key": "7",
+     "pressed": 35509,
+     "started": 35512,
+     "handled": 35552,
+     "rendered": 35552,
+     "painted": 35568,
+     "frame": 35627,
+     "nextFrame": 35675
+    },
+    {
+     "key": "8",
+     "pressed": 36021,
+     "started": 36020,
+     "handled": 36038,
+     "rendered": 36038,
+     "painted": 36054,
+     "frame": 36083,
+     "nextFrame": 36097
+    },
+    {
+     "key": "9",
+     "pressed": 36333,
+     "started": 36333,
+     "handled": 36352,
+     "rendered": 36352,
+     "painted": 36372,
+     "frame": 36441,
+     "nextFrame": 36487
+    },
+    {
+     "key": "7",
+     "pressed": 36802,
+     "started": 36802,
+     "handled": 36819,
+     "rendered": 36819,
+     "painted": 36836,
+     "frame": 36864,
+     "nextFrame": 36879
+    },
+    {
+     "key": "8",
+     "pressed": 37114,
+     "started": 37114,
+     "handled": 37137,
+     "rendered": 37137,
+     "painted": 37157,
+     "frame": 37192,
+     "nextFrame": 37206
+    },
+    {
+     "key": "9",
+     "pressed": 37394,
+     "started": 37393,
+     "handled": 37412,
+     "rendered": 37412,
+     "painted": 37431,
+     "frame": 37470,
+     "nextFrame": 37501
+    },
+    {
+     "key": "7",
+     "pressed": 38001,
+     "started": 38002,
+     "handled": 38033,
+     "rendered": 38033,
+     "painted": 38061,
+     "frame": 38124,
+     "nextFrame": 38172
+    },
+    {
+     "key": "8",
+     "pressed": 38266,
+     "started": 38266,
+     "handled": 38284,
+     "rendered": 38284,
+     "painted": 38300,
+     "frame": 38341,
+     "nextFrame": 38379
+    },
+    {
+     "key": "9",
+     "pressed": 38935,
+     "started": 38934,
+     "handled": 38952,
+     "rendered": 38952,
+     "painted": 38967,
+     "frame": 38998,
+     "nextFrame": 39012
+    },
+    {
+     "key": "7",
+     "pressed": 39341,
+     "started": 39341,
+     "handled": 39358,
+     "rendered": 39358,
+     "painted": 39375,
+     "frame": 39448,
+     "nextFrame": 39497
+    },
+    {
+     "key": "8",
+     "pressed": 39683,
+     "started": 39683,
+     "handled": 39704,
+     "rendered": 39704,
+     "painted": 39723,
+     "frame": 39790,
+     "nextFrame": 39838
+    },
+    {
+     "key": "9",
+     "pressed": 39931,
+     "started": 39931,
+     "handled": 39952,
+     "rendered": 39952,
+     "painted": 39978,
+     "frame": 40039,
+     "nextFrame": 40087
+    },
+    {
+     "key": "7",
+     "pressed": 40180,
+     "started": 40180,
+     "handled": 40200,
+     "rendered": 40200,
+     "painted": 40216,
+     "frame": 40243,
+     "nextFrame": 40289
+    },
+    {
+     "key": "8",
+     "pressed": 40603,
+     "started": 40603,
+     "handled": 40620,
+     "rendered": 40619,
+     "painted": 40635,
+     "frame": 40665,
+     "nextFrame": 40680
+    },
+    {
+     "key": "9",
+     "pressed": 41288,
+     "started": 41288,
+     "handled": 41306,
+     "rendered": 41305,
+     "painted": 41323,
+     "frame": 41364,
+     "nextFrame": 41395
+    },
+    {
+     "key": "7",
+     "pressed": 41506,
+     "started": 41505,
+     "handled": 41522,
+     "rendered": 41522,
+     "painted": 41539,
+     "frame": 41568,
+     "nextFrame": 41583
+    },
+    {
+     "key": "8",
+     "pressed": 42003,
+     "started": 42003,
+     "handled": 42021,
+     "rendered": 42021,
+     "painted": 42036,
+     "frame": 42065,
+     "nextFrame": 42079
+    },
+    {
+     "key": "9",
+     "pressed": 42500,
+     "started": 42520,
+     "handled": 42542,
+     "rendered": 42542,
+     "painted": 42586,
+     "frame": 42622,
+     "nextFrame": 42626
+    },
+    {
+     "key": "7",
+     "pressed": 43014,
+     "started": 43044,
+     "handled": 43060,
+     "rendered": 43060,
+     "painted": 43077,
+     "frame": 43108,
+     "nextFrame": 43123
+    },
+    {
+     "key": "8",
+     "pressed": 43359,
+     "started": 43359,
+     "handled": 43377,
+     "rendered": 43377,
+     "painted": 43403,
+     "frame": 43437,
+     "nextFrame": 43452
+    },
+    {
+     "key": "9",
+     "pressed": 43966,
+     "started": 43966,
+     "handled": 43985,
+     "rendered": 43984,
+     "painted": 44000,
+     "frame": 44028,
+     "nextFrame": 44042
+    },
+    {
+     "key": "7",
+     "pressed": 44309,
+     "started": 44309,
+     "handled": 44330,
+     "rendered": 44330,
+     "painted": 44349,
+     "frame": 44406,
+     "nextFrame": 44448
+    },
+    {
+     "key": "8",
+     "pressed": 44589,
+     "started": 44589,
+     "handled": 44611,
+     "rendered": 44611,
+     "painted": 44644,
+     "frame": 44712,
+     "nextFrame": 44758
+    },
+    {
+     "key": "9",
+     "pressed": 45029,
+     "started": 45030,
+     "handled": 45060,
+     "rendered": 45060,
+     "painted": 45076,
+     "frame": 45103,
+     "nextFrame": 45118
+    },
+    {
+     "key": "7",
+     "pressed": 45662,
+     "started": 45662,
+     "handled": 45679,
+     "rendered": 45679,
+     "painted": 45695,
+     "frame": 45725,
+     "nextFrame": 45740
+    },
+    {
+     "key": "8",
+     "pressed": 46166,
+     "started": 46176,
+     "handled": 46194,
+     "rendered": 46194,
+     "painted": 46225,
+     "frame": 46259,
+     "nextFrame": 46261
+    },
+    {
+     "key": "9",
+     "pressed": 46807,
+     "started": 46807,
+     "handled": 46825,
+     "rendered": 46825,
+     "painted": 46841,
+     "frame": 46870,
+     "nextFrame": 46884
+    },
+    {
+     "key": "7",
+     "pressed": 47367,
+     "started": 47367,
+     "handled": 47387,
+     "rendered": 47387,
+     "painted": 47403,
+     "frame": 47443,
+     "nextFrame": 47474
+    },
+    {
+     "key": "8",
+     "pressed": 47900,
+     "started": 47900,
+     "handled": 47919,
+     "rendered": 47919,
+     "painted": 47936,
+     "frame": 47976,
+     "nextFrame": 48023
+    },
+    {
+     "key": "9",
+     "pressed": 48119,
+     "started": 48119,
+     "handled": 48136,
+     "rendered": 48136,
+     "painted": 48156,
+     "frame": 48195,
+     "nextFrame": 48211
+    },
+    {
+     "key": "7",
+     "pressed": 48618,
+     "started": 48618,
+     "handled": 48636,
+     "rendered": 48636,
+     "painted": 48663,
+     "frame": 48695,
+     "nextFrame": 48709
+    },
+    {
+     "key": "8",
+     "pressed": 49275,
+     "started": 49276,
+     "handled": 49293,
+     "rendered": 49293,
+     "painted": 49310,
+     "frame": 49349,
+     "nextFrame": 49396
+    },
+    {
+     "key": "9",
+     "pressed": 49975,
+     "started": 49994,
+     "handled": 50010,
+     "rendered": 50010,
+     "painted": 50038,
+     "frame": 50069,
+     "nextFrame": 50084
+    },
+    {
+     "key": "7",
+     "pressed": 50257,
+     "started": 50257,
+     "handled": 50273,
+     "rendered": 50273,
+     "painted": 50290,
+     "frame": 50319,
+     "nextFrame": 50334
+    },
+    {
+     "key": "8",
+     "pressed": 50698,
+     "started": 50698,
+     "handled": 50715,
+     "rendered": 50715,
+     "painted": 50733,
+     "frame": 50787,
+     "nextFrame": 50834
+    }
+   ],
+   "otherEdits": 94,
+   "otherEditsPerSecond": 3.6103856199108924,
+   "drawingsSeen": 147
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 98,
+   "samples": [
+    {
+     "key": "7",
+     "pressed": 55183,
+     "started": 55202,
+     "handled": 55209,
+     "rendered": 55209,
+     "painted": 55244,
+     "frame": 55277,
+     "nextFrame": 55291
+    },
+    {
+     "key": "8",
+     "pressed": 55449,
+     "started": 55448,
+     "handled": 55456,
+     "rendered": 55456,
+     "painted": 55489,
+     "frame": 55526,
+     "nextFrame": 55543
+    },
+    {
+     "key": "9",
+     "pressed": 55888,
+     "started": 55888,
+     "handled": 55896,
+     "rendered": 55896,
+     "painted": 55912,
+     "frame": 55949,
+     "nextFrame": 55995
+    },
+    {
+     "key": "7",
+     "pressed": 56479,
+     "started": 56479,
+     "handled": 56489,
+     "rendered": 56489,
+     "painted": 56506,
+     "frame": 56571,
+     "nextFrame": 56620
+    },
+    {
+     "key": "8",
+     "pressed": 56854,
+     "started": 56876,
+     "handled": 56883,
+     "rendered": 56883,
+     "painted": 56917,
+     "frame": 56946,
+     "nextFrame": 56952
+    },
+    {
+     "key": "9",
+     "pressed": 57198,
+     "started": 57198,
+     "handled": 57207,
+     "rendered": 57206,
+     "painted": 57222,
+     "frame": 57260,
+     "nextFrame": 57276
+    },
+    {
+     "key": "7",
+     "pressed": 57449,
+     "started": 57449,
+     "handled": 57457,
+     "rendered": 57457,
+     "painted": 57473,
+     "frame": 57510,
+     "nextFrame": 57527
+    },
+    {
+     "key": "8",
+     "pressed": 57700,
+     "started": 57700,
+     "handled": 57707,
+     "rendered": 57707,
+     "painted": 57722,
+     "frame": 57763,
+     "nextFrame": 57779
+    },
+    {
+     "key": "9",
+     "pressed": 58382,
+     "started": 58382,
+     "handled": 58390,
+     "rendered": 58390,
+     "painted": 58407,
+     "frame": 58463,
+     "nextFrame": 58510
+    },
+    {
+     "key": "7",
+     "pressed": 58951,
+     "started": 58975,
+     "handled": 58983,
+     "rendered": 58983,
+     "painted": 59012,
+     "frame": 59044,
+     "nextFrame": 59059
+    },
+    {
+     "key": "8",
+     "pressed": 59450,
+     "started": 59450,
+     "handled": 59458,
+     "rendered": 59458,
+     "painted": 59474,
+     "frame": 59524,
+     "nextFrame": 59572
+    },
+    {
+     "key": "9",
+     "pressed": 59998,
+     "started": 60000,
+     "handled": 60017,
+     "rendered": 60016,
+     "painted": 60033,
+     "frame": 60090,
+     "nextFrame": 60136
+    },
+    {
+     "key": "7",
+     "pressed": 60216,
+     "started": 60216,
+     "handled": 60225,
+     "rendered": 60225,
+     "painted": 60252,
+     "frame": 60293,
+     "nextFrame": 60310
+    },
+    {
+     "key": "8",
+     "pressed": 60732,
+     "started": 60732,
+     "handled": 60740,
+     "rendered": 60740,
+     "painted": 60756,
+     "frame": 60793,
+     "nextFrame": 60809
+    },
+    {
+     "key": "9",
+     "pressed": 61092,
+     "started": 61092,
+     "handled": 61101,
+     "rendered": 61101,
+     "painted": 61117,
+     "frame": 61184,
+     "nextFrame": 61231
+    },
+    {
+     "key": "7",
+     "pressed": 61310,
+     "started": 61310,
+     "handled": 61328,
+     "rendered": 61327,
+     "painted": 61357,
+     "frame": 61388,
+     "nextFrame": 61403
+    },
+    {
+     "key": "8",
+     "pressed": 61811,
+     "started": 61811,
+     "handled": 61819,
+     "rendered": 61819,
+     "painted": 61840,
+     "frame": 61873,
+     "nextFrame": 61889
+    },
+    {
+     "key": "9",
+     "pressed": 62123,
+     "started": 62123,
+     "handled": 62130,
+     "rendered": 62130,
+     "painted": 62149,
+     "frame": 62184,
+     "nextFrame": 62200
+    },
+    {
+     "key": "7",
+     "pressed": 62586,
+     "started": 62623,
+     "handled": 62631,
+     "rendered": 62631,
+     "painted": 62660,
+     "frame": 62692,
+     "nextFrame": 62707
+    },
+    {
+     "key": "8",
+     "pressed": 62895,
+     "started": 62896,
+     "handled": 62903,
+     "rendered": 62903,
+     "painted": 62923,
+     "frame": 62958,
+     "nextFrame": 62972
+    },
+    {
+     "key": "9",
+     "pressed": 63114,
+     "started": 63129,
+     "handled": 63137,
+     "rendered": 63137,
+     "painted": 63160,
+     "frame": 63191,
+     "nextFrame": 63205
+    },
+    {
+     "key": "7",
+     "pressed": 63689,
+     "started": 63705,
+     "handled": 63713,
+     "rendered": 63713,
+     "painted": 63733,
+     "frame": 63767,
+     "nextFrame": 63782
+    },
+    {
+     "key": "8",
+     "pressed": 63906,
+     "started": 63906,
+     "handled": 63915,
+     "rendered": 63914,
+     "painted": 63931,
+     "frame": 63997,
+     "nextFrame": 64045
+    },
+    {
+     "key": "9",
+     "pressed": 64563,
+     "started": 64563,
+     "handled": 64571,
+     "rendered": 64571,
+     "painted": 64587,
+     "frame": 64623,
+     "nextFrame": 64636
+    },
+    {
+     "key": "7",
+     "pressed": 64969,
+     "started": 64970,
+     "handled": 64982,
+     "rendered": 64982,
+     "painted": 64998,
+     "frame": 65041,
+     "nextFrame": 65090
+    },
+    {
+     "key": "8",
+     "pressed": 65309,
+     "started": 65322,
+     "handled": 65329,
+     "rendered": 65329,
+     "painted": 65345,
+     "frame": 65388,
+     "nextFrame": 65404
+    },
+    {
+     "key": "9",
+     "pressed": 65547,
+     "started": 65559,
+     "handled": 65568,
+     "rendered": 65568,
+     "painted": 65585,
+     "frame": 65622,
+     "nextFrame": 65638
+    },
+    {
+     "key": "7",
+     "pressed": 65794,
+     "started": 65794,
+     "handled": 65802,
+     "rendered": 65802,
+     "painted": 65818,
+     "frame": 65856,
+     "nextFrame": 65901
+    },
+    {
+     "key": "8",
+     "pressed": 66199,
+     "started": 66199,
+     "handled": 66207,
+     "rendered": 66207,
+     "painted": 66222,
+     "frame": 66262,
+     "nextFrame": 66278
+    },
+    {
+     "key": "9",
+     "pressed": 66870,
+     "started": 66870,
+     "handled": 66878,
+     "rendered": 66878,
+     "painted": 66899,
+     "frame": 66963,
+     "nextFrame": 67009
+    },
+    {
+     "key": "7",
+     "pressed": 67091,
+     "started": 67092,
+     "handled": 67116,
+     "rendered": 67115,
+     "painted": 67144,
+     "frame": 67182,
+     "nextFrame": 67197
+    },
+    {
+     "key": "8",
+     "pressed": 67624,
+     "started": 67624,
+     "handled": 67635,
+     "rendered": 67635,
+     "painted": 67653,
+     "frame": 67686,
+     "nextFrame": 67701
+    },
+    {
+     "key": "9",
+     "pressed": 68123,
+     "started": 68123,
+     "handled": 68132,
+     "rendered": 68131,
+     "painted": 68166,
+     "frame": 68201,
+     "nextFrame": 68215
+    },
+    {
+     "key": "7",
+     "pressed": 68655,
+     "started": 68655,
+     "handled": 68663,
+     "rendered": 68662,
+     "painted": 68679,
+     "frame": 68716,
+     "nextFrame": 68732
+    },
+    {
+     "key": "8",
+     "pressed": 68966,
+     "started": 68966,
+     "handled": 68974,
+     "rendered": 68974,
+     "painted": 68999,
+     "frame": 69028,
+     "nextFrame": 69042
+    },
+    {
+     "key": "9",
+     "pressed": 69605,
+     "started": 69605,
+     "handled": 69613,
+     "rendered": 69613,
+     "painted": 69629,
+     "frame": 69665,
+     "nextFrame": 69712
+    },
+    {
+     "key": "7",
+     "pressed": 69948,
+     "started": 69965,
+     "handled": 69973,
+     "rendered": 69972,
+     "painted": 69993,
+     "frame": 70025,
+     "nextFrame": 70040
+    },
+    {
+     "key": "8",
+     "pressed": 70199,
+     "started": 70223,
+     "handled": 70230,
+     "rendered": 70230,
+     "painted": 70245,
+     "frame": 70277,
+     "nextFrame": 70291
+    },
+    {
+     "key": "9",
+     "pressed": 70620,
+     "started": 70620,
+     "handled": 70627,
+     "rendered": 70627,
+     "painted": 70643,
+     "frame": 70682,
+     "nextFrame": 70698
+    },
+    {
+     "key": "7",
+     "pressed": 71224,
+     "started": 71224,
+     "handled": 71236,
+     "rendered": 71236,
+     "painted": 71258,
+     "frame": 71301,
+     "nextFrame": 71349
+    },
+    {
+     "key": "8",
+     "pressed": 71728,
+     "started": 71728,
+     "handled": 71738,
+     "rendered": 71738,
+     "painted": 71761,
+     "frame": 71791,
+     "nextFrame": 71806
+    },
+    {
+     "key": "9",
+     "pressed": 72383,
+     "started": 72393,
+     "handled": 72400,
+     "rendered": 72400,
+     "painted": 72417,
+     "frame": 72445,
+     "nextFrame": 72460
+    },
+    {
+     "key": "7",
+     "pressed": 72940,
+     "started": 72970,
+     "handled": 72979,
+     "rendered": 72979,
+     "painted": 73001,
+     "frame": 73033,
+     "nextFrame": 73047
+    },
+    {
+     "key": "8",
+     "pressed": 73469,
+     "started": 73469,
+     "handled": 73478,
+     "rendered": 73478,
+     "painted": 73495,
+     "frame": 73561,
+     "nextFrame": 73626
+    },
+    {
+     "key": "9",
+     "pressed": 73671,
+     "started": 73671,
+     "handled": 73678,
+     "rendered": 73678,
+     "painted": 73717,
+     "frame": 73750,
+     "nextFrame": 73798
+    },
+    {
+     "key": "7",
+     "pressed": 74188,
+     "started": 74189,
+     "handled": 74202,
+     "rendered": 74202,
+     "painted": 74222,
+     "frame": 74262,
+     "nextFrame": 74279
+    },
+    {
+     "key": "8",
+     "pressed": 74869,
+     "started": 74868,
+     "handled": 74876,
+     "rendered": 74876,
+     "painted": 74893,
+     "frame": 74947,
+     "nextFrame": 74993
+    },
+    {
+     "key": "9",
+     "pressed": 75555,
+     "started": 75555,
+     "handled": 75563,
+     "rendered": 75563,
+     "painted": 75578,
+     "frame": 75617,
+     "nextFrame": 75634
+    },
+    {
+     "key": "7",
+     "pressed": 75838,
+     "started": 75838,
+     "handled": 75848,
+     "rendered": 75848,
+     "painted": 75865,
+     "frame": 75899,
+     "nextFrame": 75914
+    },
+    {
+     "key": "8",
+     "pressed": 76263,
+     "started": 76264,
+     "handled": 76274,
+     "rendered": 76274,
+     "painted": 76292,
+     "frame": 76348,
+     "nextFrame": 76396
+    }
+   ],
+   "otherEdits": 93,
+   "otherEditsPerSecond": 3.6430586023190226,
+   "drawingsSeen": 146
+  }
+ ]
+}

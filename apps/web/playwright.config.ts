@@ -44,14 +44,14 @@ const servedPages = {
 };
 
 /** Where a third server serves the build with the development cookie, for WebKit (the `webkit` project). */
-const INSECURE_ORIGIN = "http://localhost:8033";
+export const INSECURE_ORIGIN = "http://localhost:8033";
 
 /**
  * The server serving the build once more, with the cookie without the `__Host-` prefix and
  * `Secure` (INSECURE_COOKIES=1, docs/spec/security.md, section 1): WebKit refuses a `__Host-`
  * cookie over http, so its smoke tests log in here. Chromium and Firefox keep the `__Host-` one.
  */
-const insecurePages = {
+export const insecurePages = {
   ...servedPages,
   env: { ...servedPages.env, PORT: "8033", PUBLIC_ORIGIN: INSECURE_ORIGIN, INSECURE_COOKIES: "1" },
   url: `${INSECURE_ORIGIN}/healthz`,
