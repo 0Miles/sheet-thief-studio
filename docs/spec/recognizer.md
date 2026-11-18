@@ -209,6 +209,16 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 8. 讀取調弦行的判讀，回傳「(調弦音名, 讀不懂的原文)」的語意不變；報告的 `source`、`reason`、`raw` 照舊。
 9. 讀不懂時用標準調弦；審核頁顯示警告，並可以手動選調弦（[`phrases.md`](phrases.md) 第 7 節）。
 
+**補充**（#62，實作層的裁定；`recognizer/extract/metadata.py` 的 `_named_with_note`）：
+
+- 名稱比對不分大小寫，取最長的名稱（`E Standard` 是 `e standard`，不是 `standard` 之後接 `E`）。名稱後面只有分隔符號（`Standard -`）時照名稱讀。
+- 一組音名是 4–7 個，彼此之間是空白或直接連寫；音名後面必須接空白、分隔符號或行尾（`DADGAD on the intro` 的 `on` 不屬於白名單）。說明裡有兩組以上的音名，或音名不是 4–7 個（`Standard (Eb)`），整行 `unrecognized`。
+- 方向標籤只能寫在音名前面：`low to high`、`high to low`，後面可接 `:`。
+- 音名與名稱一致時，回傳名稱的調弦（以 `#` 拼寫，與只寫名稱時相同）；比較的是音高類別與弦數。
+- capo 只接受 `capo N`（可寫 `capo: N`，N 最多兩位數）與 `No capo`；其他寫法（`Capo on the 2nd fret`、羅馬數字）在這一行裡不屬於白名單。capo 的值仍由 `read_capo` 從標題區讀。
+- 調性：`Key D`、`Key: D`、`key of D`，音名後可接 `major`、`minor`、`maj`、`min`、`m`。標準音高：`A = ` 加三位數，可接 `Hz`。
+- 原文保留在 `tuning.raw`，照既有規則最多 40 個字元。
+
 ### 6.2 測試案例（照 #27 的驗收條件）
 
 讀成名稱所指的調弦：

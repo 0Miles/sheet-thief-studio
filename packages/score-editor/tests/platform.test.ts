@@ -22,7 +22,7 @@ const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKe
 
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
-const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""} (${binding.context})`;
+const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""}${binding.piece === undefined ? "" : ` ${binding.piece}`} (${binding.context})`;
 /** Two contexts that can be in force at once: the score's keys work on every kind of part, and none of them in a text box. */
 const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || ((a.context === "score" || b.context === "score") && a.context !== "textEntry" && b.context !== "textEntry");
 

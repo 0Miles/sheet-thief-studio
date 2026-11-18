@@ -21,6 +21,9 @@ const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+/** Bars from one to another, one bar by its number alone. */
+const barsLabel = (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last));
+const SAVE_PHRASE = "存成樂句";
 
 export const strings = {
   app: {
@@ -252,7 +255,7 @@ export const strings = {
       speed: "播放速度",
       loop: "循環",
       loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
-      loopBars: (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last)),
+      loopBars: barsLabel,
       loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
       metronome: "節拍器",
       countIn: "預備拍（一小節）",
@@ -396,6 +399,23 @@ export const strings = {
     },
     /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
     desktopOnly: "請在電腦上編輯",
+  },
+  // A range of bars of a score saved as a phrase, from either edit view (docs/spec/phrases.md, section 3).
+  savePhrase: {
+    /** The toolbar's button, and the title of its dialog. */
+    open: SAVE_PHRASE,
+    openTitle: "把選取的小節存進樂句庫",
+    /** Why the button does nothing: no range of bars selected (a range of beats, or nothing). */
+    barsOnly: "請選取小節範圍",
+    name: "名稱",
+    /** The name offered: the score's title and the bars, one bar by its number alone. */
+    defaultName: (title: string, first: number, last: number) => `${title} ${barsLabel(first, last)}`,
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+    saved: (name: string) => `已${SAVE_PHRASE}「${name}」。`,
+    /** Saved, without what could not be read in those bars (it is flagged in the score). */
+    savedSkipping: (name: string) => `已${SAVE_PHRASE}「${name}」；讀不懂的內容已經略過，沒有存進去。`,
   },
   saveAsNewPhrase: {
     title: "另存成新樂句",

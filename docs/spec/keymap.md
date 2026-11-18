@@ -130,7 +130,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
 
-**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
+**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeysAt` 給出。**補充**（#44）：鼓的 ghost、accent 已加上：`bindings.ts` 另有情境 `percussion` 的 `ghost`、`accent` 綁定，作用在畫在游標那條線上的**所有**鼓件（`noteKeysAt`，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`），一次決定、一個 Command（`toggleKeysAt`）。五線譜的 accent、staccato 跟著 M3 加上；在那之前，這些鍵在五線譜聲部不動。鼓沒有 tie，`Shift+L` 在鼓聲部不是按鍵。
 
 **補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
 
@@ -157,7 +157,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 - 字母鍵是切換：再按一次，就從拍點上移除該鼓件。
 - `Delete`：移除畫在游標那條線上的**所有**鼓件。理由：好幾個鼓件畫在同一條線上（`spike-report.md:287-301`），只刪一個會有歧義。
 - `↑` `↓`：移動譜表位置。
-- 18 個鼓件的對應如下；id 對照 `packages/score-render/src/drums.ts:15-34`，譜表位置見 [`schema.md`](schema.md) 7.1。
+- 18 個鼓件的對應如下；id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`，譜表位置見 [`schema.md`](schema.md) 7.1。
+- **補充**（#44）：鍵在 `bindings.ts` 的 `DRUM_KEYS`（`drum` 綁定，情境 `percussion`，帶 `piece`），指令是 `commands.ts` 的 `toggleDrum`。
 
 | 鍵 | `code` | 鼓件 | articulation id |
 |---|---|---|---|

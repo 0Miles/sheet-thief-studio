@@ -65,6 +65,7 @@ import {
   withinPartLimits,
 } from "./schema";
 import { writeScore } from "./build";
+import { drumLineOf, drumLineOfKey } from "./drums";
 import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -660,24 +661,42 @@ function ownNote(value: unknown): NoteJSON | undefined {
  * not written (#102).
  */
 function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
+  return writeNotes(doc, cursor, [key], (_, stored) => write(stored));
+}
+
+/**
+ * `writeNote` for the notes at several keys of the cursor's beat, one command: `write` gets each
+ * key and the note stored there (`ownNote`). In the append slot the notes made go on one new beat;
+ * none made, no beat. Every note is written as a copy (`writable`); when one of them nests deeper
+ * than `MAX_VALUE_DEPTH`, none is written (#102).
+ */
+function writeNotes(doc: Y.Doc, cursor: Cursor, keys: readonly string[], write: (key: string, stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
   if (cursor.at === "after") {
-    const [note] = writable(write(undefined)) ?? [null];
+    const made = keys.flatMap((key) => {
+      const note = write(key, undefined);
+      return note === null ? [] : [{ key, note }];
+    });
+    const copies = writable(...made.map(({ note }) => note));
     const place = placeFor(doc, cursor);
-    if (note === null || place === undefined) return cursor;
-    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, note));
+    if (made.length === 0 || copies === undefined || place === undefined) return cursor;
+    return makeBeat(doc, cursor, place, place.duration, (notes) => made.forEach(({ key }, index) => notes.set(key, copies[index]!)));
   }
   const notes = notesOf(beatAt(doc, cursor));
   if (notes === undefined) return cursor;
-  const stored = ownNote(notes.get(key));
-  const note = write(stored);
-  // Given back as stored, or nothing to remove: nothing is written.
-  if (note === stored || (note === null && stored === undefined)) return cursor;
-  const written = writable(note);
-  if (written === undefined) return cursor;
-  const [next] = written;
+  const changes = keys.flatMap((key) => {
+    const stored = ownNote(notes.get(key));
+    const note = write(key, stored);
+    // Given back as stored, or nothing to remove: nothing is written.
+    return note === stored || (note === null && stored === undefined) ? [] : [{ key, note }];
+  });
+  const copies = writable(...changes.map(({ note }) => note));
+  if (changes.length === 0 || copies === undefined) return cursor;
   doc.transact(() => {
-    if (next === null) notes.delete(key);
-    else notes.set(key, next);
+    changes.forEach(({ key }, index) => {
+      const next = copies[index];
+      if (next === null || next === undefined) notes.delete(key);
+      else notes.set(key, next);
+    });
   }, LOCAL);
   return cursor;
 }
@@ -850,12 +869,18 @@ export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> 
 }
 
 /**
- * The key of the note on the cursor's line, the one a technique key changes at the cursor: its
- * string on a fretted part. None on drums and staves until their keys name the notes drawn on a
- * line (docs/ROADMAP.md, M2 and M3), as with `deleteNote`.
+ * The keys of the notes on the cursor's line, those a technique key changes at the cursor
+ * (docs/spec/commands.md, 5.4): its string on a fretted part, whether a note is there or not;
+ * on drums, every piece of the cursor's beat drawn on that line (`drumLineOfKey`), none in the
+ * append slot. None on staves until their keys name the notes drawn on a line (docs/ROADMAP.md,
+ * M3), as with `deleteNote`.
  */
-export function noteKeyAt(doc: Y.Doc, cursor: Cursor): string | null {
-  return partKindOf(partsOf(doc).get(cursor.partId)) === "fretted" ? `s${cursor.line}` : null;
+export function noteKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const kind = partKindOf(partsOf(doc).get(cursor.partId));
+  if (kind === "fretted") return [`s${cursor.line}`];
+  if (kind !== "percussion") return [];
+  const notes = notesOf(beatAt(doc, cursor));
+  return [...(notes?.keys() ?? [])].filter((key) => drumLineOfKey(key) === cursor.line);
 }
 
 /** How the beats and notes of a part are read: by its kind and its strings. */
@@ -903,18 +928,52 @@ function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voic
  * seen and is left alone (docs/spec/schema.md, section 11).
  */
 export function toggleAt<D>(doc: Y.Doc, cursor: Cursor, key: string, toggle: NoteToggle<D>): Cursor {
+  return toggleKeysAt(doc, cursor, [key], toggle);
+}
+
+/**
+ * `toggleAt` on the notes at several keys of the cursor's beat (the pieces on a drum line), one
+ * command: the toggle decides once from all of them, as over a selection, then turns each. A note
+ * reading leaves out is not seen and is left alone.
+ */
+export function toggleKeysAt<D>(doc: Y.Doc, cursor: Cursor, keys: readonly string[], toggle: NoteToggle<D>): Cursor {
   const reader = readerOf(doc, cursor.partId);
   const place = placeFor(doc, cursor);
   if (reader === undefined || place === undefined) return cursor;
   const beat = cursor.at === "on" ? place.voice.get(place.index) : undefined;
   if (beat !== undefined && !readsAsBeat(reader.kind, beat)) return cursor;
-  const stored = notesOf(beat)?.get(key);
-  const seen = reader.note(key, stored);
-  if (stored !== undefined && seen === undefined) return cursor;
+  const notes = notesOf(beat);
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
-  const before = reader.note(key, notesBefore(doc, reader, cursor, place.voice, place.index)?.get(key));
-  const decided = toggle.decide(seen === undefined ? [] : [seen]);
-  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { kind: reader.kind, key, before }));
+  const previous = notesBefore(doc, reader, cursor, place.voice, place.index);
+  const readable = keys.flatMap((key) => {
+    const stored = notes?.get(key);
+    const seen = reader.note(key, stored);
+    return stored !== undefined && seen === undefined ? [] : [{ key, seen, before: reader.note(key, previous?.get(key)) }];
+  });
+  if (readable.length === 0) return cursor;
+  const decided = toggle.decide(readable.flatMap(({ seen }) => (seen === undefined ? [] : [seen])));
+  const befores = new Map(readable.map(({ key, before }) => [key, before]));
+  return writeNotes(doc, cursor, [...befores.keys()], (key, note) => toggle.turn(note, decided, { kind: reader.kind, key, before: befores.get(key) }));
+}
+
+/**
+ * On or off, as a drum piece's key turns its piece (docs/spec/commands.md, 5.1): on where it is
+ * not, as a note with nothing else; off where it is, with whatever it holds.
+ */
+const pieceToggle: NoteToggle<boolean> = {
+  decide: (seen) => seen.length === 0,
+  turn: (stored, on) => (on ? (stored ?? {}) : null),
+};
+
+/**
+ * A drum piece's key (docs/spec/keymap.md, 4.2), one command: the piece `p<id>` on the cursor's
+ * beat, or off it when it is there; in the append slot on a new beat, the cursor then on it. The
+ * cursor goes to the line the piece is drawn on (schema.md, 7.1), and stays on its own for a piece
+ * the interface does not offer. A piece stored as something reading leaves out is left alone.
+ */
+export function toggleDrum(doc: Y.Doc, cursor: Cursor, id: number): Cursor {
+  const next = toggleAt(doc, cursor, `p${id}`, pieceToggle);
+  return { ...next, line: drumLineOf(id) ?? next.line };
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -1044,13 +1103,16 @@ function afterRemoval(cursor: Cursor, voice: YVoice, index: number): Cursor {
 }
 
 /**
- * Remove the notes on the line of the cursor, from its beat: on a fretted part, the note on its
- * string. Drums and staves get theirs with the keys that enter their notes (docs/ROADMAP.md, M2
- * and M3): until then nothing is removed from them.
+ * Remove the notes on the line of the cursor, from its beat, one command: on a fretted part, the
+ * note on its string; on drums, every piece drawn on that line (`noteKeysAt`: several pieces share
+ * a line, so taking one off would be a guess, docs/spec/commands.md 5.2). Staves get theirs with
+ * the keys that enter their notes (docs/ROADMAP.md, M3): until then nothing is removed from them.
  */
 export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
-  if (partKindOf(partsOf(doc).get(cursor.partId)) !== "fretted") return cursor;
-  return setFret(doc, cursor, null);
+  const kind = partKindOf(partsOf(doc).get(cursor.partId));
+  if (kind === "fretted") return setFret(doc, cursor, null);
+  if (kind !== "percussion" || cursor.at !== "on") return cursor;
+  return writeNotes(doc, cursor, noteKeysAt(doc, cursor), () => null);
 }
 
 /**

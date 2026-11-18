@@ -7,6 +7,7 @@ export * from "./commands";
 // The rest of depth.ts is the model's own: how reading and the commands copy a value.
 export { dropTooDeep, MAX_VALUE_DEPTH, ownFields, updateWithinDepth } from "./depth";
 export * from "./drop";
+export * from "./drums";
 export * from "./flags";
 export * from "./migrations";
 export * from "./navigation";
