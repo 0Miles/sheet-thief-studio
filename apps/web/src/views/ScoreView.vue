@@ -81,6 +81,7 @@ import type { RestoreTarget } from "../restore";
 import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
+import { fontDirectory, soundFontUrl } from "../served";
 
 /**
  * One of the two: a member's score id, or a guest's link token; and what to say first, when the
@@ -1087,8 +1088,8 @@ onMounted(async () => {
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
   // Read view in a worker, and a click on it sends playback there.
   engine = createAlphaTabEngine(host.value, {
-    fontDirectory: "/font/",
-    soundFont: "/soundfont/sonivox.sf3",
+    fontDirectory: fontDirectory(),
+    soundFont: soundFontUrl(),
     useWorkers: reading.value,
     seekOnClick: reading.value,
     scale: display.value.scale,

@@ -3,6 +3,8 @@ import "@studio/contracts/without-eval";
 import "@karyl-chan/ui/tokens.css";
 import "./styles/app.css";
 import "./icons";
+// Before the router is made: it reads the address once, as the page starts.
+import "./linkResult";
 
 import { useColorScheme } from "@karyl-chan/ui";
 import { createPinia } from "pinia";

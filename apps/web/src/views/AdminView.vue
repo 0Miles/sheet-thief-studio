@@ -1,13 +1,24 @@
 <script setup lang="ts">
 // The admin's page (docs/spec/accounts.md, section 2): every account, making one, giving one a new
-// temporary password, disabling and enabling; and beside a disabled account, the scores it owns,
-// which can be handed to a member who can log in. The router lets only an admin here; the server
+// temporary password, disabling and enabling, binding a Discord id for logging in from the
+// karyl-chan bot (docs/spec/karyl-login.md, section 4); and beside a disabled account, the scores
+// it owns, which can be handed to a member who can log in. The router lets only an admin here; the server
 // answers anyone else as if there were no such thing.
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { type AdminAccount, adminAccount, adminAccountList, accountLimits, createAccountRequest, type OrphanedScore, orphanedScoreList, password as passwordShape } from "@studio/contracts";
+import {
+  type AdminAccount,
+  adminAccount,
+  adminAccountList,
+  accountLimits,
+  createAccountRequest,
+  discordId,
+  type OrphanedScore,
+  orphanedScoreList,
+  password as passwordShape,
+} from "@studio/contracts";
 import { computed, onMounted, ref } from "vue";
 
-import { get, post, postFor, refusal } from "../api";
+import { del, get, post, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
@@ -44,7 +55,7 @@ async function load(): Promise<void> {
 onMounted(load);
 
 // Every dialog of the page: which one is open, on which account, and what it is sending.
-type Dialog = "create" | "reset" | "disable" | "transfer";
+type Dialog = "create" | "reset" | "disable" | "transfer" | "bind" | "unbind";
 const dialog = ref<Dialog | null>(null);
 const target = ref<AdminAccount | null>(null);
 /** The score to hand over, and the member chosen to be its Owner. */
@@ -53,6 +64,7 @@ const recipient = ref("");
 const username = ref("");
 const displayName = ref("");
 const password = ref("");
+const subject = ref("");
 const error = ref("");
 const sending = ref(false);
 /** What was just done, said above the list. */
@@ -61,7 +73,13 @@ const done = ref("");
 function open(which: Dialog, account: AdminAccount | null = null): void {
   dialog.value = which;
   target.value = account;
-  username.value = displayName.value = password.value = error.value = "";
+  username.value = displayName.value = password.value = subject.value = error.value = "";
+}
+
+/** The account's Discord binding, if it has one. */
+function discordOf(account: AdminAccount | null): { id: string; subject: string } | null {
+  const identity = account?.identities.find(({ provider }) => provider === "karyl-chan");
+  return identity?.subject === undefined ? null : { id: identity.id, subject: identity.subject };
 }
 
 function openTransfer(which: OrphanedScore): void {
@@ -123,6 +141,23 @@ function transfer(): Promise<void> | void {
   return send(() => post(`/api/admin/scores/${which.id}/transfer`, { accountId: member.accountId }), text.transferred(which.title, member.username));
 }
 
+function bind(): Promise<void> | void {
+  const typed = discordId.safeParse(subject.value.trim());
+  if (!typed.success) {
+    error.value = text.discord.rule;
+    return;
+  }
+  const account = target.value!;
+  return send(() => postFor(`/api/admin/accounts/${account.accountId}/identities`, { provider: "karyl-chan", subject: typed.data }, adminAccount), text.discord.wasBound(account.username, typed.data));
+}
+
+function unbind(): Promise<void> | void {
+  const account = target.value!;
+  const binding = discordOf(account);
+  if (binding === null) return;
+  return send(() => del(`/api/admin/accounts/${account.accountId}/identities/${binding.id}`), text.discord.wasUnbound(account.username));
+}
+
 function enable(account: AdminAccount): Promise<void> {
   return send(() => post(`/api/admin/accounts/${account.accountId}/enable`), text.wasEnabled(account.username));
 }
@@ -149,11 +184,17 @@ function enable(account: AdminAccount): Promise<void> {
         </span>
         <span v-if="account.isAdmin" class="admin__tag">{{ text.isAdmin }}</span>
         <span v-if="account.disabled" class="admin__tag admin__tag--disabled">{{ text.disabled }}</span>
-        <!-- One's own password is changed on /account, and nobody disables themselves. -->
-        <Cluster v-if="account.accountId !== session.me?.accountId" gap="1" :wrap="false">
-          <AppButton variant="ghost" size="sm" @click="open('reset', account)">{{ text.reset }}</AppButton>
-          <AppButton v-if="account.disabled" variant="ghost" size="sm" :disabled="sending" @click="enable(account)">{{ text.enable }}</AppButton>
-          <AppButton v-else variant="ghost" size="sm" @click="open('disable', account)">{{ text.disable }}</AppButton>
+        <span v-if="discordOf(account)" class="admin__tag" data-discord>{{ text.discord.bound(discordOf(account)!.subject) }}</span>
+        <Cluster gap="1" :wrap="false">
+          <!-- One's own too: behind the bot, an admin logs in by their Discord id like anyone. -->
+          <AppButton v-if="discordOf(account)" variant="ghost" size="sm" @click="open('unbind', account)">{{ text.discord.unbind }}</AppButton>
+          <AppButton v-else variant="ghost" size="sm" @click="open('bind', account)">{{ text.discord.bind }}</AppButton>
+          <!-- One's own password is changed on /account, and nobody disables themselves. -->
+          <template v-if="account.accountId !== session.me?.accountId">
+            <AppButton variant="ghost" size="sm" @click="open('reset', account)">{{ text.reset }}</AppButton>
+            <AppButton v-if="account.disabled" variant="ghost" size="sm" :disabled="sending" @click="enable(account)">{{ text.enable }}</AppButton>
+            <AppButton v-else variant="ghost" size="sm" @click="open('disable', account)">{{ text.disable }}</AppButton>
+          </template>
         </Cluster>
         <!-- Its title and its members who can log in: never its content (docs/spec/accounts.md, section 2). -->
         <ul v-if="owned.get(account.accountId)" class="admin__scores" :aria-label="text.orphaned.label(account.username)">
@@ -217,6 +258,32 @@ function enable(account: AdminAccount): Promise<void> {
         </Stack>
       </form>
     </AppModal>
+    <AppModal :visible="dialog === 'bind'" :title="text.discord.bindTitle(target?.username ?? '')" :close-label="text.close" @close="close">
+      <form novalidate @submit.prevent="bind">
+        <Stack gap="4">
+          <AppTextField v-model="subject" :label="text.discord.field" name="discord-id" inputmode="numeric" :maxlength="20" autocomplete="off" spellcheck="false" autofocus required />
+          <p class="admin__muted admin__rule">{{ text.discord.help }}</p>
+          <p v-if="error" class="admin__error" role="alert">{{ error }}</p>
+          <Cluster gap="2" justify="end">
+            <AppButton type="button" variant="ghost" @click="close">{{ text.cancel }}</AppButton>
+            <AppButton type="submit" variant="primary" :loading="sending">{{ text.discord.submit }}</AppButton>
+          </Cluster>
+        </Stack>
+      </form>
+    </AppModal>
+    <AppConfirmDialog
+      :visible="dialog === 'unbind'"
+      :title="text.discord.unbindTitle"
+      :message="text.discord.unbindMessage(target?.username ?? '', discordOf(target)?.subject ?? '')"
+      :confirm-label="text.discord.unbind"
+      :cancel-label="text.cancel"
+      :loading-label="strings.loading"
+      confirm-variant="danger"
+      :loading="sending"
+      :error="error || undefined"
+      @close="close"
+      @confirm="unbind"
+    />
     <AppConfirmDialog
       :visible="dialog === 'disable'"
       :title="text.disableAccount.title"

@@ -2,7 +2,7 @@ import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { checkCredentials } from "../src/accounts";
-import { Account } from "../src/db/models";
+import { Account, Identity } from "../src/db/models";
 import { cli, cliProcess, freshDatabase } from "./support";
 
 let sequelize: Sequelize;
@@ -66,4 +66,21 @@ test("migrate on a migrated database runs nothing", async () => {
   const { code, stdout } = await cli(sequelize, ["migrate"]);
   expect(code).toBe(0);
   expect(stdout).toContain("已是最新");
+});
+
+test("bind-discord binds a Discord id to an account, once; refuses what is no Discord id and an unknown account", async () => {
+  expect((await cli(sequelize, ["create-admin", "bound-admin", "綁定的管理者"], "a password typed once\n")).code).toBe(0);
+  const id = (await Account.findOne({ where: { username: "bound-admin" } }))!.id;
+
+  const bound = await cli(sequelize, ["bind-discord", "Bound-Admin", "456789012345678901"]);
+  expect([bound.code, bound.stdout]).toEqual([0, "已把 Discord ID 456789012345678901 綁定到 bound-admin。\n"]);
+  expect(await Identity.findOne({ where: { provider: "karyl-chan", subject: "456789012345678901" } })).toMatchObject({ accountId: id });
+
+  const again = await cli(sequelize, ["bind-discord", "bound-admin", "456789012345678902"]);
+  const notAnId = await cli(sequelize, ["bind-discord", "bound-admin", "4567"]);
+  const nobody = await cli(sequelize, ["bind-discord", "nobody-here", "456789012345678903"]);
+  expect([again.code, notAnId.code, nobody.code]).toEqual([1, 1, 1]);
+  expect(notAnId.stderr).toContain("17–20 位數字");
+  expect(nobody.stderr).toContain("沒有帳號 nobody-here");
+  expect(await Identity.count({ where: { provider: "karyl-chan", accountId: id } })).toBe(1);
 });

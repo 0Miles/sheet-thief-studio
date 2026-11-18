@@ -4,6 +4,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { ApiError, get, patchFor, post } from "../api";
+import { forgetBearer } from "../served";
 
 export const useSessionStore = defineStore("session", () => {
   const me = ref<Me | null>(null);
@@ -44,6 +45,7 @@ export const useSessionStore = defineStore("session", () => {
 
   async function logout(): Promise<void> {
     await post("/api/auth/logout");
+    forgetBearer();
     me.value = null;
     asked = Promise.resolve();
   }
@@ -51,6 +53,7 @@ export const useSessionStore = defineStore("session", () => {
   /** Every device, this one included: nobody is logged in here afterwards. */
   async function logoutAll(): Promise<void> {
     await post("/api/auth/logout-all");
+    forgetBearer();
     me.value = null;
     asked = Promise.resolve();
   }

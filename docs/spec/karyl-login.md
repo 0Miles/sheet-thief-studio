@@ -36,6 +36,7 @@ owner 在 2026-11-18 裁定（#72 的留言「方向變更」）：studio 做成
 
 ## 4. 綁定
 
+- plugin 模式下沒有人能用密碼登入，所以第一個 admin 先在伺服器上用 CLI `bind-discord <帳號名稱> <Discord ID>` 綁定自己（[`accounts.md`](accounts.md) 第 2 節）。
 - admin 在 `/admin` 把 Discord id 綁到既有帳號，存成 `identities.provider = 'karyl-chan'`、`subject` 是 Discord id（[`accounts.md`](accounts.md)；API 見 [`routes.md`](routes.md) 3.2）。Discord id 是 17 到 20 位數字。
 - **補充**：一個 Discord id 只能綁一個帳號；一個帳號最多綁一個 Discord id。兩種衝突都回 409 `identity_taken`。綁定時鎖住帳號那一列，同時兩個綁定只會成功一個。
 - 解除綁定之後，那個 Discord id 的連結不再能登入，而且這個帳號用 karyl-chan 登入的 session 全部結束（連同它們的 `/collab` 連線）；用密碼登入的 session 不受影響。密碼那一筆 identity 不能解除（400 `invalid_request`）。
@@ -48,15 +49,16 @@ owner 在 2026-11-18 裁定（#72 的留言「方向變更」）：studio 做成
 - bot 的代理會刪掉請求的 `cookie` 標頭，回應的 `Set-Cookie` 則改寫 Path，所以 plugin 模式不能用 cookie session。
 - `/api/*` 除了 session cookie，也接受 `Authorization: Bearer <session id>`；兩個都有時用 Bearer。session 本身與 cookie 的一樣（Redis、sliding 30 天）。用 Bearer 的請求不會收到 `Set-Cookie`，401 時也不清 cookie。
 - `POST /api/auth/logout` 結束 Bearer 指的那一個 session。
-- 頁面把 session id 存在 `localStorage`（以 base path 為鍵），讓同一個瀏覽器的其他分頁也登入；收到 401 就刪掉它。CSP 的 `script-src 'self'` 是對 XSS 的防線（[`security.md`](security.md) 第 7 節）。
+- 頁面把 session id 存在 `localStorage`，鍵是 `studio:session:<base path>`，讓同一個瀏覽器的其他分頁也登入；API 回 401 `unauthenticated` 時刪掉它，登出時也刪掉。
+- 辨識的原圖不用 `<img src>` 直接指向 API（圖片自己的請求不會帶 Bearer），改用帶 Bearer 的請求取得內容，再顯示成 object URL（CSP 的 `img-src` 已有 `blob:`）。CSP 的 `script-src 'self'` 是對 XSS 的防線（[`security.md`](security.md) 第 7 節）。
 - 共編：collab ticket 本來就是 WebSocket 握手的 token（ADR 0005）。頁面帶 Bearer 取 ticket，再連 `<base>/collab`；bot 的代理會轉發 Upgrade（karyl-chan/karyl-chan#271）。
-- 獨立部署照舊：帳號密碼登入，session 放在 cookie。plugin 模式下密碼登入的 cookie 到不了伺服器，所以 `/login` 只顯示 karyl-chan 的說明。
+- 獨立部署照舊：帳號密碼登入，session 放在 cookie。plugin 模式下密碼登入的 cookie 到不了伺服器，所以 `/login` 只顯示 karyl-chan 的說明。頁面以「base path 不是 `/`」判斷自己由 bot 送出。
 
 ## 6. 頁面在 base path 底下
 
 - bot 把 plugin 的頁面放在 `<WEB_BASE_URL>/plugin/<key>/`，register 與 heartbeat 的回應帶 `publicBaseUrl`。base path 取它的路徑；bot 沒有設 `WEB_BASE_URL` 時用 `/plugin/<key>/`，連結的網址用 `PUBLIC_ORIGIN` 加上這個路徑。
 - 伺服器送出 `index.html` 時，把 `<base href="/">` 換成 `<base href="<base path>">`（build 裡沒有 `<base>` 時，插在 `<head>` 的最前面），ETag 依換過的內容計算。獨立部署（base path 是 `/`）照原樣送出 build 的檔案。
-- 頁面的 router、API、`/collab` 與 alphaTab 的字型、音色庫，都從 `document.baseURI` 算路徑；Vite 用 `base: "./"` 打包。
+- 頁面的 router、API、`/collab` 與 alphaTab 的字型、音色庫，都從 `document.baseURI` 算路徑（`apps/web/src/served.ts`）；唯讀連結的網址也是。Vite 用 `base: "./"` 打包，`index.html` 帶 `<base href="/">`。
 - CSP 的 `base-uri` 是 `'self'`，允許頁面自己的 `<base>`（[`security.md`](security.md) 第 7 節）。studio 自己送 CSP，蓋過 bot 預設的那一個。
 
 ## 7. 失敗時的畫面
@@ -73,5 +75,7 @@ owner 在 2026-11-18 裁定（#72 的留言「方向變更」）：studio 做成
 - server vitest 用本機產生的 Ed25519 金鑰簽 `plugin-session` token：合法的 token 建立 session 並轉到 `../#session=…`；別的金鑰簽的、過期的、`purpose` 不對的、`alg` 不對的、簽章被截掉的、不是 token 的、沒帶 token 的都被拒；同一個 token 第二次被拒；還沒註冊（沒有公鑰）時被拒；未綁定、已停用的帳號被拒；速率限制。
 - 用一個假的 bot（register、heartbeat、`auth.session`、`interactions.respond`）跑完整的一圈：plugin 註冊並送出 manifest；bot 簽名的 `/studio` dispatch 經過 studio 的伺服器到 SDK；回覆的連結能登入。沒有簽名的 dispatch 被拒。
 - Bearer session 能取 collab ticket 並連上 `/collab`。
-- 綁定、解除綁定的 API；`/admin` 的綁定與解除綁定（Playwright e2e）。
+- 綁定、解除綁定的 API 與 CLI；`/admin` 的綁定與解除綁定（Playwright e2e，`admin.spec.ts`）。
+- web 的單元測試（`apps/web/tests/served.test.ts`）：base path 底下的 API、`/collab` 與 alphaTab 檔案的路徑，fragment 的 session 與失敗原因，Bearer 的帶上與遺忘。
+- Playwright project `plugin`：一個假的 bot 代理頁面，用 `/studio` 的連結登入並在 base path 底下共編（[`testing.md`](testing.md) 第 3 節）。
 - 真實 bot 的往返是人工步驟（[`testing.md`](testing.md) 第 6 節）。
