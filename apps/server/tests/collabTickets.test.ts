@@ -3,7 +3,7 @@
 import type { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
-import { CollabTickets } from "../src/collabTickets";
+import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
 import { newToken } from "../src/tokens";
 import { freshRedis } from "./support";
 
@@ -29,7 +29,7 @@ const guest = { kind: "guest", scoreId: "score-1", linkToken: "link-1" } as cons
 /** A ticket whose stored value is this text, as an older server or a hand in Redis may have left it. */
 async function stored(value: string): Promise<string> {
   const ticket = newToken();
-  await redis.set(`collab-ticket:${ticket}`, value, "EX", 60);
+  await redis.set(`collab-ticket:${ticket}`, value, "EX", TICKET_TTL_SECONDS);
   return ticket;
 }
 
@@ -62,4 +62,14 @@ test.each([
 test("a ticket is read by its own fields: others that were stored with it are left out", async () => {
   const ticket = await stored(JSON.stringify({ ...member, linkToken: "link-1", isAdmin: true }));
   expect(await tickets.redeem(ticket)).toEqual(member);
+});
+
+test("a ticket with a field of its own named __proto__ is read without it, and the prototype is left alone", async () => {
+  const ticket = await stored(`{"__proto__": {"role": "owner", "isAdmin": true}, ${JSON.stringify(member).slice(1)}`);
+  const read = await tickets.redeem(ticket);
+  expect(read).toEqual(member);
+  expect(Object.hasOwn(read!, "__proto__")).toBe(false);
+  expect(Object.getPrototypeOf(read)).toBe(Object.prototype);
+  expect((read as { isAdmin?: unknown }).isAdmin).toBeUndefined();
+  expect(({} as { isAdmin?: unknown }).isAdmin).toBeUndefined();
 });
