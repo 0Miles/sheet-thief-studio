@@ -163,6 +163,8 @@
 
 細節見 [`recognizer.md`](recognizer.md) 與 [`phrases.md`](phrases.md)。
 
+- **補充**（#63）：`POST /api/recognitions` 的格式以檔頭判斷，瀏覽器說的 `type` 不算；第幾張不是 PNG、JPEG、WebP 時回 415 `unsupported_image`，`params.page` 是那一張（從 1 數起）。沒有圖片或超過 15 張回 400 `invalid_request`（`params.issues` 的路徑是 `images`）；一張超過 10 MB、合計超過 40 MB 回 413 `payload_too_large`。`GET /api/recognitions/:id` 與列表的每一筆都帶 `id`、`pages`（張數）、`createdAt`；形狀在 `packages/contracts/src/recognitions.ts`（`recognitionDetails`、`recognitionList`）。`report` 是 `{ strings, tuning, capo, warnings, skipped }`：前三項照辨識服務讀到的，`skipped` 見 [`recognizer.md`](recognizer.md) 7.2。`:page` 不是 1 起的整數或超過張數時 404。
+
 - **補充**（#53）：`?q=` 是名稱的子字串、不分大小寫，最多 100 字元；`?kind=` 不是三種之一時回 400。`POST` 與 `PUT` 的 body 上限是 1 MB 加 64 KB；片段本身（UTF-8 序列化後）超過 1 MB 回 413 `phrase_too_large`，整個 body 超過上限回 413 `payload_too_large`。別人的樂句、不存在的樂句、不是 UUID 的 id，一律 404 `not_found`。`PUT` 的片段和樂句的 `kind` 不同時回 400 `invalid_request`（`params.issues` 的路徑是 `fragment.kind`），不論 `baseRevision` 對不對：樂句的種類不能改（[`phrases.md`](phrases.md) 第 5 節）。
 - 樂句與辨識的 API 不分裝置。手機與平板上「只能看」是介面上的限制（[`views.md`](views.md) 第 7 節），伺服器不分辨裝置。
 

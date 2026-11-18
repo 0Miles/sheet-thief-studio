@@ -134,9 +134,9 @@ export class VersionUnreadable extends Error {
 /**
  * The content of a version, brought to the current schema (docs/spec/schema.md, section 10): what
  * a preview draws and a restore writes. Gunzipped to `MAX_VERSION_BYTES` at most, whatever the
- * row holds. `JSON.parse` and not `parsePlain`: a version is a whole `ScoreJSON`, nested deeper
- * than the values of a document `parsePlain` copies (it would refuse every score), and an older
- * one reaches its migration steps as it was stored. What they give is checked against
+ * row holds. `JSON.parse` and not `parsePlain`: a version is a whole `ScoreJSON`, not a value of
+ * a document (whose depth `parsePlain` limits, #102), and an older one reaches its migration steps
+ * as it was stored. What they give is checked against
  * `scoreSchema` (`migrateJson`), whose records refuse a key named __proto__; `JSON.parse` never
  * gives an object a prototype from the content. Null when the score has no such version; throws
  * `VersionUnreadable` when it cannot be read.

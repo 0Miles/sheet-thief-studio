@@ -16,7 +16,7 @@ import { useSessionStore } from "../stores/session";
 import NotFoundView from "./NotFoundView.vue";
 import ScoreView from "./ScoreView.vue";
 
-defineProps<{ id?: string; token?: string }>();
+const props = defineProps<{ id?: string; token?: string }>();
 
 const route = useRoute();
 const router = useRouter();
@@ -52,6 +52,15 @@ watch(aside, async (now) => {
   scoreView.value?.stepBack();
 });
 
+/**
+ * The server closed the score's connection for good (its `closed` notice, docs/spec/collab.md,
+ * 2.1): no version can be restored in it any more. From the versions page, back to the score,
+ * which says why and offers it anew from the server.
+ */
+async function onStopped(): Promise<void> {
+  if (aside.value && props.id !== undefined) await router.replace({ name: "score", params: { id: props.id } });
+}
+
 async function onClosed(closing: Closing): Promise<void> {
   if (closing.kind === "reopen") {
     notice.value = closing.notice;
@@ -69,7 +78,7 @@ async function onClosed(closing: Closing): Promise<void> {
   <NotFoundView v-if="removed" :notice="strings.score.removed" />
   <template v-else>
     <div :class="{ 'score-page__behind': aside }" :inert="aside || undefined" :aria-hidden="aside || undefined">
-      <ScoreView :key="`${id ?? token}:${opened}`" ref="scoreView" :id="id" :token="token" :notice="notice" @closed="onClosed" />
+      <ScoreView :key="`${id ?? token}:${opened}`" ref="scoreView" :id="id" :token="token" :notice="notice" @closed="onClosed" @stopped="onStopped" />
     </div>
     <RouterView v-slot="{ Component }">
       <!-- The score's own child route draws nothing: the score above is the page. -->

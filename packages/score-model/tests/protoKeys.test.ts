@@ -1,7 +1,8 @@
 // Values with a key of their own named __proto__ (#78). The member who writes one holds it as a
 // key; the others, who decode it (lib0's readAny assigns key by key), hold it as the prototype of
 // the value. Every member must read the same score, and values nested without end must not make
-// reading throw. Every member must also rewrite a note alike (#103).
+// reading throw. Every member must also rewrite a note alike (#103). How deep a value may nest,
+// and what reading and the commands do with one nested deeper: depth.test.ts (#102).
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -170,27 +171,6 @@ test("staves and a capo under __proto__ read the same, and every member counts a
   for (const doc of [sides.writer, sides.receiver]) expect(staffCountOf(partsOf(doc).get("pno")!)).toBe(1);
 });
 
-test("a field reading does not know, nested without end, is ignored by everyone and reading does not throw", () => {
-  const deep = DEEP;
-  const sides = bothSides((doc) => {
-    notesOf(doc, 0).set("s6", written(`{"fret":3,"later":${deep}}`));
-    beatOf(doc, 1).set("later", written(deep));
-    beatOf(doc, 1).set("tuplet", written(`{"actual":3,"normal":2,"later":${deep}}`));
-    barsOf(doc).get("b1")!.set("timeSig", written(`{"numerator":3,"denominator":4,"later":${deep}}`));
-    partsOf(doc).get("pno")!.set("staves", written(`[{"clef":"bass","later":${deep}}]`));
-  });
-  const { score, invalid } = readBySides(sides);
-  expect(invalid).toEqual([]);
-  expect(score.bars[0]!.timeSig).toEqual({ numerator: 3, denominator: 4 });
-  expect(score.parts[0]!.content.b1!["0:0"]).toEqual([
-    { id: "x1", value: 4, dots: 0, notes: { s6: { fret: 3 } } },
-    { id: "x2", value: 4, dots: 0, tuplet: { actual: 3, normal: 2 }, notes: { s5: { fret: 5 } } },
-  ]);
-  expect(score.parts[1]!.staves).toEqual([{ clef: "bass" }]);
-  // The document keeps what reading ignores.
-  expect(JSON.stringify(notesOf(sides.receiver, 0).get("s6"))).toBe(`{"fret":3,"later":${deep}}`);
-});
-
 test("a value nested without end where reading knows the field is unreadable for everyone, and reading does not throw", () => {
   const deep = DEEP;
   const sides = bothSides((doc) => {
@@ -207,21 +187,6 @@ test("a value nested without end where reading knows the field is unreadable for
     expect(durationOf(beatOf(doc, 1))).toBeUndefined();
     expect(staffCountOf(partsOf(doc).get("pno")!)).toBe(1);
   }
-});
-
-test("a value nested so deep that following it down would overflow the stack does not make its writer's reading throw", () => {
-  // The others cannot even decode this one (lib0's readAny follows it down); its writer still reads the document.
-  const deep = nested(20000);
-  const doc = jsonToDoc(band());
-  notesOf(doc, 0).set("s6", written(`{"fret":3,"later":${deep}}`));
-  notesOf(doc, 1).set("s5", written(`{"fret":5,"bend":${deep}}`));
-  beatOf(doc, 0).set("tuplet", written(`{"actual":3,"normal":2,"later":${deep}}`));
-  partsOf(doc).get("pno")!.set("staves", written(`[${deep}]`));
-  const { score, invalid } = readScore(doc);
-  expect(score.parts[0]!.content.b1!["0:0"]!.map((beat) => beat.notes)).toEqual([{ s6: { fret: 3 } }, {}]);
-  expect(invalid.map((flag) => flag.what)).toEqual(["note", "part.staves"]);
-  expect(staffCountOf(partsOf(doc).get("pno")!)).toBe(1);
-  expect(durationOf(beatOf(doc, 0))).toEqual({ value: 4, dots: 0, tuplet: { actual: 3, normal: 2 } });
 });
 
 /** The note at `key` of a beat of the guitar (0 is x1, 1 is x2) as its member stores it, as JSON: undefined for none. */
