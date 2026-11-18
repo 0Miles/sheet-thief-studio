@@ -64,6 +64,7 @@
 - **補充**（#109）：web 的客戶端處理在 `apps/web/src/notices.ts` 的 `lockWhenReadOnly`，ScoreView 建立 provider 後立刻掛上，把 `reason` 交給 `ScoreView.vue` 的 `lockReadOnly`（和 `newerSchema` 由文件判斷時同一個入口，[`views.md`](views.md) 第 10 節）。通知和同步誰先到沒有保證（Hocuspocus 先處理排隊的同步訊息、再呼叫 `connected`，兩者都是非同步的），所以兩種順序都要能處理：
   - 通知先到：還沒開始打譜，以唯讀編輯視圖開啟。
   - 同步先到、已經在可編輯視圖：丟掉本機文件、以唯讀重新開啟（`Closing` 的 `reopen` 帶 `readOnly`，ScorePage 傳給新的 ScoreView），新的 ScoreView **一開始就是唯讀**；不這樣的話，新的那個又可能同步先到、又重開。
+  - **丟掉本機修改時要告知使用者**：丟掉本機文件之前，先判斷這個分頁有沒有伺服器可能沒有的修改（例如離線時打的、重連後才被鎖），判斷是 `apps/web/src/access.ts` 的 `ownChangesOf`：文件裡這個分頁自己的 client 的 clock，比最後一次 provider 回報全部同步（`unsyncedChanges` 為 0）時大，就是有。凍結文件的 readOnly 連線對沒套用的更新回 `SyncStatus(false)`，provider 的 `unsyncedChanges` 不會歸零，所以這些修改不會被當成已同步。有的話，重新開啟的團譜說明「已改用伺服器上的版本，這個分頁沒同步到伺服器的修改已經丟掉」再接鎖住的理由（`strings.score.readOnlyDropped`，比照 `closed` 的 `reloaded`）；沒有就只說鎖住的理由。限制：伺服器在確認之後、儲存之前當掉而遺失的修改不在判斷範圍內（客戶端看到的是已確認）。
   - 只有 Owner 與 Editor 會被鎖；Viewer 與訪客忽略這則通知。
   - **回到可編輯**：分頁內不自動解除，一直鎖到頁面重新載入（重新整理或重新進入團譜）為止，提示文字寫明這件事。理由：通知與同步的順序沒有保證，客戶端無法可靠判斷「這次連線沒有通知」；鎖錯方向（以為可編輯、其實會被丟掉）比多按一次重新整理糟。
 - **補充**（#102）：第二種通知是 `closed`，伺服器在關閉這條連線之前送出，表示這個分頁不要再連線：

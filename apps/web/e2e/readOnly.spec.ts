@@ -3,20 +3,10 @@
 // Editor's page opens it read-only, saying why, rather than let them type what the server drops.
 // Accounts of the test's own, so that every run, retry and browser makes them anew.
 import { strings } from "../src/strings";
-import { loggedIn, openScore, pageErrors, scoreOf, seedAccount, seedScore } from "./pages";
-import { expect, type TestInfo, test } from "./test";
+import { accountsFor, loggedIn, openScore, pageErrors, scoreOf, seedScore } from "./pages";
+import { expect, test } from "./test";
 
 const text = strings.score;
-
-function accountsFor(testInfo: TestInfo) {
-  const run = `${testInfo.project.name.slice(0, 4)}-${Date.now().toString(36)}`;
-  const account = (name: string, displayName: string) => {
-    const made = { username: `e2e-${name}-${run}`, displayName, password: "e2e read-only password", isAdmin: false, mustChangePassword: false };
-    seedAccount(made);
-    return made;
-  };
-  return { run, account };
-}
 
 test("an Editor opens a score the server has no migration for read-only, told why; a Viewer is told nothing new", async ({ browser }, testInfo) => {
   const { run, account } = accountsFor(testInfo);

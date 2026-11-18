@@ -87,6 +87,9 @@ export const strings = {
       missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視；伺服器更新後請重新整理頁面。",
       migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視；問題排除後請重新整理頁面。",
     } satisfies Record<ReadOnlyReason, string>,
+    // Locked while open for typing, the score opened anew from the server's document: what this
+    // tab wrote and the server never took went with the old one (docs/spec/collab.md, 2.1).
+    readOnlyDropped: (why: string) => `已改用伺服器上的版本，這個分頁沒同步到伺服器的修改已經丟掉。${why}`,
     // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
     // holds would be refused again at every reconnection. Opening the score anew drops it.
     closed: {

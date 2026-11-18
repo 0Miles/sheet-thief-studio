@@ -36,6 +36,7 @@ const aside = computed(() => route.name === "score-versions");
 /** What the versions page restores a version in: whichever ScoreView holds the score now. */
 const restoreTarget: RestoreTarget = {
   canRestore: () => scoreView.value?.restoreTarget.canRestore() ?? false,
+  lockedBecause: () => scoreView.value?.restoreTarget.lockedBecause() ?? null,
   replace: (version) => scoreView.value?.restoreTarget.replace(version) ?? false,
 };
 
