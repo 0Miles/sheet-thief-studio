@@ -2,9 +2,9 @@
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
-import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, type TestInfo } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, PART_PRESETS, type PartKind, type ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -91,6 +91,19 @@ export async function loggedIn(browser: Browser, account: { username: string; pa
 export async function createScore(page: Page, title: string): Promise<string> {
   const origin = new URL(page.url()).origin;
   const response = await page.request.post("/api/scores", { data: { title }, headers: { origin } });
+  expect(response.status()).toBe(201);
+  return ((await response.json()) as { id: string }).id;
+}
+
+/** A name of this run only, for data the tests' database keeps from earlier runs (phrases). */
+export function runName(name: string): string {
+  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
+}
+
+/** Create a phrase through the API as the account logged in on the page (a blank 6-string guitar one unless given); returns its id. */
+export async function createPhrase(page: Page, name: string, fragment: BarsFragment = blankFragment(PART_PRESETS.guitar6)): Promise<string> {
+  const origin = new URL(page.url()).origin;
+  const response = await page.request.post("/api/phrases", { data: { name, fragment }, headers: { origin } });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { id: string }).id;
 }

@@ -40,6 +40,11 @@ const props = defineProps<{
   /** This bar is the first: only it can be a pickup bar. */
   firstBar: boolean;
   anacrusis: boolean;
+  /**
+   * The phrase editor's: a phrase holds the time signature of each bar and nothing else of what
+   * the bars of a score share (docs/spec/phrases.md, section 1), so the panel has only that.
+   */
+  phrase?: boolean;
 }>();
 const emit = defineEmits<{
   timeSig: [timeSig: TimeSignature];
@@ -163,7 +168,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     </header>
     <p class="bar-panel__where" data-panel-bar :data-bar="bar">
       {{ range && range.first !== range.last ? text.range(range.first, range.last) : text.bar(range?.first ?? bar) }}
-      <span class="bar-panel__note">{{ text.allParts }}</span>
+      <span v-if="!phrase" class="bar-panel__note">{{ text.allParts }}</span>
     </p>
     <form class="bar-panel__group" data-panel-time-sig @submit.prevent="applyTimeSig">
       <h3 class="bar-panel__label">{{ text.timeSig }}</h3>
@@ -182,6 +187,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
       <p class="bar-panel__note">{{ range ? text.timeSigRange : text.timeSigOnward }}</p>
       <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
     </form>
+    <template v-if="!phrase">
     <form class="bar-panel__group" data-panel-tempo @submit.prevent="applyTempo">
       <label class="bar-panel__field">
         <span>{{ text.tempo }}</span>
@@ -263,6 +269,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
       </label>
       <p class="bar-panel__note">{{ text.anacrusisHelp }}</p>
     </div>
+    </template>
   </aside>
 </template>
 

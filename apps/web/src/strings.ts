@@ -326,6 +326,40 @@ export const strings = {
     confirm: "刪除",
     cancel: "取消",
   },
+  // The phrase editor (/phrases/:id; docs/spec/phrases.md, section 5). Changed elsewhere and too
+  // large are said with the texts of their error codes (`errors`).
+  phraseEditor: {
+    label: "樂句",
+    library: "樂句庫",
+    rename: "改名",
+    parts: "調弦與譜號",
+    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: "沒有儲存", unchecked: "沒有儲存", tooLarge: "沒有儲存", failed: "沒有儲存" },
+    reload: "重新載入",
+    saveAsNew: "另存成新樂句",
+    /** The server could not be reached, or failed itself: saving is tried again by itself. */
+    retrying: "無法儲存，稍後會自動再試。",
+    /** Refused for its revision, and the phrase could not be read to tell why: nothing is sent until the member checks again. */
+    unchecked: "無法確認這個樂句是否在別處被修改過，修改先留在這一頁。",
+    /** Not saved, and not tried again by itself: what the server said, then this. */
+    notSaved: (said: string) => `沒有儲存：${said}`,
+    retry: "再試一次",
+    /** Leaving the editor for another page of the app with changes the server does not have. */
+    leave: {
+      title: "還有修改沒有儲存",
+      message: "這個樂句還有修改沒有存到伺服器，離開之後就沒有了。要離開嗎？",
+      confirm: "離開",
+      cancel: "留下",
+    },
+    /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
+    desktopOnly: "請在電腦上編輯",
+  },
+  saveAsNewPhrase: {
+    title: "另存成新樂句",
+    name: "名稱",
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+  },
   // The part presets (docs/spec/commands.md, section 10).
   presets: {
     guitar6: "吉他 6 弦",
