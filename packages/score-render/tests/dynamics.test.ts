@@ -127,3 +127,13 @@ test("a dynamic on a rest is drawn in its own voice and part only (#97)", () => 
   expect(namesDrawn(written([{ "0:0": ["pp- x x x"], "0:1": ["- ff- - -", "x"] }]))).toEqual(["ff", "pp"]);
   expect(namesDrawn(written([{ "0:0": ["x x x p-", "x"] }, { "0:0": ["mf- - - -", "- x"] }]))).toEqual(["mf", "p"]);
 });
+
+test("the same dynamic written at the same place in both voices of a staff is drawn once; another dynamic, or another place, is drawn in each (#45)", () => {
+  expect(namesDrawn(written([{ "0:0": ["ppx x x x"], "0:1": ["ppx x"] }]))).toEqual(["pp"]);
+  // Drawn on the second voice's note from a rest before it: still the same place as the first voice's.
+  expect(namesDrawn(written([{ "0:0": ["x ffx x x"], "0:1": ["ff- x"] }]))).toEqual(["ff"]);
+  expect(namesDrawn(written([{ "0:0": ["ppx x x x"], "0:1": ["ffx x"] }]))).toEqual(["ff", "pp"]);
+  expect(namesDrawn(written([{ "0:0": ["ppx x x x"], "0:1": ["x ppx"] }]))).toEqual(["pp", "pp"]);
+  // Not across parts: each part draws its own.
+  expect(namesDrawn(written([{ "0:0": ["ppx x x x"] }, { "0:0": ["ppx x x x"] }]))).toEqual(["pp", "pp"]);
+});

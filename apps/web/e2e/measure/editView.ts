@@ -33,9 +33,9 @@ export async function openEditView(page: Page, score: SeededScore, only?: number
   await playerSettled(page);
 }
 
-/** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, and give the score the keyboard. */
-export async function placeCursor(page: Page, part: number, bar: number, beat: number, line: number): Promise<void> {
-  const cursor = await page.evaluate(([p, b, at, l]) => window.__studioMeasure!.placeCursor(p!, b!, at!, l!), [part, bar, beat, line]);
+/** Put the cursor in the append slot of an empty voice (-1) or on a beat of a bar of a part, in a voice ("0:0" unless told), and give the score the keyboard. */
+export async function placeCursor(page: Page, part: number, bar: number, beat: number, line: number, voice = "0:0"): Promise<void> {
+  const cursor = await page.evaluate(([p, b, at, l, v]) => window.__studioMeasure!.placeCursor(p as number, b as number, at as number, l as number, v as string), [part, bar, beat, line, voice] as const);
   expect(cursor).not.toBeNull();
   await page.locator("[data-scroller]").focus();
 }
