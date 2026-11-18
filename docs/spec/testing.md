@@ -30,12 +30,12 @@
 
 | 掛鉤 | 何時存在 | 內容 |
 |---|---|---|
-| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器 |
+| `window.__studioTest` | 只在 `VITE_E2E=1` 的 build | 只有三個唯讀函式：`scoreJson()`、`cursor()`、`flags()`。**補充**（#35）：`scoreJson()` 是這一頁手上的文件，從第一次同步、譜開始畫起就有，離線時打的也在裡面；之前是 null。**補充**（#33）：加上第四個 `player()`，是播放器實際用的設定（`ScorePlayer.settings()`：速度、節拍器、預備拍、循環、各聲部的混音），e2e 用它確認存下的設定在重新整理後真的交給了播放器。**補充**（#102）：加上唯一會寫入的 `writeMeta(field, json)`：繞過指令，把 JSON 直接寫進這一頁文件的 `meta`，模擬舊版分頁或離線資料手上的值（巢狀超過 `MAX_VALUE_DEPTH` 的值沒有任何指令或按鍵寫得出來）；只有團譜頁有（版本頁沒有文件可寫），只有 `e2e/depth.spec.ts` 用 |
 | `window.__studioMeasure` | 只在 `VITE_MEASURE=1` 的 build | 只給 measure 套件用：`placeCursor`、`editBar`、`bulkEdit`、`renders`、`keys`、`player.reload`、`player.trace`，以及 measure 套件讀的 `ready`、`synced`、`json`、`stateSize`、`cursorRect`、`noteHeads`（游標所在拍點的音符頭，alphaTab 回報的位置，給游標幾何檢查用）、`errors`、`player.state`、`player.position`（補充）。在 `apps/web/src/measureHook.ts`，掛在編輯視圖上 |
 
 - 正式 build 兩者都沒有。加一個檢查，確認打包結果（`apps/web/dist`）不含 `__studio` 這個字串；CI 的 `check` job 跑它。
   - `__studioTest` 只在 `apps/web/src/testHook.ts`，以 `import.meta.env.VITE_E2E` 判斷；`__studioMeasure` 只在 `apps/web/src/measureHook.ts`，以 `import.meta.env.VITE_MEASURE` 判斷。其他 build 裡兩者都是死碼，打包時整段移除。CI 的檢查用 `grep -rq "__studio" apps/web/dist`（#37；#6 到 #37 之間檢查的是 `__studioTest`，因為 spike 頁的 `window.__studio` 還在正式 build 裡）。
-- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果。
+- e2e 的所有操作都經由真的鍵盤與介面；`__studioTest` 只用來讀結果（例外是上表的 `writeMeta`，只用來放進介面做不出來的前置資料）。
 - **補充**（#6）：測試要的前置資料（例如另一個測試要用的團譜）可以直接打 API 建立（`e2e/pages.ts` 的 `createScore`，帶瀏覽器 context 的 cookie 與 Origin）；但這個測試要驗證的行為本身一定經由真的介面操作。
   - **補充**（#19）：還沒有介面或 API 可以建立的前置資料（帶 Editor、Viewer 成員的團譜、超過 8 小節的團譜，或多聲部的團譜），由 server 自己的腳本直接寫進 e2e 資料庫（`apps/server/tests/scoreE2e.ts`，`e2e/pages.ts` 的 `seedScore`）。腳本只接受名稱以 `_e2e` 結尾的資料庫，而且只建立新的團譜，所以不會和 server 記憶體裡的文件衝突。#13 有了加入成員的頁面之後，成員本身的行為仍然要經由介面驗證。
   - **補充**（#7）：會被測試用掉的帳號（例如要改掉暫時密碼的帳號）不放進 `e2e/environment.ts` 的固定帳號，由測試自己用 `apps/server/tests/accountE2e.ts`（`e2e/pages.ts` 的 `seedAccount`）建立一個名稱帶亂數的新帳號，所以同一個測試可以重跑，也可以在別的瀏覽器 project 再跑一次。

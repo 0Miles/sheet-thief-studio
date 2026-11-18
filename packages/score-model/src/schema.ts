@@ -6,6 +6,8 @@
 import * as Y from "yjs";
 import { z } from "zod";
 
+import { ownCopy, ownEntries, TOO_DEEP } from "./depth";
+
 /** Version of the document schema; a document written by a newer version opens read-only. */
 export const SCHEMA_VERSION = 1;
 
@@ -76,65 +78,25 @@ function text(min: number, max: number) {
 const midi = z.int().min(0).max(127);
 
 /**
- * How deep lists and objects go in a legal value of the document: a note with a bend, the staves
- * of a part (a list of objects), the fields of a beat with a tuplet.
- */
-const PLAIN_DEPTH = 2;
-
-/** What stands for a list or an object nested deeper than any legal value: no schema reads it. */
-const TOO_DEEP = Symbol("nested too deep");
-
-/**
- * A value of the document as every member holds it (#78): the fields it has of its own, but one
- * named __proto__. The member who writes such a field holds it as a field; the others decode it
- * as the prototype of the value (lib0's readAny), and zod would read the fields of a prototype.
- * Copied down to the depth of a legal value only, so that a value nested without end costs
- * nothing and cannot overflow the stack: fields no schema knows are dropped by zod whatever they
- * hold. A shared type is not a value.
- */
-function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
-  if (typeof value !== "object" || value === null) return value;
-  if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
-  if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
-  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, plain(field, depth - 1)]));
-}
-
-/** Whether a value of the document is an object of fields: not a list, nor a shared type. */
-function isFieldObject(value: unknown): value is object {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Y.AbstractType);
-}
-
-/** The fields a value has of its own but __proto__, each as stored; none when it is not an object of fields. */
-function ownEntries(value: unknown): [string, unknown][] {
-  return isFieldObject(value) ? Object.entries(value).filter(([name]) => name !== "__proto__") : [];
-}
-
-/** A copy of a value without __proto__ fields, `depth` lists and objects down; below, values as stored. */
-function ownCopy(value: unknown, depth: number): unknown {
-  if (depth === 0) return value;
-  if (Array.isArray(value)) return value.map((item) => ownCopy(item, depth - 1));
-  if (!isFieldObject(value)) return value;
-  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, ownCopy(field, depth - 1)]));
-}
-
-/**
- * What a command that rewrites a value of the document starts from (#103): a note's fields.
- * It is a new object of the fields the value has of its own. A field named __proto__ is not one
- * (#78). The lists and objects in it are copied so too, `PLAIN_DEPTH` levels down; below that,
- * values are kept as stored. Fields reading does not know are kept. So every member decides from
- * the same fields and writes the same value. A value that is not an object of fields (a list, a
- * shared type, a string) has no fields to keep.
- */
-export function ownFields(value: unknown): Record<string, unknown> {
-  return isFieldObject(value) ? (ownCopy(value, PLAIN_DEPTH + 1) as Record<string, unknown>) : {};
-}
-
-/**
  * Check a value stored in the document against its schema: every read of one goes through here,
- * so that all members read it alike (see `plain`). Never throws.
+ * so that all members read it alike. What zod is given is the value as every member holds it
+ * (`ownCopy`: its own fields, no __proto__ at any level, #78). A value nested deeper than
+ * `MAX_VALUE_DEPTH` cannot be read, whatever field holds the depth (#102); a shared type is not a
+ * value. Never throws, however deep the value.
  */
 export function parsePlain<Schema extends z.ZodType>(schema: Schema, value: unknown): z.ZodSafeParseResult<z.output<Schema>> {
-  return schema.safeParse(plain(value));
+  return schema.safeParse(ownCopy(value));
+}
+
+/**
+ * Check fields gathered from a shared type (a beat's, but its notes) against a schema of them,
+ * as `parsePlain` checks a value: each field a value of its own, `MAX_VALUE_DEPTH` deep at most
+ * (gathering them is no level). One nested too deep makes them all unreadable; one holding a
+ * shared type is unreadable by itself, ignored when the schema does not know it.
+ */
+export function parsePlainFields<Schema extends z.ZodType>(schema: Schema, fields: Record<string, unknown>): z.ZodSafeParseResult<z.output<Schema>> {
+  const copies = ownEntries(fields).map(([name, field]): [string, unknown] => [name, ownCopy(field)]);
+  return schema.safeParse(copies.some(([, copy]) => copy === TOO_DEEP) ? TOO_DEEP : Object.fromEntries(copies));
 }
 
 /**
@@ -641,7 +603,7 @@ export type BeatDuration = Duration & { dots: 0 | 1 | 2 };
 
 /** The duration of a beat as stored; undefined when it cannot be read. */
 export function durationOf(beat: YBeat): BeatDuration | undefined {
-  const duration = parsePlain(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  const duration = parsePlainFields(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
   return duration.success ? duration.data : undefined;
 }
 
