@@ -239,6 +239,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts` 的 `SCHEMA_VERSION`）照用。
 - 新增 optional 欄位屬於加法改動，**不升** `schemaVersion`。條件：同一個 PR 也改本檔、ADR 0002 的增補（形狀有變時）與 zod schema。
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
+  - **補充**（#103）：「原值」指它自己的欄位，和第 11 節的 `parsePlain` 一樣不算名為 `__proto__` 的欄位；音符裡的物件（`bend`）也一樣。做法是 score-model 的 `ownFields`：指令先把原值複製成只有這些欄位的新物件，再從它判斷（例如「已經是 ghost 了嗎」）、以它為底寫入。理由：寫入者手上 `__proto__` 是普通的鍵，其他成員解碼後它是 prototype，直接讀原值時兩邊的判斷不同（接收者以為已經是 ghost 而不寫入），寫入者還會把 `__proto__` 寫回去。不認得的欄位照樣保留，裡面更深的值原樣不動；`__proto__` 欄位在改寫後消失，不論誰寫，存下的值都相同。原值不是物件（數字、字串、陣列、Y 型別）時沒有欄位可保留，`setFret` 寫成 `{ fret }`。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
 - 客戶端遇到比自己新的 `schemaVersion`：以唯讀開啟（`EditorSession` 的唯讀旗標），並顯示「這份團譜由較新的版本建立，請重新整理頁面」（ADR 0002:22）。
 - **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。伺服器怎麼做、怎麼告訴客戶端，見 [`collab.md`](collab.md) 2.1。

@@ -96,9 +96,29 @@ function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
   if (typeof value !== "object" || value === null) return value;
   if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
   if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
-  const fields: [string, unknown][] = [];
-  for (const [name, field] of Object.entries(value)) if (name !== "__proto__") fields.push([name, plain(field, depth - 1)]);
-  return Object.fromEntries(fields);
+  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, plain(field, depth - 1)]));
+}
+
+/** Whether a value of the document is an object of fields: not a list, nor a shared type. */
+function isFields(value: unknown): value is object {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Y.AbstractType);
+}
+
+/** The fields a value has of its own but __proto__, each as stored; none when it is not an object of fields. */
+function ownEntries(value: unknown): [string, unknown][] {
+  return isFields(value) ? Object.entries(value).filter(([name]) => name !== "__proto__") : [];
+}
+
+/**
+ * What a command that rewrites a value of the document starts from (#103), a note's fields: the
+ * fields the value has of its own but __proto__, as `parsePlain` reads them, and so too those of
+ * the objects among them (a bend), in a new object. What reading does not know is kept, and every
+ * member, the writer of a __proto__ and those who decode it as a prototype, decides from the same
+ * fields and writes the same value. Deeper down values are kept as stored. A value that is not an
+ * object of fields (a list, a shared type, a string) has no fields to keep.
+ */
+export function ownFields(value: unknown): Record<string, unknown> {
+  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, isFields(field) ? Object.fromEntries(ownEntries(field)) : field]));
 }
 
 /**

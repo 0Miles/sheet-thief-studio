@@ -9,7 +9,7 @@
 - Command 不碰 DOM，也不碰 renderer。
 - `EditorSession`（`packages/score-editor`）把按鍵對應到 Command，依聲部種類分派。它帶著唯讀旗標：唯讀時，任何會改動文件的 Command 都被拒絕（見 [`views.md`](views.md)）。
 - 不自動拆拍、不自動跨小節連結；超出拍號只標 Flag（ADR 0002）。
-- 指令改寫音符時，以儲存的原值為底，保留不認得的欄位（[`schema.md`](schema.md) 第 9 節）。
+- 指令改寫音符時，以儲存的原值為底，保留不認得的欄位（[`schema.md`](schema.md) 第 9 節）。**補充**（#103）：原值是它自己的欄位（`ownFields`，不算 `__proto__`），判斷與寫入都從這份複本來，所以每個成員做出相同的改寫。
 
 Command 分三類：
 
@@ -183,7 +183,7 @@ interface Cursor {
   - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`；#22 起和讀取共用 `schema.ts` 的 `readableVoicesOf`、`readableVoicesIn`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
   - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
     - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
-    - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值，沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著聲部種類（`kind`，補充，#36：tie 在 pitched 才建立同音高的音）、音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
+    - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值（補充，#103：它自己的欄位的複本，見 [`schema.md`](schema.md) 第 9 節），沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著聲部種類（`kind`，補充，#36：tie 在 pitched 才建立同音高的音）、音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
     - `toggleAt(doc, cursor, key, toggle)` 作用在游標拍點上 `key` 的音，鍵由 `noteKeyAt` 給出（目前只有 fretted 有：那條弦；鼓與五線譜是 `null`，按鍵不動）。在附加位置上，`toggle` 建立的音放在新拍點上，`place.before` 是錨點拍點的音。`toggleOnSelection` 作用在選取，不建立音符。兩者都是一個 Command，只寫入有改變的音。
     - 開關型的技巧（`ON_OFF_TECHNIQUES`）由 `techniqueToggle` 給出：`onOffToggle` 的 `decide` 是「不是全部都有」，只改已經有的音；dead 是 `deadToggle`（上面兩條補充）。
     - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。

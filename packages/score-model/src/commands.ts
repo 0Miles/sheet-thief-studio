@@ -31,6 +31,7 @@ import {
   type NoteJSON,
   type NoteValue,
   ordered,
+  ownFields,
   parsePlain,
   type PartKind,
   partKindOf,
@@ -599,9 +600,17 @@ export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cur
 }
 
 /**
+ * A note as the commands that rewrite it see it: its own fields (`ownFields`), so that every
+ * member decides and writes alike (#103); none for nothing stored.
+ */
+function asStored(value: unknown): NoteJSON | undefined {
+  return value === undefined ? undefined : (ownFields(value) as NoteJSON);
+}
+
+/**
  * Write a note at the cursor, one command: on its beat, or in the append slot on a new beat made
  * there (as `insertBeat` makes it), the cursor then on that beat. `write` gets the note stored
- * at `key` and returns the new one, or null to remove it; removing makes no beat.
+ * at `key` (`asStored`) and returns the new one, or null to remove it; removing makes no beat.
  */
 function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
   if (cursor.at === "after") {
@@ -612,7 +621,7 @@ function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: Note
   }
   const notes = notesOf(beatAt(doc, cursor));
   if (notes === undefined) return cursor;
-  const stored = notes.get(key);
+  const stored = asStored(notes.get(key));
   const note = write(stored);
   // Given back as stored, or nothing to remove: nothing is written.
   if (note === stored || (note === null && stored === undefined)) return cursor;
@@ -664,9 +673,10 @@ export interface NotePlace {
 export interface NoteToggle<D> {
   decide(seen: readonly NoteJSON[]): D;
   /**
-   * The note at `place` once turned to `decided`, from the note as stored (fields this version
-   * does not know are kept; undefined where there is none): null for no note there, removing one
-   * stored; `stored` itself to leave it as it is, which writes nothing.
+   * The note at `place` once turned to `decided`, from the note as stored, its own fields
+   * (`ownFields`: fields this version does not know are kept, one named __proto__ is not; undefined
+   * where there is none): null for no note there, removing one stored; `stored` itself to leave it
+   * as it is, which writes nothing.
    */
   turn(stored: NoteJSON | undefined, decided: D, place: NotePlace): NoteJSON | null;
 }
@@ -917,9 +927,9 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
   const reader = readerOf(doc, selection.partId);
   if (reader === undefined) return cursor;
   const beats = selectedBeatsOf(doc, reader, selection).map(({ address, voice, index, map }) => {
-    const notes = [...map.entries()].flatMap(([key, stored]) => {
-      const seen = reader.note(key, stored);
-      return seen ? [{ key, stored, seen }] : [];
+    const notes = [...map.entries()].flatMap(([key, value]) => {
+      const seen = reader.note(key, value);
+      return seen ? [{ key, stored: asStored(value), seen }] : [];
     });
     return { address, voice, index, map, notes };
   });
