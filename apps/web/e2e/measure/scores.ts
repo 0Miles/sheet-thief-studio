@@ -239,3 +239,55 @@ export function demoScore(options: DemoOptions): SeededScore {
 export function perfScore(bars = 100, { techniques = false }: { techniques?: boolean } = {}): SeededScore {
   return seeded(perfTitle(bars, techniques), (doc) => seedPerf(doc, bars, techniques));
 }
+
+const DRUM_VOICES_TITLE = "Drums, two voices";
+
+/**
+ * Drums written hands and feet apart (#45): hands in the first voice, feet in the second. Bar 1
+ * has both, bar 2 hands only (its second voice empty), bar 3 feet against quarters, bar 4 nothing.
+ */
+function seedDrumVoices(doc: Y.Doc): void {
+  const { hiHatPedal } = DRUM_PIECES;
+  doc.transact(() => {
+    createScore(doc, DRUM_VOICES_TITLE);
+    const [first, second, third] = insertBars(doc, { after: null, count: 4 }) as [string, string, string, string];
+    const partId = addPart(doc, { name: "Drums", kind: "percussion", program: 0 });
+    /** Append beats to a voice of a bar. */
+    const voice = (barId: string, key: string, beats: [NoteValue, Notes][]) => {
+      let cursor: Cursor = { ...cursorAt(doc, partId, barId), voice: key };
+      for (const [value, notes] of beats) {
+        cursor = insertBeat(doc, { ...cursor, at: "after" }, { value });
+        for (const [note, json] of Object.entries(notes)) setNote(doc, cursor, note, json);
+      }
+    };
+    const hands = Array.from({ length: 8 }, (_, index): [NoteValue, Notes] => [8, p(hiHatClosed.id, ...(index % 4 === 2 ? [snare.id] : []))]);
+    voice(first, "0:0", hands);
+    voice(first, "0:1", [
+      [4, p(kick.id)],
+      [8, p(hiHatPedal.id)],
+      [8, p(kick.id)],
+      [4, p(kick.id, hiHatPedal.id)],
+      [4, p(hiHatPedal.id)],
+    ]);
+    voice(second, "0:0", hands);
+    voice(third, "0:0", [
+      [4, p(crash.id)],
+      [4, p(snare.id)],
+      [4, p(ride.id)],
+      [4, p(snare.id)],
+    ]);
+    voice(third, "0:1", [
+      [8, p(kick.id)],
+      [8, p(kick.id)],
+      [2, p(hiHatPedal.id)],
+      [16, p(kick.id)],
+      [16, p(kick.id)],
+      [8, p(kick.id)],
+    ]);
+  }, LOCAL);
+}
+
+/** A new score of drums written in two voices. */
+export function drumVoicesScore(): SeededScore {
+  return seeded(DRUM_VOICES_TITLE, seedDrumVoices);
+}

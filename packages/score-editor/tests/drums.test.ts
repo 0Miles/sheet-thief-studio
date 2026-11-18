@@ -1,7 +1,7 @@
 // Typing on drums (docs/spec/keymap.md, 4.2; docs/spec/commands.md, 5.1, 5.2 and 5.4): a letter or
 // a digit turns its piece on and off at the cursor, Delete takes every piece off the cursor's line,
 // ↑ and ↓ move over the staff positions, Shift+G and Shift+A change the pieces on the line.
-import { DRUM_PIECES, setNote } from "@studio/score-model";
+import { docToJson, DRUM_PIECES, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 
 import { PLATFORMS } from "./band";
@@ -144,4 +144,42 @@ test("a ghost piece pressed again comes off with its ghost; Shift+G on an empty 
   press("l", 1000, shift);
   expect(transactions).toBe(0);
   expect(notesOf(beats())).toEqual([{ p38: {} }]);
+});
+
+test.each(PLATFORMS)("on %s, Alt+2 writes the pieces in the second voice: typing, moving and undo there leave the first voice as it is (#45)", (platform) => {
+  const { doc, press, beats, cursor, barIds } = sessionOn("percussion", 2, platform);
+  const alt = { altKey: true };
+  /** The pieces of each beat of a voice of a bar. */
+  const voice = (key: string, bar = 0) => notesOf(docToJson(doc).parts[0]!.content[barIds[bar]!]?.[key] ?? []);
+  // Hands in the first voice: hi-hat, hi-hat.
+  for (const key of ["h", "ArrowRight", "h"]) press(key);
+  expect(press("2", 1000, alt)).toBe(true);
+  // An empty second voice: its append slot.
+  expect(cursor()).toMatchObject({ voice: "0:1", beatId: null, at: "after" });
+  // Feet in the second voice: kick, then kick and pedal hi-hat.
+  for (const key of ["k", "ArrowRight", "k", "p"]) press(key);
+  expect(voice("0:1")).toEqual([{ p36: {} }, { p36: {}, p44: {} }]);
+  expect(notesOf(beats())).toEqual([{ p42: {} }, { p42: {} }]);
+  // ← and → stay in the second voice.
+  press("ArrowLeft");
+  expect(cursor()).toMatchObject({ voice: "0:1", beatId: docToJson(doc).parts[0]!.content[barIds[0]!]!["0:1"]![0]!.id, at: "on" });
+  // Into the next bar: its second voice is empty, the cursor goes to its append slot.
+  press("End");
+  press("ArrowRight");
+  press("ArrowRight");
+  expect(cursor()).toMatchObject({ barId: barIds[1], voice: "0:1", beatId: null, at: "after" });
+  press("s");
+  expect(voice("0:1", 1)).toEqual([{ p38: {} }]);
+  expect(voice("0:0", 1)).toEqual([]);
+  // Undo takes back the second voice's beats, one step each, last first.
+  undoEach(press, platform, () => [voice("0:1", 1), voice("0:1")], [
+    [[], [{ p36: {} }, { p36: {}, p44: {} }]],
+    [[], [{ p36: {} }, { p36: {} }]],
+    [[], [{ p36: {} }]],
+    [[], []],
+  ]);
+  expect(notesOf(beats())).toEqual([{ p42: {} }, { p42: {} }]);
+  // Back to the first voice.
+  press("1", 1000, alt);
+  expect(cursor().voice).toBe("0:0");
 });

@@ -51,8 +51,8 @@ export interface StudioMeasureHook {
   cursorRect(): Rect | null;
   /** Where the renderer drew the note heads of the cursor's beat. */
   noteHeads(): NoteHead[];
-  /** Put the cursor on a beat (or, with -1, in the append slot of an empty voice) of a bar of a part, all by index. */
-  placeCursor(part: number, bar: number, beat: number, line: number): Cursor | null;
+  /** Put the cursor on a beat (or, with -1, in the append slot of an empty voice) of a bar of a part, all by index, in a voice ("0:0" unless told). */
+  placeCursor(part: number, bar: number, beat: number, line: number, voice?: string): Cursor | null;
   /** Change one fret in a bar of a part (by index) as a member would, and wait for the drawing. */
   editBar(part: number, bar: number): Promise<RenderSample>;
   /** Apply `count` edits spread over the score, in one transaction: drawn once, for the size of the document. */
@@ -147,11 +147,11 @@ function measuring(view: MeasuredView): Measurement {
       const at = view.cursor();
       return at && engine ? engine.renderer.noteHeadsOf(at) : [];
     },
-    placeCursor(part, bar, beat, line) {
+    placeCursor(part, bar, beat, line, voice = "0:0") {
       const at = partAndBar(part, bar);
       if (at === null) return null;
-      const beatId = beat < 0 ? null : (at.part.content[at.barId]?.["0:0"]?.[beat]?.id ?? null);
-      view.moveCursor({ partId: at.part.id, barId: at.barId, voice: "0:0", beatId, at: beatId === null ? "after" : "on", line });
+      const beatId = beat < 0 ? null : (at.part.content[at.barId]?.[voice]?.[beat]?.id ?? null);
+      view.moveCursor({ partId: at.part.id, barId: at.barId, voice, beatId, at: beatId === null ? "after" : "on", line });
       return view.cursor();
     },
     editBar(part, bar) {
