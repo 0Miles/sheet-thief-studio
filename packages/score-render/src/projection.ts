@@ -86,17 +86,43 @@ function parseVoice(key: string): { staff: number; voice: number } {
   return { staff: staff ?? 0, voice: voice ?? 0 };
 }
 
-/** How many voices each staff of a part needs: the most any of its bars uses, at least one. */
+/**
+ * How many voices each staff of a part needs: the most any of its bars uses, at least one. A part
+ * has the staves its `staves` say (docs/spec/schema.md, section 4), whatever is written on them.
+ */
 function staffVoiceCounts(part: PartJSON): number[] {
-  const counts = [1];
+  const counts = part.staves.map(() => 1);
+  if (counts.length === 0) counts.push(1);
   for (const voices of Object.values(part.content)) {
     for (const key of Object.keys(voices)) {
       const { staff, voice } = parseVoice(key);
-      while (counts.length <= staff) counts.push(1);
+      // A voice of a staff the part has not: the reading left it out already (schema.md, section 5).
+      if (staff >= counts.length) continue;
       counts[staff] = Math.max(counts[staff] as number, voice + 1);
     }
   }
   return counts;
+}
+
+type StaffClef = PartJSON["staves"][number]["clef"];
+
+/**
+ * Each clef of the score as alphaTab's clef and octave mark. Tablature has none drawn: G2 as
+ * alphaTab's own. A treble clef an octave down draws its notes an octave over where they sound
+ * (alphaTab's `Ottavia._8vb` on the bar), as a guitar's or a tenor's.
+ */
+const CLEFS: Record<StaffClef, { clef: alphaTab.model.Clef; ottava: alphaTab.model.Ottavia }> = {
+  tab: { clef: model.Clef.G2, ottava: model.Ottavia.Regular },
+  neutral: { clef: model.Clef.Neutral, ottava: model.Ottavia.Regular },
+  treble: { clef: model.Clef.G2, ottava: model.Ottavia.Regular },
+  bass: { clef: model.Clef.F4, ottava: model.Ottavia.Regular },
+  "treble-8vb": { clef: model.Clef.G2, ottava: model.Ottavia._8vb },
+};
+
+/** The clef of a staff of a part, from its `staves`; one it has not, as its kind has by default. */
+function clefOf(part: PartJSON, staff: number): (typeof CLEFS)[StaffClef] {
+  const clef = part.staves[staff]?.clef ?? (part.kind === "fretted" ? "tab" : part.kind === "percussion" ? "neutral" : "treble");
+  return CLEFS[clef];
 }
 
 /**
@@ -346,7 +372,9 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
   const undrawnEntering = dynamicsUndrawn(previous, voiceCount);
   const undrawnLeavingBar: boolean[] = [];
   const atBar = new model.Bar();
-  atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
+  const { clef, ottava } = clefOf(part, staff);
+  atBar.clef = clef;
+  atBar.clefOttava = ottava;
   // A drum staff has no key: it would only draw sharps and flats on it.
   if (part.kind !== "percussion") {
     atBar.keySignature = keySig.fifths as alphaTab.model.KeySignature;

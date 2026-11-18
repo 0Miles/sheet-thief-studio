@@ -153,3 +153,82 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 ### 資料檔
 
 [`measurements/data/`](measurements/data/)：每個瀏覽器三組，`s2-stages-<瀏覽器>-headless`、`s2-keys-<瀏覽器>-headless`、`s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。
+
+## M3：游標幾何
+
+日期：2026-11-18　分支：`hiad-20261118/47-staves-geometry`（以 `hiad-20261118/studio` `86a0f76` 為底）　票：#47（[`spec/testing.md`](spec/testing.md) 第 5 節確認檢查 6）
+
+### 結論
+
+| 項目 | 結果 |
+|---|---|
+| 投影 | 譜表數與譜號改由聲部的 `staves` 決定（[`spec/schema.md`](spec/schema.md) 第 4 節的補充）。鍵盤聲部投影成兩個 staff（高音、低音），人聲一個；`treble-8vb` 是高音譜號加低八度記號 |
+| 第二個譜表、第二條聲線 | **達標**。18 個音（兩個譜表各兩條聲線、高音譜號低八度）上，游標中心與 alphaTab 回報的音符頭中心相差 **0 px**（橫向、縱向，取到 0.001 px）；門檻 1 px |
+| 空位置 | **達標**。98 個「拍點上沒有音的線或間」，游標中心與同一譜表上畫在那條線或間的音符頭相差 **0 px**；第二個譜表也一樣 |
+| 空聲線的附加位置 | 空的第二條聲線與空的第二個譜表都有游標位置：小節開頭，在自己的譜表上（第二條聲線和第一條聲線同一個譜表） |
+| `geometry.ts` | 公式不必改。只修了一個小地方：點在最上面那條線附近時 `cursorAtPoint` 回傳 `-0`，改成 `0` |
+
+M0 的 S3 說「`BarBounds` 的上緣就是第一條譜線」只在一個譜表上試過；這次第二個譜表的 `BarBounds` 也成立，所以五線譜的游標可以照原本的公式畫。之後的五線譜票（#48 的輸入模型）不受擋。
+
+### 環境與指令
+
+和 M1b 相同的機器與 Playwright 瀏覽器（見上一節）；這次只量 Chromium 158.0.8127.18（headless），視窗 1280 × 720，DPR 2（截圖用；量到的座標是 CSS px，與 DPR 無關）。量測對象是 `VITE_MEASURE=1` 的打包網頁，以 admin 開編輯視圖，開著播放器。
+
+```
+pnpm --filter @studio/web measure --project=chromium staves
+```
+
+### 做法
+
+`apps/web/e2e/measure/staves.spec.ts`，做法同 S3：經 `__studioMeasure.placeCursor`（這次多了 `voice` 參數）把游標放到指定的拍點與譜表位置，讀 `cursorRect()`（`ScoreRenderer.boundsOf`）與 `noteHeads()`（alphaTab 的 `noteHeadBounds`）。
+
+譜（`e2e/measure/scores.ts` 的 `stavesScore`）：兩個小節，第一小節四個四分音符，第二小節是空的。
+
+| 聲部 | 聲線 | 音（譜表位置：0 是最上面那條線、8 是最下面那條，往下加一是下一條線或間） |
+|---|---|---|
+| Piano（`treble`、`bass`） | `0:0` | F5（0）、C5（3）、G5（-1）、D5（2） |
+| | `0:1` | E4（8）、D4（9）、F4（7）、C4（10） |
+| | `1:0` | A3（0）、F2（9）、C4（-2）、E2（10） |
+| | `1:1`（二分音符） | C2（12）、C3（5） |
+| Guitar（`treble-8vb`） | `0:0` | E4（1）、E3（8）、B3（4）、G3（6）：畫高一個八度 |
+
+譜表位置是照譜號手算的（高音譜號最上面那條線是 F5，低音譜號是 A3，高音譜號低八度是 F4），不是從 `geometry.ts` 算出來的；音高對應到譜表位置的程式是 #48 的範圍。
+
+1. **音符上**：游標放在每個音的拍點與它的譜表位置，比較游標矩形的中心和音符頭矩形的中心（橫向、縱向）。
+2. **空位置**：游標放在每個拍點上「這個拍點沒有音」的譜表位置，和同一個譜表上畫在那個位置的音符頭比較縱向中心。這些位置有線也有間，包括加線。
+3. **空聲線**：第二小節的四條聲線（`0:0`、`0:1`、`1:0`、`1:1`）的附加位置，看游標在哪個譜表。
+
+同樣的三項比對也寫成 vitest，以 Node 的 alphaTab 排版鎖住（`packages/score-render/tests/geometry.test.ts` 的 #47 測試），不必開瀏覽器。
+
+### 數字
+
+| 比對 | 個數 | 最大差距 |
+|---|---|---|
+| 音符上，橫向 | 18 | 0 px |
+| 音符上，縱向 | 18 | 0 px |
+| 空位置，縱向 | 98（高音譜表 56、低音譜表 30、低八度 12） | 0 px |
+
+每個樣本在 [`m3-cursor-geometry.json`](measurements/data/m3-cursor-geometry.json)（`notes`、`empty`、`slots`、`environment`）。
+
+### 截圖
+
+| 位置 | 截圖 |
+|---|---|
+| 第二個譜表，F2（第 2 拍，位置 9） | [`m3-second-staff.png`](measurements/m3-second-staff.png) |
+| 第二條聲線，D4（第 2 拍，位置 9） | [`m3-second-voice.png`](measurements/m3-second-voice.png) |
+| 第二個譜表上沒有音的間（第 2 拍，位置 3，E3） | [`m3-second-staff-empty-space.png`](measurements/m3-second-staff-empty-space.png) |
+| 第二個譜表的第二條聲線，C3（二分音符，位置 5） | [`m3-second-staff-second-voice.png`](measurements/m3-second-staff-second-voice.png) |
+| 高音譜號低八度，E4 畫成 E5（位置 1） | [`m3-treble-8vb.png`](measurements/m3-treble-8vb.png) |
+| 空的第二條聲線的附加位置（第 2 小節） | [`m3-empty-second-voice.png`](measurements/m3-empty-second-voice.png) |
+
+![第二個譜表](measurements/m3-second-staff.png)
+
+![第二條聲線](measurements/m3-second-voice.png)
+
+![第二個譜表上沒有音的間](measurements/m3-second-staff-empty-space.png)
+
+### 仍然脆弱的地方
+
+- 「`BarBounds` 的上緣就是第一條譜線」仍是讀 alphaTab 內部得知的（M0 的 S3）；alphaTab 升版後要重跑這個量測。
+- 第二條聲線的音和第一條聲線相差一度或二度時，alphaTab 會把音符頭錯開；這次的譜刻意避開，游標的橫向位置是拍點的 `onNotesX`，錯開的那個音可能不在游標中心。輸入第二條聲線時（#45、#48）若遇到，要另外量。
+- 點擊選游標（`cursorAtPoint`）在兩條聲線同一時間都有拍點時，取先找到的那一個；譜表與譜表位置是對的（測試鎖住第二個譜表），聲線怎麼選屬於第二條聲線的輸入票。

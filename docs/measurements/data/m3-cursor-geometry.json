@@ -1,0 +1,1132 @@
+{
+ "environment": {
+  "mode": "headless",
+  "browser": "chromium 158.0.8127.18",
+  "node": "v24.10.0",
+  "os": "Windows_NT 10.0.26200 x64",
+  "cpu": "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
+  "logicalCpus": 16,
+  "memoryGb": 128,
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.8127.18 Safari/537.36",
+  "hardwareConcurrency": 16,
+  "deviceMemoryGb": 32,
+  "devicePixelRatio": 2,
+  "viewport": "1280x720",
+  "webAudio": true,
+  "timerStepMs": 0.09999999403953552,
+  "measuredAt": "2026-11-18T14:24:23.121Z"
+ },
+ "summary": {
+  "notes": 18,
+  "maxDx": 0,
+  "maxDy": 0,
+  "emptyPositions": 98,
+  "maxEmptyDy": 0
+ },
+ "notes": [
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "pitch": 77,
+   "position": 0,
+   "cursor": {
+    "x": 113.26333199598798,
+    "y": 133.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 116.05333199598797,
+    "y": 133.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "pitch": 72,
+   "position": 3,
+   "cursor": {
+    "x": 150.00683199598797,
+    "y": 147.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 152.79683199598796,
+    "y": 147.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "pitch": 79,
+   "position": -1,
+   "cursor": {
+    "x": 186.75033199598798,
+    "y": 129.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 189.54033199598797,
+    "y": 129.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "pitch": 74,
+   "position": 2,
+   "cursor": {
+    "x": 223.49383199598796,
+    "y": 142.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 226.28383199598795,
+    "y": 142.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "pitch": 64,
+   "position": 8,
+   "cursor": {
+    "x": 113.26333199598798,
+    "y": 169.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 116.05333199598797,
+    "y": 169.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "pitch": 62,
+   "position": 9,
+   "cursor": {
+    "x": 150.00683199598797,
+    "y": 174.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 152.79683199598796,
+    "y": 174.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "pitch": 65,
+   "position": 7,
+   "cursor": {
+    "x": 186.75033199598798,
+    "y": 165.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 189.54033199598797,
+    "y": 165.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "pitch": 60,
+   "position": 10,
+   "cursor": {
+    "x": 223.49383199598796,
+    "y": 178.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 226.28383199598795,
+    "y": 178.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "pitch": 57,
+   "position": 0,
+   "cursor": {
+    "x": 113.26333199598798,
+    "y": 245.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 116.05333199598797,
+    "y": 245.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "pitch": 41,
+   "position": 9,
+   "cursor": {
+    "x": 150.00683199598797,
+    "y": 286.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 152.79683199598796,
+    "y": 286.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "pitch": 60,
+   "position": -2,
+   "cursor": {
+    "x": 186.75033199598798,
+    "y": 236.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 189.54033199598797,
+    "y": 236.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "pitch": 40,
+   "position": 10,
+   "cursor": {
+    "x": 223.49383199598796,
+    "y": 290.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 226.28383199598795,
+    "y": 290.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "pitch": 36,
+   "position": 12,
+   "cursor": {
+    "x": 113.26333199598798,
+    "y": 299.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 116.05333199598797,
+    "y": 299.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "pitch": 48,
+   "position": 5,
+   "cursor": {
+    "x": 186.75033199598798,
+    "y": 268.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 189.54033199598797,
+    "y": 268.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 0,
+   "pitch": 64,
+   "position": 1,
+   "cursor": {
+    "x": 113.26333199598798,
+    "y": 351.415,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 116.05333199598797,
+    "y": 351.415,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 1,
+   "pitch": 52,
+   "position": 8,
+   "cursor": {
+    "x": 150.00683199598797,
+    "y": 382.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 152.79683199598796,
+    "y": 382.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 2,
+   "pitch": 59,
+   "position": 4,
+   "cursor": {
+    "x": 186.75033199598798,
+    "y": 364.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 189.54033199598797,
+    "y": 364.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 3,
+   "pitch": 55,
+   "position": 6,
+   "cursor": {
+    "x": 223.49383199598796,
+    "y": 373.915,
+    "width": 16.19999999999999,
+    "height": 9
+   },
+   "head": {
+    "x": 226.28383199598795,
+    "y": 373.915,
+    "width": 10.62,
+    "height": 9
+   },
+   "dx": 0,
+   "dy": 0
+  }
+ ],
+ "empty": [
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 0,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 1,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 2,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 3,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": -1,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "0:1",
+   "beat": 3,
+   "position": 7,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "position": -2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "position": 12,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 0,
+   "position": 5,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "position": -2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "position": 12,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 1,
+   "position": 5,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "position": 12,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 2,
+   "position": 5,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "position": -2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "position": 12,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:0",
+   "beat": 3,
+   "position": 5,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "position": -2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 0,
+   "position": 5,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "position": 0,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "position": 9,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "position": -2,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "position": 10,
+   "dy": 0
+  },
+  {
+   "part": 0,
+   "voice": "1:1",
+   "beat": 1,
+   "position": 12,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 4,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 0,
+   "position": 6,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 1,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 4,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 1,
+   "position": 6,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 1,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 2,
+   "position": 6,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 1,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 8,
+   "dy": 0
+  },
+  {
+   "part": 1,
+   "voice": "0:0",
+   "beat": 3,
+   "position": 4,
+   "dy": 0
+  }
+ ],
+ "slots": [
+  {
+   "voice": "0:0",
+   "rect": {
+    "x": 275.777331995988,
+    "y": 151.915,
+    "width": 3.15,
+    "height": 9
+   }
+  },
+  {
+   "voice": "0:1",
+   "rect": {
+    "x": 275.777331995988,
+    "y": 151.915,
+    "width": 3.15,
+    "height": 9
+   }
+  },
+  {
+   "voice": "1:0",
+   "rect": {
+    "x": 275.777331995988,
+    "y": 263.915,
+    "width": 3.15,
+    "height": 9
+   }
+  },
+  {
+   "voice": "1:1",
+   "rect": {
+    "x": 275.777331995988,
+    "y": 263.915,
+    "width": 3.15,
+    "height": 9
+   }
+  }
+ ]
+}

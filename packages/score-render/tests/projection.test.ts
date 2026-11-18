@@ -99,6 +99,57 @@ test("bars and parts become master bars and tracks, in score order, each kind on
   expect(score.tracks.map((track) => track.playbackInfo.program)).toEqual([29, 0, 4]);
 });
 
+test("a part has the staves its `staves` say, each with its clef, though nothing is written on them yet (#47)", () => {
+  const { doc, barIds } = band();
+  addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  addPart(doc, { name: "Guitar 8vb", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
+  const { score } = projectScore(docToJson(doc), settings);
+  const clefs = (track: number) => score.tracks[track]!.staves.map((staff) => staff.bars.map((bar) => [bar.clef, bar.clefOttava]));
+  const { Clef, Ottavia } = alphaTab.model;
+  const every = (clef: alphaTab.model.Clef, ottava = Ottavia.Regular) => barIds.map(() => [clef, ottava]);
+  // The tablature, the drums, the one treble staff of the keys.
+  expect(clefs(0)).toEqual([every(Clef.G2)]);
+  expect(clefs(1)).toEqual([every(Clef.Neutral)]);
+  expect(clefs(2)).toEqual([every(Clef.G2)]);
+  // Two staves for the piano, nothing written on the second; a treble clef an octave down for the other.
+  expect(clefs(3)).toEqual([every(Clef.G2), every(Clef.F4)]);
+  expect(clefs(4)).toEqual([every(Clef.G2, Ottavia._8vb)]);
+  expect(score.tracks[3]!.staves.map((staff) => [staff.showStandardNotation, staff.showTablature])).toEqual([
+    [true, false],
+    [true, false],
+  ]);
+});
+
+test("a beat written on the second staff of a part, or in a second voice, is in its place there: the voice key decides the staff and the voice (#47)", () => {
+  const { doc, barIds } = band();
+  const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const low = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[0]!), voice: "1:0" }, { value: 2 }), "n48", {});
+  const upper = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[0]!), voice: "0:1" }, { value: 4 }), "n67", {});
+  const projection = projectScore(docToJson(doc), settings);
+  const track = projection.score.tracks[3]!;
+  expect(track.staves).toHaveLength(2);
+  expect(projection.addresses.get(low.beatId!)).toEqual({ track: 3, staff: 1, bar: 0, voice: 0, beat: 0 });
+  expect(projection.addresses.get(upper.beatId!)).toEqual({ track: 3, staff: 0, bar: 0, voice: 1, beat: 0 });
+  expect(beatOf(projection, low.beatId!)!.notes[0]!.realValue).toBe(48);
+  expect(beatOf(projection, upper.beatId!)!.notes[0]!.realValue).toBe(67);
+  // The second voice of the first staff; the second staff has one voice only.
+  expect(track.staves.map((staff) => staff.bars[0]!.voices.length)).toEqual([2, 1]);
+});
+
+test("the first beat written on an empty second staff replaces its bar: the staff is there already, so the score is not projected again (#47)", () => {
+  const { doc, barIds } = band();
+  const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const projection = projectScore(docToJson(doc), settings);
+  const low = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[1]!), voice: "1:0" }, { value: 4 }), "n43", {});
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[1]!], settings)).toBe(1);
+  const whole = projectScore(json, settings);
+  const staffVoice = (of: Projection) => of.score.tracks[3]!.staves[1]!.bars[1]!.voices[0]!.beats.map((beat) => [beat.duration, beat.notes.map((note) => note.realValue)]);
+  expect(staffVoice(projection)).toEqual(staffVoice(whole));
+  expect(projection.addresses.get(low.beatId!)).toEqual({ track: 3, staff: 1, bar: 1, voice: 0, beat: 0 });
+  expect(projection.score.tracks[3]!.staves[1]!.bars[1]!.clef).toBe(alphaTab.model.Clef.F4);
+});
+
 test("the tuning of each fretted part is written beside its own tablature, not listed above the score where those of several parts overlap", () => {
   const { doc } = band();
   addPart(doc, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });

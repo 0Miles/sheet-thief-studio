@@ -102,6 +102,7 @@ Y.Doc
 
 - `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
 - 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
+  - **補充**（#47）：已改。投影的譜表數是 `staves.length`、每個譜表的譜號取 `staves[i].clef`（`treble` → alphaTab 的 G2、`bass` → F4、`treble-8vb` → G2 加 `clefOttava = _8vb`，音符畫高一個八度）；每個譜表的聲線數仍由 content 推出。寫法是 `projection.ts` 的 `staffVoiceCounts` 與 `clefOf`。所以在空的第二個譜表寫下第一個拍點時，`replaceBars` 照常就地換小節，不再因為譜表數變了而整份重投影；改譜號是聲部欄位的修改（`observeScore` 的 `structure`），照舊整份重投影。測試：`projection.test.ts` 的「a part has the staves its `staves` say …」與「the first beat written on an empty second staff …」。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
 
