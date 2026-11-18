@@ -20,7 +20,7 @@ beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
   app = buildApp({ config: testConfig(), redis, logger: false });
-  expect((await cli(["create-admin", "miles", "Miles"], `${PASSWORD}\n`)).code).toBe(0);
+  expect((await cli(sequelize, ["create-admin", "miles", "Miles"], `${PASSWORD}\n`)).code).toBe(0);
 });
 
 beforeEach(async () => {
