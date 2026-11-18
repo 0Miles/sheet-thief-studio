@@ -1,7 +1,7 @@
 // The tables as Sequelize models (docs/spec/accounts.md, section 1.2; docs/spec/collab.md, 1.1). Columns are snake_case
 // in Postgres and camelCase here. The tables themselves come from the migrations, never from
 // `sync()`.
-import type { BarsFragment, PartKind, Role } from "@studio/contracts";
+import type { BarsFragment, PartKind, Role, VersionReason } from "@studio/contracts";
 import {
   type CreationOptional,
   DataTypes,
@@ -78,8 +78,8 @@ export class Phrase extends Model<InferAttributes<Phrase>, InferCreationAttribut
   declare updatedAt: CreationOptional<Date>;
 }
 
-/** Why a version was made (docs/spec/collab.md, 8.3). */
-export type VersionReason = "last_disconnect" | "interval" | "before_restore";
+/** Why a version was made (docs/spec/collab.md, 8.3): `manual` is a member's, named as it is made. */
+export type { VersionReason };
 
 /** A version of a score (docs/spec/collab.md, section 8): its whole content at one moment. */
 export class Version extends Model<InferAttributes<Version>, InferCreationAttributes<Version>> {
