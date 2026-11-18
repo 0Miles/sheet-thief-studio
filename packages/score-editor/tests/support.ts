@@ -1,5 +1,5 @@
 // What the tests of the editor share: a score to type on, and keys as a keyboard sends them.
-import { addPart, createScore, cursorAt, docToJson, insertBars, type PartKind } from "@studio/score-model";
+import { addPart, createScore, cursorAt, docToJson, insertBars, type PartKind, type Staff } from "@studio/score-model";
 import { expect } from "vitest";
 import * as Y from "yjs";
 
@@ -25,13 +25,13 @@ export function otherMember(doc: Y.Doc) {
 /**
  * A score of empty bars (two unless told) and one part, an editor session on it with the cursor
  * in the append slot of the first bar and the keys of Windows and Linux unless told, and a clock
- * the test moves.
+ * the test moves. `staves` gives the part its staves (a keyboard's two), its kind's own unless told.
  */
-export function sessionOn(kind: PartKind = "fretted", bars = 2, platform: KeyPlatform = "other") {
+export function sessionOn(kind: PartKind = "fretted", bars = 2, platform: KeyPlatform = "other", staves?: Staff[]) {
   const doc = new Y.Doc();
   createScore(doc, "Demo");
   const barIds = insertBars(doc, { after: null, count: bars });
-  const partId = addPart(doc, { name: "Part", kind });
+  const partId = addPart(doc, { name: "Part", kind, ...(staves && { staves }) });
   const clock = { now: 0 };
   const session = createEditorSession(doc, { platform, cursor: cursorAt(doc, partId, barIds[0]!, kind === "fretted" ? 6 : 4), now: () => clock.now });
   /** Press a key `wait` milliseconds after the one before; true when the session handled it. */
@@ -39,7 +39,7 @@ export function sessionOn(kind: PartKind = "fretted", bars = 2, platform: KeyPla
     clock.now += wait;
     return session.press(keyOf(key, modifiers));
   };
-  const beats = (bar = 0) => docToJson(doc).parts[0]!.content[barIds[bar]!]!["0:0"]!;
+  const beats = (bar = 0, voice = "0:0") => docToJson(doc).parts[0]!.content[barIds[bar]!]![voice]!;
   return { doc, session, press, beats, cursor: () => session.cursor!, barIds, partId };
 }
 

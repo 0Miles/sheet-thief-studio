@@ -262,8 +262,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
   // Section 3: Shift and a letter turns a technique on and off, on a Mac as well. Tie also takes
-  // the fret of the note before; on staves it waits, as the other techniques do, for their keys
-  // to name the notes drawn on a line (keymap.md, section 3).
+  // the fret of the note before (on staves, below with the staff's keys).
   { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
   // A slide out steps through its kinds, a slide in through its own, each back to none.
   { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
@@ -292,6 +291,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "flatten", context: "pitched", keys: ["BracketLeft"], keymap: both("BracketLeft") },
   { effect: "octaveUp", context: "pitched", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "octaveDown", context: "pitched", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
+  // Section 3 on a staff (#49): tie, accent and staccato on the notes drawn on the cursor's line;
+  // tie on an empty line makes the notes the beat before draws there (`tieKeysAt`).
+  { effect: "tie", context: "pitched", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
+  { effect: "accent", context: "pitched", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
+  { effect: "staccato", context: "pitched", keys: ["Shift+KeyC"], keymap: both("Shift+KeyC") },
   // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },

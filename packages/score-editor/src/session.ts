@@ -84,6 +84,7 @@ import {
   strokeCycle,
   textAt,
   techniqueToggle,
+  tieKeysAt,
   tieToggle,
   type TimeSignature,
   toggleAnacrusis,
@@ -550,13 +551,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
    * else on the notes of the cursor's line (`noteKeysAt`: a string, or the drum pieces drawn on
-   * the line), where dead and tie may make a note, and a beat for it in the append slot.
+   * the line), where dead and tie may make a note, and a beat for it in the append slot. `keysAt`
+   * gives the keys at the cursor: a tie's (`tieKeysAt`) are, on an empty line of a staff, those of
+   * the notes the beat before draws there.
    */
-  function toggleNotes<D>(toggle: NoteToggle<D>): KeyCommand {
+  function toggleNotes<D>(toggle: NoteToggle<D>, keysAt: (doc: Y.Doc, at: Cursor) => string[] = noteKeysAt): KeyCommand {
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
       (at) => {
-        const keys = noteKeysAt(doc, at);
+        const keys = keysAt(doc, at);
         return keys.length === 0 ? at : markAppended(at, (here) => toggleKeysAt(doc, here, keys, toggle));
       },
     );
@@ -653,7 +656,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       case "octaveDown":
         return change((at) => moveNotesByOctave(doc, at, effect === "octaveUp" ? 1 : -1));
       case "tie":
-        return toggleNotes(tieToggle);
+        return toggleNotes(tieToggle, tieKeysAt);
       case "slideOut":
         return toggleNotes(slideOutCycle);
       case "slideIn":

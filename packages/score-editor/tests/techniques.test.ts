@@ -104,10 +104,10 @@ test("while read-only, a technique key changes nothing", () => {
   expect(refused).toBe(1);
 });
 
-test.each(["percussion", "pitched"] as const)("on a %s part, the fretted technique keys are not the session's (drums keep ghost and accent)", (kind) => {
+test.each(["percussion", "pitched"] as const)("on a %s part, the fretted technique keys are not the session's (drums keep ghost and accent, staves accent and staccato)", (kind) => {
   const { press } = sessionOn(kind);
-  const drums = kind === "percussion" ? ["g", "a"] : [];
-  for (const [letter] of [...TECHNIQUES, ["s"], ["e"], ["b"]]) expect(press(letter!, 1000, shift), letter).toBe(drums.includes(letter!));
+  const kept = kind === "percussion" ? ["g", "a"] : ["a", "c"];
+  for (const [letter] of [...TECHNIQUES, ["s"], ["e"], ["b"]]) expect(press(letter!, 1000, shift), letter).toBe(kept.includes(letter!));
   // Shift+↑ and Shift+↓ are a bend's semitones on a fretted part only; on a staff they are the octave (staff.test.ts), on drums nothing.
   for (const arrow of ["ArrowUp", "ArrowDown"]) expect(press(arrow, 1000, shift)).toBe(kind === "pitched");
 });
