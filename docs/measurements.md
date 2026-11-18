@@ -154,9 +154,60 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 [`measurements/data/`](measurements/data/)：每個瀏覽器三組，`s2-stages-<瀏覽器>-headless`、`s2-keys-<瀏覽器>-headless`、`s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。
 
+## M2：鼓的第二聲線
+
+日期：2026-11-18　分支：`hiad-20261118/45-drum-second-voice`（以 `hiad-20261118/studio` `86a0f76` 為底）　票：#45
+
+### 結論
+
+| 項目 | 結果 |
+|---|---|
+| 門檻 | 第二聲線上游標與音符頭的橫向差距 ≤ 1 px |
+| 第二聲線（腳：大鼓、踩鈸） | **達標**。12 個音符頭，橫向最差 0.09 px，縱向（游標在鼓件自己的線上）0 px |
+| 第一聲線（手，同一份譜對照） | 24 個音符頭，橫向最差 0.09 px，縱向 0 px：和第二聲線相同，也和 S3 一致 |
+| 空的第二聲線 | 附加位置的游標是小節開頭的細條（和空的第一聲線同樣算法），畫在第 2 小節的開頭 |
+| 幾何計算 | **不用改**。`geometry.ts` 的 `cursorRect` 以拍點所在的聲線（`BeatAddress.voice`）找 alphaTab 的 `BeatBounds`，第二聲線的 `onNotesX` 就是它自己音符頭的中心，即使和第一聲線的音在同一個位置、符桿方向相反 |
+
+### 環境
+
+和 M1b 相同的機器與版本（Windows 11、Playwright 1.65.0 的 Chromium 158 headless、alphaTab 1.9.0），視窗 1280 × 620，DPR 2（和 S3 的截圖相同）。只量 Chromium：幾何是 alphaTab 的排版結果，與瀏覽器無關（S3 也只量一個）。
+
+### 指令
+
+```
+pnpm --filter @studio/web measure --project=chromium voices
+```
+
+### 做法
+
+S3 的做法（[`spike-report.md`](spike-report.md) 的 S3）用在第二聲線：`apps/web/e2e/measure/voices.spec.ts` 開一份只有鼓的譜（`scores.ts` 的 `drumVoicesScore`），經 `window.__studioMeasure` 把游標放到兩條聲線的每一個拍點（`placeCursor` 多了選填的聲線參數），讀 `cursorRect()` 與 `noteHeads()`；每個音符頭再把游標放到那個鼓件的線上，比對游標中心與音符頭中心的橫向、縱向差距。
+
+- 第 1 小節：手是 8 個八分音符的 hi-hat（第 3、7 個加小鼓）；腳是四分大鼓、八分踩鈸、八分大鼓、四分大鼓＋踩鈸、四分踩鈸。腳的第 2、3 個拍點落在手的拍點之間或同一位置。
+- 第 2 小節：只有手，第二聲線空著（量附加位置）。
+- 第 3 小節：手是四分音符；腳有八分、二分、十六分，補滿整個小節。
+- 第 4 小節：全空。
+
+量測斷言每個音符頭的橫向差距 ≤ 1 px，套件不過就是不達標。
+
+| 位置 | 截圖 |
+|---|---|
+| 第二聲線，第 1 小節第 3 拍點（反拍的大鼓，大鼓的線） | [`m2-drum-second-voice.png`](measurements/m2-drum-second-voice.png) |
+| 空的第二聲線，第 2 小節的附加位置 | [`m2-drum-second-voice-empty-bar.png`](measurements/m2-drum-second-voice-empty-bar.png) |
+
+![第二聲線上的游標](measurements/m2-drum-second-voice.png)
+
+### 看到的其他事
+
+- 第二聲線空的小節（第 2、4 小節）沒有畫出休止；第 1 小節的第二聲線剛好填滿，第 3 小節也是，所以整張圖沒有第二聲線的休止。
+- alphaTab 把第一條以外的聲線畫成半透明的灰色（`display.resources.secondaryGlyphColor`，預設 `rgba(0,0,0,100/255)`）。鼓譜的慣例是兩條聲線都是黑色；要不要改另外決定（見 status record 與另開的 issue），不影響幾何。
+
+### 資料檔
+
+[`measurements/data/m2-drum-second-voice.json`](measurements/data/m2-drum-second-voice.json)：每個音符頭一筆（聲線、小節、拍點、鼓件、線、`dx`、`dy`，CSS px），加上摘要。
+
 ## M3：游標幾何
 
-日期：2026-11-18　分支：`hiad-20261118/47-staves-geometry`（以 `hiad-20261118/studio` `50ccf74` 為底；量測時的底是 `86a0f76`，之後 rebase 到 `50ccf74`。兩者在 `packages/score-render` 與 `apps/web/src/measureHook.ts` 上沒有差異，數字仍然有效）　票：#47（[`spec/testing.md`](spec/testing.md) 第 5 節確認檢查 6）
+日期：2026-11-18　分支：`hiad-20261118/47-staves-geometry`（合併 `hiad-20261118/studio` `d935cd9` 之後重量，含 #45 的鼓第二聲線；數字和合併前在 `86a0f76`、`50ccf74` 上量的相同）　票：#47（[`spec/testing.md`](spec/testing.md) 第 5 節確認檢查 6）
 
 ### 結論
 
@@ -180,7 +231,7 @@ pnpm --filter @studio/web measure --project=chromium staves
 
 ### 做法
 
-`apps/web/e2e/measure/staves.spec.ts`，做法同 S3：經 `__studioMeasure.placeCursor`（這次多了 `voice` 參數）把游標放到指定的拍點與譜表位置，讀 `cursorRect()`（`ScoreRenderer.boundsOf`）與 `noteHeads()`（alphaTab 的 `noteHeadBounds`）。
+`apps/web/e2e/measure/staves.spec.ts`，做法同 S3：經 `__studioMeasure.placeCursor`（第 5 個參數 `voice`，和 M2 的量測用同一個）把游標放到指定的拍點與譜表位置，讀 `cursorRect()`（`ScoreRenderer.boundsOf`）與 `noteHeads()`（alphaTab 的 `noteHeadBounds`）。
 
 譜（`e2e/measure/scores.ts` 的 `stavesScore`）：兩個小節，第一小節四個四分音符，第二小節是空的。
 

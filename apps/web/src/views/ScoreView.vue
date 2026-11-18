@@ -13,7 +13,7 @@
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
-import { type ClosedNotice, type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
+import { type ClosedNotice, type CollabTicket, type PhraseSummary, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   barsWithContent,
@@ -21,6 +21,9 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  type DropRefusal,
+  type Dropped,
+  type DropTarget,
   type Flag,
   flagsOf,
   type FlagStop,
@@ -40,7 +43,7 @@ import {
   type TimeSignature,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PartMix, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
@@ -54,6 +57,7 @@ import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
+import PhraseSidebar from "../components/PhraseSidebar.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
@@ -62,6 +66,7 @@ import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarr
 import { measureEditView } from "../measureHook";
 import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
+import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { barsToSave, type BarsToSave } from "../savePhrase";
@@ -209,11 +214,32 @@ const flagStop = shallowRef<FlagStop | null>(null);
 /** The key of the toolbar's next-flag button, as this platform names it. */
 const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
 /** The keys of the toolbar's buttons of bars, as this platform names them (docs/spec/keymap.md, section 7). */
-const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
+const barKeys = {
+  insert: keyNameOf("insertBarBefore", keyPlatform()),
+  remove: keyNameOf("deleteBars", keyPlatform()),
+  panel: keyNameOf("barPanel", keyPlatform()),
+  phrases: keyNameOf("phraseSidebar", keyPlatform()),
+};
 /** Where the bars a structural command works on are drawn, dashed over every part, out of the reserved areas. */
 const structureRects = shallowRef<Rect[]>([]);
-/** The panel of the cursor's bar is open (docs/spec/commands.md, section 6): the editable view only. */
-const panelOpen = ref(false);
+/**
+ * The one panel at the side of the score, null while none is: the panel of the cursor's bar
+ * (docs/spec/commands.md, section 6), the panel of the parts (7.1 and 7.2) and the phrase sidebar
+ * (docs/spec/phrases.md, section 6) in the editable view only; the mixer in any view but the narrow
+ * Read view, whose drawer has it.
+ */
+type SidePanel = "bar" | "parts" | "mixer" | "phrases";
+const side = ref<SidePanel | null>(null);
+const panelOpen = computed(() => side.value === "bar");
+const partsOpen = computed(() => side.value === "parts");
+const mixerOpen = computed(() => side.value === "mixer");
+const sidebarOpen = computed(() => side.value === "phrases");
+
+/** Open a panel at the side of the score, closing the one open there: the structural boxes follow the bar's panel. */
+function openSide(panel: SidePanel): void {
+  side.value = panel;
+  placeCursor();
+}
 /** The other tabs on the score (docs/spec/views.md, section 8); never any for a guest, who takes no part in the presence. */
 const peers = shallowRef<Peer[]>([]);
 /** Where the other tabs' cursors, name tags and selections are drawn, out of the reserved areas. */
@@ -259,8 +285,6 @@ const {
 const playback = ref<PlaybackOptions>({ metronome: false, countIn: false, whilePlaying: "a" });
 /** The member's mix and speed of this score, kept in this browser under its id. */
 const mix = shallowRef<ScoreMix>({ parts: new Map(), speed: 1 });
-/** The panel of the mixer is open, at the side of the score (in the narrow Read view, the drawer has it). */
-const mixerOpen = ref(false);
 /** Behaviour (b): what plays is the score before a change (docs/spec/views.md, section 10). */
 const behind = ref(false);
 /** When the sound is made again after a change of content (docs/spec/playback.md, section 3). */
@@ -353,18 +377,12 @@ const mixerParts = computed(() => {
 
 /** The toolbar's button: the mixer opens at the side of the score, alone there, or closes. */
 function toggleMixer(): void {
-  if (mixerOpen.value) {
-    closeMixer();
-    return;
-  }
-  panelOpen.value = false;
-  partsOpen.value = false;
-  placeCursor();
-  mixerOpen.value = true;
+  if (mixerOpen.value) closeMixer();
+  else openSide("mixer");
 }
 
 function closeMixer(): void {
-  mixerOpen.value = false;
+  side.value = null;
   focusScore();
 }
 
@@ -401,17 +419,9 @@ const panel = computed(() => (panelOpen.value && score.value !== null ? barPanel
 function togglePanel(): void {
   if (view.value !== "editable") return;
   if (panelOpen.value) closePanel();
-  else {
-    // One panel at the side of the score at a time.
-    partsOpen.value = false;
-    mixerOpen.value = false;
-    panelOpen.value = true;
-    placeCursor();
-  }
+  else openSide("bar");
 }
 
-/** The panel of the parts is open (docs/spec/commands.md, 7.1 and 7.2): the editable view only. */
-const partsOpen = ref(false);
 /** The part the member asked to delete, while the page asks them first; null otherwise. */
 const deleting = ref<string | null>(null);
 /** The title bar is being changed. */
@@ -448,17 +458,132 @@ watch(deletion, (asked) => {
 function toggleParts(): void {
   if (view.value !== "editable") return;
   if (partsOpen.value) closeParts();
-  else {
-    panelOpen.value = false;
-    mixerOpen.value = false;
-    placeCursor();
-    partsOpen.value = true;
-  }
+  else openSide("parts");
 }
 
 function closeParts(): void {
-  partsOpen.value = false;
+  side.value = null;
   focusScore();
+}
+
+/** The contents of the phrases previewed and dropped, each asked for once per revision. */
+const contents = phraseContents();
+/** The phrase dragged from the sidebar, while it is. */
+const dragged = shallowRef<PhraseSummary | null>(null);
+/** Where the phrase dragged would go now, and the boxes drawn there, out of the reserved areas. */
+const dropSpot = shallowRef<DropSpot | null>(null);
+const dropRects = shallowRef<Rect[]>([]);
+/** The cursor's part, which the phrases the sidebar lists fit. */
+const cursorPart = computed(() => score.value?.parts.find((part) => part.id === presence.value.cursor?.partId));
+
+/** F4, or the toolbar's button: the sidebar opens, the keyboard going to its search box, or closes, the keyboard back on the score. */
+function toggleSidebar(): void {
+  if (view.value !== "editable") return;
+  if (sidebarOpen.value) closeSidebar();
+  else openSide("phrases");
+}
+
+function closeSidebar(): void {
+  side.value = null;
+  focusScore();
+}
+
+/**
+ * Tell the member something anew: the notice is emptied first, so that the same words said again
+ * (the same hint of two drops) are a change the screen reader reads out again.
+ */
+function say(said: string): void {
+  notice.value = null;
+  void nextTick(() => {
+    notice.value = said;
+  });
+}
+
+/**
+ * What a drop tells the member, no dialog (docs/spec/commands.md, 5.7): why nothing went in, or its
+ * hints; a drop with nothing to tell takes away what an earlier one said.
+ */
+function tellDrop(result: Dropped | DropRefusal | null): void {
+  if (result === null) return;
+  if (typeof result === "string") say(text.phraseSidebar.refused[result]);
+  else if (result.hints.length > 0) say(result.hints.map((hint) => text.phraseSidebar.hints[hint]).join("；"));
+  else notice.value = null;
+}
+
+/** Drop a phrase on a bar of a part, once its content is here: one command, undone with Ctrl+Z. */
+async function dropPhrase(phrase: PhraseSummary, target: DropTarget): Promise<void> {
+  let fragment;
+  try {
+    fragment = await contents.of(phrase);
+  } catch (failure) {
+    say(refusal(failure));
+    return;
+  }
+  if (session === undefined || view.value !== "editable") return;
+  tellDrop(session.drop(target, fragment));
+}
+
+/** Enter in the sidebar: the phrase goes on the cursor's bar, of the cursor's part. */
+function dropAtCursor(phrase: PhraseSummary): void {
+  const at = session?.cursor;
+  if (at == null) return;
+  void dropPhrase(phrase, { partId: at.partId, barId: at.barId });
+}
+
+function onDrag(phrase: PhraseSummary | null): void {
+  dragged.value = phrase;
+  if (phrase === null) forgetDropSpot();
+}
+
+function forgetDropSpot(): void {
+  dropSpot.value = null;
+  dropRects.value = [];
+}
+
+/** Where on the score the pointer is, while a phrase is dragged: the bar `hitTest` gives, and whether it can go there. */
+function spotAt(event: DragEvent): DropSpot | null {
+  const phrase = dragged.value;
+  if (phrase === null || engine === undefined || host.value === undefined || score.value === null) return null;
+  const box = host.value.getBoundingClientRect();
+  return dropSpotOf(score.value, engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top), phrase);
+}
+
+/**
+ * A phrase dragged over the score: the bars it would replace are drawn, or the bar of a part of
+ * another kind, marked as one it cannot be dropped on (no drop is let through there).
+ */
+function onDragOver(event: DragEvent): void {
+  if (dragged.value === null) return;
+  const spot = spotAt(event);
+  if (spot !== null && !spot.refused) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  } else if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+  const before = dropSpot.value;
+  if (spot !== null && before !== null && spot.partId === before.partId && spot.barId === before.barId) return;
+  dropSpot.value = spot;
+  dropRects.value =
+    spot === null || engine === undefined
+      ? []
+      : selectionBoxes(engine.renderer, { kind: "bars", partId: spot.partId, anchorBarId: spot.barId, focusBarId: spot.last }, reserved.value);
+}
+
+/** Out of the score, not into something on it. */
+function onDragLeave(event: DragEvent): void {
+  if (event.relatedTarget instanceof Node && scroller.value?.contains(event.relatedTarget)) return;
+  forgetDropSpot();
+}
+
+function onDrop(event: DragEvent): void {
+  const phrase = dragged.value;
+  const spot = spotAt(event);
+  forgetDropSpot();
+  dragged.value = null;
+  if (phrase === null || spot === null || spot.refused) return;
+  event.preventDefault();
+  // The score has the keyboard: Ctrl+Z undoes the drop.
+  focusScore();
+  void dropPhrase(phrase, { partId: spot.partId, barId: spot.barId });
 }
 
 function onAddPart(preset: PartPresetId, tuning: number[] | undefined): void {
@@ -548,7 +673,7 @@ function onPhraseSaved(name: string): void {
 }
 
 function closePanel(): void {
-  panelOpen.value = false;
+  side.value = null;
   placeCursor();
   focusScore();
 }
@@ -781,6 +906,11 @@ function onKey(event: KeyboardEvent): void {
   if (pageEffect === "barPanel") {
     event.preventDefault();
     togglePanel();
+    return;
+  }
+  if (pageEffect === "phraseSidebar") {
+    event.preventDefault();
+    toggleSidebar();
     return;
   }
   stopFollowing();
@@ -1104,6 +1234,9 @@ onBeforeUnmount(() => {
           <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleParts">
             {{ text.parts.panel }}
           </AppButton>
+          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleSidebar">
+            {{ text.phraseSidebar.open }}
+          </AppButton>
         </div>
         <!--
           Without a range of bars the button is disabled only to assistive technology (aria-disabled):
@@ -1147,10 +1280,17 @@ onBeforeUnmount(() => {
         </ul>
         <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
-        <p v-if="notice" class="score__notice" role="status">
-          <span>{{ notice }}</span>
-          <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
-        </p>
+        <!--
+          The live region is always in the page, only what is in it changes: one inserted with its
+          words is not read out everywhere. The notice itself (`.score__notice`) is in it only while
+          there is one, so that "no notice" is no element, as before.
+        -->
+        <div class="score__status" role="status">
+          <p v-if="notice" class="score__notice">
+            <span>{{ notice }}</span>
+            <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
+          </p>
+        </div>
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
@@ -1173,6 +1313,9 @@ onBeforeUnmount(() => {
         @keydown="onKey"
         @pointerdown="onPointer"
         @scroll.passive="onScroll"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
@@ -1247,6 +1390,18 @@ onBeforeUnmount(() => {
                 rx="2"
               />
             </template>
+            <rect
+              v-for="(box, index) in dropRects"
+              :key="`drop-${index}`"
+              data-drop-target
+              :data-drop="dropSpot?.refused ? 'refused' : 'ok'"
+              :data-part="dropSpot?.partId"
+              :class="['score__drop', { 'score__drop--refused': dropSpot?.refused }]"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+            />
             <rect v-if="cursorRect" data-cursor :class="['score__cursor', { 'score__cursor--read': view === 'readOnlyEdit' }]" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
           <!-- The names are what members typed: text only, never markup. -->
@@ -1269,6 +1424,14 @@ onBeforeUnmount(() => {
               >{{ mark.name }}</span
             >
           </template>
+          <!-- Inside the box of the bar it is about, which is clear of the reserved areas. -->
+          <span
+            v-if="dropSpot?.refused && dropRects[0]"
+            class="score__drop-label"
+            data-drop-label
+            :style="{ left: `${dropRects[0].x + 2}px`, top: `${dropRects[0].y + 2}px`, maxWidth: `${Math.max(dropRects[0].width - 4, 0)}px` }"
+            >{{ text.phraseSidebar.cannotDrop }}</span
+          >
           <InlineTextEntry
             v-if="textEntry"
             :rect="textEntry.rect"
@@ -1307,6 +1470,17 @@ onBeforeUnmount(() => {
         @program="onProgram"
         @clef="onClef"
         @close="closeParts"
+      />
+      <PhraseSidebar
+        v-if="view === 'editable'"
+        v-show="sidebarOpen"
+        :platform="keyPlatform()"
+        :open="sidebarOpen"
+        :part="cursorPart"
+        :contents="contents"
+        @close="closeSidebar"
+        @drop="dropAtCursor"
+        @drag="onDrag"
       />
       <aside v-if="mixerOpen && view && !narrow" class="score__side" data-mixer-panel :aria-label="text.mixer.title">
         <header class="score__side-header">
@@ -1421,11 +1595,14 @@ onBeforeUnmount(() => {
 .score__sync[data-sync="offline"] {
   color: var(--danger);
 }
+.score__status {
+  margin: 0 0 0 auto;
+}
 .score__notice {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin: 0 0 0 auto;
+  margin: 0;
   font-size: 0.875rem;
 }
 .score__error {
@@ -1523,6 +1700,26 @@ onBeforeUnmount(() => {
 /* The read-only edit view's cursor: pale, nothing is typed there (docs/spec/views.md, section 4). */
 .score__cursor--read {
   fill: rgba(234, 88, 12, 0.18);
+}
+/* Where a phrase dragged would go: filled only, as the selection is. */
+.score__drop {
+  fill: rgba(22, 163, 74, 0.22);
+}
+/* A part of another kind: the phrase cannot be dropped there. */
+.score__drop--refused {
+  fill: rgba(220, 38, 38, 0.22);
+}
+.score__drop-label {
+  position: absolute;
+  z-index: 5;
+  overflow: hidden;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* The other members' marks, in their colour (`fill`): filled only, as one's own are. */
 .score__peer-cursor--edit {

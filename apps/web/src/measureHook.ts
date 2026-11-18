@@ -51,11 +51,7 @@ export interface StudioMeasureHook {
   cursorRect(): Rect | null;
   /** Where the renderer drew the note heads of the cursor's beat. */
   noteHeads(): NoteHead[];
-  /**
-   * Put the cursor on a beat (or, with -1, in the append slot of an empty voice) of a bar of a
-   * part, all by index; in `voice` (`"<staff>:<voice>"`), the first voice of the first staff when
-   * left out.
-   */
+  /** Put the cursor on a beat (or, with -1, in the append slot of an empty voice) of a bar of a part, all by index, in a voice ("0:0" unless told). */
   placeCursor(part: number, bar: number, beat: number, line: number, voice?: string): Cursor | null;
   /** Change one fret in a bar of a part (by index) as a member would, and wait for the drawing. */
   editBar(part: number, bar: number): Promise<RenderSample>;

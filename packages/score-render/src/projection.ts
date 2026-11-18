@@ -379,6 +379,8 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
   }
   const beatIds: string[][] = [];
   const content = part.content[bar.id] ?? {};
+  // The dynamics the voices before draw, by tick from the start of the bar.
+  const drawnBefore = new Map<number, AtDynamic[]>();
   for (let voice = 0; voice < voiceCount; voice++) {
     const atVoice = new model.Voice();
     atBar.addVoice(atVoice);
@@ -391,6 +393,8 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
     // Whether a dynamic is written that no beat has been drawn with yet: the beat that draws it
     // draws the one in force there, the last written.
     let undrawn = undrawnEntering[voice] as boolean;
+    const drawnHere: [number, AtDynamic][] = [];
+    let tick = 0;
     for (const [index, beat] of beats.entries()) {
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
       const atBeat = projectBeat(part, beat, beatAfter(beats, index, following), dynamic);
@@ -399,8 +403,16 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
         atBeat.showDynamics = true;
         undrawn = false;
       }
+      if (atBeat.showDynamics && !atBeat.isRest) {
+        // The same dynamic drawn at the same place by a voice before: once is enough. alphaTab
+        // would draw it again, as it skips its own check when `showDynamics` is set (#30, #45).
+        if (drawnBefore.get(tick)?.includes(atBeat.dynamics)) atBeat.showDynamics = false;
+        else drawnHere.push([tick, atBeat.dynamics]);
+      }
+      tick += beatTicks(beat);
       atVoice.addBeat(atBeat);
     }
+    for (const [at, drawn] of drawnHere) drawnBefore.set(at, [...(drawnBefore.get(at) ?? []), drawn]);
     undrawnLeavingBar.push(undrawn);
     if (beats.length === 0 && (pickup === null || voice > 0)) {
       // An empty first voice is a whole-bar rest; other voices stay invisible, and take no time.
