@@ -322,7 +322,7 @@ Editor 與 Owner 可以新增、刪除、重新排序聲部。
     - 沒有游標時，復原、重做與聲部面板、標題列的設定類指令照常執行（它們不需要游標），其他按鍵不處理。
     - 測試：`packages/score-model/tests/parts.test.ts`、`packages/score-editor/tests/parts.test.ts`、`packages/score-render/tests/engine.test.ts`，以及 `apps/web/e2e/parts.spec.ts` 的兩個 e2e（打開一份沒有聲部的團譜、從面板新增後繼續打譜；兩位成員同時刪除之後按 `Ctrl+Z`）。
   - **補充**（#24）：刪除確認對話框開著時，那個聲部被別人刪掉，對話框關閉、不再記著要刪的聲部，聲部之後被復原也不會自己再跳出來。
-- `replaceScore(json)`：還原版本用。在一筆交易裡以版本的內容取代 `meta` 的 `title`、`artist`，以及所有小節與聲部；保留版本裡的 id；是一個復原步驟。流程見 [`collab.md`](collab.md)。
+- `replaceScore(json)`：還原版本用。在一筆交易裡以版本的內容取代 `meta` 的 `title`、`artist`，以及所有小節與聲部；保留版本裡的 id；是一個復原步驟。流程見 [`collab.md`](collab.md)。**補充**（#68）：score-model 的 `replaceScore(doc, version, migrations?)`（`migrateJson` 再 `jsonToDoc`）；`EditorSession.replaceScore(version)` 和其他設定類指令一樣不需要游標、唯讀時拒絕，讀不懂的版本回 false、不改文件；游標所在的小節或聲部不在版本裡時回到譜首。測試：`packages/score-model/tests/restore.test.ts`、`packages/score-editor/tests/restore.test.ts`。
 
 ## 8. 復原
 

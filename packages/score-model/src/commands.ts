@@ -64,6 +64,8 @@ import {
   voiceKeys,
   withinPartLimits,
 } from "./schema";
+import { writeScore } from "./build";
+import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
@@ -213,6 +215,21 @@ function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: 
   const upper = end < order.length ? keyAt(end) : null;
   const keys = generateNKeysBetween(lower, upper, count);
   return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
+}
+
+/**
+ * `count` ordering keys in a row, for items written anew all at once (a restore), in an interval
+ * of their own: a stem made as `keysAfter` makes a first key (`withSuffix`: "a0" and five random
+ * digits), each key the stem followed by the fraction a key between "a0" and "a1" has, in order.
+ * Every key of the run sorts after the stem and before any other stem, so two runs made at once
+ * never mix. `keysAfter` itself would not do: each of its keys has a suffix of its own, so two
+ * runs made from nothing would take turns (a0x, a0y, a1x, a1y…).
+ */
+function keysOfARun(count: number): string[] {
+  if (count === 0) return [];
+  const first = generateKeyBetween(null, null);
+  const stem = withSuffix(first, null);
+  return generateNKeysBetween(first, generateKeyBetween(first, null), count).map((key) => stem + key.slice(first.length));
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -1334,6 +1351,20 @@ export function setArtist(doc: Y.Doc, artist: string): boolean {
   if (artist.length > MAX_TITLE) return false;
   writeField(metaOf(doc), "artist", artistSchema, artist === "" ? undefined : artist);
   return true;
+}
+
+/**
+ * Restore a version in place (docs/spec/collab.md, 8.5): one command, one transaction of this
+ * member's, that writes the version over the score as this document knows it (title, artist,
+ * every bar and part), its ids kept (`writeScore`). A version of an older schema is brought up to
+ * date first (`migrateJson`). Throws, changing nothing, when it cannot be: newer than this code,
+ * missing a step, or not a score. The bars and parts are put in a run of keys of their own
+ * (`keysOfARun`): bars or parts others add meanwhile, which this document has not seen and so
+ * cannot take away, stay beside the version's, never among them; so do those of another member
+ * restoring at the same time.
+ */
+export function replaceScore(doc: Y.Doc, version: unknown, migrations: readonly Migration[] = MIGRATIONS): void {
+  writeScore(doc, migrateJson(version, migrations), keysOfARun);
 }
 
 // Parts (docs/spec/commands.md, 7.1 and 7.2) ------------------------------------------------------

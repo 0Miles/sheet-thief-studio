@@ -160,7 +160,7 @@
 1. **最後一個連線離開時**：Hocuspocus 的 `onDisconnect`，剩 0 個連線時，用記憶體裡的文件建立。**補充**：只用 `onDisconnect`，不在 `afterUnloadDocument` 再建一次（內容比較也會擋掉重複，但文件卸載後就不在記憶體裡了）。
 2. **連續編輯中，每 10 分鐘一次**：文件載入期間的計時器。
 3. **還原前**（`reason = 'before_restore'`）：見 8.5。**補充**：內容和最新版本相同時不另建，直接回傳最新版本的 id。
-4. **補充**（#67）：**成員存成命名版本**（`reason = 'manual'`，建立時就帶 `name`）：Owner 或 Editor 在版本頁要求，一律建立新的一筆，不比較內容（這是成員明確的要求）。內容是伺服器當下的（[`routes.md`](routes.md) 3.6）；還原前的版本（3）要用同一個來源（`collab.saveVersion`），由 #68 接上。
+4. **補充**（#67）：**成員存成命名版本**（`reason = 'manual'`，建立時就帶 `name`）：Owner 或 Editor 在版本頁要求，一律建立新的一筆，不比較內容（這是成員明確的要求）。內容是伺服器當下的（[`routes.md`](routes.md) 3.6）；還原前的版本（3）用同一個來源（`collab.saveVersion`，#68）。
 
 **補充**（#17）：
 
@@ -193,17 +193,26 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 4. 成功之後，客戶端送出 Command `replaceScore(versionJson)`：在一筆交易裡以版本的內容取代現有內容（`meta` 的 `title`、`artist`，所有小節與聲部），保留版本裡的 id，是一個復原步驟。
 5. 這筆交易經由 WebSocket 送出；100 × 5 約 501 KB，所以單則訊息的上限是 8 MB（[`security.md`](security.md)）。
 
-- 同時正在被別人修改的內容會消失；事前存下的版本就是保險。
+- 同時正在被別人修改的內容會消失；事前存下的版本就是保險。**補充**（#68，host 裁定）：精確地說，還原取代的是**還原當下這個分頁看得到的**內容（`meta` 的 `title`、`artist`，以及這份文件已知的小節與聲部）。在 CRDT 下刪不掉還沒收到的別人新增：其他人同時新增、還沒同步到這個分頁的小節與聲部會保留下來，排在版本的小節、聲部旁邊，不會插進中間；兩人同時還原，結果是兩個版本並存，各自連續。
 - `jsonToDoc` 放在 `score-model`，和匯入共用。
-- **補充**：`/scores/:id/versions` 是團譜頁裡的一個路由，和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider；`replaceScore` 在這份文件上執行，完成後回到 `/scores/:id`。同一個分頁可以用復原鍵（`Ctrl+Z`，Mac 是 `Cmd+Z`）復原這次還原。
+- **補充**：`/scores/:id/versions` 是團譜頁裡的一個路由，和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider；`replaceScore` 在這份文件上執行，完成後回到 `/scores/:id`。同一個分頁可以用復原鍵（`Ctrl+Z`，Mac 是 `Cmd+Z`）復原這次還原。**補充**（#68）：可編輯視圖與 Read view（Owner、Editor 在不能打譜的裝置上）都可以；Read view 接上鍵盤時按復原鍵、重做鍵生效。
 - 不做「還原成新團譜」，不做逐小節的差異比對或合併。
+- **補充**（#68）：實作方式。
+  - 路由：`/scores/:id` 是 `ScorePage.vue`，`versions` 是它的子路由。版本頁顯示時，譜頁的 `ScoreView` 仍然掛著、不顯示（`visibility: hidden`、`inert`，仍照視窗寬度排版，所以譜面寬度不變），`Y.Doc`、provider、`EditorSession` 與它的復原堆疊都留著；進版本頁時停止播放、關掉刪除聲部的確認對話框（`AppConfirmDialog` 經 `AppModal` teleport 到 `body`，不在隱藏的譜裡，留著會蓋在版本頁上；版本頁自己的還原對話框也 teleport 到 `body`，不受 `inert` 影響），回到譜頁時把鍵盤交回譜面。直接打開 `/scores/:id/versions`，或在版本頁上譜被重新開啟（第 7 節），譜一開始就在版本頁底下。
+  - **補充**（#68，合併 #102 後）：版本頁顯示時伺服器送來 `closed` 通知（2.1）：譜頁照常停止重連、丟掉 provider（之後 `restoreVersion` 一律 `notOpen`，什麼都不送），並發出 `stopped`；`ScorePage` 收到就從版本頁回到 `/scores/:id`（`replace`），讓成員看到譜頁上的原因與「重新載入」。正在進行中的還原在寫入前就被拒絕（`replace` 先檢查 provider 還在）。
+  - 在場（第 5 節）：版本頁顯示時，這個分頁仍連著 `/collab`，仍是在場的成員；它送出的狀態改成 `mode: "read"`、沒有游標與選取（和 Read view 一樣），所以其他成員在成員名單看到他「閱讀中」、譜上沒有他的游標。回到譜頁後恢復原本的模式與游標。
+  - 流程在 `apps/web/src/restore.ts` 的 `restoreVersion`：譜還沒同步完成（`ScoreView` 還沒 `start`）或這個分頁不能修改時，什麼都不送（`notOpen`），因為寫進還沒同步的空文件，伺服器的內容之後會併到版本旁邊。否則 `POST`（不帶 `name`）→ `GET` 版本 → 寫入。前兩步任何一步失敗就不寫入、顯示錯誤。寫入成功後回到 `/scores/:id`。
+  - 寫入一律走 `EditorSession.replaceScore`（一個復原步驟；唯讀時拒絕）。可編輯視圖用原本的 session；Owner、Editor 的 Read view 開一個沒有游標的 session（`createEditorSession` 的 `cursorless`）：只有復原、重做兩個鍵有作用，點擊與復原都不產生游標，所以不會變成能打譜。`replaceScore(doc, version, migrations?)` 在 `commands.ts`：先 `migrateJson` 再寫入（`build.ts` 的 `writeScore`，和 `jsonToDoc` 共用），origin 是 `LOCAL`；讀不懂的版本丟例外、不改文件（session 的版本回 false）。
+  - 排序鍵：`jsonToDoc` 從零產生鍵、不加後綴；還原的小節與聲部各用一串自己的鍵（`commands.ts` 的 `keysOfARun`，[`schema.md`](schema.md) 第 1 節），所以和別人同時新增的、或同時還原的另一個版本不會交錯。測試：`packages/score-model/tests/restore.test.ts`（兩份文件同時還原、交換更新，跑 50 次）。
+  - 確認對話框另外寫明：取代的是這個分頁目前看到的內容、其他人同時所做的修改會被取代並可以從「還原前」的版本找回、他們剛新增還沒同步到的小節與聲部會保留、回到譜頁可以用復原鍵復原。
+  - e2e 掛鉤：見 [`testing.md`](testing.md) 第 2 節。
 
 ### 8.6 預覽（M5）
 
 - 版本列表顯示建立時間、原因、名稱、大小。
 - 預覽用 Read view 的 renderer 畫遷移後的 JSON，不連線、不改文件（補充）。
-- **補充**（#67）：版本頁是 `apps/web/src/views/VersionsView.vue`，目前是獨立的頁面（和設定頁一樣），不開 `Y.Doc` 與 provider；預覽以 `createAlphaTabEngine`（worker、點擊移動播放位置）畫 `GET .../versions/:versionId` 的結果，可以播放。所有成員都看得到列表與預覽；Owner 與 Editor 另外有「命名」與「把目前的內容存成版本」。e2e 掛鉤的 `scoreJson()` 在這頁回傳預覽中的版本內容。
-- **補充**（#67）：交接給還原（#68）的事：(1) 8.5 說的「和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider」；(2) `POST /api/scores/:id/versions` 不帶 `name` 時建立 `before_restore`（伺服器當下的內容走 `collab.saveVersion`，和最新版本相同時不另建，[`routes.md`](routes.md) 3.6），目前這樣的請求回 400；(3) `apps/web/e2e/versions.spec.ts` 的 `typeAndLeave` 靠離開譜頁讓最後一條連線斷開來產生版本，改成共用 provider 後，離開譜頁到版本頁不再斷線，這個 e2e 要改寫。
+- **補充**（#67）：版本頁是 `apps/web/src/views/VersionsView.vue`；預覽本身不開 `Y.Doc` 與 provider（#68 起譜頁的文件開在它底下，見 8.5，但預覽不碰它）；預覽以 `createAlphaTabEngine`（worker、點擊移動播放位置）畫 `GET .../versions/:versionId` 的結果，可以播放。所有成員都看得到列表與預覽；Owner 與 Editor 另外有「命名」與「把目前的內容存成版本」。e2e 掛鉤的 `scoreJson()` 在這頁回傳預覽中的版本內容。
+- **補充**（#67 交接、#68 完成）：(1) 共用 `Y.Doc` 與 provider：見 8.5 的實作方式；(2) `POST /api/scores/:id/versions` 不帶 `name` 建立 `before_restore`（[`routes.md`](routes.md) 3.6）；(3) `apps/web/e2e/versions.spec.ts` 的 `typeAndLeave` 改成離開到 `/`（不再經版本頁的連結）讓最後一條連線斷開。
 
 ## 9. 信任模型
 
