@@ -2,7 +2,7 @@
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
-import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
 import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
 
@@ -107,6 +107,8 @@ export interface ScoreFixture {
   bars?: number;
   parts?: { name: string; kind: PartKind }[];
   state?: string;
+  /** The schema version the score says it is of: the current one when left out. */
+  schemaVersion?: number;
 }
 
 /**
@@ -145,6 +147,21 @@ export interface AccountFixture {
  */
 export function seedAccount(fixture: AccountFixture): void {
   runServerScript("account:e2e", fixture, "the account");
+}
+
+/**
+ * Accounts of a test's own, whose roles and sessions it changes: every run, retry and browser
+ * makes them anew. `run` tells this one apart (in titles too); `account` seeds one and returns it,
+ * to log in with.
+ */
+export function accountsFor(testInfo: TestInfo) {
+  const run = `${testInfo.project.name.slice(0, 4)}-${Date.now().toString(36)}`;
+  const account = (name: string, displayName: string) => {
+    const made = { username: `e2e-${name}-${run}`, displayName, password: "e2e own account password", isAdmin: false, mustChangePassword: false };
+    seedAccount(made);
+    return made;
+  };
+  return { run, account };
 }
 
 /** Every change typed here has reached the server. */
