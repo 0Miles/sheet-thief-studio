@@ -4,19 +4,20 @@
 // recognition reaching it. The recognizer is a stand-in answering the contract fixtures
 // (fakeRecognizer.ts); Postgres and Redis are real.
 import { type RecognitionDetails, type RecognizerResult, recognizerFailure } from "@studio/contracts";
+import { type BarsFragment, blankFragment, MAX_FRAGMENT_BYTES, PART_PRESETS, tuningFor } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { buildApp } from "../src/app";
-import { Recognition, RecognitionImage } from "../src/db/models";
+import { Phrase, Recognition, RecognitionImage } from "../src/db/models";
 import { PURGE_INTERVAL_MS } from "../src/deletion";
 import { MB } from "../src/limits";
 import { fragmentOfRecognition } from "../src/recognitionFragment";
 import { recognize } from "../src/recognizer";
 import { answers, type FakeAnswer, type FakeRecognizer, fixture, fixtureNames, startFakeRecognizer } from "./fakeRecognizer";
-import { apiCall, COOKIE, createMembers, freshDatabase, freshRedis, NO_RECOGNIZER, ORIGIN, sessionOf, testConfig, warmPool } from "./support";
+import { apiCall, COOKIE, createMembers, fragmentOfAtLeast, freshDatabase, freshRedis, NO_RECOGNIZER, ORIGIN, sessionOf, testConfig, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -46,7 +47,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await sequelize.query("TRUNCATE recognitions CASCADE");
+  await sequelize.query("TRUNCATE recognitions, phrases CASCADE");
   recognizer.answer(answers.recognized());
   recognizer.received.length = 0;
   anna = await sessionOf(app, "anna", PASSWORD);
@@ -281,6 +282,89 @@ test("discarding deletes the recognition and its images; one discarded while run
   recognizer.answer(answers.recognized());
   await vi.waitUntil(async () => (await upload(anna, [{ data: png() }])).statusCode === 202, { timeout: 5000 });
   expect(await Recognition.count({ where: { id: running } })).toBe(0);
+});
+
+/** The fragment of a recognition that succeeded, as the review page reads it. */
+async function recognizedFragment(id: string, session: string): Promise<BarsFragment> {
+  const read = await finished(id, session);
+  if (read.status !== "succeeded") throw new Error(`recognition ${id} did not succeed`);
+  return read.fragment;
+}
+
+function save(id: string, session: string, payload: object) {
+  return apiCall(app, "POST", `/api/recognitions/${id}/save`, session, payload);
+}
+
+test("saving makes a phrase of the name and the fragment sent, edited or not, and deletes the recognition with its images", async () => {
+  const id = await started(anna, [{ data: png() }, { data: jpeg() }]);
+  const recognized = await recognizedFragment(id, anna);
+  // Edited on the review page: another tuning, of the same kind.
+  const edited: BarsFragment = { ...recognized, tuning: tuningFor("drop", 6) } as BarsFragment;
+  const saved = await save(id, anna, { name: "  辨識結果 2026-11-18 ", fragment: edited });
+  expect([saved.statusCode, saved.json()]).toEqual([201, { phraseId: expect.any(String) }]);
+  const { phraseId } = saved.json() as { phraseId: string };
+  const phrase = await apiCall(app, "GET", `/api/phrases/${phraseId}`, anna);
+  expect(phrase.json()).toEqual({ id: phraseId, name: "辨識結果 2026-11-18", fragment: edited, revision: 1, updatedAt: expect.any(String) });
+  expect((await apiCall(app, "GET", "/api/phrases", anna)).json().phrases).toEqual([expect.objectContaining({ id: phraseId, kind: "fretted", stringCount: 6, barCount: edited.bars.length })]);
+
+  expect((await details(id, anna)).statusCode).toBe(404);
+  expect((await apiCall(app, "GET", `/api/recognitions/${id}/images/1`, anna)).statusCode).toBe(404);
+  expect(await RecognitionImage.count()).toBe(0);
+  expect((await apiCall(app, "GET", "/api/recognitions", anna)).json()).toEqual({ recognitions: [] });
+  // Saved once: the second time there is nothing to save.
+  expect((await save(id, anna, { name: "再一次", fragment: edited })).statusCode).toBe(404);
+  expect(await Phrase.count()).toBe(1);
+});
+
+test("only a recognition that succeeded is saved, by the account that started it, with a legal name and fragment of its kind; nothing changes otherwise", async () => {
+  const id = await started(anna);
+  const fragment = await recognizedFragment(id, anna);
+  const body = { name: "前奏", fragment };
+  // Someone else's, none, and an id of none.
+  for (const [other, session] of [
+    [id, ben],
+    ["00000000-0000-4000-8000-000000000000", anna],
+    ["not-a-uuid", anna],
+  ] as const) {
+    expect((await save(other, session, body)).json()).toEqual({ code: "not_found" });
+  }
+  expect((await apiCall(app, "POST", `/api/recognitions/${id}/save`, null, body)).statusCode).toBe(401);
+  // Not legal: a name empty or too long, a fragment that is no fragment of bars, another kind.
+  for (const payload of [{ name: " ", fragment }, { name: "名".repeat(101), fragment }, { name: "前奏", fragment: { ...fragment, bars: [] } }, { name: "前奏" }]) {
+    expect([(await save(id, anna, payload)).json().code]).toEqual(["invalid_request"]);
+  }
+  const otherKind = await save(id, anna, { name: "前奏", fragment: blankFragment(PART_PRESETS.keys) });
+  expect([otherKind.statusCode, otherKind.json()]).toEqual([400, { code: "invalid_request", params: { issues: [{ path: ["fragment", "kind"], code: "custom" }] } }]);
+  // Too large: the fragment, then the whole body.
+  const tooLarge = await save(id, anna, { name: "前奏", fragment: fragmentOfAtLeast(MAX_FRAGMENT_BYTES + 1) });
+  expect([tooLarge.statusCode, tooLarge.json()]).toEqual([413, { code: "phrase_too_large" }]);
+  const huge = await save(id, anna, { name: "前奏", fragment: fragmentOfAtLeast(2 * MAX_FRAGMENT_BYTES) });
+  expect([huge.statusCode, huge.json()]).toEqual([413, { code: "payload_too_large" }]);
+  expect(await Phrase.count()).toBe(0);
+  expect((await details(id, anna)).statusCode).toBe(200);
+
+  // Still running, or failed: there is nothing recognized to save.
+  const held = heldBack();
+  recognizer.answer(held.answering);
+  await apiCall(app, "DELETE", `/api/recognitions/${id}`, anna);
+  const running = await started(anna);
+  await receivedCount(2);
+  expect([(await save(running, anna, body)).statusCode, (await save(running, anna, body)).json()]).toEqual([409, { code: "recognition_not_succeeded" }]);
+  held.release(answers.failed());
+  await finished(running, anna);
+  expect((await save(running, anna, body)).json()).toEqual({ code: "recognition_not_succeeded" });
+  expect(await Phrase.count()).toBe(0);
+  expect(await Recognition.count()).toBe(1);
+});
+
+test("two saves of the same recognition at once make one phrase: the other answers 404", async () => {
+  const id = await started(anna);
+  const fragment = await recognizedFragment(id, anna);
+  await warmPool(sequelize);
+  const answered = await Promise.all(["一", "二"].map((name) => save(id, anna, { name, fragment })));
+  expect(answered.map((answer) => answer.statusCode).sort()).toEqual([201, 404]);
+  expect(await Phrase.count()).toBe(1);
+  expect(await Recognition.count()).toBe(0);
 });
 
 test.each(fixtureNames().filter((name) => name.startsWith("error-")))("the recognizer failing with %s is recorded as failed with its code and pages", async (name) => {

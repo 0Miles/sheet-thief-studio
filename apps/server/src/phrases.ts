@@ -16,10 +16,10 @@ import {
 } from "@studio/contracts";
 import { jsonBytes } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { literal, Op, type WhereOptions } from "sequelize";
+import { literal, Op, type Transaction, type WhereOptions } from "sequelize";
 
 import { Phrase } from "./db/models";
-import { invalidRequest, isUuid, notFound } from "./http";
+import { invalidFields, invalidRequest, isUuid, notFound } from "./http";
 import { FRAGMENT_BODY_LIMIT, MAX_FRAGMENT_BYTES } from "./limits";
 
 /** What the name of a copy ends with. */
@@ -35,12 +35,27 @@ function countsOf(fragment: BarsFragment): Pick<Phrase, "kind" | "stringCount" |
   };
 }
 
+/**
+ * A new phrase of the account, at its first revision; its id. Within `transaction` when given (a
+ * recognition saved as a phrase is deleted in the same one).
+ */
+export async function createPhrase(ownerId: string, name: string, fragment: BarsFragment, transaction?: Transaction): Promise<{ id: string; revision: number }> {
+  // Not the content back: it is what was just sent.
+  const phrase = await Phrase.create({ ownerId, name, content: fragment, revision: 1, ...countsOf(fragment) }, { returning: ["id", "revision"], transaction });
+  return { id: phrase.id, revision: phrase.revision };
+}
+
 /** Answer 413 `phrase_too_large` to a body whose fragment takes more than 1 MB; true when it did. */
-function refusedAsTooLarge(body: unknown, reply: FastifyReply): boolean {
+export function refusedAsTooLarge(body: unknown, reply: FastifyReply): boolean {
   const fragment = typeof body === "object" && body !== null ? (body as { fragment?: unknown }).fragment : undefined;
   if (fragment === undefined || jsonBytes(fragment) <= MAX_FRAGMENT_BYTES) return false;
   void reply.code(413).send({ code: "phrase_too_large" });
   return true;
+}
+
+/** 400: a fragment of another kind than what it is to be written over or made from; a kind never changes (docs/spec/phrases.md, section 5). */
+export function otherKind(reply: FastifyReply) {
+  return invalidFields(reply, [{ path: ["fragment", "kind"], code: "custom" }]);
 }
 
 /** The name of a copy: the name and 「（副本）」, the name cut short when both would not fit. */
@@ -84,7 +99,7 @@ async function writePhrase(reply: FastifyReply, { id, ownerId, baseRevision, kin
   if (written === 1) return phraseRevision.parse({ revision: rows[0]!.revision });
   const phrase = await Phrase.findOne({ where: { id, ownerId }, attributes: ["kind"] });
   if (phrase === null) return notFound(reply);
-  if (kind !== undefined && phrase.kind !== kind) return reply.code(400).send({ code: "invalid_request", params: { issues: [{ path: ["fragment", "kind"], code: "custom" }] } });
+  if (kind !== undefined && phrase.kind !== kind) return otherKind(reply);
   return reply.code(409).send({ code: "revision_conflict" });
 }
 
@@ -113,9 +128,7 @@ export function registerPhrases(app: FastifyInstance): void {
     const body = createPhraseRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
     const { name, fragment } = body.data;
-    // Not the content back: it is what was just sent.
-    const phrase = await Phrase.create({ ownerId: request.account!.id, name, content: fragment, revision: 1, ...countsOf(fragment) }, { returning: ["id", "revision"] });
-    return reply.code(201).send(createdPhrase.parse({ id: phrase.id, revision: phrase.revision }));
+    return reply.code(201).send(createdPhrase.parse(await createPhrase(request.account!.id, name, fragment)));
   });
 
   app.get<{ Params: { id: string } }>("/api/phrases/:id", async (request, reply) => {

@@ -5,14 +5,16 @@ import { apiError, type CollabTicket, collabTicket, type ErrorCode, type GuestTi
 import { errorText, strings } from "./strings";
 
 /**
- * An answer other than 2xx, with the stable code the server sent (`internal_error` when none), and
- * how long its `Retry-After` asks to wait, in milliseconds, when it says (a 429 does).
+ * An answer other than 2xx, with the stable code the server sent (`internal_error` when none), how
+ * long its `Retry-After` asks to wait, in milliseconds, when it says (a 429 does), and the
+ * `params` of the code when it has some (a 415 names its image).
  */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: ErrorCode,
     readonly retryAfterMs: number | null = null,
+    readonly params: Record<string, unknown> | null = null,
   ) {
     super(`${status} ${code}`);
   }
@@ -33,14 +35,17 @@ export function refusal(failure: unknown): string {
 }
 
 async function call(method: string, path: string, body?: unknown): Promise<Response> {
+  // A form goes as it is: the browser writes its multipart/form-data and the boundary.
+  const form = body instanceof FormData;
   const response = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || form ? {} : { "content-type": "application/json" },
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
   if (response.ok) return response;
   const error = apiError.safeParse(await response.json().catch(() => null));
-  throw new ApiError(response.status, error.success ? error.data.code : "internal_error", retryAfterOf(response.headers.get("retry-after")));
+  const { code, params } = error.success ? error.data : { code: "internal_error" as const, params: undefined };
+  throw new ApiError(response.status, code, retryAfterOf(response.headers.get("retry-after")), params ?? null);
 }
 
 /** GET, the answer checked against its shape in @studio/contracts. */
@@ -58,7 +63,7 @@ export async function del(path: string): Promise<void> {
   await call("DELETE", path);
 }
 
-/** POST, the answer checked against its shape in @studio/contracts. */
+/** POST, the answer checked against its shape in @studio/contracts; a FormData body goes as multipart/form-data. */
 export async function postFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
   return shape.parse(await (await call("POST", path, body)).json());
 }

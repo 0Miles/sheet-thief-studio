@@ -375,6 +375,14 @@ export type PhraseRevision = z.infer<typeof phraseRevision>;
 export const createdPhrase = z.object({ id: z.string(), revision });
 export type CreatedPhrase = z.infer<typeof createdPhrase>;
 
+/** A recognition saved as a phrase (`POST /api/recognitions/:id/save`): the review page's name and fragment, edited or not. */
+export const saveRecognitionRequest = createPhraseRequest;
+export type SaveRecognitionRequest = z.infer<typeof saveRecognitionRequest>;
+
+/** The phrase a recognition was saved as; the recognition and its images are gone. */
+export const savedRecognition = z.object({ phraseId: z.string() });
+export type SavedRecognition = z.infer<typeof savedRecognition>;
+
 /** The whole content of a phrase, written over what it held (`PUT /api/phrases/:id`). */
 export const savePhraseRequest = z.object({ fragment: barsFragmentSchema, baseRevision: revision });
 export type SavePhraseRequest = z.infer<typeof savePhraseRequest>;
@@ -433,6 +441,7 @@ export const errorCode = z.enum([
   "version_unreadable",
   "version_name_required",
   "recognition_in_progress",
+  "recognition_not_succeeded",
   "payload_too_large",
   "phrase_too_large",
   "score_too_large",
