@@ -2,6 +2,7 @@ import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { checkCredentials } from "../src/accounts";
+import { Account } from "../src/db/models";
 import { cli, cliProcess, freshDatabase } from "./support";
 
 let sequelize: Sequelize;
@@ -36,12 +37,14 @@ test("create-admin refuses a password shorter than 10 or longer than 256 charact
 });
 
 test("create-admin refuses a username outside the rules and one that is taken", async () => {
+  expect((await cli(sequelize, ["create-admin", "ren", "Ren"], "ren's first password\n")).code).toBe(0);
   const invalid = await cli(sequelize, ["create-admin", "Not Valid", "Name"], "a good enough password\n");
-  const taken = await cli(sequelize, ["create-admin", "miles", "Someone Else"], "another password here\n");
+  const taken = await cli(sequelize, ["create-admin", "ren", "Someone Else"], "another password here\n");
   expect([invalid.code, taken.code]).toEqual([1, 1]);
   expect(invalid.stderr).toContain("帳號名稱");
-  expect(taken.stderr).toContain("miles");
-  expect(await checkCredentials("miles", "another password here")).toBeNull();
+  expect(taken.stderr).toContain("ren");
+  expect(await checkCredentials("ren", "another password here")).toBeNull();
+  expect(await checkCredentials("ren", "ren's first password")).not.toBeNull();
 });
 
 test("create-admin takes no password as an argument", async () => {
@@ -51,8 +54,9 @@ test("create-admin takes no password as an argument", async () => {
   expect(await checkCredentials("ana", "a password in the shell history")).toBeNull();
 });
 
-test("a connection given to the CLI is neither closed nor bound again", async () => {
+test("the CLI runs on the connection it is given, leaves the models bound to it and leaves it open", async () => {
   expect((await cli(sequelize, ["create-admin", "kai", "Kai"], "kai's own password\n")).code).toBe(0);
+  expect(Account.sequelize).toBe(sequelize);
   const [rows] = await sequelize.query("SELECT 1 AS open");
   expect(rows).toEqual([{ open: 1 }]);
   expect(await checkCredentials("kai", "kai's own password")).not.toBeNull();

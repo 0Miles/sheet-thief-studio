@@ -29,8 +29,8 @@ const USAGE = `用法：
 export interface CliOptions {
   /**
    * A connection the models (src/db/models.ts) are already bound to, used as it is and left
-   * open: the server's tests run the commands in their own process on their own connection
-   * (#116). Without one, the command connects to the database of `io.env` and closes it.
+   * open: the server's tests run the commands in the test process, on the test file's own
+   * connection, instead of starting a process for each (#116). Without one, the command connects to the database of `io.env` and closes it.
    */
   sequelize?: Sequelize;
 }

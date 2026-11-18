@@ -20,6 +20,7 @@
 - **補充**（#31）：`packages/score-render/tests/engine.test.ts` 測播放器在重新產生聲音前後的行為（[`playback.md`](playback.md) 4.1）。瀏覽器裡碰不到那十幾毫秒，所以把 alphaTab 的 `AlphaTabApi` 換成替身（`vi.mock`），其他都是 alphaTab 自己的：設定、模型、投影，以及用 `MidiFileGenerator` 建的 tick lookup。替身不會自己回報任何事；worker 的回報由測試照 alphaTab 1.9 的順序送出（位置 0、paused、ready、midiLoaded、ready、位置 0），替身的 `playerState`、`tickPosition` 也只在這些回報時改變，和 alphaTab 的快取一樣。範圍只到引擎怎麼回應這些回報；alphaTab 實際的順序、聲音本身與跟隨仍由 Playwright e2e 與人工試聽確認。升 alphaTab 版本時要重新核對這個順序。
 - **補充**：`compose.dev.yaml` 的 Postgres 與 Redis 是 M1a 第一張 server 票建立的；伺服器測試用獨立的資料庫名稱，每個測試檔自己清資料。
   - **補充**（#114）：遷移只在 vitest 的 `globalSetup`（`apps/server/tests/globalSetup.ts`）跑一次，每個測試檔開頭用 `TRUNCATE ... RESTART IDENTITY CASCADE` 清空（`tests/support.ts` 的 `freshDatabase`），不再每檔重建 schema（CPU 忙碌時重建會超過 hook 的 10 秒上限）。測試檔共用一個資料庫與一個 Redis database，所以 server 的測試檔依序執行（`fileParallelism: false`）。`migrations.test.ts` 在自己的資料庫（`<測試資料庫>_migrations`，跑完刪掉）從零遷移，不影響其他檔。等待「之後不會再寫入」的測試用 fake timer 推過去，不用真的 sleep。
+  - **補充**（#116）：CLI（`apps/server/src/cli.ts`）的 seam 是 `runCli(args, io, { sequelize })`：給了連線就直接用（models 必須已綁到它），不讀環境變數、不另外連線、不關閉。測試平常用 `tests/support.ts` 的 `cli(sequelize, args, input)`，在測試行程內、用測試檔自己的連線跑；它給 CLI 的環境變數一讀就丟例外，以免測試連到開發用的資料庫。只有要確認「以 `cli` script 啟動的行程」本身（argv、`DATABASE_URL`、管線 stdin、exit code）時才用 `cliProcess(args, input)` 開子行程；每個子行程都要冷啟動 Node 與 tsx，CPU 忙碌時要好幾秒，所以 `cli.test.ts` 只留一個這樣的測試，而且不同時開兩個。
 
 ## 2. 測試掛鉤與 build
 
