@@ -199,15 +199,28 @@ test("a version named, and one made with a name, outlive any number of automatic
   await apiCall(app, "PATCH", `${path}/${unnamed.id}`, sessions.eddie!, { name: null });
   const saved = ((await apiCall(app, "POST", path, sessions.olivia!, { name: "存下來的" })).json() as { versionId: string }).versionId;
 
-  // 200 automatic versions more, then 1 beyond.
-  for (let index = 0; index <= AUTO_VERSIONS_KEPT; index += 1) {
-    expect((await createVersion(id, { read: () => ({ ...score, title: `自動 ${index}` }), reason: "interval" }))?.created).toBe(true);
-  }
+  // 200 automatic versions more, newer than those, written at once (one version made at a time
+  // would make this test as slow as 200 transactions); then one made beyond them.
+  const automatic = await Version.bulkCreate(
+    Array.from({ length: AUTO_VERSIONS_KEPT }, (_, index) => ({
+      scoreId: id,
+      schemaVersion: SCHEMA_VERSION,
+      content: Buffer.from("old"),
+      contentHash: `${index}`.padStart(64, "0"),
+      byteSize: 3,
+      reason: "interval" as const,
+      createdAt: new Date(Date.now() - (index + 1) * 60_000),
+    })),
+  );
+  expect((await createVersion(id, { read: () => ({ ...score, title: "第 201 個" }), reason: "interval" }))?.created).toBe(true);
 
+  // The two oldest automatic ones went: the one whose name was taken away, and the oldest written.
   const kept = new Set((await Version.findAll({ where: { scoreId: id }, attributes: ["id"] })).map((version) => version.id));
   expect(kept.has(oldest.id)).toBe(true);
   expect(kept.has(saved)).toBe(true);
   expect(kept.has(unnamed.id)).toBe(false);
+  expect(kept.has(automatic.at(-1)!.id)).toBe(false);
+  expect(kept.has(automatic.at(-2)!.id)).toBe(true);
   expect(await Version.count({ where: { scoreId: id, name: null } })).toBe(AUTO_VERSIONS_KEPT);
   expect(kept.size).toBe(AUTO_VERSIONS_KEPT + 2);
 });
