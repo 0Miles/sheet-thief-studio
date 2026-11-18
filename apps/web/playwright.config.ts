@@ -65,6 +65,39 @@ export const insecurePages = {
   url: `${INSECURE_ORIGIN}/healthz`,
 };
 
+/** Where the stand-in karyl-chan bot serves the plugin's pages (the `plugin` project). */
+export const BOT_ORIGIN = "http://localhost:8036";
+const PLUGIN_SETUP_SECRET = "e2e-setup-secret";
+
+/**
+ * The stand-in karyl-chan bot (apps/server/tests/botE2e.ts), and the server as its plugin on a
+ * port of its own, serving the build the preview has made: the bot proxies its pages under
+ * `/plugin/sheet-thief-studio/`, without cookies (docs/spec/karyl-login.md).
+ */
+const pluginPages = [
+  {
+    command: "pnpm --filter @studio/server bot:e2e",
+    env: { PORT: new URL(BOT_ORIGIN).port, SETUP_SECRET: PLUGIN_SETUP_SECRET },
+    url: `${BOT_ORIGIN}/healthz`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+  },
+  {
+    command: "pnpm --filter @studio/server start",
+    env: {
+      ...servedPages.env,
+      PORT: "8035",
+      PUBLIC_ORIGIN: BOT_ORIGIN,
+      KARYL_PLUGIN_SETUP_SECRET: PLUGIN_SETUP_SECRET,
+      BOT_URL: "http://127.0.0.1:8036",
+      PLUGIN_URL: "http://127.0.0.1:8035",
+    },
+    url: "http://localhost:8035/healthz",
+    reuseExistingServer: false,
+    timeout: 60_000,
+  },
+];
+
 // End-to-end tests run against the real server and the built web app, on the ports the
 // project uses in development (8031 and 5183), and against the Postgres and Redis of
 // compose.dev.yaml in databases of their own (e2e/environment.ts). Both ports must be free: a dev
@@ -85,12 +118,14 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", testIgnore: ["**/measure/**", "**/served.spec.ts", "**/smoke/**"], use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", testIgnore: ["**/measure/**", "**/served.spec.ts", "**/plugin.spec.ts", "**/smoke/**"], use: { ...devices["Desktop Chrome"] } },
     { name: "served", testMatch: "**/served.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: SERVED_ORIGIN } },
+    // Behind the stand-in karyl-chan bot, under its /plugin/<key>/ (plugin.spec.ts).
+    { name: "plugin", testMatch: "**/plugin.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: BOT_ORIGIN } },
     // The whole suite runs in Chromium; the other browsers run smoke tests, and the clipboard check
     // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5).
     { name: "firefox", testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", testMatch: ["**/smoke/*.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
   ],
-  webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages],
+  webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages, ...pluginPages],
 });

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { basePath } from "./served";
 import { useSessionStore } from "./stores/session";
 import HomeView from "./views/HomeView.vue";
 
@@ -13,7 +14,8 @@ declare module "vue-router" {
 }
 
 export const router = createRouter({
-  history: createWebHistory(),
+  // Under where the page is served: `/`, or `/plugin/<key>/` behind the karyl-chan bot.
+  history: createWebHistory(basePath()),
   routes: [
     { path: "/login", name: "login", component: () => import("./views/LoginView.vue"), meta: { public: true } },
     // Where an account with a temporary password is held until it has chosen its own.

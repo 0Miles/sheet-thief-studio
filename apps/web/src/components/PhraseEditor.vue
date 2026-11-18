@@ -44,6 +44,7 @@ import BarPanel from "./BarPanel.vue";
 import InlineTextEntry from "./InlineTextEntry.vue";
 import PartPanel from "./PartPanel.vue";
 import PlayerControls from "./PlayerControls.vue";
+import { fontDirectory, soundFontUrl } from "../served";
 
 const props = defineProps<{
   /** What the editor opens; null until the page has it. */
@@ -287,8 +288,8 @@ function start(fragment: BarsFragment): void {
   // The editor lays out on the page's own thread, bar by bar, as the edit views do (docs/adr/0003);
   // a device that only plays lays out in a worker, and a click sends playback there.
   engine = createAlphaTabEngine(host.value, {
-    fontDirectory: "/font/",
-    soundFont: "/soundfont/sonivox.sf3",
+    fontDirectory: fontDirectory(),
+    soundFont: soundFontUrl(),
     useWorkers: !props.editable,
     seekOnClick: !props.editable,
     scale: 1,

@@ -1,16 +1,18 @@
 // The server's command line, run on the server itself (`pnpm --filter @studio/server cli …`):
 //   migrate                                    bring the database up to the latest schema
 //   create-admin <username> <display name>     create an admin; the password is read from stdin
+//   bind-discord <username> <discord id>       bind a Discord id, to log in from the karyl-chan bot
 // A password is never an argument: arguments end up in the shell history and the process list.
 import type { Readable, Writable } from "node:stream";
 
-import { accountLimits } from "@studio/contracts";
+import { accountLimits, discordId } from "@studio/contracts";
 import type { Sequelize } from "sequelize";
 import { ZodError } from "zod";
 
-import { createAccount, UsernameTaken } from "./accounts";
+import { bindKarylIdentity, createAccount, IdentityTaken, normalizeUsername, UsernameTaken } from "./accounts";
 import { readConfig } from "./config";
 import { connectDatabase } from "./db/database";
+import { Account } from "./db/models";
 import { migrate } from "./db/migrate";
 
 export interface CliIo {
@@ -24,6 +26,7 @@ export interface CliIo {
 const USAGE = `用法：
   cli migrate
   cli create-admin <帳號名稱> <顯示名稱>    密碼從標準輸入讀取
+  cli bind-discord <帳號名稱> <Discord ID>   綁定之後可以從 karyl-chan bot 的連結登入
 `;
 
 export interface CliOptions {
@@ -62,6 +65,25 @@ export async function runCli(args: string[], io: CliIo, options: CliOptions = {}
         throw error;
       }
       io.stdout.write(`已建立管理者 ${username}。\n`);
+      return 0;
+    });
+  }
+  // Behind the karyl-chan bot nobody logs in with a password (its proxy drops the cookie): the
+  // first admin binds their Discord id here (docs/spec/karyl-login.md, section 4).
+  if (command === "bind-discord" && rest.length === 2) {
+    const [username, subject] = rest as [string, string];
+    if (!discordId.safeParse(subject).success) return fail(io, "Discord ID 是 17–20 位數字。");
+    return withDatabase(async () => {
+      const account = await Account.findOne({ where: { username: normalizeUsername(username) } });
+      if (account === null) return fail(io, `沒有帳號 ${username}。`);
+      try {
+        await bindKarylIdentity(account.id, subject);
+      } catch (error) {
+        if (error instanceof IdentityTaken) return fail(io, `Discord ID ${subject} 已經綁定別的帳號，或 ${account.username} 已經綁定了一個。`);
+        throw error;
+      }
+      io.stdout.write(`已把 Discord ID ${subject} 綁定到 ${account.username}。
+`);
       return 0;
     });
   }

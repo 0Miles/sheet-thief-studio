@@ -147,6 +147,16 @@ function runServerScript(script: string, fixture: object, made: string): string 
   return run.stdout;
 }
 
+/** Bind a Discord id to an account with the server's CLI, as the first admin of a plugin does (docs/spec/karyl-login.md, section 4). */
+export function bindDiscord(username: string, discordId: string): void {
+  const run = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "cli", "bind-discord", username, discordId], {
+    env: { ...process.env, ...SERVER_ENV },
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (run.status !== 0) throw new Error(`Could not bind the Discord id: ${run.stderr}`);
+}
+
 /** An account as the server's script makes it (apps/server/tests/accountE2e.ts). */
 export interface AccountFixture {
   username: string;

@@ -69,6 +69,7 @@
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
   - **補充**（#64）：e2e 的 server 呼叫假的辨識服務（`apps/server/tests/recognizerE2e.ts`），由 Playwright 的 `webServer` 在 port 8034 啟動（`e2e/environment.ts` 的 `RECOGNIZER_URL`），不會連到開發用、在 8000 的真辨識服務。要別的回答時，測試先送 `PUT /fixture/<契約 fixture 名稱>`，之後都回那一份。
   - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），辨識的審核頁（上傳圖片、畫出辨識結果、音色載入完成、原圖載入，#64），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
+  - **補充**（#72）：Playwright project `plugin` 只跑 `e2e/plugin.spec.ts`。一個假的 karyl-chan bot（`apps/server/tests/botE2e.ts`，port 8036）讓 plugin 模式的 server（port 8035，`WEB_ROOT` 指向 `dist`）註冊，像真的 bot 一樣把它的頁面放在 `/plugin/sheet-thief-studio/` 底下代理（去掉前綴、刪掉 cookie、轉發 WebSocket Upgrade），並提供 `POST /test/studio` 簽一個 `/studio` dispatch、回傳回覆裡的連結。spec 用連結登入，在 base path 底下開一份團譜：畫出譜面、音色載入完成、打字同步到伺服器、重新整理後仍登入、登出；另外是未綁定與用過的連結在 `/login` 顯示原因，全程沒有 CSP 違規。CI 的 `e2e` job 用 `--project=plugin` 一起跑。
 - 送 PR 前：`pnpm lint && pnpm typecheck && pnpm test`；web 或 server 有改時加上 `pnpm --filter @studio/web test:e2e`。
 
 ## 4. 量測（不是 CI 的關卡）

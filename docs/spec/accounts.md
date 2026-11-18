@@ -36,6 +36,7 @@
 - Admin 是 Account 上的旗標 `accounts.is_admin`，和團譜的 Owner 無關。
 - 第一個 admin 用伺服器上的 CLI 指令建立（ADR 0004）。**補充**：`pnpm --filter @studio/server cli create-admin <帳號名稱> <顯示名稱>`，密碼從標準輸入讀，不放在指令列。
 - **補充**：CLI 建立的 admin 的密碼是自己在伺服器上設的，不是別人給的暫時密碼，所以 `must_change_password = false`，首次登入不強制改密碼（#5）。第 1 節的強制改密碼適用於 admin 在 `/admin` 建立的帳號，以及被重設密碼的帳號。
+- **補充**（#72）：karyl-chan plugin 模式下 bot 的代理會刪掉 cookie，沒有人能用密碼登入；第一個 admin 先在伺服器上用 `cli bind-discord <帳號名稱> <Discord ID>` 綁定自己的 Discord id，再從 `/studio` 的連結登入（[`karyl-login.md`](karyl-login.md) 第 4 節）。
 - **補充**：`is_admin` 只能用 CLI 設定或取消（`cli grant-admin <帳號名稱>`、`cli revoke-admin <帳號名稱>`），`/admin` 不能改，避免網頁上的 admin 互相拔除或鎖住自己。
 - Admin 能做的事**只有這些**：
   1. 建立帳號：帳號名稱、顯示名稱、初始密碼。新帳號 `must_change_password = true`。
