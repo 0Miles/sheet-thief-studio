@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, type PhraseSummary, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 import type { WhilePlaying } from "./mixer";
@@ -16,10 +16,14 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const TOO_MANY_BARS = `小節最多 ${MAX_BARS} 個`;
 const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+/** Bars from one to another, one bar by its number alone. */
+const barsLabel = (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last));
+const SAVE_PHRASE = "存成樂句";
 
 export const strings = {
   app: {
@@ -106,7 +110,7 @@ export const strings = {
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",
-      tooManyBars: `小節最多 ${MAX_BARS} 個`,
+      tooManyBars: TOO_MANY_BARS,
       lastBar: "至少要留下一個小節",
       tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
@@ -251,7 +255,7 @@ export const strings = {
       speed: "播放速度",
       loop: "循環",
       loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
-      loopBars: (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last)),
+      loopBars: barsLabel,
       loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
       metronome: "節拍器",
       countIn: "預備拍（一小節）",
@@ -275,6 +279,39 @@ export const strings = {
         danglingLink: "搥弦、勾弦或連到下一個音的滑音後面沒有音",
         invalidContent: "這裡有讀不懂的內容，已經略過",
       } satisfies Record<Flag["kind"], string>,
+    },
+    // The phrase sidebar of the editable view (docs/spec/phrases.md, section 6): my phrases, those
+    // that fit the cursor's part unless all are asked for, a preview, and a drop on a bar.
+    phraseSidebar: {
+      open: "樂句側欄",
+      openKey: (key: string) => `開關樂句側欄（${key}）`,
+      title: "樂句",
+      close: "關閉",
+      search: "搜尋樂句",
+      showAll: "顯示全部，包含和游標所在聲部不相容的",
+      help: "拖到譜面上的小節放下，或選好樂句按 Enter 放到游標所在的小節。",
+      empty: "還沒有樂句。",
+      noneFit: "沒有和游標所在聲部相容的樂句。",
+      noMatch: "沒有符合的樂句。",
+      library: "樂句庫",
+      preview: (name: string) => `「${name}」的預覽`,
+      closePreview: "關閉預覽",
+      dropAtCursor: "放到游標所在的小節",
+      /** Over a part of another kind, while a phrase is dragged over it. */
+      cannotDrop: "不能放",
+      // What a drop tells, no dialog (docs/spec/commands.md, 5.7).
+      hints: {
+        tuningDiffers: "調弦不同，格號照原樣放入",
+        barsAppended: "小節不夠，已在譜尾附加小節",
+      } satisfies Record<DropHint, string>,
+      refused: {
+        gone: "要放的小節或聲部已經不在了",
+        otherKind: "只能放進同一種聲部",
+        tooManyStrings: "樂句用到的弦超過這個聲部的弦數",
+        otherStaves: "樂句用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+        invalid: "這個樂句的內容讀不懂，沒有放入",
+      } satisfies Record<DropRefusal, string>,
     },
     // Each member's own display options (docs/spec/views.md, section 6).
     display: {
@@ -300,6 +337,16 @@ export const strings = {
     strings: (count: number) => `${count} 弦`,
     staves: (count: number) => `${count} 個譜表`,
     bars: (count: number) => `${count} 小節`,
+    /** What a list says of a phrase besides its name, in the library and in the sidebar: its kind, its strings or its staves (more than one), its bars. */
+    details: (phrase: Pick<PhraseSummary, "kind" | "stringCount" | "staffCount" | "barCount">) =>
+      [
+        strings.phrases.kinds[phrase.kind],
+        phrase.stringCount === null ? null : strings.phrases.strings(phrase.stringCount),
+        phrase.staffCount !== null && phrase.staffCount > 1 ? strings.phrases.staves(phrase.staffCount) : null,
+        strings.phrases.bars(phrase.barCount),
+      ]
+        .filter((part) => part !== null)
+        .join(" · "),
     rename: "改名",
     duplicate: "複製",
     delete: "刪除",
@@ -352,6 +399,23 @@ export const strings = {
     },
     /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
     desktopOnly: "請在電腦上編輯",
+  },
+  // A range of bars of a score saved as a phrase, from either edit view (docs/spec/phrases.md, section 3).
+  savePhrase: {
+    /** The toolbar's button, and the title of its dialog. */
+    open: SAVE_PHRASE,
+    openTitle: "把選取的小節存進樂句庫",
+    /** Why the button does nothing: no range of bars selected (a range of beats, or nothing). */
+    barsOnly: "請選取小節範圍",
+    name: "名稱",
+    /** The name offered: the score's title and the bars, one bar by its number alone. */
+    defaultName: (title: string, first: number, last: number) => `${title} ${barsLabel(first, last)}`,
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+    saved: (name: string) => `已${SAVE_PHRASE}「${name}」。`,
+    /** Saved, without what could not be read in those bars (it is flagged in the score). */
+    savedSkipping: (name: string) => `已${SAVE_PHRASE}「${name}」；讀不懂的內容已經略過，沒有存進去。`,
   },
   saveAsNewPhrase: {
     title: "另存成新樂句",

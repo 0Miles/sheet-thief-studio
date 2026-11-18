@@ -36,3 +36,14 @@ test.each<KeyPlatform>(["other", "mac"])("on %s, F8 goes to the next flag, with 
     expect(session.cursor).toEqual(before);
   }
 });
+
+test.each<KeyPlatform>(["other", "mac"])("on %s, F4 opens and closes the phrase sidebar, with no modifier only, and the session leaves it to the page", (platform) => {
+  expect(pageEffectOf(keyOf("F4"), platform)).toBe("phraseSidebar");
+  expect(pageEffectOf(keyOf("F4", { shiftKey: true }), platform)).toBeNull();
+  for (const kind of ["fretted", "percussion", "pitched"] as const) {
+    const { session, press } = sessionOn(kind);
+    const before = session.cursor;
+    expect(press("F4")).toBe(false);
+    expect(session.cursor).toEqual(before);
+  }
+});

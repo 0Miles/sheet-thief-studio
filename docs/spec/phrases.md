@@ -54,6 +54,7 @@ interface BeatsFragment {
 
 1. **空白樂句**：在 `/phrases` 按「新增」，選聲部預設（[`commands.md`](commands.md) 第 10 節的預設表），在樂句編輯器裡打。**補充**：新的空白樂句是 4/4、1 個空小節，名稱「未命名樂句」。
 2. **存成樂句**：在團譜裡選取**小節範圍**後「存成樂句」。任何成員都可以，包含 Viewer；訪客沒有帳號，所以不行。片段帶著那個聲部的 `kind`、`tuning`（fretted）、`staves`（pitched）、每個小節的拍號與所有聲線。**補充**：只有拍點範圍時，提示「請選取小節範圍」；預設名稱是「<團譜標題> 第 a–b 小節」，可以在存檔前修改。
+   - **補充**（#55）：入口是兩種編輯視圖工具列上的「存成樂句」按鈕（Read view 沒有，所以訪客、以及不能打譜的裝置上的成員都沒有）。沒有選取或只有拍點範圍時按鈕停用：用 `aria-disabled` 而不是 `disabled`，按鈕留在 Tab 順序裡，`aria-describedby` 指向「請選取小節範圍」，按下不動作。按下時以當下的內容取出片段（`apps/web/src/savePhrase.ts` 的 `barsToSave`，用 `fragmentOfBars`），對話框開著時別人的修改不算進去；按鈕狀態與取出的片段都來自 session 最後回報的選取。存好後留在團譜，提示「已存成樂句「<名稱>」。」；那個聲部在那些小節裡有讀不懂而略過的內容（`invalidContent` Flag）時，提示改成「……；讀不懂的內容已經略過，沒有存進去。」。伺服器回的任何 413（片段超過 1 MB 的 `phrase_too_large`，或請求本體超過上限的 `payload_too_large`）都顯示「樂句太大。」（`saveRefusal`，同 `phraseSaver.ts`）。只有一個小節時預設名稱是「<團譜標題> 第 a 小節」；空白標題用「未命名」；太長時從標題的尾端以字素（`Intl.Segmenter`，ZWJ 組成的 emoji 不拆開）為單位截掉，讓名稱不超過 100 個 UTF-16 單位（和 `phraseName` 的 zod 計法相同；`defaultPhraseName`）。
 3. **辨識**：見第 7 節與 [`recognizer.md`](recognizer.md)。
 
 ## 4. 樂句庫（`/phrases`）
@@ -118,6 +119,15 @@ interface BeatsFragment {
 - 放置：拖到小節上放下，或按鍵放到游標所在的小節。拖曳時的目標由 `hitTest` 決定（`geometry.ts:91-129` 的 `cursorAtPoint`，由 `alphaTabEngine.ts:162` 呼叫）；種類不合的聲部，高亮成「不能放」。
 - 放置的語意見 [`commands.md`](commands.md) 5.7。
 - 側欄不做辨識。
+- **補充**（#57）：寫法。
+  - 側欄是 `apps/web/src/components/PhraseSidebar.vue`，放在譜面旁邊，和小節屬性面板、聲部面板、混音器同一時間只開一個。打開時重新讀 `GET /api/phrases`（搜尋同 `/phrases`，打字停 200 ms 後送），焦點進搜尋框；`Esc` 先關預覽，沒有預覽時關側欄；`F4` 關側欄；關掉後焦點回到譜面。四個側邊面板是同一個列舉（`ScoreView.vue` 的 `SidePanel`），同時只有一個。
+  - 預覽是 `role="dialog"`：點樂句打開時焦點移進預覽，關閉（`Esc`、「關閉預覽」、再點一次樂句）時回到打開它的樂句。`Enter` 只在兩處放置：焦點在列表的樂句上，或焦點在預覽裡（不在預覽的按鈕上）。側欄自己的按鈕、連結與輸入框（`button`、`a`、`input`、`select`、`textarea`、`[data-no-drop]`）的 `Enter` 照它們自己的作用，不放置。列表顯示的樂句資訊和樂句庫共用 `strings.phrases.details`。
+  - 相容與拖曳目標的判定是 `apps/web/src/phraseSidebar.ts` 的純函式（vitest）：`fitsPart`（樂句庫列表的 `stringCount`、`staffCount` 對聲部的弦數與譜表數）、`phrasesShown`（沒有游標時列出全部）、`dropSpotOf`。
+  - 預覽的 popover 開在側欄自己的欄位裡，不疊在譜面上，所以不會蓋住譜面的保留區域。預覽裡畫出樂句的小節框（`structureBoxesOf`，避開預覽自己的保留區域），並放上 `data-reserved`。預覽的捲動區最高 50vh、`overflow: auto`；縮放 0.75。renderer 在第一次預覽時建立，側欄關閉時不銷毀（側欄以 `v-show` 隱藏），離開譜頁才銷毀。
+  - 樂句內容（`GET /api/phrases/:id`）依 `id` 與 `revision` 快取，讀不到的下次重讀。
+  - 拖曳用 HTML5 drag and drop：`dragover` 時以 `hitTest` 找小節，`dropSpotOf` 算出要取代的小節（譜裡有的那些）；種類相同時畫成可以放（`data-drop="ok"`），種類不同時只畫游標下那個小節、標成「不能放」（`data-drop="refused"`、`data-drop-label`），不接受放下。弦數、譜表數等其他拒絕由 `dropFragment` 判斷，放下後以提示告知。
+  - 放置走 `EditorSession.drop(target, fragment)`：一個 Command、一個復原步驟；唯讀時拒絕（同其他會改動文件的鍵）；游標以 `settleCursor` 留在原處（原本的拍點被取代時移到最近的位置），選取結束。拖曳放下後焦點回到譜面，`Ctrl+Z` 直接復原。
+  - 放置的提示（`DropHint`）與拒絕（`DropRefusal`）顯示在譜頁工具列的提示（`role="status"`），**不是** issue #57 寫的 toast。理由：app 沒有掛 `@karyl-chan/ui` 的 `AppToast`；工具列的提示在譜面上方，不疊在譜面上，所以不會蓋到保留區域；session 的其他提示也在這裡。這個 `role="status"` 容器（`.score__status`）一直在頁面上，只換裡面的內容；提示本身（`.score__notice`）只在有提示時才在容器裡，所以「沒有提示」仍是沒有這個元素（#109 的 `readOnly.spec.ts` 這樣判斷）；放置的提示先清空再寫入，所以連續兩次相同的提示，螢幕閱讀器也會再念一次；成功而沒有提示的放置會清掉上一次的提示。文字在 `strings.score.phraseSidebar`。
 
 ## 7. 審核頁（`/recognitions/:id`）
 
