@@ -336,6 +336,9 @@ function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined
   if (json.slap) beat.slap = true;
   if (json.pop) beat.pop = true;
   if (json.text) beat.text = json.text;
+  // One line of lyrics; a melisma's empty syllable is none (`[""]` would be a syllable of nothing),
+  // and a `-` at the end is drawn as it is.
+  if (json.lyric) beat.lyrics = [json.lyric];
   for (const [key, noteJson] of Object.entries(json.notes)) {
     const note = projectNote(part, key, noteJson, after);
     if (!note) continue;
