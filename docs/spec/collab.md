@@ -139,9 +139,9 @@
 | `content` | gzip 過的 `ScoreJSON`（`bytea`） |
 | `content_hash` | 補充：鍵依字母排序後的 `ScoreJSON` 的 SHA-256，用來判斷「和最新版本相同」 |
 | `byte_size` | 壓縮前的大小 |
-| `reason` | 補充：`'last_disconnect'`、`'interval'`、`'before_restore'` |
+| `reason` | 補充：`'last_disconnect'`、`'interval'`、`'before_restore'`；**補充**（#67）：`'manual'` 是成員「把目前內容存成命名版本」（migration `0006-manual-versions`） |
 | `name` | 手動命名（M5）；null 表示自動版本 |
-| `created_by` | 補充：`before_restore` 是發起還原的帳號；自動版本是 null |
+| `created_by` | 補充：`before_restore` 是發起還原的帳號；自動版本是 null；**補充**（#67）：`manual` 是存下它的帳號 |
 
 **補充**（#17）：`created_at` 是寫入那一刻資料庫的時鐘（`clock_timestamp()`），不是交易開始的時間；同一份團譜的版本在鎖住該團譜列的交易裡一次建一個，所以 `created_at` 的順序就是建立的順序。`content` 存的是鍵排序後的 JSON，`content_hash` 就是這段文字的 SHA-256（hex）。`reason` 有 check constraint；`created_by` 的外鍵是 `ON DELETE SET NULL`。
 
@@ -152,6 +152,7 @@
 1. **最後一個連線離開時**：Hocuspocus 的 `onDisconnect`，剩 0 個連線時，用記憶體裡的文件建立。**補充**：只用 `onDisconnect`，不在 `afterUnloadDocument` 再建一次（內容比較也會擋掉重複，但文件卸載後就不在記憶體裡了）。
 2. **連續編輯中，每 10 分鐘一次**：文件載入期間的計時器。
 3. **還原前**（`reason = 'before_restore'`）：見 8.5。**補充**：內容和最新版本相同時不另建，直接回傳最新版本的 id。
+4. **補充**（#67）：**成員存成命名版本**（`reason = 'manual'`，建立時就帶 `name`）：Owner 或 Editor 在版本頁要求，一律建立新的一筆，不比較內容（這是成員明確的要求）。內容的來源和還原前的版本相同（[`routes.md`](routes.md) 3.6）。
 
 **補充**（#17）：
 
@@ -193,6 +194,7 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 
 - 版本列表顯示建立時間、原因、名稱、大小。
 - 預覽用 Read view 的 renderer 畫遷移後的 JSON，不連線、不改文件（補充）。
+- **補充**（#67）：版本頁是 `apps/web/src/views/VersionsView.vue`，目前是獨立的頁面（和設定頁一樣），不開 `Y.Doc` 與 provider；預覽以 `createAlphaTabEngine`（worker、點擊移動播放位置）畫 `GET .../versions/:versionId` 的結果，可以播放。所有成員都看得到列表與預覽；Owner 與 Editor 另外有「命名」與「把目前的內容存成版本」。8.5 說的「和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider」留給還原（#68）處理。e2e 掛鉤的 `scoreJson()` 在這頁回傳預覽中的版本內容。
 
 ## 9. 信任模型
 

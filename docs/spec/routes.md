@@ -130,6 +130,12 @@
 | `POST /api/scores/:id/versions` | 還原前存下伺服器當下的內容 → `{ versionId }`（[`collab.md`](collab.md) 8.5） | Owner、Editor |
 | `PATCH /api/scores/:id/versions/:versionId` | M5：`{ name: string \| null }` | Owner、Editor（補充） |
 
+- **補充**（#67）：`GET /api/scores/:id/versions` 回 `{ versions: [...] }`，每一筆是 `id`、`createdAt`、`reason`、`name`（自動版本是 null）、`byteSize`，依 `createdAt`（再依 `id`）由新到舊；形狀在 contracts 的 `versionList`。不分頁：自動版本最多 200 個。
+- **補充**（#67）：`GET /api/scores/:id/versions/:versionId` 直接回遷移後的 `ScoreJSON`（`scoreSchema`）。版本比伺服器新、缺遷移步驟、步驟失敗、或內容壞掉（解壓以 `MAX_VERSION_BYTES` 為上限）時回 409 `version_unreadable`，並寫 error log。
+- **補充**（#67）：`POST /api/scores/:id/versions` 的 body 是 `{ name?: string }`（1–100 字元，去掉前後空白；body 可以省略）。給了 `name`：成員「把目前內容存成命名版本」，`reason = 'manual'`，不論內容是否和最新版本相同都建立新的一筆，回 201。沒給 `name`：還原前的版本（`before_restore`，collab.md 8.5），和最新版本相同時不另建，回 200 與最新版本的 id；建立時回 201。兩者都回 `{ versionId }`，`created_by` 是發起的帳號。內容是伺服器當下的：伺服器以 direct connection 開啟文件（記憶體裡有就用那一份，沒有就照 `onLoadDocument` 載入、遷移），在 `createVersion` 鎖住團譜列之後讀 `docToJson`（`collab.saveVersion`）。文件被凍結（collab.md 2.1）時回 409 `score_read_only`，不建立。
+- **補充**（#67）：`PATCH` 的 `name` 是 1–100 字元（去掉前後空白）或 null（取消命名），回這個版本（`versionSummary` 的形狀）。在鎖住團譜列的交易裡寫入，並在鎖內再確認一次角色，所以和建立版本時的保留刪除不會交錯。取消命名不立刻套用保留規則，下一次建立版本時才算進 200 個。
+- **補充**（#67）：四個 route 都先檢查角色再檢查內容：非成員（含已刪除的團譜）一律 404 `not_found`，Viewer 對 `POST`、`PATCH` 一律 403 `forbidden`。版本不屬於這份團譜、不存在、`:versionId` 不是 UUID 都是 404。
+
 ### 3.7 樂句（M4）
 
 | 方法與路徑 | 說明 |
@@ -172,6 +178,8 @@
 | `account_not_found` | 404 | 加入成員時帳號名稱不存在 |
 | `already_member`、`username_taken`、`identity_taken`、`cannot_disable_self`、`owner_cannot_leave` | 409 | |
 | `revision_conflict` | 409 | 樂句的 `baseRevision` 不符 |
+| `score_read_only` | 409 | 團譜被凍結（collab.md 2.1），不能存成版本（補充，#67） |
+| `version_unreadable` | 409 | 這台伺服器讀不了這個版本，不能預覽或還原（補充，#67） |
 | `recognition_in_progress` | 409 | 自己已有一件辨識在跑 |
 | `payload_too_large`、`phrase_too_large`、`score_too_large` | 413 | |
 | `unsupported_image` | 415 | 不是 PNG、JPEG、WebP |
