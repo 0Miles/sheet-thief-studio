@@ -281,10 +281,12 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       if ((await scoreOfLink(holder.linkToken))?.id !== holder.scoreId) throw Forbidden;
       return;
     }
-    const member = await membership(holder.scoreId, holder.accountId);
-    if (member === null || !(await sessions.isActive(holder.sessionId))) throw Forbidden;
-    const account = await Account.findByPk(holder.accountId, { attributes: ["displayName"] });
-    if (account === null) throw Forbidden;
+    const [member, active, account] = await Promise.all([
+      membership(holder.scoreId, holder.accountId),
+      sessions.isActive(holder.sessionId),
+      Account.findByPk(holder.accountId, { attributes: ["displayName"] }),
+    ]);
+    if (member === null || !active || account === null) throw Forbidden;
     holder.role = member.role;
     holder.displayName = account.displayName;
   }
@@ -347,13 +349,17 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       if (connection === undefined) return;
       // A member speaks for their own tab only, never for another's; a guest, or a connection
       // the server cannot tell, for nobody (docs/spec/collab.md, section 5).
-      const others = new Set<number>();
-      for (const other of document.getConnections()) if (other !== connection) for (const client of document.getClients(other)) others.add(client);
       // Who it is, as of now: the register's holder is the one `renamed` updates; Hocuspocus
       // keeps a copy of it as the context.
       const holder = register.get(connection);
       const who = holder?.kind === "member" ? holder : context;
-      screenAwareness({ who, readOnly: connection.readOnly, own: document.getClients(connection), others }, states, removedClients);
+      const own = document.getClients(connection);
+      // The other connections' clients matter only to a member's first claim (`clientsAllowed`).
+      const others = new Set<number>();
+      if (own.size === 0 && who?.kind === "member") {
+        for (const other of document.getConnections()) if (other !== connection) for (const client of document.getClients(other)) others.add(client);
+      }
+      screenAwareness({ who, readOnly: connection.readOnly, own, others }, states, removedClients);
     },
     async onLoadDocument({ documentName, document }) {
       // Authentication has found the score; a direct connection only ever opens one that exists.

@@ -9,10 +9,12 @@ export const PRESENCE_PALETTE = ["#d73a49", "#22863a", "#005cc5", "#e36209", "#6
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
+const UTF8 = new TextEncoder();
+
 /** The 32-bit FNV-1a hash of the text's UTF-8 bytes. */
 export function fnv1a(text: string): number {
   let hash = FNV_OFFSET;
-  for (const byte of new TextEncoder().encode(text)) {
+  for (const byte of UTF8.encode(text)) {
     hash ^= byte;
     hash = Math.imul(hash, FNV_PRIME) >>> 0;
   }

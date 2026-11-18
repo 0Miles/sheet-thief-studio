@@ -5,7 +5,7 @@
 import { type CloseEvent, Forbidden, ResetConnection } from "@hocuspocus/common";
 import { addMemberRequest, changeRoleRequest, type ErrorCode, scoreMember, scoreMemberList, transferRequest } from "@studio/contracts";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { Transaction } from "sequelize";
+import { type Transaction, UniqueConstraintError } from "sequelize";
 
 import { normalizeUsername } from "./accounts";
 import type { Collab } from "./collab";
@@ -113,11 +113,6 @@ function shown(member: Pick<ScoreMember, "role">, account: Account) {
   return { accountId: account.id, username: account.username, displayName: account.displayName, role: member.role, disabled: account.disabledAt !== null };
 }
 
-/** Whether Postgres refused a row because one with its key is there already. */
-function isDuplicate(error: unknown): boolean {
-  return error instanceof Error && error.name === "SequelizeUniqueConstraintError";
-}
-
 /** Send the refusal of a change that was not made; anything else that went wrong is the server's fault. */
 export async function unlessRefused(reply: FastifyReply, change: () => Promise<unknown>) {
   try {
@@ -167,7 +162,7 @@ export function registerMembers(app: FastifyInstance, { collab, limiter }: { col
           // The Owner too is a member already. A savepoint, so that a refused row leaves the transaction usable.
           await Score.sequelize!.transaction({ transaction }, (nested) => ScoreMember.create({ scoreId: score.id, accountId: account.id, role: body.data.role }, { transaction: nested }));
         } catch (error) {
-          if (isDuplicate(error)) throw new Refusal(409, "already_member");
+          if (error instanceof UniqueConstraintError) throw new Refusal(409, "already_member");
           throw error;
         }
       });
