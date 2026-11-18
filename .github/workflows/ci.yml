@@ -63,6 +63,21 @@ jobs:
             exit 1
           fi
 
+  # The recognition service, the repository's only Python: its pytest suite in the Docker image that
+  # has the OCR packages, where a test marked "ocr" fails instead of skipping when they are missing
+  # (docs/spec/recognizer.md, ADR 0006). Then the image Compose builds (its last target).
+  recognizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the test image
+        run: docker build --target test --tag studio-recognizer-test services/recognizer
+      - name: Recognizer tests
+        run: docker run --rm studio-recognizer-test
+      - name: Build the service image
+        run: docker build --tag studio-recognizer services/recognizer
+
   # The pages through a real browser, against the real server, Postgres and Redis: the whole suite
   # in Chromium, smoke tests in Firefox and WebKit (docs/spec/testing.md, section 3). WebKit's
   # Playwright project logs in to a server of its own with the development cookie
