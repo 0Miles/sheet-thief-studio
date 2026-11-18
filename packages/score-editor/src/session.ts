@@ -40,7 +40,8 @@ import {
   moveToBarEnd,
   moveToBarStart,
   moveToVoice,
-  noteKeyAt,
+  DRUM_PIECES,
+  noteKeysAt,
   type NoteToggle,
   type RepeatChange,
   type PartPresetId,
@@ -77,7 +78,8 @@ import {
   tieToggle,
   type TimeSignature,
   toggleAnacrusis,
-  toggleAt,
+  toggleDrum,
+  toggleKeysAt,
   toggleOnSelection,
   tripletToggle,
   VOICE_NOT_OFFERED,
@@ -516,15 +518,15 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
 
   /**
    * A technique key (docs/spec/commands.md, 5.4): on every note of the selection, which stays;
-   * else on the note of the cursor's line (`noteKeyAt`), where dead and tie may make a note, and
-   * a beat for it in the append slot.
+   * else on the notes of the cursor's line (`noteKeysAt`: a string, or the drum pieces drawn on
+   * the line), where dead and tie may make a note, and a beat for it in the append slot.
    */
   function toggleNotes<D>(toggle: NoteToggle<D>): KeyCommand {
     return selectionOrCursor(
       (selected, at) => toggleOnSelection(doc, selected, at, toggle),
       (at) => {
-        const key = noteKeyAt(doc, at);
-        return key === null ? at : markAppended(at, (here) => toggleAt(doc, here, key, toggle));
+        const keys = noteKeysAt(doc, at);
+        return keys.length === 0 ? at : markAppended(at, (here) => toggleKeysAt(doc, here, keys, toggle));
       },
     );
   }
@@ -543,7 +545,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
   };
 
-  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1 and 5). */
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1, 4.2 and 5). */
   function commandOf(binding: SessionBinding, previous: TypedDigit | null): KeyCommand {
     const { effect } = binding;
     switch (effect) {
@@ -609,6 +611,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return history(effect);
       case "fret":
         return change((at) => typeDigit(binding.fret, at, previous));
+      case "drum":
+        return change((at) => markAppended(at, (here) => toggleDrum(doc, here, DRUM_PIECES[binding.piece].id)));
       case "tie":
         return toggleNotes(tieToggle);
       case "slideOut":

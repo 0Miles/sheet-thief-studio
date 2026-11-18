@@ -145,7 +145,7 @@ Y.Doc
 
 ### 7.1 介面提供的 18 個鼓件
 
-id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最上面那條線，一格是半個間距）與符頭是 alphaTab 內建表的值（`spike-report.md` S6）。
+id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置（0 是最上面那條線，一格是半個間距）與符頭是 alphaTab 內建表的值（`spike-report.md` S6）。
 
 | 鼓件 | 鍵 | 發出的 MIDI 音 | 譜表位置 |
 |---|---|---|---|
@@ -168,7 +168,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 | splash | `p55` | 55 | −2 |
 | cowbell | `p56` | 56 | 0 |
 
-**補充**：`EditorSession` 需要「鼓件 → 譜表位置」才能處理鼓的 `Delete` 與游標位置，但它不能依賴 alphaTab。做法：`score-render` 匯出一份由 alphaTab 內建表產生的純資料對照（`ReadonlyMap<number, number>`），由 Vue 殼傳給 `EditorSession`。對照裡沒有的 id，不受 `Delete` 的「整條線」規則影響，只能用 `Shift+R` 清空拍點。
+**補充**（#44 改寫）：`EditorSession` 需要「鼓件 → 譜表位置」才能處理鼓的 `Delete` 與游標位置，但它不能依賴 alphaTab。做法：這張表（id、發出的 MIDI 音、譜表位置）只有一份，放在 `score-model` 的 `drums.ts`（`DRUM_PIECES`、`drumLineOf`、`drumLineOfKey`），編輯器、`score-render` 的測試與量測都讀它；`score-render` 不再有自己的一份，殼也不必轉交。表的值以 alphaTab 為準：`packages/score-render/tests/geometry.test.ts` 的「each of the 18 drum pieces is drawn on the line the table gives it」逐一畫出 18 個鼓件，確認符頭落在表上那條線的游標裡；`sound.test.ts` 確認發出的 MIDI 音。表裡沒有的 id，不受 `Delete` 的「整條線」規則影響，只能用 `Shift+R` 清空拍點。
 
 ## 8. 音符（NoteJSON）
 

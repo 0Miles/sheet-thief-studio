@@ -9,6 +9,7 @@ import {
   createScore,
   cursorAt,
   docToJson,
+  DRUM_PIECES,
   dynamicCycle,
   insertBars,
   insertBeat,
@@ -23,7 +24,6 @@ import {
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { DRUM_PIECES } from "../src/drums";
 import { projectScore } from "../src/projection";
 
 const settings = new alphaTab.Settings();
