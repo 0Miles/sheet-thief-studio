@@ -64,3 +64,34 @@ test("on drums, Delete with the cursor on the hi-hat's line takes off every piec
   expect(await drums()).toEqual([{ p38: {} }]);
   expect(errors).toEqual([]);
 });
+
+test("on drums, Alt+2 then K writes the kick in the second voice, drawn as its own voice; Alt+1 goes back to the first (#45)", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+  await page.keyboard.press("Control+ArrowDown");
+  for (const key of ["h", "ArrowRight", "h"]) await page.keyboard.press(key);
+
+  await page.keyboard.press("Alt+2");
+  expect(await cursorOf(page)).toMatchObject({ voice: "0:1", beatId: null, at: "after" });
+  await page.keyboard.press("k");
+  /** The pieces of each beat of a voice of the drums' first bar. */
+  const voice = async (key: string) => {
+    const score = await scoreOf(page);
+    return (score.parts[1]!.content[score.bars[0]!.id]?.[key] ?? []).map((beat) => beat.notes);
+  };
+  expect(await voice("0:1")).toEqual([{ p36: {} }]);
+  expect(await voice("0:0")).toEqual([{ p42: {} }, { p42: {} }]);
+  expect(await cursorOf(page)).toMatchObject({ voice: "0:1", at: "on", line: DRUM_PIECES.kick.line });
+  await drawn(page);
+  await expect(page.locator("[data-cursor]")).toBeVisible();
+
+  await page.keyboard.press("Alt+1");
+  expect(await cursorOf(page)).toMatchObject({ voice: "0:0", at: "on" });
+  await synced(page);
+  await page.reload();
+  await drawn(page);
+  expect(await voice("0:1")).toEqual([{ p36: {} }]);
+  expect(errors).toEqual([]);
+});
