@@ -9,7 +9,7 @@
 import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 
-import type { Closing } from "../access";
+import type { Closing, ReadOnlyReason } from "../access";
 import type { RestoreTarget } from "../restore";
 import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
@@ -25,6 +25,8 @@ const session = useSessionStore();
 const opened = ref(0);
 /** What the score opened anew says first. */
 const notice = ref<string | undefined>();
+/** Why the score opened anew is read-only from the start: it was locked on this page (`lockReadOnly`). */
+const readOnly = ref<ReadOnlyReason | undefined>();
 const removed = ref(false);
 /** The score open now: the ScoreView of this time it was opened. */
 const scoreView = shallowRef<InstanceType<typeof ScoreView> | null>(null);
@@ -34,6 +36,7 @@ const aside = computed(() => route.name === "score-versions");
 /** What the versions page restores a version in: whichever ScoreView holds the score now. */
 const restoreTarget: RestoreTarget = {
   canRestore: () => scoreView.value?.restoreTarget.canRestore() ?? false,
+  lockedBecause: () => scoreView.value?.restoreTarget.lockedBecause() ?? null,
   replace: (version) => scoreView.value?.restoreTarget.replace(version) ?? false,
 };
 
@@ -64,6 +67,7 @@ async function onStopped(): Promise<void> {
 async function onClosed(closing: Closing): Promise<void> {
   if (closing.kind === "reopen") {
     notice.value = closing.notice;
+    readOnly.value = closing.readOnly;
     opened.value += 1;
   } else if (closing.kind === "removed") {
     removed.value = true;
@@ -78,7 +82,7 @@ async function onClosed(closing: Closing): Promise<void> {
   <NotFoundView v-if="removed" :notice="strings.score.removed" />
   <template v-else>
     <div :class="{ 'score-page__behind': aside }" :inert="aside || undefined" :aria-hidden="aside || undefined">
-      <ScoreView :key="`${id ?? token}:${opened}`" ref="scoreView" :id="id" :token="token" :notice="notice" @closed="onClosed" @stopped="onStopped" />
+      <ScoreView :key="`${id ?? token}:${opened}`" ref="scoreView" :id="id" :token="token" :notice="notice" :read-only="readOnly" @closed="onClosed" @stopped="onStopped" />
     </div>
     <RouterView v-slot="{ Component }">
       <!-- The score's own child route draws nothing: the score above is the page. -->
