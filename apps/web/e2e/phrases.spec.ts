@@ -1,11 +1,10 @@
 // The phrase library (#53; docs/spec/phrases.md, section 4): on a desktop, making a blank phrase,
 // renaming, copying and deleting one through the page; on a phone, the list and its search only.
 import { type BrowserContextOptions, expect, type Locator, type Page, test } from "./test";
-import { blankFragment, PART_PRESETS } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { loggedIn, logInFromStart, pageErrors } from "./pages";
+import { createPhrase, loggedIn, logInFromStart, pageErrors } from "./pages";
 
 const text = strings.phrases;
 
@@ -20,13 +19,6 @@ function runName(name: string): string {
 /** The row of the phrase with this name, exactly. */
 function rowOf(page: Page, name: string): Locator {
   return page.getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
-}
-
-/** A phrase made through the API as the account logged in on the page (data the test starts from). */
-async function createPhrase(page: Page, name: string): Promise<void> {
-  const origin = new URL(page.url()).origin;
-  const response = await page.request.post("/api/phrases", { data: { name, fragment: blankFragment(PART_PRESETS.guitar6) }, headers: { origin } });
-  expect(response.status()).toBe(201);
 }
 
 test("on /phrases a blank phrase is made, renamed, copied and deleted, each kept after reloading", async ({ page }) => {

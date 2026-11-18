@@ -50,6 +50,11 @@ export async function postFor<T>(path: string, body: unknown, shape: { parse(val
   return shape.parse(await (await call("POST", path, body)).json());
 }
 
+/** PUT, the answer checked against its shape in @studio/contracts. */
+export async function putFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
+  return shape.parse(await (await call("PUT", path, body)).json());
+}
+
 /** PATCH, the answer checked against its shape in @studio/contracts. */
 export async function patchFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
   return shape.parse(await (await call("PATCH", path, body)).json());

@@ -22,6 +22,7 @@ export const router = createRouter({
     { path: "/admin", name: "admin", component: () => import("./views/AdminView.vue"), meta: { admin: true } },
     { path: "/", name: "home", component: HomeView },
     { path: "/phrases", name: "phrases", component: () => import("./views/PhrasesView.vue") },
+    { path: "/phrases/:id", name: "phrase", component: () => import("./views/PhrasePage.vue"), props: true },
     { path: "/scores/:id", name: "score", component: () => import("./views/ScorePage.vue"), props: true },
     { path: "/scores/:id/versions", name: "score-versions", component: () => import("./views/VersionsView.vue"), props: true },
     { path: "/scores/:id/settings", name: "score-settings", component: () => import("./views/SettingsView.vue"), props: true },

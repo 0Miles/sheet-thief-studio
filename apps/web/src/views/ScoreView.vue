@@ -20,13 +20,11 @@ import {
   canAddPart,
   type Cursor,
   cursorAt,
-  DEFAULT_KEY_SIG,
   docToJson,
   type Flag,
   flagsOf,
   type FlagStop,
   type KeySignature,
-  keySigAt,
   MAX_BEAT_TEXT,
   nextFlag,
   observeScore,
@@ -38,9 +36,7 @@ import {
   type ScoreChange,
   type ScoreJSON,
   stillAt,
-  tempoAt,
   type TimeSignature,
-  voltaRepeatTimes,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PartMix, type PlayerState, playerUsable, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
@@ -49,6 +45,7 @@ import * as Y from "yjs";
 
 import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
+import { barPanelOf } from "../barPanel";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -369,38 +366,7 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
 
 
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
-const panel = computed(() => {
-  const json = score.value;
-  const { cursor: at, selection } = presence.value;
-  if (!panelOpen.value || json === null || at === null) return null;
-  const index = json.bars.findIndex((bar) => bar.id === at.barId);
-  const bar = json.bars[index];
-  if (bar === undefined) return null;
-  const numberOf = (barId: string) => json.bars.findIndex((each) => each.id === barId) + 1;
-  const ends = selection === null ? null : selection.kind === "beats" ? [selection.barId, selection.barId] : [selection.anchorBarId, selection.focusBarId];
-  const numbers = ends?.map(numberOf);
-  const range = numbers && numbers.every((number) => number > 0) ? { first: Math.min(...numbers), last: Math.max(...numbers) } : null;
-  // A repeat set here starts on the first bar of the selection and ends on its last (docs/spec/commands.md, section 6).
-  const repeatFirst = json.bars[(range?.first ?? index + 1) - 1];
-  const repeatLast = json.bars[(range?.last ?? index + 1) - 1];
-  return {
-    bar: index + 1,
-    range,
-    timeSig: bar.timeSig,
-    tempo: bar.tempo,
-    tempoInForce: tempoAt(json, bar.id) ?? 0,
-    keySig: bar.keySig,
-    keySigInForce: keySigAt(json, bar.id) ?? DEFAULT_KEY_SIG,
-    section: bar.section,
-    repeatStart: repeatFirst?.repeatStart === true,
-    repeatEnd: repeatLast?.repeatEnd,
-    voltas: bar.voltas ?? [],
-    // Voltas go on every bar of the selection, else on the cursor's.
-    voltaRepeatTimes: voltaRepeatTimes(json, range ? json.bars.slice(range.first - 1, range.last).map((each) => each.id) : [bar.id]),
-    firstBar: index === 0,
-    anacrusis: bar.anacrusis === true,
-  };
-});
+const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
 
 /** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
 function togglePanel(): void {

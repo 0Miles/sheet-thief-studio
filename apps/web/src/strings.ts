@@ -312,6 +312,28 @@ export const strings = {
     confirm: "刪除",
     cancel: "取消",
   },
+  // The phrase editor (/phrases/:id; docs/spec/phrases.md, section 5). Changed elsewhere and too
+  // large are said with the texts of their error codes (`errors`).
+  phraseEditor: {
+    label: "樂句",
+    library: "樂句庫",
+    rename: "改名",
+    parts: "調弦與譜號",
+    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: "沒有儲存", tooLarge: "沒有儲存", failed: "沒有儲存" },
+    reload: "重新載入",
+    saveAsNew: "另存成新樂句",
+    /** The server could not be reached, or failed itself: saving is tried again by itself. */
+    retrying: "無法儲存，稍後會自動再試。",
+    /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
+    desktopOnly: "請在電腦上編輯",
+  },
+  saveAsNewPhrase: {
+    title: "另存成新樂句",
+    name: "名稱",
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+  },
   // The part presets (docs/spec/commands.md, section 10).
   presets: {
     guitar6: "吉他 6 弦",
