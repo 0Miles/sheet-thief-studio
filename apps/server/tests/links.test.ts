@@ -15,6 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Account, Score, ScoreMember } from "../src/db/models";
 import { withoutLinkTokens } from "../src/links";
+import { holdClock } from "./clock";
 import { apiCall, closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -166,6 +167,7 @@ test("a wrong token answers 404; right and wrong answers both say no referrer an
 });
 
 test("a guest's tickets are limited to 30 a minute from one IP", async () => {
+  holdClock();
   const { app } = await startApp();
   const statuses: number[] = [];
   for (let attempt = 0; attempt < 30; attempt += 1) statuses.push((await askAsGuest(app, "x".repeat(43), "10.0.0.7")).statusCode);

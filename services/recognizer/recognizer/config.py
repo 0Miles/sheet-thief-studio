@@ -29,7 +29,7 @@ class Settings:
     max_job_timeout_s: int = 900  # whole job, however it advances
     # Address space of one recognition child: decoding the pictures plus OCR (onnxruntime) needs ~2.5 GB.
     worker_memory_mb: int = 3072
-    worker_concurrency: int = 1
+    # One recognition at a time is not a setting: the HTTP service answers 503 to a second one (service.py).
     max_pages: int = 40
     max_events: int = 50_000
     max_measures: int = 2000

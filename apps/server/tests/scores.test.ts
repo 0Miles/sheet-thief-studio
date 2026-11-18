@@ -10,6 +10,7 @@ import * as Y from "yjs";
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, ScoreMember } from "../src/db/models";
+import { holdClock } from "./clock";
 import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -97,6 +98,7 @@ test("a member gets a collab ticket with their role", async () => {
 });
 
 test("a member's collab tickets are limited to 60 a minute for one account, whatever the score", async () => {
+  holdClock();
   const id = await createScore(app, anna);
   const statuses: number[] = [];
   for (let attempt = 0; attempt < 59; attempt += 1) statuses.push((await askTicket(app, id, anna)).statusCode);

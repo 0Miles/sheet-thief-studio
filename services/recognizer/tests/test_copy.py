@@ -85,7 +85,7 @@ def test_the_limits_of_the_sandbox() -> None:
     """docs/spec/recognizer.md, section 4: 120 s without progress, 900 s in all, 3072 MB a child."""
     settings = Settings.from_env({})
     assert (settings.conversion_timeout_s, settings.max_job_timeout_s, settings.worker_memory_mb) == (120, 900, 3072)
-    assert (settings.worker_concurrency, settings.max_image_pages, settings.max_image_megapixels) == (1, 15, 40)
+    assert (settings.max_image_pages, settings.max_image_megapixels) == (15, 40)
     assert (settings.max_upload_mb, settings.max_total_upload_mb) == (10, 40)
 
 

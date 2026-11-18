@@ -1,4 +1,5 @@
-# Postgres and Redis for development and for the server's tests (docs/spec/testing.md).
+# Postgres and Redis for development and for the server's tests (docs/spec/testing.md), and the
+# recognition service (docs/spec/recognizer.md).
 # Start with `docker compose -f compose.dev.yaml up -d`. The host ports are not the default
 # ones so that they do not collide with other projects' databases on the same machine.
 name: sheet-thief-studio
@@ -31,6 +32,15 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # The recognition service (docs/spec/recognizer.md, section 3): the server reaches it at
+  # RECOGNIZER_URL, http://127.0.0.1:8000 by default. Bound to this machine only.
+  recognizer:
+    build:
+      context: ./services/recognizer
+      target: runtime
+    ports:
+      - "127.0.0.1:8000:8000"
 
 volumes:
   postgres:
