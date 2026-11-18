@@ -51,6 +51,7 @@ import * as Y from "yjs";
 import { afterRoleChange, type Closing, openedView, ownChangesOf, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal, whyRefused } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
 import { barPanelOf } from "../barPanel";
+import { listenToClipboard } from "../clipboard";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -80,6 +81,7 @@ import type { RestoreTarget } from "../restore";
 import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
+import { fontDirectory, soundFontUrl } from "../served";
 
 /**
  * One of the two: a member's score id, or a guest's link token; and what to say first, when the
@@ -260,9 +262,7 @@ const lyrics = useLyricEntry({
   session: () => session,
   boundsOf: (cursor) => engine?.renderer.boundsOf(cursor) ?? null,
   reserved: () => reserved.value,
-  tell: (said) => {
-    notice.value = said;
-  },
+  tell: say,
   done: focusScore,
 });
 const { request: lyricRequest, rect: lyricRect } = lyrics;
@@ -1063,6 +1063,8 @@ function warnUnsynced(event: BeforeUnloadEvent): void {
 window.addEventListener("offline", goOffline);
 window.addEventListener("online", goOnline);
 window.addEventListener("beforeunload", warnUnsynced);
+// Copy, cut and paste while the score has the keyboard (docs/spec/phrases.md, section 2); told as a drop is.
+const stopClipboard = listenToClipboard({ scroller: () => scroller.value, session: () => session, tell: say });
 
 onMounted(async () => {
   let opened: Opening;
@@ -1086,8 +1088,8 @@ onMounted(async () => {
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
   // Read view in a worker, and a click on it sends playback there.
   engine = createAlphaTabEngine(host.value, {
-    fontDirectory: "/font/",
-    soundFont: "/soundfont/sonivox.sf3",
+    fontDirectory: fontDirectory(),
+    soundFont: soundFontUrl(),
     useWorkers: reading.value,
     seekOnClick: reading.value,
     scale: display.value.scale,
@@ -1203,6 +1205,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
   window.removeEventListener("online", goOnline);
   window.removeEventListener("beforeunload", warnUnsynced);
+  stopClipboard();
   sound?.destroy();
   hideFromTests();
   measurement.stop();

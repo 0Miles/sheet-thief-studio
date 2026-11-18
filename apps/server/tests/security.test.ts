@@ -12,6 +12,7 @@ import { Redis } from "ioredis";
 import { afterEach, expect, test } from "vitest";
 
 import { buildApp } from "../src/app";
+import { registeredPlugin } from "./karyl";
 import { ORIGIN, TEST_REDIS_URL, testConfig } from "./support";
 
 /** A build as Vite leaves one: the page, and a file of /assets/ named after its content. */
@@ -19,7 +20,7 @@ const BUILD = fileURLToPath(new URL("fixtures/web", import.meta.url));
 const PAGE = readFileSync(`${BUILD}/index.html`, "utf8");
 
 const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
 
 let closing: Array<() => Promise<unknown> | void> = [];
 
@@ -186,6 +187,42 @@ test("a link inside the build that leads out of it serves nothing from there", a
   // Without an extension it is a path of the page like any other: the page, not the file.
   const bare = await app.inject({ method: "GET", url: "/link/secret" });
   expect([bare.statusCode, bare.body]).toEqual([200, PAGE]);
+});
+
+test("behind the karyl-chan bot, the page's <base> is where the bot serves it; its files are the build's", async () => {
+  const redis = new Redis(TEST_REDIS_URL, { lazyConnect: true });
+  const app = buildApp({ config: testConfig({ WEB_ROOT: BUILD }), redis, logger: false, karyl: registeredPlugin(null) });
+  closing.push(
+    () => app.close(),
+    () => redis.disconnect(),
+  );
+  const served = PAGE.replace('<base href="/" />', '<base href="/plugin/sheet-thief-studio/">');
+  expect(served).not.toBe(PAGE);
+
+  for (const url of ["/", "/scores/anything", "/index.html"]) {
+    const page = await app.inject({ method: "GET", url });
+    expect([url, page.statusCode, page.body]).toEqual([url, 200, served]);
+    expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(page.headers["content-security-policy"]).toBe(CSP);
+    const again = await app.inject({ method: "GET", url, headers: { "if-none-match": page.headers.etag as string } });
+    expect([url, again.statusCode]).toEqual([url, 304]);
+  }
+  const asset = await app.inject({ method: "GET", url: "/assets/app-1a2b3c4d.js" });
+  expect([asset.statusCode, asset.body]).toEqual([200, readFileSync(`${BUILD}/assets/app-1a2b3c4d.js`, "utf8")]);
+});
+
+test("a build whose page has no <base> gets one first in <head>", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "studio-web-"));
+  closing.push(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, "index.html"), '<!doctype html><html><head lang="zh-Hant"><title>t</title></head><body></body></html>');
+  const redis = new Redis(TEST_REDIS_URL, { lazyConnect: true });
+  const app = buildApp({ config: testConfig({ WEB_ROOT: directory }), redis, logger: false, karyl: registeredPlugin(null) });
+  closing.push(
+    () => app.close(),
+    () => redis.disconnect(),
+  );
+
+  expect((await app.inject({ method: "GET", url: "/" })).body).toBe('<!doctype html><html><head lang="zh-Hant"><base href="/plugin/sheet-thief-studio/"><title>t</title></head><body></body></html>');
 });
 
 test("the page of a read-only link sends no referrer on and is not indexed", async () => {

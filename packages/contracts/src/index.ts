@@ -109,7 +109,8 @@ export const adminAccount = z.object({
   displayName: z.string(),
   isAdmin: z.boolean(),
   disabled: z.boolean(),
-  identities: z.array(z.object({ id: z.string(), provider: identityProvider })),
+  /** `subject` is the Discord id of a karyl-chan binding; a password's says nothing more and is left out. */
+  identities: z.array(z.object({ id: z.string(), provider: identityProvider, subject: z.string().optional() })),
 });
 export type AdminAccount = z.infer<typeof adminAccount>;
 
@@ -120,6 +121,13 @@ export type AdminAccountList = z.infer<typeof adminAccountList>;
 /** A new account with a temporary password, which its person must change first (`POST /api/admin/accounts`). */
 export const createAccountRequest = z.object({ username, displayName, password });
 export type CreateAccountRequest = z.infer<typeof createAccountRequest>;
+
+/** A Discord user id: a snowflake, 17 to 20 digits. */
+export const discordId = z.string().regex(/^[0-9]{17,20}$/);
+
+/** Binding a Discord id to an account (`POST /api/admin/accounts/:id/identities`; docs/spec/karyl-login.md, section 4). */
+export const bindIdentityRequest = z.object({ provider: z.literal("karyl-chan"), subject: discordId });
+export type BindIdentityRequest = z.infer<typeof bindIdentityRequest>;
 
 /** A new temporary password (`POST /api/admin/accounts/:id/reset-password`). */
 export const resetPasswordRequest = z.object({ password });

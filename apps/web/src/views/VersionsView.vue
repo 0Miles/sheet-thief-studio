@@ -23,6 +23,7 @@ import { type RestoreTarget, restoreVersion } from "../restore";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
+import { fontDirectory, soundFontUrl } from "../served";
 
 /** The score open under this page, which a version is restored in. */
 const props = defineProps<{ id: string; restoreTarget: RestoreTarget }>();
@@ -101,7 +102,7 @@ onMounted(async () => {
   await nextTick();
   if (host.value === undefined) return;
   // As the Read view draws a score: in a worker, a click sending playback there.
-  engine = createAlphaTabEngine(host.value, { fontDirectory: "/font/", soundFont: "/soundfont/sonivox.sf3", useWorkers: true, seekOnClick: true });
+  engine = createAlphaTabEngine(host.value, { fontDirectory: fontDirectory(), soundFont: soundFontUrl(), useWorkers: true, seekOnClick: true });
   engine.renderer.onRendered(() => {
     drawnVersion.value = drawing;
   });

@@ -39,8 +39,11 @@ export type SessionsEnded = { accountId: string; sessionId: null } | { accountId
 
 export type SessionsEndedListener = (ended: SessionsEnded) => void | Promise<void>;
 
-/** One session, or every session of an account but the one it keeps (changing one's own password). */
-export type SessionsToEnd = { sessionId: string } | { accountId: string; except?: string };
+/**
+ * One session, or every session of an account but the one it keeps (changing one's own password),
+ * or only those that logged in one way (unbinding its Discord id).
+ */
+export type SessionsToEnd = { sessionId: string } | { accountId: string; except?: string; via?: LoginMethod };
 
 interface Logger {
   error(details: object, message: string): void;
@@ -114,8 +117,17 @@ export class Sessions {
       }
       return;
     }
-    const { accountId, except } = which;
+    const { accountId, except, via } = which;
     const ending = (await this.redis.smembers(accountKey(accountId))).filter((id) => id !== except);
+    if (via !== undefined) {
+      // Only those that logged in this way: each ends as one session does, closing its own connections only.
+      const stored = ending.length === 0 ? [] : await this.redis.mget(ending.map(sessionKey));
+      for (const [at, sessionId] of ending.entries()) {
+        const value = stored[at];
+        if (value != null && readJson(value, storedSession)?.via === via) await this.end({ sessionId });
+      }
+      return;
+    }
     const removal = this.redis.multi();
     for (const id of ending) removal.del(sessionKey(id));
     if (except === undefined) removal.del(accountKey(accountId));

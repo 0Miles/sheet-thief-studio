@@ -1,10 +1,14 @@
 <script setup lang="ts">
+// Logging in. On its own, with a username and password; behind the karyl-chan bot, whose proxy
+// drops the session cookie, by a link of its `/studio` command, and this page says why the last
+// link logged nobody in (docs/spec/karyl-login.md, section 7).
 import { AppButton, AppTextField, Stack } from "@karyl-chan/ui";
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { ApiError } from "../api";
 import { afterLogin } from "../router";
+import { behindBot, type KarylFailure, takeKarylFailure } from "../served";
 import { errorText, strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 
@@ -16,6 +20,25 @@ const username = ref("");
 const password = ref("");
 const error = ref("");
 const sending = ref(false);
+
+const karyl = strings.login.karyl;
+const viaBot = behindBot();
+
+function failureText(failure: KarylFailure): string {
+  switch (failure.kind) {
+    case "unbound":
+      return karyl.unbound(failure.discordId);
+    case "disabled":
+      return karyl.disabled;
+    case "rate_limited":
+      return karyl.rateLimited;
+    case "invalid":
+      return karyl.invalid;
+  }
+}
+
+const linkFailure = takeKarylFailure();
+const linkError = linkFailure === null ? "" : failureText(linkFailure);
 
 async function submit(): Promise<void> {
   error.value = "";
@@ -34,7 +57,15 @@ async function submit(): Promise<void> {
 
 <template>
   <main class="login">
-    <form class="login__form" @submit.prevent="submit">
+    <section v-if="viaBot" class="login__form" data-karyl-login>
+      <Stack gap="4">
+        <h1 class="login__title">{{ strings.app.name }}</h1>
+        <p v-if="session.expired && !linkError" class="login__expired" role="status">{{ strings.login.expired }}</p>
+        <p v-if="linkError" class="login__error" role="alert">{{ linkError }}</p>
+        <p class="login__karyl">{{ karyl.instructions }}</p>
+      </Stack>
+    </section>
+    <form v-else class="login__form" @submit.prevent="submit">
       <Stack gap="4">
         <h1 class="login__title">{{ strings.app.name }}</h1>
         <p v-if="session.expired" class="login__expired" role="status">{{ strings.login.expired }}</p>
@@ -75,6 +106,9 @@ async function submit(): Promise<void> {
 .login__error {
   margin: 0;
   color: var(--danger);
+}
+.login__karyl {
+  margin: 0;
 }
 .login__help {
   margin: 0;

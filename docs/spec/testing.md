@@ -61,12 +61,14 @@
 - CI 的 e2e job 跑在 Playwright 官方 image `mcr.microsoft.com/playwright:v<版本>-noble` 裡，版本由 `playwright-version` job 從 `pnpm-lock.yaml` 的 `@playwright/test` 讀出，瀏覽器與它們要的系統套件都在 image 裡，不再從 Ubuntu mirror 用 `--with-deps` 安裝（#145：mirror 慢的時候，單是安裝就吃掉整個 job 的時間）。容器以 runner 的 uid 1001 執行（Firefox 不肯以 root 跑）。容器裡的 service containers 用名稱與原本的 port 連（`postgres:5432`、`redis:6379`），由 `E2E_DATABASE_URL`、`E2E_REDIS_URL` 交給 `apps/web/e2e/environment.ts`；沒設時用 `compose.dev.yaml` 的 `localhost:5438`、`localhost:6388`。時間預算分開：`pnpm install` 5 分鐘、瀏覽器檢查 3 分鐘、e2e 本身 20 分鐘、整個 job 30 分鐘。本機第一次要自己裝瀏覽器，見 `README.md`。
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project。
   - **補充**（#52）：第 5 節確認檢查 3 的 `apps/web/e2e/clipboard.spec.ts` 不是 smoke，三個 project 都跑：`chromium` 照常收進完整的 e2e，`firefox`、`webkit` 的 `testMatch` 另外列出它。
+    - **補充**（#58）：剪貼簿本身的 e2e（跨團譜複製小節、剪下並貼上拍點、Viewer 複製進樂句編輯器）也放在這個檔案，三個 project 都跑。Windows 上的 Playwright WebKit 讀不回 `copy`、`cut` 寫入的內容，那裡改斷言事件有被頁面處理：剪下照樣清空、貼上提示「剪貼簿裡沒有可以貼上的內容」、文件不變；round trip 以其他瀏覽器與 CI 的 Linux WebKit 為準。
   - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
   - **補充**（#64）：e2e 的 server 呼叫假的辨識服務（`apps/server/tests/recognizerE2e.ts`），由 Playwright 的 `webServer` 在 port 8034 啟動（`e2e/environment.ts` 的 `RECOGNIZER_URL`），不會連到開發用、在 8000 的真辨識服務。要別的回答時，測試先送 `PUT /fixture/<契約 fixture 名稱>`，之後都回那一份。
   - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），辨識的審核頁（上傳圖片、畫出辨識結果、音色載入完成、原圖載入，#64），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
+  - **補充**（#72）：Playwright project `plugin` 只跑 `e2e/plugin.spec.ts`。一個假的 karyl-chan bot（`apps/server/tests/botE2e.ts`，port 8036）讓 plugin 模式的 server（port 8035，`WEB_ROOT` 指向 `dist`）註冊，像真的 bot 一樣把它的頁面放在 `/plugin/sheet-thief-studio/` 底下代理（去掉前綴、刪掉 cookie、轉發 WebSocket Upgrade），並提供 `POST /test/studio` 簽一個 `/studio` dispatch、回傳回覆裡的連結。spec 用連結登入，在 base path 底下開一份團譜：畫出譜面、音色載入完成、打字同步到伺服器、重新整理後仍登入、登出；另外是未綁定與用過的連結在 `/login` 顯示原因，全程沒有 CSP 違規。CI 的 `e2e` job 用 `--project=plugin` 一起跑。
 - 送 PR 前：`pnpm lint && pnpm typecheck && pnpm test`；web 或 server 有改時加上 `pnpm --filter @studio/web test:e2e`。
 
 ## 4. 量測（不是 CI 的關卡）
@@ -116,7 +118,7 @@
 4. 真實照片的辨識品質，包含非六弦的 TAB，以及用手機直接拍照上傳（iPhone、Android 各一次：檔案格式被不被接受、直拍的照片有沒有轉正）。
 5. 目視確認 alphaTab 的標記沒有被我們的疊層蓋住；e2e 的幾何斷言之外，仍保留這項人工檢查。
 6. 在樂團成員實際的筆電上重量 S2。spike 只在一台 i9-9900K 桌機上量過（`spike-report.md:22,355`）。Mac 的成員另外用 WebKit 量一次。
-7. 部署，以及在 karyl-chan bot 的 `/admin/services` 註冊 service。
+7. 部署，以及在 karyl-chan bot 的 `/admin/plugins` 建立 plugin（取得 setup secret）、啟用它，再用 `/studio` 實際登入一次，並在共編頁確認 WebSocket 經過 bot 的代理連得上。
 8. 在 Windows、macOS 各實際試一次衝突的快捷鍵，有 Linux 的話也試：[`keymap.md`](keymap.md) 裡每個帶修飾鍵的組合、Mac 上要按 `Fn` 的功能鍵與 `Fn+←`、`Fn+→`、Mac 上 Safari 的 `Cmd+C`、`Cmd+V`、`Cmd+Z`，以及 Linux 版 Chrome 的 `Alt+1`、`Alt+2`。記錄動作有沒有生效、作業系統或瀏覽器有沒有另外做事。
 
 ## 7. 其他用測試鎖住的行為

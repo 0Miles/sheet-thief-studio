@@ -116,3 +116,30 @@ export async function setDisabled(accountId: string, disabled: boolean): Promise
   if (disabled !== (account.disabledAt !== null)) await account.update({ disabledAt: disabled ? new Date() : null });
   return true;
 }
+
+/** The Discord id is bound to an account already, or the account has one bound already (docs/spec/karyl-login.md, section 4). */
+export class IdentityTaken extends Error {
+  constructor(readonly subject: string) {
+    super(`karyl-chan identity ${subject} cannot be bound`);
+  }
+}
+
+/**
+ * Bind a Discord id to the account, for logging in from the karyl-chan bot. Null when there is no
+ * such account; IdentityTaken when the id is bound (to any account) or the account has one. The
+ * account's row is locked, so that two bindings at once cannot both give it one.
+ */
+export async function bindKarylIdentity(accountId: string, subject: string): Promise<Identity | null> {
+  try {
+    return await Account.sequelize!.transaction(async (transaction) => {
+      const account = await Account.findByPk(accountId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!account) return null;
+      if ((await Identity.count({ where: { accountId, provider: "karyl-chan" }, transaction })) > 0) throw new IdentityTaken(subject);
+      return await Identity.create({ accountId, provider: "karyl-chan", subject }, { transaction });
+    });
+  } catch (error) {
+    // `(provider, subject)` is unique: bound to another account.
+    if (error instanceof UniqueConstraintError) throw new IdentityTaken(subject);
+    throw error;
+  }
+}

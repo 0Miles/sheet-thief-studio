@@ -15,7 +15,7 @@ import {
   type VersionReason,
 } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PasteRefusal, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 import type { WhilePlaying } from "./mixer";
@@ -29,8 +29,14 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 // Texts said the same in more than one place.
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
+const NOTHING_TO_PASTE = "剪貼簿裡沒有可以貼上的內容";
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
 const TOO_MANY_BARS = `小節最多 ${MAX_BARS} 個`;
+/** What a drop tells, no dialog (docs/spec/commands.md, 5.7): of a phrase from the sidebar, or of bars pasted. */
+const DROP_HINTS = {
+  tuningDiffers: "調弦不同，格號照原樣放入",
+  barsAppended: "小節不夠，已在譜尾附加小節",
+} satisfies Record<DropHint, string>;
 const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
@@ -140,6 +146,22 @@ export const strings = {
       tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
     } satisfies Record<SessionHint, string>,
+    // What a paste tells the member (docs/spec/phrases.md, section 2; docs/spec/commands.md, 5.6
+    // and 5.7): why nothing was pasted, or what was done besides (several are said together).
+    clipboard: {
+      refused: {
+        nothing: NOTHING_TO_PASTE,
+        gone: "游標所在的小節已經不在了",
+        // Not a fragment once the session checks it again: as good as none.
+        invalid: NOTHING_TO_PASTE,
+        otherKind: "只能貼進同一種聲部",
+        tooManyStrings: "貼上的內容用到這個聲部沒有的弦",
+        otherStaves: "貼上的內容用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+      } satisfies Record<PasteRefusal, string>,
+      hints: DROP_HINTS,
+      joiner: "；",
+    },
     // A title read as empty (co-editing can empty it; docs/spec/schema.md, section 2).
     untitled: "未命名",
     // The title and the artist, changed in the title bar of the editable view (docs/spec/commands.md, 7.3).
@@ -325,10 +347,7 @@ export const strings = {
       /** Over a part of another kind, while a phrase is dragged over it. */
       cannotDrop: "不能放",
       // What a drop tells, no dialog (docs/spec/commands.md, 5.7).
-      hints: {
-        tuningDiffers: "調弦不同，格號照原樣放入",
-        barsAppended: "小節不夠，已在譜尾附加小節",
-      } satisfies Record<DropHint, string>,
+      hints: DROP_HINTS,
       refused: {
         gone: "要放的小節或聲部已經不在了",
         otherKind: "只能放進同一種聲部",
@@ -762,6 +781,21 @@ export const strings = {
     wasReset: (username: string) => `已重設 ${username} 的密碼。`,
     wasDisabled: (username: string) => `已停用 ${username}。`,
     wasEnabled: (username: string) => `已啟用 ${username}。`,
+    // Logging in from the karyl-chan bot: the Discord id bound to an account (docs/spec/karyl-login.md, section 4).
+    discord: {
+      bound: (discordId: string) => `Discord：${discordId}`,
+      bind: "綁定 Discord",
+      unbind: "解除綁定",
+      bindTitle: (username: string) => `為 ${username} 綁定 Discord`,
+      field: "Discord ID",
+      help: "成員的 Discord 使用者 ID，17–20 位數字。成員用 /studio 登入被拒時，登入頁會顯示自己的 ID。",
+      rule: "Discord ID 是 17–20 位數字。",
+      submit: "綁定",
+      unbindTitle: "解除 Discord 綁定",
+      unbindMessage: (username: string, discordId: string) => `要解除 ${username} 與 Discord ID ${discordId} 的綁定嗎？用 Discord 登入的裝置都會登出。`,
+      wasBound: (username: string, discordId: string) => `已把 Discord ID ${discordId} 綁定到 ${username}。`,
+      wasUnbound: (username: string) => `已解除 ${username} 的 Discord 綁定。`,
+    },
   },
   login: {
     username: "帳號名稱",
@@ -770,6 +804,14 @@ export const strings = {
     help: "帳號由管理者建立；忘記密碼時請找管理者重設。",
     // A page found the session ended (logged out elsewhere, a new password, an account disabled).
     expired: "登入已失效，請重新登入。",
+    // Behind the karyl-chan bot, logging in is by a link of its command (docs/spec/karyl-login.md, sections 1 and 7).
+    karyl: {
+      instructions: "在 Discord 的伺服器頻道輸入 /studio，打開 bot 回覆的連結就能登入。連結 2 分鐘內有效，只能用一次。",
+      unbound: (discordId: string) => `這個 Discord 帳號（ID：${discordId}）還沒有綁定帳號。請把這個 ID 交給管理者綁定。`,
+      disabled: "綁定的帳號已停用，請找管理者。",
+      invalid: "登入連結無效、已過期或已經用過。請在 Discord 重新輸入 /studio。",
+      rateLimited: "嘗試太多次，請稍後再試。",
+    },
   },
   notFound: {
     title: "找不到這個頁面",
@@ -789,6 +831,7 @@ export const strings = {
     owner_cannot_leave: "擁有者要先轉移擁有權。",
     username_taken: "這個帳號名稱已經有人使用。",
     cannot_disable_self: "不能停用自己的帳號。",
+    identity_taken: "這個 Discord ID 已經綁定別的帳號，或這個帳號已經綁定了一個。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",
     score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
