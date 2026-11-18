@@ -35,7 +35,7 @@
   - `convert_many` 回傳 `ConversionResult(scores, report)`：`scores` 是每個聲部的 `Score`（前身拿去寫 GP5 的那些），報告裡沒有 `preview`。`sandbox.run_isolated` 的子行程只回報告（JSON），回傳值是報告；前身的 `edit` 工作（`gp_edit`）刪掉。#61 在這之上加 JSON 出口。
   - 前身讀 GP5 驗證辨識結果的測試，改讀 `ConversionResult.scores`（`tests/scores.py`，沿用前身 GP5 writer 的名稱，期望值不變）。刪掉的只有測 GP5 寫出（`test_gp5_writer`）、Guitar Pro 編輯（`test_gp_edit`）、API（`test_api`、`test_projects`）、資料庫遷移（`test_migrations`）與 setuptools 安裝設定（`test_packaging` 的套件清單；它的相對 import 檢查搬進 `test_copy.py`）的測試。前身 `test_worker.py` 裡測辨識與 sandbox 行為的部分（圖片辨識成功、失敗頁標頁碼、`invalid_image`、`image_too_large`）改成直接呼叫 `run_isolated(job="images")`，失敗的 code 與訊息改成直接呼叫 `recognition_error`，都放在 `tests/test_sandbox.py`（另加一個 `cancel` 的測試）；其餘測 API、資料庫、佇列、MusicXML 的部分刪掉。
   - 第 4 節的限制在 `recognizer/config.py` 的 `Settings`，欄位名稱與預設值照前身 `app/config.py`，以大寫的同名環境變數覆寫（例如 `WORKER_MEMORY_MB`）。
-  - `Dockerfile` 有兩個 target：`test`（加裝 pytest、reportlab，設 `RECOGNIZER_REQUIRE_OCR=1`，標 `ocr` 的測試在缺 OCR 套件時失敗而不是略過）與最後的 `runtime`（Compose 之後會建置的 target，#61 接上）。CI 的 `recognizer` job 建 `test` 並在裡面跑 pytest，再建 `runtime`。
+  - `Dockerfile` 有兩個 target：`test`（加裝 pytest、reportlab，設 `RECOGNIZER_REQUIRE_OCR=1`，標 `ocr` 的測試在缺 OCR 套件時失敗而不是略過；**補充**（#61）也帶 `contract/`，測試拿它檢查服務的 JSON）與最後的 `runtime`（`compose.dev.yaml` 建置的 target，跑第 3 節的 HTTP 服務，帶 `/healthz` 的 `HEALTHCHECK`）。CI 的 `recognizer` job 建 `test` 並在裡面跑 pytest，再建 `runtime`。
 
 ### 2.1 授權聲明
 
@@ -46,7 +46,7 @@
 
 ## 3. HTTP 介面（內部）
 
-服務只在 Compose 的內部網路上，不對外開 port（補充）。
+服務不對外開放。**補充**（#61）：`compose.dev.yaml` 的 `recognizer` 把 port 只綁在 `127.0.0.1:8000`，讓本機執行的 server 以 `RECOGNIZER_URL`（預設 `http://127.0.0.1:8000`）連到它。
 
 | 方法與路徑 | 說明 |
 |---|---|
@@ -55,6 +55,12 @@
 
 - 同步呼叫：一次只跑一件；正在跑的時候，新的請求立刻回 503，對應舊的 `busy` code。
 - **補充**：埠號 8000；Node 端呼叫的逾時是 930 秒（整體上限 900 秒加 30 秒餘裕）。
+- **補充**（#61）實作的細節：
+  - `recognizer/service.py`，用 Python 標準庫的 `http.server`（image 裡沒有 web 框架，也不為一個端點新增套件），`python -m recognizer.service` 啟動，聽 `0.0.0.0:8000`（`HOST` 可改）。
+  - 先讀完並檢查請求（400），再看是否忙碌（503）：忙碌時送來的壞請求仍是 400。`/healthz` 在辨識進行中也照常回 200。
+  - 400 的回應不在契約裡，形狀是 `{ code, params }`：`bad_request`（不是 `multipart/form-data`、body 不完整、沒有 `Content-Length` 或用 chunked）、`no_images`（沒有 `images` 欄位）、`too_many_images`（超過 15 張）、`empty_image` `{ page }`、`file_too_large` `{ page }`（超過 10 MB）、`unsupported_image` `{ page }`（以檔頭判斷不是 PNG、JPEG、WebP）、`upload_too_large`（合計超過 40 MB；`Content-Length` 超過 40 MB 加 64 KB 時不讀 body）。`page` 從 1 數起。server 收檔時就先擋同樣的東西，正常不會遇到；萬一遇到，server 當成 `unavailable`。
+  - 422 的 code：沙箱的 `ConversionTimeout` → `timeout`；`ConversionUnavailable` → `unavailable`；核心的 `ConversionError`（頁層級的原因放進 `pages`）與其他沒料到的例外 → `recognition_failed`。核心的句子只進 log，用英文（`i18n.use("en")`）。
+  - 第 4 節的限制從 `config.get_settings()`（環境變數）取，傳給 `sandbox.run_isolated` 的 `recognize` 工作（圖片在子行程裡組成 PDF，再走出口）。前身的 `worker_concurrency` 刪掉：一次一件是介面的規則（503），不是設定。
 
 ## 4. 限制與逾時
 
@@ -75,6 +81,7 @@
 辨識服務回傳**它自己的中間模型 JSON**，帶版本號，以 JSON Schema 描述；Python 核心不認得 Studio 的 schema。
 
 - 新增的 JSON 出口放在 `_build_track` 之後、`_unify_bars` 之前（前身 `converter.py:558,738`）。理由：`_unify_bars` 會切掉超出拍號的音（前身 `converter.py:738-745`），違反 Studio「只標記、不改寫」的原則。
+- **補充**（#61）：出口在 `recognizer/contract.py`。`converter.build_tracks` 是從 `convert_many` 拆出來的前半（讀檔到每個聲部的 `_build_track`），`convert_many` 照舊接著做；出口只用 `build_tracks`。
 - JSON Schema 放在 `services/recognizer/contract/recognition.schema.json`（補充：路徑），版本號從 1 開始。形狀改了就升版本號。
 - Python 與 TypeScript 兩邊用同一批契約 fixture 測試（補充：放在 `services/recognizer/contract/fixtures/`，TypeScript 的測試直接讀這個目錄）。
 - **補充**（#59）：server 讀這份 JSON 用的 zod 形狀在 `packages/contracts/src/recognizer.ts`（`recognizerResponse`、`recognizerResult`、`recognizerFailure`）。`packages/contracts/tests/recognizer.test.ts` 用 Ajv（JSON Schema 2020-12）與 zod 驗證每一份 fixture，也驗證故意改壞的版本兩者都拒絕，並檢查 schema 的每個欄位都有 `description`。欄位的意思寫在 schema 的 `description` 裡；本節只寫大綱與跨欄位的規則。
@@ -123,7 +130,7 @@
 - `strings`：4–7。`tuning.midi`：第 1 弦（最高）在前。
 - `tuning.source`：`"detected"`（譜面或標題區印的調弦）或 `"default"`（該弦數的標準調弦）；`reason` 是讀不到時的原因代碼（例如 `"unrecognized"`）；`raw` 是讀不懂時保留的原文（前身 `tunings.py` 的 `TuningChoice`）。
 - `capo.source`：`"detected"` 或 `"default"`。
-- 每個小節的 `timeSignature` 是 `null` 時沿用前一個。
+- 每個小節的 `timeSignature` 是 `null` 時沿用前一個。**補充**（#61）：出口只在和當時生效的拍號不同時寫出（第一小節和整首的比），其他小節是 `null`。
 - `units` 是寫出來的長度，以 32 分音符為單位，一定能表示成一個音符加 0–2 個附點：1、2、3、4、6、7、8、12、14、16、24、28、32、48（第 7.2 節的表）；`tuplet` 為真表示三連音。
 - **補充**（#59）JSON Schema 與 zod 都檢查的規則（`packages/contracts/tests/recognizer.test.ts` 裡每一條都有改壞的版本）：
   - `tuning.midi` 的個數等於 `strings`；音符的 `string` 不超過 `strings`；同一個拍點上每條弦最多一個音符。
@@ -138,13 +145,13 @@
   - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出（只標記、不改寫）。
   - `sign`、`jump` 不用前身 Guitar Pro 的名稱；前身的 `"Da Coda"` 就是 `to_coda`。
   - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `\d` 也吃得到 `0.`）不輸出。
-- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。
+- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。**補充**（#61）：有 code 的句子在副本裡是 `notices.Notice`（`str` 的子類別，句子不變，另帶 code 與參數），核心與它的測試照舊當字串用；調弦與「從圖片讀出」的句子標成不回報。
 
 **補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
 
 | code | `params` | 意思 |
 |---|---|---|
-| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致。出口（#61）從 `_build_track` 的小節與 `report["rhythm_from_notation"]` 重新算，只在讀到印出的節奏（有不是 tie 的音、沒有估時值的小節）時才發；不沿用前身的 `_flag_estimated_rhythm`，因為它跑在 `_align_by_numbers`、`_unify_bars`、`_expand_repeats` 之後，小節號碼已經變了 |
+| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致。出口（#61）從 `_build_track` 的小節與 `report["rhythm_from_notation"]` 重新算，只在讀到印出的節奏時才發：前身的 `rhythm_from_notation` 大於 0，也就是有音符（只有 tie 的也算）、時值不是估的小節（休止小節、tie 穿過的空小節都不算）；不沿用前身的 `_flag_estimated_rhythm`，因為它跑在 `_align_by_numbers`、`_unify_bars`、`_expand_repeats` 之後，小節號碼已經變了 |
 | `overlapping_notes` | `{ page, count }` | 那一頁同一條弦上重疊的音符，略過了幾個（前身 `rhythm.py:81`） |
 | `staves_ignored` | `{ count }` | 弦數和多數不同的譜表，略過了幾行（前身 `converter.py` 的 `_main_staves`） |
 | `bar_too_dense` | `{ page, notes }` | 那一頁有個小節讀到的音多到超出拍號，這個小節的音都當成 32 分音符（前身 `rhythm.py:447`） |

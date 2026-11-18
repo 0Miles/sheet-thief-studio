@@ -19,6 +19,7 @@ from collections.abc import Callable
 from multiprocessing.connection import Connection
 
 from . import i18n
+from .contract import recognize
 from .converter import ConversionError, ConversionOptions, convert_many, inspect, set_progress
 
 logger = logging.getLogger(__name__)
@@ -212,8 +213,11 @@ def _worker(
         if job == "inspect":
             _reply(conn, status="ok", report=inspect(pdfs[0], options))
             return
-        if job == "images":  # pdfs are pictures, one page each, read as a single track
+        if job in ("images", "recognize"):  # pdfs are pictures, one page each, read as a single track
             pdfs = [images_pdf(pdfs, options.max_image_pixels)]
+        if job == "recognize":  # Studio's JSON exit (contract.py): the result instead of the report
+            _reply(conn, status="ok", report=recognize(pdfs[0], options))
+            return
         _reply(conn, status="ok", report=convert_many(pdfs, options).report)
     except ConversionError as exc:
         _reply(conn, status="error", message=str(exc), diagnostics=exc.diagnostics)
@@ -280,8 +284,9 @@ def run_isolated(
     total_s: int | None = None,
     cancel: threading.Event | None = None,
 ) -> dict:
-    """Run ``job`` ("convert", "images" or "inspect") in a child process and return its report.
-    "images" takes pictures instead of PDFs: one page each, decoded in the child.
+    """Run ``job`` ("convert", "images", "recognize" or "inspect") in a child process and return its
+    report. "images" takes pictures instead of PDFs: one page each, decoded in the child;
+    "recognize" reads them the same way and returns the contract's result (contract.py) instead.
 
     ``pdfs`` is one PDF per track (inspect uses the first). ``on_progress`` gets the percent of
     the job done, as the child reports it. ``timeout_s`` is how long the child may go without
@@ -290,7 +295,7 @@ def run_isolated(
     (default: ``timeout_s``). Setting ``cancel`` kills the child and raises ConversionCancelled.
     """
     total_s = max(timeout_s, total_s if total_s is not None else timeout_s)
-    if job not in ("convert", "images", "inspect"):
+    if job not in ("convert", "images", "recognize", "inspect"):
         raise ValueError(f"unknown job {job!r}")
     if isinstance(pdfs, bytes):
         pdfs = [pdfs]

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .i18n import tr
+from .notices import TUNING, Notice
 
 TUNINGS: dict[str, tuple[int, ...]] = {
     "standard": (64, 59, 55, 50, 45, 40),
@@ -138,11 +139,14 @@ def resolve_tuning(requested: str, string_count: int, labels: list[str], unreada
         if len(midi) == string_count:
             return TuningChoice(list(midi), warnings, "manual", detected=detected, raw=raw)
         warnings.append(
-            tr(
-                f"Afinação '{requested}' tem {len(midi)} cordas mas a tablatura tem {string_count}; "
-                "usada a afinação padrão para esse número de cordas.",
-                f"Tuning '{requested}' has {len(midi)} strings but the tablature has {string_count}; "
-                "using the standard tuning for that number of strings.",
+            Notice(
+                tr(
+                    f"Afinação '{requested}' tem {len(midi)} cordas mas a tablatura tem {string_count}; "
+                    "usada a afinação padrão para esse número de cordas.",
+                    f"Tuning '{requested}' has {len(midi)} strings but the tablature has {string_count}; "
+                    "using the standard tuning for that number of strings.",
+                ),
+                TUNING,
             )
         )
         return TuningChoice(
@@ -152,18 +156,24 @@ def resolve_tuning(requested: str, string_count: int, labels: list[str], unreada
         return TuningChoice(detected, warnings, "detected", detected=detected)
     if labels and len(labels) == string_count:
         warnings.append(
-            tr(
-                f"Afinação indicada no PDF ({' '.join(labels)}) não reconhecida; usada a padrão.",
-                f"Tuning given in the PDF ({' '.join(labels)}) not recognized; using the standard one.",
+            Notice(
+                tr(
+                    f"Afinação indicada no PDF ({' '.join(labels)}) não reconhecida; usada a padrão.",
+                    f"Tuning given in the PDF ({' '.join(labels)}) not recognized; using the standard one.",
+                ),
+                TUNING,
             )
         )
     elif labels:
         warnings.append(
-            tr(
-                f"A afinação indicada no PDF tem {len(labels)} notas mas a tablatura tem {string_count} cordas; "
-                "usada a padrão.",
-                f"The tuning given in the PDF has {len(labels)} notes but the tablature has {string_count} strings; "
-                "using the standard one.",
+            Notice(
+                tr(
+                    f"A afinação indicada no PDF tem {len(labels)} notas mas a tablatura tem {string_count} cordas; "
+                    "usada a padrão.",
+                    f"The tuning given in the PDF has {len(labels)} notes but the tablature has {string_count} strings; "
+                    "using the standard one.",
+                ),
+                TUNING,
             )
         )
     return TuningChoice(list(TUNINGS[default]), warnings, "default", reason, raw=raw)
