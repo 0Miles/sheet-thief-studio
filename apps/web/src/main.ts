@@ -1,5 +1,4 @@
-// First: the schemas the modules below build must already know (see the module).
-import "@studio/contracts/without-eval";
+// zod parses without eval: vite.config.ts resolves "zod" to @studio/contracts/without-eval.
 import "@karyl-chan/ui/tokens.css";
 import "./styles/app.css";
 import "./icons";

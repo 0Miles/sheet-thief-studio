@@ -108,7 +108,7 @@ object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
 - 行內樣式允許，因為 UI 元件與 alphaTab 會在執行時設定樣式；script 維持嚴格，這才是擋 XSS 的地方。
 - **補充**（#18）：頁面不向別的 host 要任何東西，也不在執行時產生程式碼，所以上面的字串不必放寬：
   - 圖示打包在 `apps/web/src/icons.ts`。`@karyl-chan/ui` 用的 `@iconify/vue` 預設會向 `api.iconify.design` 取圖示，`apps/web/vite.config.ts` 把它換成 `icons.ts` 匯出的 `Icon`（包著不連線的 `@iconify/vue/offline`）。UI 或 `@karyl-chan/ui` 用到新的圖示時要加進 `icons.ts`：`apps/web/tests/icons.test.ts` 檢查原始碼裡任何 `prefix:name` 形狀的字串與 `icon` 的字串值；執行時才組出來的名稱（`:icon="…"`）測試看不到，由 `Icon` 在找不到時 `console.error`，e2e 會因此失敗。
-  - zod 預設會試一次 `new Function("")` 來決定要不要編譯 parser；CSP 會擋下並回報違規。網頁在最前面 import `@studio/contracts/without-eval`（`z.config({ jitless: true })`），server 不受影響。
+  - zod 預設會試一次 `new Function("")` 來決定要不要編譯 parser；CSP 會擋下並回報違規。網頁的 build 把每個 `"zod"` import 都解析到 `@studio/contracts/without-eval`（`apps/web/vite.config.ts` 的 alias；它 `z.config({ jitless: true })` 之後再匯出 zod），所以不論 build 把 zod 與 schema 切到哪個 chunk，設定都在任何 schema 建立之前；server 不受影響。**補充**（#70）：原本是在 `main.ts` 最前面 import；`/` 改成按需載入 score-render 之後，build 把 score-model 與 zod 切到一個比 `main.ts` 先執行的 chunk，每一頁都觸發一次 eval 違規，所以改成 alias。
 - `connect-src 'self'` 也涵蓋同一個 host 的 `wss:`（CSP Level 3）。**補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0；三種瀏覽器都要過，任何瀏覽器擋了 WebSocket，就把 `wss://<公開 host>` 明確加進 `connect-src`。
 
 ## 8. 404 規則

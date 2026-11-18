@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 
 import * as alphaTab from "@coderline/alphatab";
 import { type BeatJSON, defaultSpelling, keySigsOf, MAX_BARS, MAX_IMPORT_BYTES, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartJSON, type ScoreJSON } from "@studio/score-model";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { exportGp7, exportMidi, type ImportReportItem, type ImportResult, importScore, MAX_IMPORT_FILE_BYTES } from "../src/index";
 import { projectScore } from "../src/projection";
@@ -278,6 +278,19 @@ describe("limits: a file over one makes no score, and says which", () => {
   test("a file over 20 MB is not read; one alphaTab cannot read makes no score", () => {
     expect(importScore(new Uint8Array(MAX_IMPORT_FILE_BYTES + 1), "huge.gp")).toEqual({ ok: false, failure: "fileTooLarge" });
     expect(importScore(new TextEncoder().encode("not a score"), "notes.txt")).toEqual({ ok: false, failure: "unreadable" });
+  });
+
+  test("a file alphaTab fails on is an answer, not an error: nothing is logged, and alphaTab's log level is as it was (#70)", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const level = alphaTab.Logger.logLevel;
+    try {
+      // Read as Guitar Pro 3 to 5, it ends before its version string does: alphaTab's loader logs that as an error of its own.
+      expect(importScore(new TextEncoder().encode("not a score at all"), "notes.gp")).toEqual({ ok: false, failure: "unreadable" });
+      expect(logged).not.toHaveBeenCalled();
+      expect(alphaTab.Logger.logLevel).toBe(level);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

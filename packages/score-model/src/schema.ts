@@ -70,6 +70,9 @@ export const MAX_LYRIC = 32;
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
+/** The largest file an import reads at all (docs/spec/import-export.md, section 2), checked before it is read. */
+export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
+
 /**
  * A string of `min` to `max` characters, counted as JavaScript counts them (UTF-16 code units,
  * docs/spec/schema.md section 13); zod's own length checks count code points.

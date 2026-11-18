@@ -11,6 +11,7 @@ import {
   DYNAMICS,
   type Harmonic,
   importedScoreSchema,
+  MAX_IMPORT_FILE_BYTES,
   jsonBytes,
   KIND_DEFAULTS,
   type KeySignature,
@@ -50,8 +51,9 @@ type AtNote = alphaTab.model.Note;
 
 const { model } = alphaTab;
 
-/** The largest file read at all (docs/spec/import-export.md, section 2): checked before alphaTab reads it. */
-export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
+// The largest file read at all (docs/spec/import-export.md, section 2), checked before alphaTab
+// reads it: defined in score-model, where the web app's texts read it without loading alphaTab.
+export { MAX_IMPORT_FILE_BYTES };
 
 /**
  * What an import leaves out or changes (docs/spec/import-export.md, section 2): each is listed in the
@@ -619,10 +621,16 @@ function titleOfFile(fileName: string): string {
 
 /** The score alphaTab reads from a file, or null when it cannot read it. */
 function load(bytes: Uint8Array): AtScore | null {
+  // A file alphaTab cannot read is an answer (`unreadable`), not an error of the page: its loader
+  // would log one to the console for each (#70). Its log level is global, so it is put back.
+  const level = alphaTab.Logger.logLevel;
+  alphaTab.Logger.logLevel = alphaTab.LogLevel.None;
   try {
     return alphaTab.importer.ScoreLoader.loadScoreFromBytes(bytes, new alphaTab.Settings());
   } catch {
     return null;
+  } finally {
+    alphaTab.Logger.logLevel = level;
   }
 }
 
