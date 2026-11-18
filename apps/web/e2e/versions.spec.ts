@@ -130,23 +130,33 @@ test("an Editor restores an older version in place: back on the score it is the 
   await typeAndLeave(editor, id, [5, 7], 0);
   await typeAndLeave(editor, id, [9], 1);
 
-  // More typed since the latest version, then the versions page by the score's link.
+  // More typed since the latest version, then the versions page by the score's link. The Owner,
+  // on the score meanwhile, sees the Editor there, reading with no cursor, while on that page.
+  const owner = await loggedIn(browser, ADMIN);
+  pageErrors(owner);
+  await openScore(owner, id);
   await openScore(editor, id);
   await typeAtEnd(editor, [3]);
   expect(fretsOf(await scoreOf(editor))).toEqual([5, 7, 9, 3]);
+  const seen = owner.locator("[data-member]", { hasText: EDITOR.displayName });
+  await expect(seen).toHaveAttribute("data-mode", "edit");
   await toVersions(editor, id);
+  await expect(seen).toHaveAttribute("data-mode", "read");
   const items = editor.locator("[data-version]");
   await expect(items).toHaveCount(2);
 
   // The older one, the question answered: the score as it was then.
   await items.nth(1).locator("[data-restore]").click();
   const question = editor.getByRole("dialog", { name: text.restore.title });
-  await expect(question).toContainText("目前的內容會先存成一個版本");
+  await expect(question).toContainText(text.reasons.before_restore);
+  await expect(question).toContainText("還沒同步到這裡的小節與聲部則會保留");
   await question.getByRole("button", { name: text.restore.confirm }).click();
   await expect(editor).toHaveURL(`/scores/${id}`);
   await drawn(editor);
   await expect.poll(async () => fretsOf(await scoreOf(editor))).toEqual([5, 7]);
   await synced(editor);
+  await expect.poll(async () => fretsOf(await scoreOf(owner))).toEqual([5, 7]);
+  await expect(seen).toHaveAttribute("data-mode", "edit");
 
   // One undo step: the score as it was before the restore, and again the version with redo.
   await editor.keyboard.press("Control+z");
@@ -161,5 +171,39 @@ test("an Editor restores an older version in place: back on the score it is the 
   await expect(items.first()).toHaveAttribute("data-reason", "before_restore");
   await expect(items.first()).toContainText(text.reasons.before_restore);
   expect(fretsOf(await previewVersion(editor, 0))).toEqual([5, 7, 9, 3]);
+  expect(errors).toEqual([]);
+});
+
+test("an Editor on a device that cannot be typed on restores in the Read view, and a key undoes it there", async ({ browser }) => {
+  const id = seedScore({ title: "平板還原", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }] });
+  const editor = await loggedIn(browser, EDITOR);
+  pageErrors(editor);
+  await typeAndLeave(editor, id, [4], 0);
+  await openScore(editor, id);
+  await typeAtEnd(editor, [6]);
+  await editor.goto("/");
+
+  // A window narrower than 1024 px: the Read view (docs/spec/views.md, section 1).
+  const tablet = await loggedIn(browser, EDITOR, { viewport: { width: 900, height: 900 } });
+  const errors = pageErrors(tablet);
+  await openScore(tablet, id);
+  await expect(tablet.locator("main[data-view]")).toHaveAttribute("data-view", "read");
+  expect(fretsOf(await scoreOf(tablet))).toEqual([4, 6]);
+  await toVersions(tablet, id);
+  const items = tablet.locator("[data-version]");
+  await items.last().locator("[data-restore]").click();
+  await tablet.getByRole("dialog", { name: text.restore.title }).getByRole("button", { name: text.restore.confirm }).click();
+  await expect(tablet).toHaveURL(`/scores/${id}`);
+  await expect.poll(async () => fretsOf(await scoreOf(tablet))).toEqual([4]);
+  await expect(tablet.locator("main[data-view]")).toHaveAttribute("data-view", "read");
+
+  await tablet.keyboard.press("Control+z");
+  await expect.poll(async () => fretsOf(await scoreOf(tablet))).toEqual([4, 6]);
+  // No cursor there: a note key changes nothing.
+  await tablet.keyboard.press("7");
+  expect(await tablet.evaluate(() => window.__studioTest!.cursor())).toBeNull();
+  await tablet.keyboard.press("Control+y");
+  await expect.poll(async () => fretsOf(await scoreOf(tablet))).toEqual([4]);
+  await synced(tablet);
   expect(errors).toEqual([]);
 });

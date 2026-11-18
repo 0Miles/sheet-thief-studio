@@ -130,6 +130,12 @@ export interface EditorSessionOptions {
    * Viewer's changes anyway; this keeps the page from showing changes that will not last.
    */
   readOnly?: boolean;
+  /**
+   * Never a cursor: the Read view of a member who may change the score (a device that cannot be
+   * typed on, docs/spec/views.md, section 5), where a restored version (`replaceScore`) is the only
+   * change made. No key but undo and redo runs, and neither puts a cursor (docs/spec/collab.md, 8.5).
+   */
+  cursorless?: boolean;
   /** The clock of the two-digit frets, in milliseconds. */
   now?: () => number;
 }
@@ -155,7 +161,7 @@ export interface EditorSession {
    * browser fires for them, and the page's keys (`pageEffectOf`: Space plays) are left alone.
    */
   press(key: Key): boolean;
-  /** Put the cursor somewhere else (a click on the page), ending the selection. Never changes the score. */
+  /** Put the cursor somewhere else (a click on the page), ending the selection. Never changes the score; never a cursor in a `cursorless` session. */
   moveTo(cursor: Cursor | null): void;
   /**
    * Called the first time a key that would change the score is refused because the session is
@@ -275,7 +281,7 @@ interface TypedDigit {
   cursor: Cursor;
 }
 
-export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null, readOnly = false, now = () => Date.now() }: EditorSessionOptions): EditorSession {
+export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null, readOnly = false, cursorless = false, now = () => Date.now() }: EditorSessionOptions): EditorSession {
   // Only what this member did is undone (docs/adr/0001), the title among it. The session, not the
   // clock, tells where an undo step ends: each change of this member's starts one, but the second
   // digit of a fret, which joins the step of the first (`separate`).
@@ -322,7 +328,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    * such place (no bars, or no parts, as two members deleting the last two at once leave it):
    * the cursor comes once a bar or a part does (docs/spec/commands.md, sections 7.3 and 9).
    */
-  let stranded = start === null && startOfScore(doc) === null;
+  let stranded = !cursorless && start === null && startOfScore(doc) === null;
 
   /** Put the cursor and the selection there, and tell the presence when either moved. */
   function putAt({ cursor: next, selection: selected }: LocalPresence): void {
@@ -502,7 +508,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       },
       runWithoutCursor: () => {
         step();
-        return { cursor: startOfScore(doc, lines), selection: null };
+        return { cursor: cursorless ? null : startOfScore(doc, lines), selection: null };
       },
     };
   };
@@ -705,7 +711,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     moveTo(next) {
       // A click is not the second digit of a fret.
       lastDigit = null;
-      putAt({ cursor: next, selection: null });
+      putAt({ cursor: cursorless ? null : next, selection: null });
     },
     onRefused(listener) {
       refusedListeners.add(listener);

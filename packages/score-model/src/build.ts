@@ -33,13 +33,14 @@ function beatToY({ notes, ...fields }: BeatJSON): YBeat {
 }
 
 /**
- * Write a score into a document, in one transaction, in place of the score it held (title,
- * artist, bars and parts): a new document when none is given. The ids of the score are kept,
- * the ordering keys made anew from its order, and every bar of every part gets its content with
- * all its voices. Throws when the score does not pass the schema or is of another schema
- * version (migrateJson brings an old one up to date first).
+ * Write a score into a document, in one transaction of this member's, in place of the score it
+ * held as far as this document knows it (title, artist, bars and parts): the ids of the score
+ * kept, the ordering keys from `orderKeys` (as many as there are bars, then parts), and every bar
+ * of every part given its content with all its voices. Throws, writing nothing, when the score
+ * does not pass the schema or is of another schema version (migrateJson brings an old one up to
+ * date first). What `jsonToDoc` and a restore (`replaceScore`) share.
  */
-export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
+export function writeScore(doc: Y.Doc, json: unknown, orderKeys: (count: number) => string[]): void {
   const score = scoreSchema.parse(json);
   if (score.schemaVersion !== SCHEMA_VERSION) throw new Error(`jsonToDoc writes schema version ${SCHEMA_VERSION}: migrate version ${score.schemaVersion} first (migrateJson)`);
   doc.transact(() => {
@@ -51,7 +52,7 @@ export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
 
     const bars = barsOf(doc);
     bars.clear();
-    const barKeys = generateNKeysBetween(null, null, score.bars.length);
+    const barKeys = orderKeys(score.bars.length);
     score.bars.forEach(({ id, ...fields }, index) => {
       const bar: YBar = new Y.Map();
       bar.set("order", barKeys[index]);
@@ -61,7 +62,7 @@ export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
 
     const parts = partsOf(doc);
     parts.clear();
-    const partKeys = generateNKeysBetween(null, null, score.parts.length);
+    const partKeys = orderKeys(score.parts.length);
     score.parts.forEach(({ id, content: beatsByBar, ...fields }, index) => {
       const part: YPart = new Y.Map();
       part.set("order", partKeys[index]);
@@ -81,5 +82,14 @@ export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
       parts.set(id, part);
     });
   }, LOCAL);
+}
+
+/**
+ * Write a score into a document (`writeScore`): a new document when none is given, an imported
+ * score. The ordering keys are made from nothing, in order, without a suffix
+ * (docs/spec/schema.md, section 1).
+ */
+export function jsonToDoc(json: unknown, doc: Y.Doc = new Y.Doc()): Y.Doc {
+  writeScore(doc, json, (count) => generateNKeysBetween(null, null, count));
   return doc;
 }

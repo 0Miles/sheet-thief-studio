@@ -57,14 +57,10 @@ export type CollabContext = (Member & { displayName: string }) | Guest;
 
 /**
  * A version a member asks for: who asks, and what must still hold once the score's row is locked
- * (`VersionToMake.admit`). Named as it is made, a member's own (`manual`); without a name (null),
- * the one a restore makes first (`before_restore`), none made when the latest holds the same.
+ * (`VersionToMake.admit`). A member's own (`manual`), named as it is made; or the one a restore
+ * makes first (`before_restore`), with no name, none made when the latest holds the same.
  */
-export interface SavedVersion {
-  name: string | null;
-  createdBy: string;
-  admit: NonNullable<VersionToMake["admit"]>;
-}
+export type SavedVersion = { createdBy: string; admit: NonNullable<VersionToMake["admit"]> } & ({ reason: "manual"; name: string } | { reason: "before_restore" });
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -508,8 +504,8 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       try {
         if (frozen.has(scoreId)) return "readOnly";
         const document = direct.document!;
-        const reason = made.name === null ? "before_restore" : "manual";
-        return await createVersion(scoreId, { read: () => docToJson(document), reason, createdBy: made.createdBy, name: made.name, admit: made.admit });
+        const name = made.reason === "manual" ? made.name : null;
+        return await createVersion(scoreId, { read: () => docToJson(document), reason: made.reason, createdBy: made.createdBy, name, admit: made.admit });
       } finally {
         await direct.disconnect();
       }

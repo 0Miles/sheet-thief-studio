@@ -35,7 +35,6 @@ import {
   type PitchedClef,
   readScore,
   type RepeatChange,
-  replaceScore,
   type ScoreChange,
   type ScoreJSON,
   stillAt,
@@ -48,7 +47,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
-import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
+import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
@@ -254,6 +253,10 @@ const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
+/** The versions page is shown over this score, hidden under it (ScorePage). */
+let aside = false;
+/** An Owner or an Editor, whatever the view: they may restore a version here. */
+const mayChange = (): boolean => opening.value?.role != null && roleCanType(opening.value.role);
 /** This tab in the presence: a member's, once the provider is made. */
 let presenceLink: PresenceLink | null = null;
 let stopObserving: (() => void) | undefined;
@@ -296,7 +299,8 @@ function placePeers(): void {
 /** Tell the other tabs where this one is: the view's mode, and in the edit views the cursor and the selection. */
 function tellPresence(): void {
   if (presenceLink === null || view.value === null) return;
-  presenceLink.tell(localStateOf(view.value, session?.presence() ?? { cursor: null, selection: null }));
+  // On the versions page, the score under it: reading, with no cursor (docs/spec/collab.md, 8.5).
+  presenceLink.tell(localStateOf(aside ? "read" : view.value, session?.presence() ?? { cursor: null, selection: null }));
 }
 
 /**
@@ -836,9 +840,15 @@ function start(): void {
   if (stopObserving !== undefined || engine === undefined) return;
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, draw);
-  if (editing.value && score.value) startEditing(score.value);
+  if (editing.value && score.value) {
+    startEditing(score.value);
+    return;
+  }
+  // The Read view of an Owner or an Editor (a device that cannot be typed on): a session with no
+  // cursor, for a version restored here to be undone and done again by key (docs/spec/collab.md, 8.5).
+  if (mayChange()) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
   // Space plays and pauses in the Read view too.
-  else focusScore();
+  focusScore();
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -872,7 +882,7 @@ function onPointer(event: PointerEvent): void {
   if (event.button !== 0 || event.target === scroller.value) return;
   // A button on the page (+bar) is not the score.
   if (event.target instanceof Element && event.target.closest("button") !== null) return;
-  if (session === undefined || engine === undefined || host.value === undefined) return;
+  if (!editing.value || session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
   if (hit) session.moveTo(hit);
@@ -1067,30 +1077,32 @@ watch(view, tellPresence);
  */
 const restoreTarget: RestoreTarget = {
   canRestore() {
-    if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null) return false;
-    if (view.value === "editable") return session !== undefined;
-    return view.value === "read" && opening.value?.role != null && opening.value.role !== "viewer";
+    if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null || session === undefined) return false;
+    return view.value === "editable" || (view.value === "read" && mayChange());
   },
   replace(version) {
-    if (!restoreTarget.canRestore()) return false;
-    if (session !== undefined) return session.replaceScore(version);
-    try {
-      replaceScore(doc, version);
-      return true;
-    } catch {
-      return false;
-    }
+    return restoreTarget.canRestore() && session!.replaceScore(version);
   },
 };
 
 defineExpose({
   restoreTarget,
-  /** The versions page is shown over the score: playback stops, as it would were the page left. */
+  /**
+   * The versions page is shown over the score: playback stops and the question of a part's
+   * deletion goes, as they would were the page left (the question is teleported to the body, out
+   * of the hidden score); the others see this tab reading.
+   */
   stepAside(): void {
+    aside = true;
     stop();
+    deleting.value = null;
+    textEntry.value = null;
+    tellPresence();
   },
-  /** Back from the versions page: the score has the keyboard again. */
-  focus(): void {
+  /** Back from the versions page: in the presence as before, and the score has the keyboard again. */
+  stepBack(): void {
+    aside = false;
+    tellPresence();
     focusScore();
   },
 });

@@ -17,6 +17,7 @@ const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}�
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
 const VERSIONS = "版本記錄";
+const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -331,7 +332,7 @@ export const strings = {
     reasons: {
       last_disconnect: "自動（所有人離開時）",
       interval: "自動（每 10 分鐘）",
-      before_restore: "還原前",
+      before_restore: BEFORE_RESTORE,
       manual: "手動存下",
     } satisfies Record<VersionReason, string>,
     named: "已命名",
@@ -357,7 +358,7 @@ export const strings = {
       action: "還原",
       title: "還原這個版本",
       message: (when: string, undoKey: string) =>
-        `這會以 ${when} 的版本取代目前的內容；目前的內容會先存成一個版本（「還原前」）。其他人在同一時間所做的修改也會被取代，需要時可以從那個版本找回。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+        `這會以 ${when} 的版本取代你這個分頁目前看到的內容；伺服器上目前的內容會先存成一個版本（「${BEFORE_RESTORE}」）。其他人在同一時間所做的修改會被取代，需要時可以從那個版本找回；他們剛新增、還沒同步到這裡的小節與聲部則會保留下來。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
       confirm: "還原",
       notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
       notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",

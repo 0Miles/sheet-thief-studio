@@ -246,8 +246,9 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
       await checkMember(scoreId, accountId, true);
       const body = createVersionRequest.safeParse(request.body);
       if (!body.success) return invalidRequest(reply, body.error);
-      const name = body.data.name ?? null;
-      const made = await collab.saveVersion(scoreId, { name, createdBy: accountId, admit: (row, transaction) => admitWriter(row, accountId, transaction) });
+      const { name } = body.data;
+      const asked = { createdBy: accountId, admit: (row: Score, transaction: Transaction) => admitWriter(row, accountId, transaction) };
+      const made = await collab.saveVersion(scoreId, name === undefined ? { ...asked, reason: "before_restore" } : { ...asked, reason: "manual", name });
       if (made === "readOnly") throw new Refusal(409, "score_read_only");
       // Deleted meanwhile.
       if (made === null) throw new Refusal(404, "not_found");

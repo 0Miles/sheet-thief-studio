@@ -63,3 +63,22 @@ test("a restore reaches another member's copy as the version", () => {
   session.replaceScore(version);
   expect(docToJson(other)).toEqual(version);
 });
+
+test("in the Read view of a member who may change the score, a restore is undone and done again by key, and no key or click puts a cursor", () => {
+  const { doc } = band();
+  const version = docToJson(doc);
+  setTitle(doc, "改過的");
+  const before = docToJson(doc);
+  const reader = createEditorSession(doc, { platform: "other", cursorless: true });
+  expect(reader.replaceScore(version)).toBe(true);
+  expect(docToJson(doc)).toEqual(version);
+  // A note key does nothing there: no cursor to type at.
+  expect(reader.press({ code: "Digit5" })).toBe(false);
+  expect(reader.press({ code: "KeyZ", ctrlKey: true })).toBe(true);
+  expect(docToJson(doc)).toEqual(before);
+  expect(reader.cursor).toBeNull();
+  reader.press({ code: "KeyY", ctrlKey: true });
+  expect(docToJson(doc)).toEqual(version);
+  reader.moveTo(cursorAt(doc, version.parts[0]!.id, version.bars[0]!.id));
+  expect(reader.cursor).toBeNull();
+});

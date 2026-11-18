@@ -23,7 +23,8 @@ export function openedView(view: View, readOnly: ReadOnlyReason | null): View {
   return readOnly !== null && view === "editable" ? "readOnlyEdit" : view;
 }
 
-const canType = (role: Role) => role !== "viewer";
+/** An Owner or an Editor: the role may change the score (whatever the device lets them type). */
+export const roleCanType = (role: Role): boolean => role !== "viewer";
 
 /**
  * A reconnection gave the member another role than the page was opened with. `reopen`: they can
@@ -33,7 +34,7 @@ const canType = (role: Role) => role !== "viewer";
  * Editor and an Editor the Owner: both keep typing, their document still the server's).
  */
 export function afterRoleChange(opened: Role, now: Role): "carryOn" | "reopen" {
-  return canType(opened) === canType(now) ? "carryOn" : "reopen";
+  return roleCanType(opened) === roleCanType(now) ? "carryOn" : "reopen";
 }
 
 /**

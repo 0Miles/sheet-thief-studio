@@ -37,6 +37,11 @@ const restoreTarget: RestoreTarget = {
   replace: (version) => scoreView.value?.restoreTarget.replace(version) ?? false,
 };
 
+// A score opened under the versions page (its address loaded, or the score opened anew there) starts aside.
+watch(scoreView, (opened) => {
+  if (aside.value) opened?.stepAside();
+});
+
 watch(aside, async (now) => {
   if (now) {
     scoreView.value?.stepAside();
@@ -44,7 +49,7 @@ watch(aside, async (now) => {
   }
   // Once the score is shown again: a hidden element takes no focus.
   await nextTick();
-  scoreView.value?.focus();
+  scoreView.value?.stepBack();
 });
 
 async function onClosed(closing: Closing): Promise<void> {
