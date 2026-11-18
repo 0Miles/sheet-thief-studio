@@ -86,7 +86,7 @@ MEASURE_RUNS=3 pnpm --filter @studio/web measure --project=webkit latency
 | WebKit | 同時修改（plain） | 1 個聲部 | 62 / **90** | 62 / 77 | 60 / 77 |
 | WebKit | 同時修改（plain） | 5 個聲部 | 100 / **151** | 108 / **169** | 94 / 139 |
 
-每一格的 50 個按鍵都等到了重畫，沒有丟掉任何樣本。完整的表（handler 開始、指令做完、rendered、小節畫上去、第一個 frame）在 [`s2-keys-*-headless.md`](measurements/data/) 與 [`s2-concurrent-*-headless.md`](measurements/data/)。
+每一格的 50 個按鍵都等到了重畫，沒有丟掉任何樣本。完整的表（handler 開始、指令做完、rendered、小節畫上去、第一個 frame）在 [`m1b-s2-keys-*-headless.md`](measurements/data/) 與 [`m1b-s2-concurrent-*-headless.md`](measurements/data/)。
 
 **和門檻比較**（p95 的最差值，取第二個 frame；括號內是取第一個 frame）
 
@@ -122,7 +122,7 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 | Firefox | 2–3 / 6–10 | 2–3 / 3–12 | 57 / 71、80 / 94 | 109 |
 | WebKit | 3 / 6–9 | 1–2 / 3–6 | 23 / 35、32 / 41 | 55 |
 
-完整的表在 [`s2-stages-*-headless.md`](measurements/data/)。
+完整的表在 [`m1b-s2-stages-*-headless.md`](measurements/data/)。
 
 ### 怎麼讀這些數字
 
@@ -147,12 +147,134 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 - 在 60 Hz（或更高）的螢幕上開視窗量 Firefox，確認沒達標是否來自 headless 的 32 Hz frame：
   `HEADED=1 pnpm --filter @studio/web measure --project=firefox latency`
-  （會開瀏覽器視窗約 11 分鐘；結果寫成 `s2-*-firefox-headed.*`）
+  （會開瀏覽器視窗約 11 分鐘；結果寫成 `<里程碑>-s2-*-firefox-headed.*`）
 - WebKit 的可信數字要在 macOS 的 Safari（或有 Web Audio 的 Linux WebKit）上量：在 Mac 上 `pnpm --filter @studio/web measure --project=webkit latency`。在 Windows 上沒有辦法補上 Web Audio（#129）。
 
 ### 資料檔
 
-[`measurements/data/`](measurements/data/)：每個瀏覽器三組，`s2-stages-<瀏覽器>-headless`、`s2-keys-<瀏覽器>-headless`、`s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。
+[`measurements/data/`](measurements/data/)：每個瀏覽器三組，`m1b-s2-stages-<瀏覽器>-headless`、`m1b-s2-keys-<瀏覽器>-headless`、`m1b-s2-concurrent-<瀏覽器>-headless`，`.json` 是每個樣本與環境，`.md` 是表。（#46 之前的檔名沒有 `m1b-` 前綴，內容沒有改。）
+
+## M2：S2 重測
+
+日期：2026-11-19　分支：`hiad-20261118/46-m2-s2-retest`（以 `hiad-20261118/studio` `bcd687e` 為底，含 #44 鼓的打譜、#45 鼓的第二聲線；量測的程式是 `c84b25e`）　票：#46
+
+### 結論
+
+| 項目 | 結果 |
+|---|---|
+| 門檻 | 和 M1b 相同：按鍵到畫面 p95，一個聲部 ≤ 80 ms、五個聲部 ≤ 150 ms（100 小節 × 5 聲部） |
+| Chromium | **達標**。一個聲部最差 59 ms、五個聲部最差 98 ms；另一位成員同時修改時 51 / 113 ms。和 M1b 比，五個聲部第 3 小節的 p95 多 2–24 ms（其他小節 −9 到 +9 ms），一個聲部持平或略好 |
+| Firefox | **按鍵（keys）沒有可用的數字**：兩次都碰上機器上其他工作的負載，依規則不採用，列進「需要人做的事」。同時修改：一個聲部最差 61 ms（**達標**，M1b 96）、五個聲部第 3 小節 204 ms（**沒達標**，M1b 169）。一個聲部變好主要是 headless Firefox 這次的 frame 間隔是 17 ms（M1b 31 ms），不是程式變快 |
+| WebKit | **按鍵（keys）沒有可用的數字**（同上）。同時修改：一個聲部最差 107 ms（**沒達標**，M1b 90）、五個聲部 168 ms（**沒達標**，M1b 169）。仍然沒有 Web Audio（#129） |
+| 鼓的第二聲線的成本 | 只在顯示鼓的時候（五個聲部）出現在排版：五個聲部第 3 小節 `render → rendered` 中位數 Chromium 27.0 → 28.0 ms（+4%）、Firefox 57 → 65 ms（+14%）、WebKit 23 → 26 ms（+13%）；技巧譜 36.8 → 38.0、80 → 93、32 → 39 ms。一個聲部（只顯示 Guitar 1）不變 |
+| `readScore`（zod 驗證 + `WeakMap` 快取） | Chromium 中位數 1.9–2.1 ms（M1b 1.7–2.1）、p95 3.3–6.0 ms（M1b 6.3–7.7）。拍點從 4,000 變成 4,500，看不出差別 |
+| Flag 全部重算 | **仍然不是瓶頸**。Chromium 中位數 0.9 / 1.2–1.3 ms（plain / techniques，M1b 0.8 / 1.1–1.2）、p95 ≤ 3.7 ms；第二聲線沒有產生新的 Flag（plain 0 個、techniques 324 個，和 M1b 相同）。不開增量的票 |
+
+### 環境
+
+和 M1b 相同的機器、作業系統、瀏覽器版本與量測對象（Playwright 1.65.0：Chromium 158.0.8127.18、Firefox 159.0、WebKit 27.2，全部 headless，1280 × 720，DPR 1；Windows 的 WebKit 沒有 Web Audio）。
+
+| 項目 | 內容 |
+|---|---|
+| 負載 | 這台機器同時有其他專案的 agent 在跑建置與測試，比 M1b 吵。做法改成：先等 CPU 連續一分鐘低於 20% 才開始；量測時每 30 秒（後來每 10 秒）記一次 CPU 使用率；**有任何一筆超過 50% 的那次量測整份不採用**，重量（後來的重量由看門狗在超過時直接中止）。採用的量測，含量測本身，CPU 在 12–37% 之間 |
+| 採用的量測 | Chromium 三項與 Firefox 的各階段、同時修改：第一次完整執行（2026-11-19 00:12–00:32）。WebKit 的同時修改：00:51–00:59 的重量。WebKit 的各階段：01:29–01:31 的重量（第一次執行時有 42% 的取樣，數字明顯偏高，不採用） |
+| 不採用 | Firefox 按鍵：00:25（92%）、00:48（53%）、01:45（58%，中止）三次；WebKit 按鍵：00:37（71%，另一個專案的 vitest）、00:54（84%）兩次。之後使用者在 2026-11-19 決定不再等安靜的時段：這台機器一直有其他負載 |
+
+### 指令
+
+和 M1b 相同；`-g` 只跑其中一項：
+
+```
+pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency   # 只量按鍵
+pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
+```
+
+### 做法
+
+和 M1b 相同（兩份譜 `plain`、`techniques`，三項量測，每格 50 次，第二個 frame 和門檻比較），只有一個不同：**種子譜的鼓改成兩條聲線**（`e2e/measure/scores.ts`）。手在第一聲線：八分音符的 closed hi-hat，第 2、4 拍加小鼓；腳在第二聲線：大鼓在第 1、3 拍與第 3 拍的反拍，hi-hat 踏板在第 2、4 拍（四分、四分、八分、八分、四分）。每小節兩條聲線都有內容，所以拍點從 4,000 變成 4,500。M1b 的鼓是一條聲線、大鼓和 hi-hat 寫在同一個拍點；其他聲部的音與 M1b 相同（鼓不用隨機數）。techniques 譜的鼓和 M1b 一樣有 accent 與 ghost。
+
+修改仍然是 Guitar 1 的格號；「一個聲部」只顯示 Guitar 1，所以鼓只在「五個聲部」的格子裡被排版與畫出來。
+
+### 數字：按鍵到畫面
+
+毫秒，中位數 / p95，取第二個 frame（frame after）；括號內是 M1b 的同一格。粗體是超過門檻的 p95。
+
+| 瀏覽器 | 情境 | 顯示 | 第 3 小節 | 第 50 小節 | 第 98 小節 |
+|---|---|---|---|---|---|
+| Chromium | plain | 1 個聲部 | 40 / 51（39 / 53） | 39 / 53（38 / 53） | 35 / 49（39 / 50） |
+| Chromium | plain | 5 個聲部 | 63 / 79（56 / 77） | 47 / 59（44 / 68） | 38 / 52（35 / 55） |
+| Chromium | techniques | 1 個聲部 | 44 / 59（41 / 61） | 37 / 47（38 / 59） | 36 / 45（38 / 52） |
+| Chromium | techniques | 5 個聲部 | 80 / 98（72 / 86） | 56 / 83（58 / 74） | 38 / 52（38 / 56） |
+| Chromium | 同時修改（plain） | 1 個聲部 | 39 / 51（40 / 54） | 37 / 45（36 / 52） | 35 / 45（31 / 53） |
+| Chromium | 同時修改（plain） | 5 個聲部 | 67 / 113（65 / 89） | 50 / 85（52 / 79） | 41 / 64（40 / 62） |
+| Firefox | plain、techniques | 1、5 個聲部 | 沒有可用的數字 | | |
+| Firefox | 同時修改（plain） | 1 個聲部 | 43 / 61（63 / **92**） | 40 / 60（61 / **96**） | 37 / 50（62 / **93**） |
+| Firefox | 同時修改（plain） | 5 個聲部 | 122 / **204**（124 / **169**） | 74 / **157**（89 / **151**） | 50 / 100（63 / 114） |
+| WebKit | plain、techniques | 1、5 個聲部 | 沒有可用的數字 | | |
+| WebKit | 同時修改（plain） | 1 個聲部 | 61 / 79（62 / **90**） | 69 / **107**（62 / 77） | 61 / 78（60 / 77） |
+| WebKit | 同時修改（plain） | 5 個聲部 | 121 / **168**（100 / **151**） | 91 / 138（108 / **169**） | 77 / 150（94 / 139） |
+
+每一格的 50 個按鍵都等到了重畫。完整的表在 [`m2-s2-keys-chromium-headless.md`](measurements/data/m2-s2-keys-chromium-headless.md) 與 [`m2-s2-concurrent-*-headless.md`](measurements/data/)。
+
+**和門檻比較**（p95 的最差值，取第二個 frame；括號內是取第一個 frame）
+
+| 瀏覽器 | 一個聲部（≤ 80） | 五個聲部（≤ 150） | 同時修改：一個 / 五個聲部 | M1b（同欄順序） |
+|---|---|---|---|---|
+| Chromium | 59（42）達標 | 98（82）達標 | 51（35）/ 113（95）達標 | 61 / 86 / 54、89 |
+| Firefox | 未量 | 未量 | 61（47）/ 204（169）五個聲部沒達標 | 93 / 158 / 96、169 |
+| WebKit（無播放器） | 未量 | 未量 | 107（77）/ 168（124）沒達標 | 88 / 108 / 90、169 |
+
+### 數字：各階段
+
+毫秒，中位數 / p95，每次修改之間停 120 ms。Chromium（0.1 ms 精度）；`render → rendered` 括號內是 M1b：
+
+| 譜 | 顯示 | 小節 | `readScore` | `flagsOf` | 投影 | `finish()` | 排版到 rendered | 合計 |
+|---|---|---|---|---|---|---|---|---|
+| plain | 1 | 3 | 2.0 / 5.1 | 0.9 / 2.5 | 0.2 / 0.6 | 0.0 / 0.1 | 4.8 / 8.7（4.5 / 9.9） | 8.0 / 15.7 |
+| plain | 1 | 50 | 2.1 / 5.5 | 0.9 / 2.7 | 0.2 / 0.6 | 0.0 / 0.1 | 2.3 / 5.6（2.1 / 5.6） | 5.6 / 14.1 |
+| plain | 1 | 98 | 2.1 / 6.0 | 0.9 / 2.7 | 0.3 / 0.6 | 0.0 / 0.1 | 0.6 / 1.4（0.6 / 1.5） | 3.8 / 10.5 |
+| plain | 5 | 3 | 2.1 / 3.3 | 0.9 / 1.8 | 0.2 / 0.6 | 0.0 / 0.1 | 28.0 / 33.8（27.0 / 41.8） | 31.4 / 40.0 |
+| plain | 5 | 50 | 2.1 / 4.6 | 0.9 / 2.4 | 0.3 / 0.5 | 0.0 / 0.1 | 13.5 / 22.8（12.5 / 21.4） | 16.9 / 33.6 |
+| plain | 5 | 98 | 2.1 / 4.2 | 0.9 / 1.9 | 0.2 / 0.5 | 0.0 / 0.1 | 1.7 / 3.4（1.6 / 3.7） | 5.0 / 10.1 |
+| techniques | 1 | 3 | 2.0 / 5.6 | 1.3 / 3.7 | 0.3 / 0.6 | 0.0 / 0.2 | 7.1 / 12.6（7.1 / 14.5） | 11.0 / 22.8 |
+| techniques | 1 | 50 | 2.0 / 4.1 | 1.2 / 2.8 | 0.3 / 0.5 | 0.0 / 0.1 | 3.4 / 6.5（3.6 / 8.5） | 7.3 / 14.6 |
+| techniques | 1 | 98 | 2.0 / 5.2 | 1.2 / 3.3 | 0.3 / 0.5 | 0.0 / 0.1 | 0.6 / 1.2（0.7 / 1.6） | 4.5 / 11.3 |
+| techniques | 5 | 3 | 2.0 / 5.3 | 1.3 / 3.5 | 0.3 / 0.7 | 0.0 / 0.1 | 38.0 / 49.7（36.8 / 49.4） | 42.8 / 61.0 |
+| techniques | 5 | 50 | 2.1 / 5.2 | 1.2 / 3.4 | 0.2 / 0.5 | 0.0 / 0.1 | 17.6 / 27.8（16.2 / 29.5） | 22.5 / 37.0 |
+| techniques | 5 | 98 | 1.9 / 4.9 | 1.2 / 2.6 | 0.3 / 0.5 | 0.0 / 0.1 | 2.1 / 4.2（2.0 / 4.5） | 6.6 / 13.8 |
+
+Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍；括號內是 M1b）：
+
+| 瀏覽器 | `readScore` 中位數 / p95 | `flagsOf` 中位數 / p95 | 排版到 rendered：五個聲部第 3 小節（plain / techniques） | 合計最差 p95 |
+|---|---|---|---|---|
+| Firefox | 3–4 / 5–10（2–3 / 6–10） | 2–3 / 3–8（2–3 / 3–12） | 65 / 81、93 / 121（57 / 71、80 / 94） | 134（109） |
+| WebKit | 3–4 / 4–7（3 / 6–9） | 2 / 2–5（1–2 / 3–6） | 26 / 34、39 / 48（23 / 35、32 / 41） | 56（55） |
+
+完整的表在 [`m2-s2-stages-*-headless.md`](measurements/data/)。
+
+### 怎麼讀這些數字
+
+- **鼓的第二聲線花在排版**：五個聲部時 alphaTab 要多排每小節 5 個拍點與第二條聲線的符桿、休止位置。Chromium 只多 1 ms 左右（中位數 +4%，p95 在雜訊內），Firefox 與 WebKit 多 13–22%（Firefox 技巧譜第 3 小節 80 → 93 ms、WebKit 32 → 39 ms）。`readScore`、`flagsOf` 與投影看不出差別：多 500 個拍點對它們來說太少。
+- **Chromium 仍然達標，但五個聲部的餘裕變小**：技巧譜第 3 小節的 p95 86 → 98 ms，同時修改 89 → 113 ms；離門檻 150 ms 還有 37–52 ms。各階段的排版只多 1 ms，這兩格按鍵的 p95 卻多了 12–24 ms，其中多少是第二聲線、多少是兩次量測之間的雜訊（同一格在兩次執行間可以差很多，`spec/testing.md` 第 3 節），這次沒有辦法分開；五個聲部的中位數只差 −2 到 +8 ms。
+- **Firefox 的 frame 間隔這次是 17 ms**（M1b 是 31 ms，同一個 Firefox 159.0 build）。所以 Firefox 一個聲部的按鍵到畫面從 61–63 ms 降到 37–43 ms（中位數），同時修改一個聲部從沒達標變成達標；這是 headless Firefox 的 frame 排程不同，不是程式變快（`bar painted` 的中位數和 M1b 幾乎一樣：20 / 20.5 / 16 vs 21 / 20 / 18 ms）。原因可能是 Windows 的計時器解析度受同時開著的其他程式影響，這次沒有追。M1b「headless Firefox 32 Hz」的結論因此不穩定，開視窗量仍然是人工項目。
+- **Firefox 同時修改五個聲部變差**（第 3 小節 p95 169 → 204 ms）：`command done` 的 p95 從 82 變成 131 ms，表示按鍵等了更久的對方修改的排版：打字的頁面顯示五個聲部，對方每次修改它都要連鼓的第二聲線一起重排（對方的客戶端只顯示 Guitar 1，負擔不變）。加上 Firefox 本來的排版就是 Chromium 的 2 倍多，五個聲部又碰上對方的修改時最容易超過門檻。
+- **WebKit 同時修改**：一個聲部第 50 小節 p95 107 ms 超過門檻，但同一格中位數 69 ms，另兩格 78–79 ms；五個聲部第 3 小節 168 ms（M1b 151）、第 50 小節 138 ms（M1b 169）。WebKit 的數字一直在這個範圍上下跳，和 M1b 一樣只能當參考（沒有 Web Audio、Windows 版的繪製排程）。
+- **Flag 全部重算仍然不是瓶頸**：Chromium 0.9–1.3 ms，Firefox / WebKit 2–3 ms，約占按鍵到畫面的 5% 以內；依 `spec/testing.md`，不開改成增量的票。
+- **沒有量到的格子**：Firefox 與 WebKit 的按鍵（不含同時修改）每一次都碰上負載；使用者在 2026-11-19 決定略過，留給安靜的機器補量。不採用的那幾次的數字沒有提交，也不拿來下結論。
+
+### 需要人做的事
+
+- **在安靜的機器上補量 Firefox 與 WebKit 的按鍵**（各約 6 分鐘；量的時候不要跑建置、測試或其他瀏覽器自動化，結果寫成 `m2-s2-keys-<瀏覽器>-headless.*`，再把上面兩張表的「沒有可用的數字」與「未量」換掉）：
+  ```
+  MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency
+  MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=webkit -g 'painted frame$' latency
+  ```
+- M1b 的兩項仍然有效：在 60 Hz 螢幕上開視窗量 Firefox（這次 headless 的 frame 間隔又不一樣，更需要），以及在 macOS 的 Safari 上量 WebKit。
+
+### 資料檔
+
+[`measurements/data/`](measurements/data/)：`m2-s2-stages-{chromium,firefox,webkit}-headless`、`m2-s2-keys-chromium-headless`、`m2-s2-concurrent-{chromium,firefox,webkit}-headless`，`.json` 是每個樣本與環境，`.md` 是表。Firefox 與 WebKit 的 `m2-s2-keys-*` 還沒有。
 
 ## M2：鼓的第二聲線
 
