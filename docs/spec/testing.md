@@ -58,6 +58,7 @@
 - 瀏覽器支援：打譜是最新版的 Chromium 系（Chrome、Edge）、Firefox 與桌面 Safari（owner 在 2026-11-13 裁定）；Read view 另外支援 iOS Safari 與 Android Chrome。
 - CI 的瀏覽器用 `playwright install --with-deps <瀏覽器>` 安裝（只在 CI；本機第一次要自己裝，見 `README.md`）。
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project、只安裝自己的瀏覽器；`~/.cache/ms-playwright` 以 Playwright 版本為鍵快取，系統套件每次由 `--with-deps` 安裝。
+  - **補充**（#52）：第 5 節確認檢查 3 的 `apps/web/e2e/clipboard.spec.ts` 不是 smoke，三個 project 都跑：`chromium` 照常收進完整的 e2e，`firefox`、`webkit` 的 `testMatch` 另外列出它。
   - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
@@ -95,6 +96,8 @@
 | 7 | 刪除小節的復原行為 | vitest 鎖住「刪除當下的內容會回來、之後別人同時送到的不保證」，仿照 `packages/score-model/tests/coediting.test.ts` 的「undo takes back only what the member did」 | — |
 | 8 | 聲道分配 | 用 `sound.test.ts` 的寫法，斷言 16 個聲部（其中 15 個非鼓）都拿到獨立的主聲道，鼓都在第 9 聲道 | — |
 | 9 | alphaTab 標記不被遮蓋 | e2e 在捲動位置 0 時，斷言所有疊層與 `reservedRects()` 不相交；包含編輯視圖、Read view、窄螢幕、樂句預覽 | 移開疊層，不是遮住標記 |
+
+**補充**（#52 的結果）：確認檢查 3 通過，焦點元素維持 `[data-scroller]`，不改用 `<textarea>`。三個瀏覽器都觸發 `copy`、`cut`、`paste`，`copy`、`cut` 寫入的 `text/plain` 在 `paste` 讀得到（Windows 上的 Playwright WebKit 例外：它不保留事件裡寫入的內容，焦點換成選取文字的 `<textarea>` 也一樣，不是焦點的問題；測試在那裡只斷言事件與空字串，round trip 以 CI 的 Linux WebKit 為準）。事件送到的元素不同：Chromium、WebKit 是 `[data-scroller]`，Firefox 是 `<body>`；所以頁面在 document 上聽，只在 `document.activeElement` 是 scroller 時處理（`apps/web/e2e/clipboard.spec.ts` 開頭的註解）。
 
 ## 6. 人工判定項目
 
