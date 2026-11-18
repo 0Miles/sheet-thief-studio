@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig, devices } from "@playwright/test";
 
-import { SERVER_ENV } from "./e2e/environment";
+import { RECOGNIZER_URL, SERVER_ENV } from "./e2e/environment";
 
 /**
  * The server, and the web app built with `env`: VITE_E2E=1 here, for `window.__studioTest`
@@ -10,6 +10,14 @@ import { SERVER_ENV } from "./e2e/environment";
  */
 export function webServers(env: Record<string, string>) {
   return [
+    // The stand-in recognizer the server calls (e2e/environment.ts).
+    {
+      command: "pnpm --filter @studio/server recognizer:e2e",
+      env: { PORT: new URL(RECOGNIZER_URL).port },
+      url: `${RECOGNIZER_URL}/healthz`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
     {
       command: "pnpm --filter @studio/server start",
       env: SERVER_ENV,

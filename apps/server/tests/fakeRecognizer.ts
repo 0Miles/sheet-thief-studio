@@ -79,13 +79,28 @@ async function imagesOf(request: IncomingMessage): Promise<ReceivedImage[]> {
   );
 }
 
+export interface FakeRecognizerOptions {
+  port?: number;
+  answering?: Answering;
+  /**
+   * Told of each `PUT /fixture/<name>`, from a test in another process (recognizerE2e.ts): true
+   * when it now answers that fixture (204), false when there is none of that name (404).
+   */
+  onControl?: (fixtureName: string) => boolean;
+}
+
 /** Start the stand-in on the loopback, on a free port unless told one; it answers a six-string TAB until told otherwise. */
-export async function startFakeRecognizer({ port = 0, answering = answers.recognized() }: { port?: number; answering?: Answering } = {}): Promise<FakeRecognizer> {
+export async function startFakeRecognizer({ port = 0, answering = answers.recognized(), onControl }: FakeRecognizerOptions = {}): Promise<FakeRecognizer> {
   let current = answering;
   const received: ReceivedImage[][] = [];
   const server = createServer((request, response) => {
     const send = ({ status, body, raw }: FakeAnswer) => response.writeHead(status, { "content-type": "application/json" }).end(raw ?? JSON.stringify(body));
     if (request.method === "GET" && request.url === "/healthz") return send({ status: 200, body: { status: "ok" } });
+    const control = /^\/fixture\/([\w-]+)$/.exec(request.url ?? "");
+    if (onControl !== undefined && request.method === "PUT" && control !== null) {
+      request.resume();
+      return onControl(control[1]!) ? response.writeHead(204).end() : send({ status: 404, body: {} });
+    }
     if (request.method !== "POST" || request.url !== "/recognize") return send({ status: 404, body: {} });
     void imagesOf(request).then(
       async (images) => {
