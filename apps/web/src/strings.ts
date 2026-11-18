@@ -135,6 +135,9 @@ export const strings = {
     removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
     beatText: "拍點文字",
+    // The box of lyrics mode (Shift+Enter on a staff), and why a syllable with its - was not saved.
+    lyrics: "歌詞",
+    lyricTooLong: (max: number) => `一個音節最多 ${max} 個字元`,
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",

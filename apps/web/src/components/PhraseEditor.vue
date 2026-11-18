@@ -19,6 +19,7 @@ import {
   fragmentToScore,
   jsonToDoc,
   MAX_BEAT_TEXT,
+  MAX_LYRIC,
   observeScore,
   type PitchedClef,
   readScore,
@@ -34,6 +35,7 @@ import * as Y from "yjs";
 import { barPanelOf } from "../barPanel";
 import { listenToClipboard } from "../clipboard";
 import { keyPlatform } from "../device";
+import { useLyricEntry } from "../lyricEntry";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { selectionBoxes } from "../presence";
 import { useScorePlayback } from "../scorePlayback";
@@ -42,6 +44,7 @@ import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import BarPanel from "./BarPanel.vue";
 import InlineTextEntry from "./InlineTextEntry.vue";
+import LyricEntry from "./LyricEntry.vue";
 import PartPanel from "./PartPanel.vue";
 import PlayerControls from "./PlayerControls.vue";
 import { fontDirectory, soundFontUrl } from "../served";
@@ -82,6 +85,15 @@ const selectionRects = shallowRef<Rect[]>([]);
 const structureRects = shallowRef<Rect[]>([]);
 const reserved = shallowRef<Rect[]>([]);
 const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
+/** Lyrics mode, while Shift+Enter has it open on a staff (docs/spec/keymap.md, 6.2). */
+const lyrics = useLyricEntry({
+  session: () => session,
+  boundsOf: (cursor) => engine?.renderer.boundsOf(cursor) ?? null,
+  reserved: () => reserved.value,
+  tell: say,
+  done: focus,
+});
+const { request: lyricRequest, rect: lyricRect } = lyrics;
 const panelOpen = ref(false);
 const partsOpen = ref(false);
 const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
@@ -149,6 +161,7 @@ function placeCursor(): void {
   const selection = session.selection;
   selectionRects.value = selection === null ? [] : selectionBoxes(engine.renderer, selection, reserved.value);
   structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
+  lyrics.place();
   updateLoop();
 }
 
@@ -276,6 +289,7 @@ function startEditing(json: ScoreJSON): void {
   });
   session.onHint((hint) => say(strings.score.hints[hint]));
   session.onEditText(openText);
+  session.onEditLyric(lyrics.open);
   placeCursor();
   scroller.value?.focus();
 }
@@ -387,6 +401,16 @@ defineExpose({ focus, openParts });
             <rect v-if="cursorRect" data-cursor class="phrase__cursor" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
           <InlineTextEntry v-if="textEntry" :rect="textEntry.rect" :initial="textEntry.request.text" :max-length="MAX_BEAT_TEXT" :label="strings.score.beatText" @close="closeText" />
+          <LyricEntry
+            v-if="lyricRequest && lyricRect"
+            :rect="lyricRect"
+            :initial="lyricRequest.lyric"
+            :beat-key="`${lyricRequest.cursor.barId}/${lyricRequest.cursor.beatId}`"
+            :max-length="MAX_LYRIC"
+            :label="strings.score.lyrics"
+            @key="lyrics.onKey"
+            @close="lyrics.close"
+          />
         </div>
       </div>
       <BarPanel v-if="panel" :platform="keyPlatform()" v-bind="panel" phrase @time-sig="onTimeSig" @close="closePanel" />

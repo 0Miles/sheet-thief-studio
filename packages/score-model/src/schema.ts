@@ -64,6 +64,9 @@ export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
+/** The longest syllable of a lyric (docs/spec/schema.md, section 13). */
+export const MAX_LYRIC = 32;
+
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
@@ -219,7 +222,7 @@ const beatFieldsSchema = z.object({
   /** Free text over the beat, such as a chord name: never read nor transposed. */
   text: text(1, MAX_BEAT_TEXT).optional(),
   /** One syllable; empty continues the syllable before it (melisma). */
-  lyric: text(0, 32).optional(),
+  lyric: text(0, MAX_LYRIC).optional(),
 });
 
 /** Every field a beat can have, whatever its part. */
