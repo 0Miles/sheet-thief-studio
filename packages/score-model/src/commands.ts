@@ -911,26 +911,33 @@ function readerOf(doc: Y.Doc, partId: string): PartReader | undefined {
   return { kind, note: (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored)) };
 }
 
-/** The notes of the last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
-function lastReadNotes(reader: PartReader, voice: YVoice, end: number): Y.Map<NoteJSON> | undefined {
+/** The last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
+function lastReadBeat(reader: PartReader, voice: YVoice, end: number): YBeat | undefined {
   for (let index = end - 1; index >= 0; index--) {
     const beat = voice.get(index);
-    if (readsAsBeat(reader.kind, beat)) return notesOf(beat);
+    if (readsAsBeat(reader.kind, beat)) return beat;
   }
   return undefined;
 }
 
 /**
- * The notes of the beat before `index` in a voice, as the members see it: the last beat before it
- * that reading keeps, else the last such beat of the same voice in the bar before.
+ * The beat before `index` in a voice, as the members see it, and the bar it is in: the last beat
+ * before it that reading keeps, else the last such beat of the same voice in the bar before.
  */
-function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
-  const own = lastReadNotes(reader, voice, index);
-  if (own !== undefined) return own;
+function beatBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): { beat: YBeat; barId: string } | undefined {
+  const own = lastReadBeat(reader, voice, index);
+  if (own !== undefined) return { beat: own, barId: address.barId };
   const bars = ordered(barsOf(doc));
   const previous = bars[bars.indexOf(address.barId) - 1];
-  const before = previous === undefined ? undefined : voiceIn(doc, { ...address, barId: previous });
-  return before && lastReadNotes(reader, before, before.length);
+  if (previous === undefined) return undefined;
+  const before = voiceIn(doc, { ...address, barId: previous });
+  const last = before && lastReadBeat(reader, before, before.length);
+  return last && { beat: last, barId: previous };
+}
+
+/** The notes of the beat before `index` in a voice (`beatBefore`). */
+function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
+  return notesOf(beatBefore(doc, reader, address, voice, index)?.beat);
 }
 
 /**
@@ -1067,6 +1074,23 @@ function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
 function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const place = staffPlaceOf(doc, cursor);
   return place === undefined ? [] : notesOnLine(place, cursor.line).map(({ key }) => key);
+}
+
+/**
+ * The keys of the notes a tie changes at the cursor (docs/spec/commands.md, 5.4; #49): those of
+ * the cursor's line (`noteKeysAt`). On a staff whose line holds no note at the cursor (or in the
+ * append slot), those of the notes the beat before draws on that line, by the clef of the staff and
+ * the key in force in the bar of that beat: the tie makes them there, of the same pitch and
+ * spelling (`tieToggle`). None when that beat draws none there.
+ */
+export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const keys = noteKeysAt(doc, cursor);
+  const place = keys.length === 0 ? staffPlaceOf(doc, cursor) : undefined;
+  const at = place && placeFor(doc, cursor);
+  if (place === undefined || at === undefined) return keys;
+  const before = beatBefore(doc, place.reader, cursor, at.voice, at.index);
+  if (before === undefined) return [];
+  return notesOnLine({ ...place, keySig: keySigIn(doc, before.barId), beat: before.beat }, cursor.line).map(({ key }) => key);
 }
 
 /** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */
