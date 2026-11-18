@@ -192,6 +192,19 @@ test("a fretted phrase that uses a string the part has not is refused; one that 
   expect(frets(content(bass)[barIds[0]!]!["0:0"])).toEqual([[3], [3], [3], [3]]);
 });
 
+test("a fretted part whose tuning cannot be read takes a phrase on any string, and the shell is told the tuning differs", () => {
+  const { doc, barIds, bass } = band(2);
+  partsOf(doc).get(bass)!.set("tuning", "not a tuning");
+  const onSixth: BarsFragment = { kind: "fretted", tuning: [...GUITAR], bars: [{ timeSig: { ...COMMON }, voices: { "0:0": quarters(6, [3, 5, 7, 8]) } }] };
+
+  const result = dropped(dropFragment(doc, { partId: bass, barId: barIds[0]! }, onSixth));
+
+  expect(result.hints).toEqual(["tuningDiffers"]);
+  // Reading leaves out notes it cannot place on a string; the document holds them as dropped.
+  const voice = voiceIn(doc, { partId: bass, barId: barIds[0]!, voice: "0:0" })!;
+  expect(voice.toArray().map((beat) => (beat.get("notes") as Y.Map<{ fret: number }>).get("s6")?.fret)).toEqual([3, 5, 7, 8]);
+});
+
 test("a pitched phrase using a staff the part has not is refused; a staff the part has and the phrase has not is emptied", () => {
   const doc = new Y.Doc();
   createScore(doc, "Voices");
@@ -283,5 +296,28 @@ test("beats another member types into a bar while a phrase is dropped on it stay
   const beats = score.parts.find((part) => part.id === guitar)!.content[barIds[0]!]!["0:0"]!;
   // The beat the drop knew of goes with the bar's old content; the one typed meanwhile stays.
   expect(beats.map((beat) => Object.values(beat.notes)[0]!.fret!).sort((x, y) => x - y)).toEqual([1, 2, 3, 4, 7]);
+  expect(flagsOf(score)).toContainEqual({ kind: "overfull", partId: guitar, barId: barIds[0], voice: "0:0" });
+});
+
+test("two members dropping phrases on the same bar at once both keep theirs, one run after the other, and the bar is flagged overfull", () => {
+  const { doc: a, barIds, guitar } = band(2);
+  const b = new Y.Doc();
+  send(a, b);
+  setFret(a, insertBeat(a, cursorAt(a, guitar, barIds[0]!, 1), { value: 1 }), 12);
+  send(a, b);
+
+  dropped(dropFragment(a, { partId: guitar, barId: barIds[0]! }, guitarPhrase([1, 2, 3, 4])));
+  dropped(dropFragment(b, { partId: guitar, barId: barIds[0]! }, guitarPhrase([5, 6, 7, 8])));
+  send(a, b);
+  send(b, a);
+
+  const score = docToJson(a);
+  expect(docToJson(b)).toEqual(score);
+  const fretsThere = frets(score.parts.find((part) => part.id === guitar)!.content[barIds[0]!]!["0:0"]).flat();
+  // The whole note both knew of is gone; each phrase stays together, in an order both agree on.
+  expect([
+    [1, 2, 3, 4, 5, 6, 7, 8],
+    [5, 6, 7, 8, 1, 2, 3, 4],
+  ]).toContainEqual(fretsThere);
   expect(flagsOf(score)).toContainEqual({ kind: "overfull", partId: guitar, barId: barIds[0], voice: "0:0" });
 });

@@ -242,10 +242,12 @@ interface Cursor {
   - `dropFragment(doc, { partId, barId }, fragment)`：目標是聲部與小節，不是游標（拖曳的目標由 `hitTest` 給出，可以不是游標所在的聲部）；游標由殼或 `EditorSession` 之後用 `settleCursor` 處理。成功時回傳 `Dropped`：`barIds`（寫入的小節，依順序，附加的在最後）與 `hints`（`DropHint`：`"tuningDiffers"`、`"barsAppended"`），殼依 `hints` 顯示提示。
   - 拒絕時回傳 `DropRefusal`，文件不動、不開交易：`"gone"`（聲部或小節不在，或聲部讀不懂）、`"otherKind"`（第 1 點）、`"tooManyStrings"`（第 7 點）、`"otherStaves"`（第 8 點）、`"tooManyBars"`（第 4 點）、`"invalid"`（片段不合 `barsFragmentSchema`：指令自己再驗一次，所以不合 schema 的值不會進文件）。
   - 「用到的譜表」是有拍點（休止也算）的聲線所在的最後一個譜表；片段帶了目標沒有的譜表、但那些聲線是空的，照樣接受。「用到的弦」同第 7 點，只看有音的弦，所以 6 弦的片段只用到第 1–4 弦時可以放進 4 弦貝斯（照樣提示調弦不同）。
-  - 調弦「不同」：目標聲部的 `tuning` 讀不懂、弦數不同或任一條弦不同。
+  - 調弦「不同」：目標聲部的 `tuning` 讀不懂、弦數不同或任一條弦不同。`tuning` 讀不懂時不知道有幾條弦，所以略過第 7 點的弦數檢查，照樣放入並提示調弦不同（host 裁定，#56 審查）。
   - 覆寫的聲線是 `readableVoicesOf` 讀得到的那些；文件裡缺少的聲線容器不在這裡建立（第 9 節：只有伺服器補），片段在那條聲線的拍點不寫入。
   - 附加小節用 `insertBars`，與覆寫在同一筆交易裡（Yjs 的巢狀 `transact` 併入外層），所以整個放置、包含附加的小節，是一個復原步驟。
-  - 片段裡不認得的欄位在驗證時已經去掉（[`phrases.md`](phrases.md) 1.1），寫進文件的是驗證後的值。
+  - 片段裡不認得的欄位在驗證時已經去掉（[`phrases.md`](phrases.md) 1.1），寫進文件的是驗證後的值，再經 `writableCopy`（#102：沒有 `__proto__`、不超過 `MAX_VALUE_DEPTH`）。放置不改寫既有的值（先刪再插新的拍點），所以不經 `ownFields`（#103）。
+  - 兩位成員同時放置在同一個小節：兩邊都刪掉自己看到的拍點、插入自己的片段，合併後兩段片段都在、各自連在一起，小節標成 overfull（第 3 點）。
+  - 附加的小節目前用 `keysAfter` 的排序鍵；#68 的 `keysOfARun` 併入後改用它，讓兩人同時在譜尾附加的兩串小節不交錯。
 
 ### 5.8 Pitched 的升降與八度
 
