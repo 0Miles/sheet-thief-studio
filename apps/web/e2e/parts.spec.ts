@@ -6,7 +6,7 @@ import * as Y from "yjs";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { beatsIn, cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
+import { beatsIn, cursorOf, loggedIn, openScore, pageErrors, scoreOf, seedScore, storedAs, synced } from "./pages";
 
 const text = strings.score.parts;
 
@@ -80,9 +80,11 @@ test("a bass added, a part with content deleted (asked first, with its bars coun
   await expect(page.getByRole("heading", { name: "新的標題" })).toBeVisible();
   await expect(page.locator("[data-artist]")).toHaveText("某個樂團");
   await synced(page);
-  // The list of scores reads the title the server mirrored.
+  // The list of scores reads the title the server mirrored, once it has stored the score.
+  await storedAs(page, id, { title: "新的標題", artist: "某個樂團" });
   await page.goto("/");
-  await expect(page.getByText("新的標題")).toBeVisible();
+  // This score's own entry: a test run again leaves other scores of the same title in the list.
+  await expect(page.locator(`a[href="/scores/${id}"]`)).toContainText("新的標題");
   expect(errors).toEqual([]);
 });
 

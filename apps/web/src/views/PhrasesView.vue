@@ -7,6 +7,7 @@ import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, S
 import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseLimits, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
 import { blankFragment, PART_PRESET_IDS, PART_PRESETS, type PartPresetId } from "@studio/score-model";
 import { onMounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 
 import { ApiError, del, get, patchFor, postFor } from "../api";
 import AppHeader from "../components/AppHeader.vue";
@@ -154,7 +155,7 @@ function remove(): Promise<void> {
     <p v-else-if="phrases.length === 0" class="phrases__muted">{{ kind === "" && search.trim() === "" ? text.empty : text.noMatch }}</p>
     <ul v-else class="phrases__list">
       <li v-for="phrase in phrases" :key="phrase.id" class="phrases__item" :data-phrase="phrase.id">
-        <span class="phrases__name">{{ phrase.name }}</span>
+        <RouterLink class="phrases__name" :to="{ name: 'phrase', params: { id: phrase.id } }">{{ phrase.name }}</RouterLink>
         <span class="phrases__muted">{{ detailsOf(phrase) }}</span>
         <Cluster v-if="editable" gap="1" :wrap="false">
           <AppButton variant="ghost" size="sm" @click="open('rename', phrase)">{{ text.rename }}</AppButton>

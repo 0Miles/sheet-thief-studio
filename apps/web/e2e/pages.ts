@@ -2,9 +2,9 @@
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
 
-import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, PART_PRESETS, type PartKind, type ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { SERVER_ENV } from "./environment";
@@ -95,6 +95,19 @@ export async function createScore(page: Page, title: string): Promise<string> {
   return ((await response.json()) as { id: string }).id;
 }
 
+/** A name of this run only, for data the tests' database keeps from earlier runs (phrases). */
+export function runName(name: string): string {
+  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
+}
+
+/** Create a phrase through the API as the account logged in on the page (a blank 6-string guitar one unless given); returns its id. */
+export async function createPhrase(page: Page, name: string, fragment: BarsFragment = blankFragment(PART_PRESETS.guitar6)): Promise<string> {
+  const origin = new URL(page.url()).origin;
+  const response = await page.request.post("/api/phrases", { data: { name, fragment }, headers: { origin } });
+  expect(response.status()).toBe(201);
+  return ((await response.json()) as { id: string }).id;
+}
+
 /**
  * What `seedScore` makes: account names, how many bars the score starts with (8 when left out),
  * and the parts it has after the first one every new score has (「吉他 1」); or, for the measure
@@ -107,6 +120,8 @@ export interface ScoreFixture {
   bars?: number;
   parts?: { name: string; kind: PartKind }[];
   state?: string;
+  /** The schema version the score says it is of: the current one when left out. */
+  schemaVersion?: number;
 }
 
 /**
@@ -147,9 +162,40 @@ export function seedAccount(fixture: AccountFixture): void {
   runServerScript("account:e2e", fixture, "the account");
 }
 
+/**
+ * Accounts of a test's own, whose roles and sessions it changes: every run, retry and browser
+ * makes them anew. `run` tells this one apart (in titles too); `account` seeds one and returns it,
+ * to log in with.
+ */
+export function accountsFor(testInfo: TestInfo) {
+  const run = `${testInfo.project.name.slice(0, 4)}-${Date.now().toString(36)}`;
+  const account = (name: string, displayName: string) => {
+    const made = { username: `e2e-${name}-${run}`, displayName, password: "e2e own account password", isAdmin: false, mustChangePassword: false };
+    seedAccount(made);
+    return made;
+  };
+  return { run, account };
+}
+
 /** Every change typed here has reached the server. */
 export async function synced(page: Page): Promise<void> {
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+}
+
+/**
+ * Wait until the server has stored a score's title and artist in its row, which the list of scores
+ * reads (GET /api/scores). `synced` says only that the server has the change: it writes the row
+ * when it stores the document, a while later (`STORE_DEBOUNCE_MS`, apps/server/src/collab.ts). A
+ * page that reads the list before then shows the title as it was (#163).
+ */
+export async function storedAs(page: Page, id: string, row: { title: string; artist: string | null }): Promise<void> {
+  await expect
+    .poll(async () => {
+      const { scores } = (await (await page.request.get("/api/scores")).json()) as { scores: { id: string; title: string; artist: string | null }[] };
+      const listed = scores.find((score) => score.id === id);
+      return listed && { title: listed.title, artist: listed.artist };
+    })
+    .toEqual(row);
 }
 
 /** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
