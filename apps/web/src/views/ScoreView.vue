@@ -55,6 +55,7 @@ import InlineTextEntry from "../components/InlineTextEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
 import PlayerControls from "../components/PlayerControls.vue";
+import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
@@ -63,6 +64,7 @@ import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
+import { barsToSave, type BarsToSave } from "../savePhrase";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
@@ -511,6 +513,38 @@ function applyTitle(title: string, artist: string): void {
 function cancelTitle(): void {
   editingTitle.value = false;
   focusScore();
+}
+
+/**
+ * Bars may be saved as a phrase (docs/spec/phrases.md, section 3): in either edit view, a Viewer's
+ * too, once a range of bars is selected; never a range of beats. A guest has no edit view, nor a
+ * library to save to.
+ */
+const selectedBars = computed(() => {
+  const json = score.value;
+  // One source for the button and for what it saves: the selection as the session last said it, in the score drawn last.
+  return editing.value && json !== null ? barsToSave(json, presence.value.selection, flags.value) : null;
+});
+/** The bars being saved as a phrase, as they were when the member asked; null while the dialog is closed. */
+const savingPhrase = shallowRef<BarsToSave | null>(null);
+
+/**
+ * The toolbar's button: the bars selected, as they are now, wait in the dialog for a name. Without
+ * a range of bars it stays where it is in the keys' order, saying why, and does nothing.
+ */
+function openSavePhrase(): void {
+  if (selectedBars.value !== null) savingPhrase.value = selectedBars.value;
+}
+
+function closeSavePhrase(): void {
+  savingPhrase.value = null;
+  focusScore();
+}
+
+function onPhraseSaved(name: string): void {
+  // What could not be read in those bars was left out: said, the score flagging where.
+  notice.value = savingPhrase.value?.skipped ? strings.savePhrase.savedSkipping(name) : strings.savePhrase.saved(name);
+  closeSavePhrase();
 }
 
 function closePanel(): void {
@@ -1071,6 +1105,25 @@ onBeforeUnmount(() => {
             {{ text.parts.panel }}
           </AppButton>
         </div>
+        <!--
+          Without a range of bars the button is disabled only to assistive technology (aria-disabled):
+          it stays in the keys' order, its description saying why, and a press does nothing.
+        -->
+        <template v-if="editing">
+          <AppButton
+            variant="ghost"
+            size="sm"
+            data-save-phrase
+            :class="{ score__unavailable: selectedBars === null }"
+            :aria-disabled="selectedBars === null"
+            :aria-describedby="selectedBars === null ? 'save-phrase-why' : undefined"
+            :title="selectedBars === null ? strings.savePhrase.barsOnly : strings.savePhrase.openTitle"
+            @click="openSavePhrase"
+          >
+            {{ strings.savePhrase.open }}
+          </AppButton>
+          <span id="save-phrase-why" hidden>{{ strings.savePhrase.barsOnly }}</span>
+        </template>
         <FlagControls
           v-if="view"
           :count="flags.length"
@@ -1275,6 +1328,7 @@ onBeforeUnmount(() => {
         @close="closeDeletion"
         @confirm="confirmDelete"
       />
+      <SavePhraseDialog v-if="editing" :saving="savingPhrase" :title="score?.title ?? ''" @close="closeSavePhrase" @saved="onPhraseSaved" />
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
@@ -1395,6 +1449,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+/* A button that does nothing yet (aria-disabled): looks it, still reachable by the keys. */
+.score__unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .score__bars {
   display: flex;

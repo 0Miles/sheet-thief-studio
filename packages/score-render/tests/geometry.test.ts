@@ -1,7 +1,7 @@
 // Where the cursor is drawn and which areas no overlay may cover, read from a real alphaTab layout
 // made without a browser (alphaTab lays out and draws SVG in Node).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, type Cursor, cursorAt, docToJson, insertBars, insertBeat, type ScoreJSON, type Selection, setFret, setNote } from "@studio/score-model";
+import { addPart, createScore, type Cursor, cursorAt, docToJson, DRUM_PIECES, insertBars, insertBeat, type ScoreJSON, type Selection, setFret, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
@@ -284,4 +284,31 @@ test("an append slot, a beat not drawn and a part not drawn have no note heads",
   expect(drawn.heads(cursorAt(doc, partIds[0]!, barIds[1]!, 1))).toEqual([]);
   expect(drawn.heads({ ...beat, beatId: "gone" })).toEqual([]);
   expect(drawn.heads(hidden)).toEqual([]);
+});
+
+test("each of the 18 drum pieces is drawn on the line the table gives it, under the cursor on that line", () => {
+  const doc = new Y.Doc();
+  createScore(doc, "Kit");
+  const pieces = Object.values(DRUM_PIECES);
+  const [barId] = insertBars(doc, { after: null, count: 1, timeSig: { numerator: pieces.length, denominator: 4 } });
+  const drums = addPart(doc, { name: "Drums", kind: "percussion" });
+  let cursor = cursorAt(doc, drums, barId!);
+  const beats = pieces.map((piece) => {
+    cursor = setNote(doc, insertBeat(doc, { ...cursor, at: "after" }, { value: 4 }), `p${piece.id}`, {});
+    return { piece, beat: cursor };
+  });
+  const drawn = layOut(docToJson(doc));
+  for (const { piece, beat } of beats) {
+    const [head] = drawn.heads(beat);
+    expect(head?.key, piece.name).toBe(`p${piece.id}`);
+    const on = drawn.rect({ ...beat, line: piece.line })!;
+    const centre = head!.rect.y + head!.rect.height / 2;
+    expect(centre, piece.name).toBeGreaterThanOrEqual(on.y);
+    expect(centre, piece.name).toBeLessThanOrEqual(on.y + on.height);
+    // Not under the cursor a line away: the line is the piece's, not merely near it.
+    for (const other of [piece.line - 1, piece.line + 1]) {
+      const off = drawn.rect({ ...beat, line: other })!;
+      expect(Math.abs(centre - (off.y + off.height / 2)), `${piece.name}, line ${other}`).toBeGreaterThan(Math.abs(centre - (on.y + on.height / 2)));
+    }
+  }
 });

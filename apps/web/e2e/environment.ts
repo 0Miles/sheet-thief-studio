@@ -5,12 +5,18 @@
 /**
  * The stand-in for the recognizer service (apps/server/tests/recognizerE2e.ts), on a port of its
  * own: never a real recognizer on 8000. A test picks its answer with `PUT /fixture/<name>`.
+ * Playwright starts it beside the servers (playwright.config.ts), on this machine or in CI's
+ * container alike, so the loopback reaches it in both: no service of its own in ci.yml.
  */
 export const RECOGNIZER_URL = "http://127.0.0.1:8034";
 
+/**
+ * Those of compose.dev.yaml by default. CI's e2e jobs run in a container, where the service
+ * containers answer to their own names and ports (E2E_DATABASE_URL, E2E_REDIS_URL in ci.yml).
+ */
 export const SERVER_ENV = {
-  DATABASE_URL: "postgres://studio:studio@localhost:5438/studio_e2e",
-  REDIS_URL: "redis://localhost:6388/2",
+  DATABASE_URL: process.env.E2E_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_e2e",
+  REDIS_URL: process.env.E2E_REDIS_URL ?? "redis://localhost:6388/2",
   RECOGNIZER_URL,
 };
 

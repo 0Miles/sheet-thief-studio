@@ -78,14 +78,49 @@ jobs:
       - name: Build the service image
         run: docker build --tag studio-recognizer services/recognizer
 
+  # The Playwright version pnpm-lock.yaml holds, which names the image the e2e jobs run in.
+  playwright-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.lockfile.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: pnpm-lock.yaml
+          sparse-checkout-cone-mode: false
+      - id: lockfile
+        name: Playwright's version in the lockfile
+        run: |
+          versions=$(sed -nE "s#^  '@playwright/test@([0-9.]+)':\$#\1#p" pnpm-lock.yaml | sort -u)
+          if [ "$(echo "$versions" | wc -w)" != 1 ]; then
+            echo "pnpm-lock.yaml must hold exactly one @playwright/test, holds: $versions" >&2
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
   # The pages through a real browser, against the real server, Postgres and Redis: the whole suite
   # in Chromium, smoke tests in Firefox and WebKit (docs/spec/testing.md, section 3). WebKit's
   # Playwright project logs in to a server of its own with the development cookie
   # (INSECURE_COOKIES=1, apps/web/playwright.config.ts); Chromium and Firefox keep `__Host-`.
+  #
+  # The jobs run in Playwright's image of the lockfile's version, which holds the browsers and the
+  # system libraries they need: nothing comes from an Ubuntu mirror, whose slow hours used to eat
+  # the job's whole time budget installing them (#145). User 1001 is the runner's, which owns the
+  # workspace; Firefox refuses to run as root under GitHub's HOME. In a container job the services
+  # are reached by their names on their own ports, not through localhost (e2e/environment.ts).
   e2e:
     name: ${{ matrix.name }}
+    needs: playwright-version
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The image pull and setup take a minute or two, the whole Chromium suite over 7 minutes and growing.
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    env:
+      E2E_DATABASE_URL: postgres://studio:studio@postgres:5432/studio_e2e
+      E2E_REDIS_URL: redis://redis:6379/2
     strategy:
       fail-fast: false
       matrix:
@@ -100,11 +135,9 @@ jobs:
           POSTGRES_USER: studio
           POSTGRES_PASSWORD: studio
           POSTGRES_DB: studio_e2e
-        ports: ["5438:5432"]
         options: --health-cmd "pg_isready -U studio -d studio_e2e" --health-interval 2s --health-timeout 3s --health-retries 30
       redis:
         image: redis:7-alpine
-        ports: ["6388:6379"]
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
@@ -114,18 +147,15 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: playwright
-        name: Playwright's version
-        run: echo "version=$(pnpm --filter @studio/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      # Only the browser of this job, kept between runs of the same Playwright version; the
-      # system libraries it needs are installed each time (--with-deps), the browser only if missing.
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ steps.playwright.outputs.version }}
+        timeout-minutes: 5
+      # The image already holds every browser of its version (PLAYWRIGHT_BROWSERS_PATH=/ms-playwright),
+      # so this finds the browser and downloads nothing; it fails here, within its own budget,
+      # rather than in the tests if the image ever lacks it.
       - name: Install ${{ matrix.browser }}
-        run: pnpm --filter @studio/web exec playwright install --with-deps ${{ matrix.browser }}
+        timeout-minutes: 3
+        run: pnpm --filter @studio/web exec playwright install ${{ matrix.browser }}
       - name: End-to-end tests
+        timeout-minutes: 20
         run: pnpm --filter @studio/web test:e2e ${{ matrix.projects }}
       - name: Keep the Playwright report of a failed run
         if: ${{ failure() }}

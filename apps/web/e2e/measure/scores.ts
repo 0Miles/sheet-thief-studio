@@ -10,6 +10,7 @@ import {
   createScore,
   type Cursor,
   cursorAt,
+  DRUM_PIECES,
   DYNAMICS,
   flagsOf,
   insertBars,
@@ -21,7 +22,6 @@ import {
   readScore,
   setNote,
 } from "@studio/score-model";
-import { DRUM_PIECES } from "@studio/score-render";
 import * as Y from "yjs";
 
 import { ADMIN, EDITOR } from "../environment";

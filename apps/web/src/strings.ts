@@ -33,6 +33,9 @@ const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+/** Bars from one to another, one bar by its number alone. */
+const barsLabel = (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last));
+const SAVE_PHRASE = "存成樂句";
 /** The images a recognition takes (docs/spec/recognizer.md, section 1), and how many at once. */
 const IMAGE_TYPES = "PNG、JPEG 或 WebP";
 const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
@@ -269,7 +272,7 @@ export const strings = {
       speed: "播放速度",
       loop: "循環",
       loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
-      loopBars: (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last)),
+      loopBars: barsLabel,
       loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
       metronome: "節拍器",
       countIn: "預備拍（一小節）",
@@ -411,14 +414,14 @@ export const strings = {
     chooseTuning: "選擇調弦",
     images: "原圖",
     imageAlt: (page: number) => `第 ${page} 張原圖`,
-    save: "存成樂句",
+    save: SAVE_PHRASE,
     discard: "捨棄",
     /** The name a phrase saved from a recognition starts with: the day it was recognized. */
     defaultName: (day: string) => `辨識結果 ${day}`,
-    edited: "有修改尚未存成樂句",
+    edited: `有修改尚未${SAVE_PHRASE}`,
     /** On a phone or a tablet the result is only looked at and played (`canType`). */
-    desktopOnly: "請在電腦上審核並存成樂句",
-    saveDialog: { title: "存成樂句", name: "名稱", save: "儲存", cancel: "取消", close: "關閉" },
+    desktopOnly: `請在電腦上審核並${SAVE_PHRASE}`,
+    saveDialog: { title: SAVE_PHRASE, name: "名稱", save: "儲存", cancel: "取消", close: "關閉" },
     discardDialog: {
       title: "捨棄辨識結果",
       message: "要捨棄這次辨識嗎？辨識結果與原圖都會刪除，無法復原。",
@@ -427,8 +430,8 @@ export const strings = {
     },
     /** Leaving for another page of the app with changes not saved as a phrase. */
     leave: {
-      title: "修改還沒有存成樂句",
-      message: "辨識結果的修改還沒有存成樂句，離開之後就沒有了（辨識結果本身會保留）。要離開嗎？",
+      title: `修改還沒有${SAVE_PHRASE}`,
+      message: `辨識結果的修改還沒有${SAVE_PHRASE}，離開之後就沒有了（辨識結果本身會保留）。要離開嗎？`,
       confirm: "離開",
       cancel: "留下",
     },
@@ -481,6 +484,23 @@ export const strings = {
     },
     /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
     desktopOnly: "請在電腦上編輯",
+  },
+  // A range of bars of a score saved as a phrase, from either edit view (docs/spec/phrases.md, section 3).
+  savePhrase: {
+    /** The toolbar's button, and the title of its dialog. */
+    open: SAVE_PHRASE,
+    openTitle: "把選取的小節存進樂句庫",
+    /** Why the button does nothing: no range of bars selected (a range of beats, or nothing). */
+    barsOnly: "請選取小節範圍",
+    name: "名稱",
+    /** The name offered: the score's title and the bars, one bar by its number alone. */
+    defaultName: (title: string, first: number, last: number) => `${title} ${barsLabel(first, last)}`,
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+    saved: (name: string) => `已${SAVE_PHRASE}「${name}」。`,
+    /** Saved, without what could not be read in those bars (it is flagged in the score). */
+    savedSkipping: (name: string) => `已${SAVE_PHRASE}「${name}」；讀不懂的內容已經略過，沒有存進去。`,
   },
   saveAsNewPhrase: {
     title: "另存成新樂句",
@@ -725,7 +745,7 @@ export const strings = {
     version_name_required: "手動存下的版本一定要有名稱。",
     recognition_in_progress: "你已經有一件辨識在進行，請等它完成再上傳。",
     recognizer_busy: "辨識服務正在處理別人的圖片，請稍後再試。",
-    recognition_not_succeeded: "這次辨識沒有結果可以存成樂句。",
+    recognition_not_succeeded: `這次辨識沒有結果可以${SAVE_PHRASE}。`,
     unsupported_image: `只能上傳 ${IMAGE_TYPES} 圖片。`,
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
