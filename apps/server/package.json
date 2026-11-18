@@ -10,6 +10,7 @@
     "seed:e2e": "tsx tests/seedE2e.ts",
     "score:e2e": "tsx tests/scoreE2e.ts",
     "account:e2e": "tsx tests/accountE2e.ts",
+    "bot:e2e": "tsx tests/botE2e.ts",
     "recognizer:e2e": "tsx tests/recognizerE2e.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run"

@@ -22,6 +22,7 @@ import { get, refusal } from "../api";
 import { STRUCTURE_STROKE, structureBoxesOf } from "../overlay";
 import { type PhraseContents, phrasesShown } from "../phraseSidebar";
 import { strings } from "../strings";
+import { fontDirectory } from "../served";
 
 const props = defineProps<{
   platform: KeyPlatform;
@@ -139,7 +140,7 @@ async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise
   await nextTick();
   if (previewed.value !== phrase || previewHost.value === undefined) return;
   if (engine === undefined) {
-    engine = createAlphaTabEngine(previewHost.value, { fontDirectory: "/font/", soundFont: null, useWorkers: true, scale: 0.75 });
+    engine = createAlphaTabEngine(previewHost.value, { fontDirectory: fontDirectory(), soundFont: null, useWorkers: true, scale: 0.75 });
     engine.renderer.onRendered(() => {
       previewReady.value = true;
       placePreview();

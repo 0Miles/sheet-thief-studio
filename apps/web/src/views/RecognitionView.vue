@@ -11,10 +11,10 @@
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import { type RecognitionDetails, recognitionDetails, phraseLimits, savedRecognition } from "@studio/contracts";
 import type { BarsFragment } from "@studio/score-model";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { onBeforeRouteLeave, RouterLink, useRouter } from "vue-router";
 
-import { ApiError, del, get, postFor, refusal } from "../api";
+import { ApiError, del, get, getObjectUrl, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PhraseEditor from "../components/PhraseEditor.vue";
 import { canType } from "../device";
@@ -138,8 +138,28 @@ onMounted(() => {
   stopPolling = pollRecognition(() => get(`/api/recognitions/${encodeURIComponent(props.id)}`, recognitionDetails), onRead, onFailure);
 });
 
+/**
+ * The original images, as object URLs once fetched: an `<img>`'s own request would carry no Bearer
+ * token behind the karyl-chan bot (docs/spec/karyl-login.md, section 5).
+ */
+const images = ref<Record<number, string>>({});
+const asked = new Set<number>();
+let left = false;
+watch(pages, (now) => {
+  for (const page of now) {
+    if (asked.has(page)) continue;
+    asked.add(page);
+    void getObjectUrl(`/api/recognitions/${encodeURIComponent(props.id)}/images/${page}`).then((url) => {
+      if (left) URL.revokeObjectURL(url);
+      else images.value = { ...images.value, [page]: url };
+    });
+  }
+});
+
 onBeforeUnmount(() => {
   stopPolling?.();
+  left = true;
+  for (const url of Object.values(images.value)) URL.revokeObjectURL(url);
 });
 </script>
 
@@ -193,7 +213,9 @@ onBeforeUnmount(() => {
           </section>
           <section v-if="pages.length > 0" data-images>
             <h2 class="review__heading">{{ text.images }}</h2>
-            <img v-for="page in pages" :key="page" class="review__image" :src="`/api/recognitions/${encodeURIComponent(id)}/images/${page}`" :alt="text.imageAlt(page)" data-original />
+            <template v-for="page in pages" :key="page">
+              <img v-if="images[page]" class="review__image" :src="images[page]" :alt="text.imageAlt(page)" data-original />
+            </template>
           </section>
         </aside>
       </template>
