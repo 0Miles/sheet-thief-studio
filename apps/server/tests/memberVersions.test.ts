@@ -1,14 +1,14 @@
 // What members do with a score's versions (docs/spec/routes.md, 3.6; docs/spec/collab.md, 8.4
 // to 8.6): every member lists and reads them, brought to the current schema; an Owner or an
-// Editor names one, and makes one now; anyone else is told there is no such score.
-import { gzipSync } from "node:zlib";
+// Editor names one, and makes a named one now; anyone else is told there is no such score.
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { versionList, versionSummary } from "@studio/contracts";
 import { docToJson, metaOf, migrateJson, SCHEMA_VERSION, scoreSchema } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
 import { SCORE_V0, zeroToOne } from "../../../packages/score-model/tests/fixtures/scoreV0";
@@ -37,6 +37,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const { provider } of opened) provider.destroy();
   for (const app of apps) await app.close();
   apps = [];
@@ -200,7 +201,7 @@ test("a version named, and one made with a name, outlive any number of automatic
 
   // 200 automatic versions more, then 1 beyond.
   for (let index = 0; index <= AUTO_VERSIONS_KEPT; index += 1) {
-    expect((await createVersion(id, () => ({ ...score, title: `自動 ${index}` }), "interval"))?.created).toBe(true);
+    expect((await createVersion(id, { read: () => ({ ...score, title: `自動 ${index}` }), reason: "interval" }))?.created).toBe(true);
   }
 
   const kept = new Set((await Version.findAll({ where: { scoreId: id }, attributes: ["id"] })).map((version) => version.id));
@@ -238,22 +239,24 @@ test("a version of an older schema is read through the JSON migration; one that 
   }
 });
 
-test("a version made now holds what the members have open, before it is stored; one without a name is the restore's, made only when the content changed", async () => {
+test("a version made now holds what the score is on the server: the stored one when nobody has it open, the members' before it is stored; never without a name", async () => {
   const started = await startApp();
   const { app, sessions } = started;
   const url = await listen(app);
   const id = await scoreOfTheBand(started);
   const path = `/api/scores/${id}/versions`;
 
+  // Without a name: the version a restore makes first, which is not made here (#68).
+  for (const body of [undefined, {}, { name: null }]) expect((await apiCall(app, "POST", path, sessions.eddie!, body)).statusCode).toBe(400);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+
   // Nobody has the score open: the stored one is read, and not kept in memory afterwards.
-  const first = await apiCall(app, "POST", path, sessions.eddie!);
+  const first = await apiCall(app, "POST", path, sessions.eddie!, { name: "沒人開著時" });
   expect(first.statusCode).toBe(201);
   expect(app.collab.loadedScores()).toEqual([]);
   const firstVersion = await Version.findByPk((first.json() as { versionId: string }).versionId);
-  expect([firstVersion?.reason, firstVersion?.name, firstVersion?.createdBy]).toEqual(["before_restore", null, ids.eddie]);
-  // Nothing changed since: the latest version is the one a restore would make.
-  const again = await apiCall(app, "POST", path, sessions.eddie!);
-  expect([again.statusCode, again.json()]).toEqual([200, { versionId: firstVersion!.id }]);
+  expect([firstVersion?.reason, firstVersion?.name, firstVersion?.createdBy]).toEqual(["manual", "沒人開著時", ids.eddie]);
+  expect(JSON.parse(gunzipSync(firstVersion!.content).toString())).toEqual(await storedScore(id));
 
   const member = await openScore(url, id, () => ticketFor(app, id, sessions.olivia!));
   opened.push(member);
@@ -279,11 +282,70 @@ test("a score this server cannot read gets no version made now: it says the scor
   metaOf(doc).set("schemaVersion", SCHEMA_VERSION + 1);
   await Score.update({ docState: Buffer.from(Y.encodeStateAsUpdate(doc)), schemaVersion: SCHEMA_VERSION + 1 }, { where: { id } });
 
-  for (const body of [{ name: "存不了" }, undefined]) {
-    const refused = await apiCall(app, "POST", `/api/scores/${id}/versions`, sessions.olivia!, body);
-    expect([refused.statusCode, refused.json()]).toEqual([409, { code: "score_read_only" }]);
-  }
+  const refused = await apiCall(app, "POST", `/api/scores/${id}/versions`, sessions.olivia!, { name: "存不了" });
+  expect([refused.statusCode, refused.json()]).toEqual([409, { code: "score_read_only" }]);
   expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+});
+
+/**
+ * Change the score after the request was let in and before its version is made, as another
+ * request at once would: `Collab.saveVersion` is the step between the two. Deterministic, so no
+ * warmed pool is needed: the change is committed before the version's transaction starts.
+ */
+function meanwhile(app: FastifyInstance, change: () => Promise<unknown>): void {
+  const original = app.collab.saveVersion.bind(app.collab);
+  vi.spyOn(app.collab, "saveVersion").mockImplementationOnce(async (...args) => {
+    await change();
+    return original(...args);
+  });
+}
+
+test("an Editor made a Viewer while asking for a version gets none: the role is checked again once the score is locked", async () => {
+  const started = await startApp();
+  const { app, sessions } = started;
+  const id = await scoreOfTheBand(started);
+  meanwhile(app, () => ScoreMember.update({ role: "viewer" }, { where: { scoreId: id, accountId: ids.eddie! } }));
+
+  const refused = await apiCall(app, "POST", `/api/scores/${id}/versions`, sessions.eddie!, { name: "降級前送出的" });
+
+  expect([refused.statusCode, refused.json()]).toEqual([403, { code: "forbidden" }]);
+  expect(await Version.count({ where: { scoreId: id } })).toBe(0);
+});
+
+test("a score deleted while a version of it is asked for gets none, whether members had it open or not", async () => {
+  const started = await startApp();
+  const { app, sessions } = started;
+  const url = await listen(app);
+  const deleted = () => new Date();
+
+  // Nobody has it open: it would be loaded, and a deleted score is not.
+  const closed = await scoreOfTheBand(started, "沒人開著");
+  meanwhile(app, () => Score.update({ deletedAt: deleted() }, { where: { id: closed } }));
+  const notLoaded = await apiCall(app, "POST", `/api/scores/${closed}/versions`, sessions.olivia!, { name: "刪除時存的" });
+  expect([notLoaded.statusCode, notLoaded.json()]).toEqual([404, { code: "not_found" }]);
+  expect(await Version.count({ where: { scoreId: closed } })).toBe(0);
+
+  // A member has it open: it is in memory, and the version is refused once its row is locked.
+  const open = await scoreOfTheBand(started, "有人開著");
+  opened.push(await openScore(url, open, () => ticketFor(app, open, sessions.eddie!)));
+  meanwhile(app, () => Score.update({ deletedAt: deleted() }, { where: { id: open } }));
+  const loaded = await apiCall(app, "POST", `/api/scores/${open}/versions`, sessions.olivia!, { name: "刪除時存的" });
+  expect([loaded.statusCode, loaded.json()]).toEqual([404, { code: "not_found" }]);
+  expect(await Version.count({ where: { scoreId: open } })).toBe(0);
+});
+
+test("a member's own version keeps a name: renamed, never unnamed", async () => {
+  const started = await startApp();
+  const { app, sessions } = started;
+  const id = await scoreOfTheBand(started);
+  const path = `/api/scores/${id}/versions`;
+  const versionId = ((await apiCall(app, "POST", path, sessions.eddie!, { name: "手動存的" })).json() as { versionId: string }).versionId;
+
+  const refused = await apiCall(app, "PATCH", `${path}/${versionId}`, sessions.olivia!, { name: null });
+  expect([refused.statusCode, refused.json()]).toEqual([409, { code: "version_name_required" }]);
+  expect((await Version.findByPk(versionId))?.name).toBe("手動存的");
+  expect((await apiCall(app, "PATCH", `${path}/${versionId}`, sessions.olivia!, { name: "改過名" })).statusCode).toBe(200);
+  expect((await Version.findByPk(versionId))?.name).toBe("改過名");
 });
 
 test("a deleted score's versions are no one's to see", async () => {

@@ -324,16 +324,19 @@ export const versionList = z.object({ versions: z.array(versionSummary) });
 export type VersionList = z.infer<typeof versionList>;
 
 /**
- * A version made now of the server's content (`POST /api/scores/:id/versions`): with a name, a
- * member's own, always a new one; without, the one made before a restore.
+ * A member's own version, named as it is made, of the content the server has now
+ * (`POST /api/scores/:id/versions`): always a new one, whatever the latest version holds.
  */
-export const createVersionRequest = z.object({ name: versionName.optional() });
+export const createVersionRequest = z.object({ name: versionName });
 export type CreateVersionRequest = z.infer<typeof createVersionRequest>;
 
 export const createdVersion = z.object({ versionId: z.string() });
 export type CreatedVersion = z.infer<typeof createdVersion>;
 
-/** A version named, or its name taken away: an automatic version again (`PATCH /api/scores/:id/versions/:versionId`). */
+/**
+ * A version named, or its name taken away (`PATCH /api/scores/:id/versions/:versionId`): an
+ * automatic version again; a member's own (`manual`) keeps one (409 `version_name_required`).
+ */
 export const renameVersionRequest = z.object({ name: versionName.nullable() });
 export type RenameVersionRequest = z.infer<typeof renameVersionRequest>;
 
@@ -412,6 +415,7 @@ export const errorCode = z.enum([
   "revision_conflict",
   "score_read_only",
   "version_unreadable",
+  "version_name_required",
   "recognition_in_progress",
   "payload_too_large",
   "phrase_too_large",

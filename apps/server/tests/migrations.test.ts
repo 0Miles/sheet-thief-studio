@@ -6,6 +6,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { connectDatabase } from "../src/db/database";
 import { migrate } from "../src/db/migrate";
+import * as manualVersions from "../src/db/migrations/0006-manual-versions";
 import { TEST_DATABASE_URL } from "./support";
 
 const url = new URL(TEST_DATABASE_URL);
@@ -58,4 +59,25 @@ test("migrating an empty database creates the tables, and migrating again change
 
   expect(await migrate(sequelize)).toEqual([]);
   expect(await tables()).toEqual(expected);
+});
+
+test("0006 allows a member's own version, and taken back it deletes them and refuses the reason again", async () => {
+  await migrate(sequelize);
+  const context = sequelize.getQueryInterface();
+  const [[score]] = (await sequelize.query("INSERT INTO scores (title, doc_state, schema_version) VALUES ('t', '\\x00', 1) RETURNING id")) as [{ id: string }[], unknown];
+  const insert = (reason: string) =>
+    sequelize.query("INSERT INTO versions (score_id, schema_version, content, content_hash, byte_size, reason, name) VALUES (:score, 1, '\\x00', :hash, 1, :reason, 'n')", {
+      replacements: { score: score!.id, hash: "0".repeat(64), reason },
+    });
+  const reasons = async () => ((await sequelize.query("SELECT reason FROM versions ORDER BY reason", { plain: false })) as [{ reason: string }[], unknown])[0].map((row) => row.reason);
+  await insert("manual");
+  await insert("interval");
+
+  await manualVersions.down({ context });
+  expect(await reasons()).toEqual(["interval"]);
+  await expect(insert("manual")).rejects.toThrow(/versions_reason_check/);
+
+  await manualVersions.up({ context });
+  await insert("manual");
+  expect(await reasons()).toEqual(["interval", "manual"]);
 });

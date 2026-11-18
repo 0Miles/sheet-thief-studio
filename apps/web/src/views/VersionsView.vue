@@ -236,9 +236,10 @@ async function saveNow(): Promise<void> {
                 <form v-if="naming === version.id" class="versions__naming" novalidate data-naming @submit.prevent="saveName(version)">
                   <Stack gap="2">
                     <AppTextField v-model="nameDraft" :label="text.renameOf(timeOf(version))" name="version-rename" :maxlength="MAX_NAME" autocomplete="off" full-width />
-                    <p class="versions__muted">{{ text.nameRule }}</p>
+                    <!-- A member's own version keeps a name (docs/spec/collab.md, 8.4). -->
+                    <p class="versions__muted">{{ version.reason === "manual" ? text.nameRuleManual : text.nameRule }}</p>
                     <Cluster gap="2">
-                      <AppButton type="submit" variant="primary" size="sm" :loading="sending">{{ text.saveName }}</AppButton>
+                      <AppButton type="submit" variant="primary" size="sm" :loading="sending" :disabled="version.reason === 'manual' && nameDraft.trim() === ''">{{ text.saveName }}</AppButton>
                       <AppButton variant="ghost" size="sm" @click="naming = null">{{ text.cancel }}</AppButton>
                     </Cluster>
                   </Stack>

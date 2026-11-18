@@ -16,6 +16,7 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const VERSIONS = "版本記錄";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -208,7 +209,7 @@ export const strings = {
     },
     dismiss: "關閉",
     settings: "設定",
-    versions: "版本記錄",
+    versions: VERSIONS,
     player: {
       loading: "音色載入中…",
       play: "播放",
@@ -321,7 +322,7 @@ export const strings = {
   // A score's versions (/scores/:id/versions; docs/spec/collab.md, section 8): every member looks
   // at them, an Owner or an Editor names them.
   versions: {
-    title: "版本記錄",
+    title: VERSIONS,
     back: "回到團譜",
     help: "系統會在所有人離開團譜時、以及編輯中每 10 分鐘自動存一個版本，最多保留 200 個自動版本。命名的版本不會被自動刪除。",
     empty: "還沒有版本。",
@@ -340,6 +341,7 @@ export const strings = {
     choose: "選一個版本來預覽。",
     name: "版本名稱",
     nameRule: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
+    nameRuleManual: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元。手動存下的版本一定要有名稱。`,
     rename: "命名",
     renameOf: (when: string) => `替 ${when} 的版本命名`,
     saveName: "儲存",
@@ -530,6 +532,7 @@ export const strings = {
     phrase_too_large: "樂句太大。",
     score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
     version_unreadable: "伺服器讀不了這個版本，無法預覽。",
+    version_name_required: "手動存下的版本一定要有名稱。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",

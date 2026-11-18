@@ -21,7 +21,7 @@ import { scoreOfLink } from "./links";
 import { screenAwareness } from "./presence";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
-import { createVersion, type MadeVersion, VERSION_INTERVAL_MS } from "./versions";
+import { createVersion, type MadeVersion, VERSION_INTERVAL_MS, type VersionToMake } from "./versions";
 
 export const COLLAB_PATH = "/collab";
 
@@ -55,8 +55,15 @@ type FrozenReason = CollabNotice["reason"];
  */
 export type CollabContext = (Member & { displayName: string }) | Guest;
 
-/** A version a member asks for: the one a restore makes first, or one they name as it is made. */
-export type SavedVersion = { reason: "before_restore"; createdBy: string } | { reason: "manual"; createdBy: string; name: string };
+/**
+ * A version a member asks for, named as it is made (`manual`): who asks, the name, and what must
+ * still hold once the score's row is locked (`VersionToMake.admit`).
+ */
+export interface SavedVersion {
+  name: string;
+  createdBy: string;
+  admit: NonNullable<VersionToMake["admit"]>;
+}
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -76,8 +83,9 @@ export interface Collab {
   /**
    * Make a version, asked for by a member, of what the score is now on this server: the document
    * the members have open, or the stored one brought up to date as any load does
-   * (docs/spec/collab.md, 8.3 and 8.5). `readOnly`, with none made, when the document is frozen:
-   * this server cannot read it for sure. Null when the score is gone for good.
+   * (docs/spec/collab.md, 8.3). `readOnly`, with none made, when the document is frozen: this
+   * server cannot read it for sure. Null when the score is gone, or deleted before it could be
+   * loaded; rejects with what `admit` throws.
    */
   saveVersion(scoreId: string, made: SavedVersion): Promise<MadeVersion | "readOnly" | null>;
   /**
@@ -220,7 +228,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       return null;
     };
     const making = Promise.resolve()
-      .then(() => createVersion(scoreId, read, reason))
+      .then(() => createVersion(scoreId, { read, reason }))
       .then(
         () => undefined,
         (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),
@@ -487,11 +495,19 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
     async saveVersion(scoreId, made) {
       // Loaded as a member's connection loads it, or the one in memory: migrated, frozen or not.
       // Held in memory until the version is made: the content is read once the row is locked.
-      const direct = await hocuspocus.openDirectConnection(scoreId);
+      let direct: Awaited<ReturnType<typeof hocuspocus.openDirectConnection>>;
+      try {
+        direct = await hocuspocus.openDirectConnection(scoreId);
+      } catch (error) {
+        // Not in memory, and deleted since the request was let in: `onLoadDocument` loads no
+        // deleted score. The same answer as when it is deleted after it was loaded (`admit`).
+        if ((await liveScore(scoreId)) === null) return null;
+        throw error;
+      }
       try {
         if (frozen.has(scoreId)) return "readOnly";
         const document = direct.document!;
-        return await createVersion(scoreId, () => docToJson(document), made.reason, made.createdBy, made.reason === "manual" ? made.name : null);
+        return await createVersion(scoreId, { read: () => docToJson(document), reason: "manual", createdBy: made.createdBy, name: made.name, admit: made.admit });
       } finally {
         await direct.disconnect();
       }

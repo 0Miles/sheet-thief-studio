@@ -1,8 +1,8 @@
 // The versions of a score (docs/spec/collab.md, section 8): the whole score at one moment, as
 // `docToJson` reads it, one row each. Here: making one, keeping at most 200 automatic ones, and
 // what a member does with them (docs/spec/routes.md, 3.6): listing, reading one brought to the
-// current schema, naming one, and making one now. When the server makes one on its own is the
-// collab server's business (collab.ts); restoring one is the web app's (#68).
+// current schema, naming one, and making a named one now. When the server makes one on its own
+// is the collab server's business (collab.ts); restoring one, and the version made before, #68's.
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
@@ -10,11 +10,13 @@ import { gunzip, gzip } from "node:zlib";
 import { createdVersion, createVersionRequest, renameVersionRequest, type Role, versionList, versionSummary } from "@studio/contracts";
 import { type Migration, migrateJson, MIGRATIONS, type ScoreJSON } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { Transaction } from "sequelize";
 
 import type { Collab } from "./collab";
 import { Score, ScoreMember, Version, type VersionReason } from "./db/models";
-import { invalidRequest, isUuid, notFound } from "./http";
+import { invalidRequest, isUuid } from "./http";
 import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
+import { Refusal } from "./members";
 import { membership } from "./scores";
 
 const compress = promisify(gzip);
@@ -57,6 +59,22 @@ export interface MadeVersion {
   created: boolean;
 }
 
+/** A version to make (`createVersion`). */
+export interface VersionToMake {
+  /** The content, read once the score's row is locked; null makes none. */
+  read: () => ScoreJSON | null;
+  reason: VersionReason;
+  /** Who asked for it; null for the ones the server makes on its own. */
+  createdBy?: string | null;
+  /** Given as it is made (`manual`); null for an automatic version. */
+  name?: string | null;
+  /**
+   * Run once the score's row is locked, before the content is read: what must still hold for the
+   * version to be made (the member's role, a score not deleted meanwhile). It throws to make none.
+   */
+  admit?: (row: Score, transaction: Transaction) => Promise<void>;
+}
+
 /**
  * Make a version of the score with the content `read` gives, unless its latest version already
  * holds the same; then delete its oldest automatic versions beyond the 200 kept. A named version
@@ -67,19 +85,15 @@ export interface MadeVersion {
  * newer one is made first, and then be made the latest version (#114). Null, with nothing
  * written, when the score is no longer there (deleted for good meanwhile; `read` is not called
  * then), or when `read` gives null: there is nothing to make a version of any more. A score
- * deleted softly still gets its versions: it can be restored. Throws `VersionTooLarge`, writing
- * nothing, when the content is more than `MAX_VERSION_BYTES`.
+ * deleted softly still gets its automatic versions: it can be restored (`admit` refuses what a
+ * member asks for then). Throws `VersionTooLarge`, writing nothing, when the content is more
+ * than `MAX_VERSION_BYTES`, and whatever `admit` throws.
  */
-export async function createVersion(
-  scoreId: string,
-  read: () => ScoreJSON | null,
-  reason: VersionReason,
-  createdBy: string | null = null,
-  name: string | null = null,
-): Promise<MadeVersion | null> {
+export async function createVersion(scoreId: string, { read, reason, createdBy = null, name = null, admit }: VersionToMake): Promise<MadeVersion | null> {
   return Version.sequelize!.transaction(async (transaction) => {
-    const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id"], lock: transaction.LOCK.UPDATE, transaction });
+    const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id", "deletedAt"], lock: transaction.LOCK.UPDATE, transaction });
     if (row === null) return null;
+    await admit?.(row, transaction);
     const score = read();
     if (score === null) return null;
     const json = sortedJson(score);
@@ -119,8 +133,12 @@ export class VersionUnreadable extends Error {
 /**
  * The content of a version, brought to the current schema (docs/spec/schema.md, section 10): what
  * a preview draws and a restore writes. Gunzipped to `MAX_VERSION_BYTES` at most, whatever the
- * row holds. Null when the score has no such version; throws `VersionUnreadable` when it cannot
- * be read.
+ * row holds. `JSON.parse` and not `parsePlain`: a version is a whole `ScoreJSON`, nested deeper
+ * than the values of a document `parsePlain` copies (it would refuse every score), and an older
+ * one reaches its migration steps as it was stored. What they give is checked against
+ * `scoreSchema` (`migrateJson`), whose records refuse a key named __proto__; `JSON.parse` never
+ * gives an object a prototype from the content. Null when the score has no such version; throws
+ * `VersionUnreadable` when it cannot be read.
  */
 export async function readVersion(scoreId: string, versionId: string, migrations: readonly Migration[] = MIGRATIONS): Promise<ScoreJSON | null> {
   if (!isUuid(versionId)) return null;
@@ -145,94 +163,121 @@ function summaryOf(version: Version) {
 /** Who may name a score's versions and make one: its Owner and its Editors (docs/spec/routes.md, 3.6). */
 const canWrite = (role: Role) => role !== "viewer";
 
-/** A request about a score's versions that is not answered: the refusal to send instead. */
-type Refused = 403 | 404;
-
-function refuse(reply: FastifyReply, refused: Refused) {
-  return refused === 404 ? notFound(reply) : reply.code(403).send({ code: "forbidden" });
+/**
+ * Throws the `Refusal` unless the member may read the score's versions, or with `write` change
+ * them: checked before the body, and before anything is loaded (docs/spec/routes.md, 3.4). A
+ * write checks again with the score's row locked (`admitWriter`).
+ */
+async function checkMember(scoreId: string, accountId: string, write: boolean): Promise<void> {
+  const member = await membership(scoreId, accountId);
+  if (member === null) throw new Refusal(404, "not_found");
+  if (write && !canWrite(member.role)) throw new Refusal(403, "forbidden");
 }
 
-/** Null when the member may: read them, or with `write` change them; else the refusal, 404 to anyone who is no member, 403 to a Viewer. */
-async function refusalOf(scoreId: string, accountId: string, write: boolean): Promise<Refused | null> {
-  const member = await membership(scoreId, accountId);
-  if (member === null) return 404;
-  return write && !canWrite(member.role) ? 403 : null;
+/**
+ * Throws the `Refusal` unless the member may still name the score's versions or make one, as of
+ * the score's row locked: what is checked holds until the version is written. 404 to anyone who
+ * is no member any more, or once the score is deleted; 403 to a Viewer, whoever was made one
+ * since the request came.
+ */
+async function admitWriter(row: Score, accountId: string, transaction: Transaction): Promise<void> {
+  if (row.deletedAt !== null) throw new Refusal(404, "not_found");
+  const member = await ScoreMember.findOne({ where: { scoreId: row.id, accountId }, attributes: ["role"], transaction });
+  if (member === null) throw new Refusal(404, "not_found");
+  if (!canWrite(member.role)) throw new Refusal(403, "forbidden");
+}
+
+/** The answer `answer` gives, or the refusal it throws. */
+async function answered<T>(reply: FastifyReply, answer: () => Promise<T>): Promise<T | FastifyReply> {
+  try {
+    return await answer();
+  } catch (error) {
+    if (!(error instanceof Refusal)) throw error;
+    return reply.code(error.status).send({ code: error.code });
+  }
 }
 
 type ScoreParams = { Params: { id: string } };
 type VersionParams = { Params: { id: string; versionId: string } };
 
 export function registerVersions(app: FastifyInstance, { collab, migrations }: { collab: Collab; migrations?: readonly Migration[] | undefined }): void {
-  // Every member, a Viewer too; a guest has no session, so none of this. The role is checked
-  // before the body, as for the members (docs/spec/routes.md, 3.4).
-  app.get<ScoreParams>("/api/scores/:id/versions", async (request, reply) => {
-    const refused = await refusalOf(request.params.id, request.account!.id, false);
-    if (refused !== null) return refuse(reply, refused);
-    const versions = await Version.findAll({
-      where: { scoreId: request.params.id },
-      attributes: SUMMARY_ATTRIBUTES,
-      order: [
-        ["createdAt", "DESC"],
-        ["id", "DESC"],
-      ],
-    });
-    return versionList.parse({ versions: versions.map(summaryOf) });
-  });
+  // Every member, a Viewer too; a guest has no session, so none of this.
+  app.get<ScoreParams>("/api/scores/:id/versions", (request, reply) =>
+    answered(reply, async () => {
+      await checkMember(request.params.id, request.account!.id, false);
+      const versions = await Version.findAll({
+        where: { scoreId: request.params.id },
+        attributes: SUMMARY_ATTRIBUTES,
+        order: [
+          ["createdAt", "DESC"],
+          ["id", "DESC"],
+        ],
+      });
+      return versionList.parse({ versions: versions.map(summaryOf) });
+    }),
+  );
 
-  app.get<VersionParams>("/api/scores/:id/versions/:versionId", async (request, reply) => {
-    const { id: scoreId, versionId } = request.params;
-    const refused = await refusalOf(scoreId, request.account!.id, false);
-    if (refused !== null) return refuse(reply, refused);
-    try {
-      const score = await readVersion(scoreId, versionId, migrations);
-      return score === null ? notFound(reply) : score;
-    } catch (error) {
-      if (!(error instanceof VersionUnreadable)) throw error;
-      request.log.error({ scoreId, versionId, error }, "a version could not be read");
-      return reply.code(409).send({ code: "version_unreadable" });
-    }
-  });
+  app.get<VersionParams>("/api/scores/:id/versions/:versionId", (request, reply) =>
+    answered(reply, async () => {
+      const { id: scoreId, versionId } = request.params;
+      await checkMember(scoreId, request.account!.id, false);
+      let score: ScoreJSON | null;
+      try {
+        score = await readVersion(scoreId, versionId, migrations);
+      } catch (error) {
+        if (!(error instanceof VersionUnreadable)) throw error;
+        request.log.error({ scoreId, versionId, error }, "a version could not be read");
+        throw new Refusal(409, "version_unreadable");
+      }
+      if (score === null) throw new Refusal(404, "not_found");
+      return score;
+    }),
+  );
 
-  // Of the content the server has now (`Collab.saveVersion`): with a name, a member's own;
-  // without, the one a restore makes first (docs/spec/collab.md, 8.5).
-  app.post<ScoreParams>("/api/scores/:id/versions", async (request, reply) => {
-    const scoreId = request.params.id;
-    const refused = await refusalOf(scoreId, request.account!.id, true);
-    if (refused !== null) return refuse(reply, refused);
-    const body = createVersionRequest.safeParse(request.body ?? {});
-    if (!body.success) return invalidRequest(reply, body.error);
-    const createdBy = request.account!.id;
-    const { name } = body.data;
-    const made = await collab.saveVersion(scoreId, name === undefined ? { reason: "before_restore", createdBy } : { reason: "manual", createdBy, name });
-    if (made === "readOnly") return reply.code(409).send({ code: "score_read_only" });
-    // Deleted for good meanwhile.
-    if (made === null) return notFound(reply);
-    return reply.code(made.created ? 201 : 200).send(createdVersion.parse({ versionId: made.id }));
-  });
+  // A member's own version, named as it is made, of the content the server has now
+  // (`Collab.saveVersion`). The one a restore makes first, without a name, is #68's
+  // (docs/spec/collab.md, 8.5): a request without a name is refused here.
+  app.post<ScoreParams>("/api/scores/:id/versions", (request, reply) =>
+    answered(reply, async () => {
+      const scoreId = request.params.id;
+      const accountId = request.account!.id;
+      await checkMember(scoreId, accountId, true);
+      const body = createVersionRequest.safeParse(request.body);
+      if (!body.success) return invalidRequest(reply, body.error);
+      const made = await collab.saveVersion(scoreId, { name: body.data.name, createdBy: accountId, admit: (row, transaction) => admitWriter(row, accountId, transaction) });
+      if (made === "readOnly") throw new Refusal(409, "score_read_only");
+      // Deleted meanwhile.
+      if (made === null) throw new Refusal(404, "not_found");
+      return reply.code(201).send(createdVersion.parse({ versionId: made.id }));
+    }),
+  );
 
   // With the score's row locked, as making a version locks it: the retention never deletes a
   // version while it is being named, and the role is the one the member has as it is written.
-  app.patch<VersionParams>("/api/scores/:id/versions/:versionId", async (request, reply) => {
-    const { id: scoreId, versionId } = request.params;
-    const accountId = request.account!.id;
-    const refused = await refusalOf(scoreId, accountId, true);
-    if (refused !== null) return refuse(reply, refused);
-    const body = renameVersionRequest.safeParse(request.body);
-    if (!body.success) return invalidRequest(reply, body.error);
-    if (!isUuid(versionId)) return notFound(reply);
-    const answer = await Version.sequelize!.transaction(async (transaction): Promise<Refused | ReturnType<typeof summaryOf>> => {
-      const score = await Score.findOne({ where: { id: scoreId, deletedAt: null }, attributes: ["id"], lock: transaction.LOCK.UPDATE, transaction });
-      const member = score && (await ScoreMember.findOne({ where: { scoreId, accountId }, attributes: ["role"], transaction }));
-      if (!member) return 404;
-      if (!canWrite(member.role)) return 403;
-      const version = await Version.findOne({ where: { id: versionId, scoreId }, attributes: SUMMARY_ATTRIBUTES, transaction });
-      if (version === null) return 404;
-      // Without its name it is an automatic version again: the next version made keeps the 200
-      // latest automatic ones, this one counted (docs/spec/collab.md, 8.4).
-      await Version.update({ name: body.data.name }, { where: { id: versionId }, transaction });
-      version.name = body.data.name;
-      return summaryOf(version);
-    });
-    return typeof answer === "number" ? refuse(reply, answer) : answer;
-  });
+  app.patch<VersionParams>("/api/scores/:id/versions/:versionId", (request, reply) =>
+    answered(reply, async () => {
+      const { id: scoreId, versionId } = request.params;
+      const accountId = request.account!.id;
+      await checkMember(scoreId, accountId, true);
+      const body = renameVersionRequest.safeParse(request.body);
+      if (!body.success) return invalidRequest(reply, body.error);
+      if (!isUuid(versionId)) throw new Refusal(404, "not_found");
+      const { name } = body.data;
+      return Version.sequelize!.transaction(async (transaction) => {
+        const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id", "deletedAt"], lock: transaction.LOCK.UPDATE, transaction });
+        if (row === null) throw new Refusal(404, "not_found");
+        await admitWriter(row, accountId, transaction);
+        const version = await Version.findOne({ where: { id: versionId, scoreId }, attributes: SUMMARY_ATTRIBUTES, transaction });
+        if (version === null) throw new Refusal(404, "not_found");
+        // A member's own version was named as it was made, and stays named: renamed, never
+        // unnamed, it never turns into an automatic one (docs/spec/collab.md, 8.4).
+        if (name === null && version.reason === "manual") throw new Refusal(409, "version_name_required");
+        // Without its name another version is an automatic one again: the next version made
+        // keeps the 200 latest automatic ones, this one counted.
+        await Version.update({ name }, { where: { id: versionId }, transaction });
+        version.name = name;
+        return summaryOf(version);
+      });
+    }),
+  );
 }

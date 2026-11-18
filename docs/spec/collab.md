@@ -147,12 +147,12 @@
 
 ### 8.3 什麼時候建立
 
-兩者都只在內容和該團譜最新的版本不同時才建（比較 `content_hash`）：
+前三種都只在內容和該團譜最新的版本不同時才建（比較 `content_hash`）；第 4 種（成員存成命名版本，#67）一律建立：
 
 1. **最後一個連線離開時**：Hocuspocus 的 `onDisconnect`，剩 0 個連線時，用記憶體裡的文件建立。**補充**：只用 `onDisconnect`，不在 `afterUnloadDocument` 再建一次（內容比較也會擋掉重複，但文件卸載後就不在記憶體裡了）。
 2. **連續編輯中，每 10 分鐘一次**：文件載入期間的計時器。
 3. **還原前**（`reason = 'before_restore'`）：見 8.5。**補充**：內容和最新版本相同時不另建，直接回傳最新版本的 id。
-4. **補充**（#67）：**成員存成命名版本**（`reason = 'manual'`，建立時就帶 `name`）：Owner 或 Editor 在版本頁要求，一律建立新的一筆，不比較內容（這是成員明確的要求）。內容的來源和還原前的版本相同（[`routes.md`](routes.md) 3.6）。
+4. **補充**（#67）：**成員存成命名版本**（`reason = 'manual'`，建立時就帶 `name`）：Owner 或 Editor 在版本頁要求，一律建立新的一筆，不比較內容（這是成員明確的要求）。內容是伺服器當下的（[`routes.md`](routes.md) 3.6）；還原前的版本（3）要用同一個來源（`collab.saveVersion`），由 #68 接上。
 
 **補充**（#17）：
 
@@ -172,7 +172,7 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 ### 8.4 保留
 
 - 每份團譜最多 200 個自動版本（`name` 是 null 的，包含 `before_restore`）；超過時刪最舊的自動版本。
-- 手動命名的版本（M5）不會被自動刪除。**補充**：命名就是替一個既有的版本加上名稱，1–100 字元；把名稱清掉，它就回到自動版本的保留規則。
+- 手動命名的版本（M5）不會被自動刪除。**補充**：命名是替一個既有的版本加上名稱，或在存下目前內容時一併命名（`manual`，8.3 第 4 種），1–100 字元。替既有的自動版本或還原前的版本取的名稱可以清掉，它就回到自動版本的保留規則（下一次建立版本時才算進 200 個）。**補充**（#67）：`manual` 版本一定有名稱，可以改名、不能清掉（409 `version_name_required`）：它是成員為了保留而存的，沒有名稱就會變成「手動存下、卻可能被自動刪除」的版本。
 - 團譜永久刪除時，版本一起刪除（[`accounts.md`](accounts.md) 第 8 節）。
 
 ### 8.5 還原
@@ -194,7 +194,8 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 
 - 版本列表顯示建立時間、原因、名稱、大小。
 - 預覽用 Read view 的 renderer 畫遷移後的 JSON，不連線、不改文件（補充）。
-- **補充**（#67）：版本頁是 `apps/web/src/views/VersionsView.vue`，目前是獨立的頁面（和設定頁一樣），不開 `Y.Doc` 與 provider；預覽以 `createAlphaTabEngine`（worker、點擊移動播放位置）畫 `GET .../versions/:versionId` 的結果，可以播放。所有成員都看得到列表與預覽；Owner 與 Editor 另外有「命名」與「把目前的內容存成版本」。8.5 說的「和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider」留給還原（#68）處理。e2e 掛鉤的 `scoreJson()` 在這頁回傳預覽中的版本內容。
+- **補充**（#67）：版本頁是 `apps/web/src/views/VersionsView.vue`，目前是獨立的頁面（和設定頁一樣），不開 `Y.Doc` 與 provider；預覽以 `createAlphaTabEngine`（worker、點擊移動播放位置）畫 `GET .../versions/:versionId` 的結果，可以播放。所有成員都看得到列表與預覽；Owner 與 Editor 另外有「命名」與「把目前的內容存成版本」。e2e 掛鉤的 `scoreJson()` 在這頁回傳預覽中的版本內容。
+- **補充**（#67）：交接給還原（#68）的事：(1) 8.5 說的「和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider」；(2) `POST /api/scores/:id/versions` 不帶 `name` 時建立 `before_restore`（伺服器當下的內容走 `collab.saveVersion`，和最新版本相同時不另建，[`routes.md`](routes.md) 3.6），目前這樣的請求回 400；(3) `apps/web/e2e/versions.spec.ts` 的 `typeAndLeave` 靠離開譜頁讓最後一條連線斷開來產生版本，改成共用 provider 後，離開譜頁到版本頁不再斷線，這個 e2e 要改寫。
 
 ## 9. 信任模型
 
