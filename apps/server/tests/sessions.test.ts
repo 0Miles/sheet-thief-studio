@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import type { SessionsEnded } from "../src/sessions";
-import { COOKIE, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig, whoAmI } from "./support";
+import { COOKIE, freshDatabase, freshRedis, isActiveSession, ORIGIN, sessionOf, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -40,9 +40,7 @@ afterAll(async () => {
 });
 
 
-async function valid(session: string): Promise<boolean> {
-  return (await whoAmI(app, session)).statusCode === 200;
-}
+const valid = (session: string) => isActiveSession(app, session);
 
 test("ending an account's sessions ends every one of them, keeps other accounts', and tells every listener", async () => {
   const [annaHere, annaThere, ben] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "ben", PASSWORD)];
@@ -100,4 +98,51 @@ test("a listener can stop listening", async () => {
   stop();
   await app.sessions.end({ accountId: anna });
   expect(listener).not.toHaveBeenCalled();
+});
+
+test("a session whose deletion Redis ran but never answered still has its listeners told, without the account", async () => {
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+  // Redis deletes the session; its reply is lost on the way back.
+  const getdel = redis.getdel.bind(redis);
+  vi.spyOn(redis, "getdel").mockImplementationOnce(async (key) => {
+    await getdel(key);
+    throw new Error("the reply was lost");
+  });
+
+  await expect(app.sessions.end({ sessionId: leaving })).rejects.toThrow("the reply was lost");
+
+  expect(listener.mock.calls).toEqual([[{ accountId: null, sessionId: leaving }]]);
+  expect([await valid(leaving), await valid(staying)]).toEqual([false, true]);
+});
+
+test("a session that had already ended tells no listener", async () => {
+  const session = await sessionOf(app, "anna", PASSWORD);
+  await app.sessions.end({ sessionId: session });
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+
+  await app.sessions.end({ sessionId: session });
+
+  expect(listener).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["is not JSON", "not JSON"],
+  ["names no account", "{}"],
+])("a session whose stored value %s still ends and has its listeners told, without the account", async (_, stored) => {
+  const session = await sessionOf(app, "anna", PASSWORD);
+  await redis.set(`session:${session}`, stored);
+  const listener = vi.fn();
+  app.sessions.onEnd(listener);
+  const srem = vi.spyOn(redis, "srem");
+
+  await app.sessions.end({ sessionId: session });
+
+  expect(listener.mock.calls).toEqual([[{ accountId: null, sessionId: session }]]);
+  expect(await redis.exists(`session:${session}`)).toBe(0);
+  // No account, no list to take the session off.
+  expect(srem).not.toHaveBeenCalled();
+  srem.mockRestore();
 });

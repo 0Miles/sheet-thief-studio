@@ -64,3 +64,55 @@ export async function checkCredentials(typedUsername: string, typedPassword: str
   const matches = await verifyPassword(identity.secretHash, typedPassword);
   return matches && account.disabledAt === null ? account : null;
 }
+
+/** Whether this is the account's password, for someone already logged in who is asked for it again. */
+export async function isPasswordOf(accountId: string, typedPassword: string): Promise<boolean> {
+  const identity = await Identity.findOne({ where: { accountId, provider: "password" } });
+  if (!identity?.secretHash) {
+    await verifyNothing(typedPassword);
+    return false;
+  }
+  return verifyPassword(identity.secretHash, typedPassword);
+}
+
+/**
+ * Give the account the password its own person chose: with it, nothing is left to change. The
+ * caller has checked the password against the rules, and ends the account's other sessions.
+ */
+export async function chooseOwnPassword(accountId: string, newPassword: string): Promise<void> {
+  const secretHash = await hashPassword(newPassword);
+  await Account.sequelize!.transaction(async (transaction) => {
+    const [changed] = await Identity.update({ secretHash }, { where: { accountId, provider: "password" }, transaction });
+    if (changed !== 1) throw new Error(`account ${accountId} has no password to change`);
+    await Account.update({ mustChangePassword: false }, { where: { id: accountId }, transaction });
+  });
+}
+
+/**
+ * Give the account a temporary password, an admin's: its person must change it at the next login.
+ * False when there is no such account. The caller has checked the password against the rules,
+ * and ends the account's sessions.
+ */
+export async function setTemporaryPassword(accountId: string, temporaryPassword: string): Promise<boolean> {
+  const secretHash = await hashPassword(temporaryPassword);
+  return Account.sequelize!.transaction(async (transaction) => {
+    const [found] = await Account.update({ mustChangePassword: true }, { where: { id: accountId }, transaction });
+    if (found !== 1) return false;
+    const [changed] = await Identity.update({ secretHash }, { where: { accountId, provider: "password" }, transaction });
+    // An account that only logged in another way gets a password to log in with.
+    if (changed === 0) await Identity.create({ accountId, provider: "password", subject: accountId, secretHash }, { transaction });
+    return true;
+  });
+}
+
+/**
+ * Disable the account, or enable it again: a disabled account cannot log in. False when there is
+ * no such account. One already disabled stays disabled since when it was. The caller ends the
+ * sessions of an account it disables.
+ */
+export async function setDisabled(accountId: string, disabled: boolean): Promise<boolean> {
+  const account = await Account.findByPk(accountId);
+  if (!account) return false;
+  if (disabled !== (account.disabledAt !== null)) await account.update({ disabledAt: disabled ? new Date() : null });
+  return true;
+}

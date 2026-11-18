@@ -123,7 +123,7 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   expect(await Score.count()).toBe(scoresBefore);
 });
 
-/** Make Ben a member of the score with this role, as the members API of #13 will. */
+/** Make Ben a member of the score with this role, straight in the database. */
 async function addBen(scoreId: string, role: Role): Promise<void> {
   await ScoreMember.create({ scoreId, accountId: ben, role });
 }
@@ -212,6 +212,32 @@ test("a provider the server disconnects connects again with a ticket it fetched 
   expect(await applied).toBe(true);
 });
 
+test("a message of 7 MB is applied; one of 9 MB closes the connection that sent it, and only that one", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  const id = await createScore(app, session);
+  const sender = await open(app, url, id, session);
+  const other = await open(app, url, id, session);
+  const otherClosed = closes(other);
+
+  // Under the 8 MB of docs/spec/security.md, section 5: a change like any other.
+  const applied = nextSyncStatus(sender.provider);
+  const received = new Promise<void>((resolve) => other.doc.once("update", () => resolve()));
+  sender.doc.getMap("padding").set("bytes", "x".repeat(7 * 1024 * 1024));
+  expect(await applied).toBe(true);
+  await received;
+  expect((other.doc.getMap("padding").get("bytes") as string).length).toBe(7 * 1024 * 1024);
+
+  // Over it: 1009, "message too big", before the message is read whole.
+  const closed = socketClosed(sender.provider);
+  sender.doc.getMap("padding").set("more", "y".repeat(9 * 1024 * 1024));
+  expect(await closed).toBe(1009);
+  // Not left to reconnect and send it again.
+  sender.provider.destroy();
+  expect(other.doc.getMap("padding").has("more")).toBe(false);
+  expect(otherClosed()).toBe(false);
+});
+
 test("a session that ends while the document is being loaded leaves no connection open", async () => {
   const { app, url } = await startApp();
   const session = await sessionOf(app, "anna", PASSWORD);
@@ -261,4 +287,110 @@ test("logging out closes the session's connections even when Redis fails once th
   await expect(app.sessions.end({ sessionId: session })).rejects.toThrow("Redis is not answering");
 
   expect(await closed).toBe(Unauthorized.code);
+});
+
+test("logging out closes the session's connections even when Redis's reply to deleting the session is lost", async () => {
+  const { app, url } = await startApp();
+  const [leaving, staying] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD)];
+  const id = await createScore(app, leaving);
+  const left = await open(app, url, id, leaving);
+  const kept = await open(app, url, id, staying);
+  const leftClosed = socketClosed(left.provider);
+  const keptClosed = closes(kept);
+  // Redis deletes the session; its reply never arrives, so the account is not known.
+  const getdel = redis.getdel.bind(redis);
+  vi.spyOn(redis, "getdel").mockImplementationOnce(async (key) => {
+    await getdel(key);
+    throw new Error("the reply was lost");
+  });
+
+  await expect(app.sessions.end({ sessionId: leaving })).rejects.toThrow("the reply was lost");
+
+  expect(await leftClosed).toBe(Unauthorized.code);
+  const applied = nextSyncStatus(kept.provider);
+  metaOf(kept.doc).set("title", "另一個分頁改的標題");
+  expect(await applied).toBe(true);
+  expect(keptClosed()).toBe(false);
+});
+
+/** Change the password of the account of this session through the API, as /account does. */
+async function changePassword(app: FastifyInstance, session: string, currentPassword: string, newPassword: string): Promise<void> {
+  const response = await app.inject({ method: "POST", url: "/api/me/password", headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, payload: { currentPassword, newPassword } });
+  if (response.statusCode !== 204) throw new Error(`changing the password answered ${response.statusCode} ${response.body}`);
+}
+
+test("changing one's password closes the connection of the session that is kept too, and it comes back with a new ticket", async () => {
+  const { app, url } = await startApp();
+  await createAccount({ username: "cara", displayName: "cara", password: PASSWORD, isAdmin: false, mustChangePassword: false });
+  const session = await sessionOf(app, "cara", PASSWORD);
+  const id = await createScore(app, session);
+  const score = await open(app, url, id, session);
+  const closed = socketClosed(score.provider);
+
+  await changePassword(app, session, PASSWORD, "the password cara chose");
+
+  expect(await closed).toBe(4401);
+  // The session is still good for a ticket: the provider is back in without anyone doing anything.
+  await insync(score.provider);
+  const applied = nextSyncStatus(score.provider);
+  metaOf(score.doc).set("title", "改密碼之後改的標題");
+  expect(await applied).toBe(true);
+});
+
+test("changing one's password while the kept session's document is being loaded leaves that connection closed", async () => {
+  const { app, url } = await startApp();
+  await createAccount({ username: "dora", displayName: "dora", password: PASSWORD, isAdmin: false, mustChangePassword: false });
+  const session = await sessionOf(app, "dora", PASSWORD);
+  const id = await createScore(app, session);
+  const ticket = await ticketFor(app, id, session);
+  // As in the test of a session ending while its document loads: the spy stands in that window.
+  // Here the session stays, so only the event for the whole account can close the connection.
+  const load = Score.findOne.bind(Score);
+  const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
+    await changePassword(app, session, PASSWORD, "the password dora chose");
+    return load(options);
+  });
+
+  const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
+  opened.push({ provider, doc: provider.document });
+  const closed = await socketClosed(provider);
+
+  expect(loading).toHaveBeenCalledOnce();
+  expect(closed).toBe(4401);
+});
+
+test("an unload left over from a document that is gone does not drop the one loaded after it (#131)", async () => {
+  const { app, url } = await startApp();
+  const session = await sessionOf(app, "anna", PASSWORD);
+  // Once Hocuspocus has stored a document, it unloads it from a timer of 0 ms. The server's own
+  // change (here, the content of a new score) stores and unloads its document at once, leaving
+  // that timer behind; an event loop busy elsewhere runs it only after the score is loaded again
+  // for a member. Held here until then, the one and only timer of its kind.
+  const held: Array<() => void> = [];
+  const setTimer = globalThis.setTimeout;
+  const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) => {
+    if (!delay && String(callback).includes("shouldUnloadDocument")) {
+      held.push(callback);
+      return setTimer(() => {}, 0);
+    }
+    return setTimer(callback, delay);
+  }) as typeof setTimeout);
+  const id = await createScore(app, session, "載入前的標題");
+  timers.mockRestore();
+  expect(held.length).toBeGreaterThan(0);
+  expect(app.collab.loadedScores()).not.toContain(id);
+
+  const anna = await open(app, url, id, session);
+  for (const unload of held) unload();
+  // Let the unloads run to their end.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // Still the document in memory: a member who opens the score now joins Anna's, sees what she
+  // writes, and nothing either of them writes is stored over the other's.
+  expect(app.collab.loadedScores()).toContain(id);
+  const applied = nextSyncStatus(anna.provider);
+  metaOf(anna.doc).set("title", "載入後改的標題");
+  expect(await applied).toBe(true);
+  const ben = await open(app, url, id, await sessionOf(app, "anna", PASSWORD));
+  expect(metaOf(ben.doc).get("title")).toBe("載入後改的標題");
 });

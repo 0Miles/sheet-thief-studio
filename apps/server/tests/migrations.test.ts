@@ -1,19 +1,38 @@
+// Migrating from nothing, in a database of this file's own: the other files use the tables of the
+// tests' database, migrated once for the run (tests/globalSetup.ts), and this one never touches
+// them. Not a schema of its own: Sequelize looks for the table of the migrations in `public`.
 import type { Sequelize } from "sequelize";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { connectDatabase } from "../src/db/database";
 import { migrate } from "../src/db/migrate";
-import { emptyDatabase, TEST_DATABASE_URL } from "./support";
+import { TEST_DATABASE_URL } from "./support";
+
+const url = new URL(TEST_DATABASE_URL);
+const DATABASE = `${url.pathname.slice(1)}_migrations`;
+url.pathname = `/${DATABASE}`;
+
+/** Drop this file's database if a run left it, and make it again, empty, when asked. */
+async function dropDatabase({ andCreate }: { andCreate: boolean }): Promise<void> {
+  const tests = connectDatabase(TEST_DATABASE_URL);
+  try {
+    await tests.query(`DROP DATABASE IF EXISTS "${DATABASE}" WITH (FORCE)`);
+    if (andCreate) await tests.query(`CREATE DATABASE "${DATABASE}"`);
+  } finally {
+    await tests.close();
+  }
+}
 
 let sequelize: Sequelize;
 
 beforeAll(async () => {
-  sequelize = connectDatabase(TEST_DATABASE_URL);
-  await emptyDatabase(sequelize);
+  await dropDatabase({ andCreate: true });
+  sequelize = connectDatabase(url.toString());
 });
 
 afterAll(async () => {
   await sequelize.close();
+  await dropDatabase({ andCreate: false });
 });
 
 async function columns(table: string): Promise<string[]> {
@@ -25,7 +44,8 @@ async function columns(table: string): Promise<string[]> {
 }
 
 test("migrating an empty database creates the tables, and migrating again changes nothing", async () => {
-  await migrate(sequelize);
+  // All of them, from the first: none was recorded in this database.
+  expect((await migrate(sequelize))[0]).toBe("0001-accounts");
   const expected = {
     accounts: ["created_at", "disabled_at", "display_name", "id", "is_admin", "must_change_password", "updated_at", "username"],
     identities: ["account_id", "created_at", "id", "provider", "secret_hash", "subject"],
@@ -36,6 +56,6 @@ test("migrating an empty database creates the tables, and migrating again change
   const tables = async () => Object.fromEntries(await Promise.all(Object.keys(expected).map(async (table) => [table, await columns(table)])));
   expect(await tables()).toEqual(expected);
 
-  await migrate(sequelize);
+  expect(await migrate(sequelize)).toEqual([]);
   expect(await tables()).toEqual(expected);
 });

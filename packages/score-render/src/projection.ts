@@ -2,13 +2,17 @@
 // One way only: nothing built here is ever written back to the score.
 import * as alphaTab from "@coderline/alphatab";
 import {
+  DEFAULT_TEMPO,
   type BarJSON,
   barTicks,
   beatAfter,
   type BeatJSON,
   type BendType,
+  type Harmonic,
   beatTicks,
   DYNAMICS,
+  type KeySignature,
+  keySigsOf,
   linkReaches,
   linksOn,
   type NoteJSON,
@@ -21,6 +25,8 @@ import {
   WHOLE,
 } from "@studio/score-model";
 
+import { channelsOf, type PartChannels } from "./channels";
+
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
 type AtStaff = alphaTab.model.Staff;
@@ -30,12 +36,6 @@ type AtNote = alphaTab.model.Note;
 type AtDynamic = alphaTab.model.DynamicValue;
 
 const { model } = alphaTab;
-
-/** Quarter notes per minute of a score whose first bar gives no tempo. */
-export const DEFAULT_TEMPO = 120;
-
-/** The MIDI channel every percussion part plays on. */
-const PERCUSSION_CHANNEL = 9;
 
 const NOTE_VALUES: readonly NoteValue[] = [1, 2, 4, 8, 16, 32, 64];
 
@@ -162,6 +162,24 @@ const BENDS: Record<BendType, { type: alphaTab.model.BendType; shape: [offset: n
   preBendRelease: { type: model.BendType.PrebendRelease, shape: [[0, 1], [15, 0]] },
 };
 
+/** The harmonic value of a pinch or artificial harmonic: an octave over the fretted note. */
+const HARMONIC_OCTAVE = 12;
+
+/**
+ * Each harmonic (docs/spec/schema.md, section 8) as alphaTab's type, and the harmonic value it is
+ * given: where on the string, in frets, the harmonic is touched. alphaTab sounds a natural
+ * harmonic at the node of that fret over the open string (12 an octave, 7 an octave and a fifth,
+ * 5 two octaves; a fret with no node in its table, the open string) and draws that value as the
+ * fret, so a natural harmonic is given its own fret. Pinch and artificial sound that far over the
+ * fretted note: 12, an octave, as alphaTab's Guitar Pro import does; with none they would sound
+ * as the note plain.
+ */
+const HARMONIC_TYPES: Record<Harmonic, { type: alphaTab.model.HarmonicType; value: (fret: number) => number }> = {
+  natural: { type: model.HarmonicType.Natural, value: (fret) => fret },
+  pinch: { type: model.HarmonicType.Pinch, value: () => HARMONIC_OCTAVE },
+  artificial: { type: model.HarmonicType.Artificial, value: () => HARMONIC_OCTAVE },
+};
+
 /** Set a bend on an alphaTab note: its type, and its points up `semitones`, in alphaTab's quarter tones. */
 function projectBend(note: AtNote, { type, semitones }: NonNullable<NoteJSON["bend"]>): void {
   const bend = BENDS[type];
@@ -211,6 +229,11 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   if (json.slideOut && (reaches || !slideGoesOn(json.slideOut))) note.slideOutType = SLIDE_OUT_TYPES[json.slideOut];
   if (json.slideIn) note.slideInType = SLIDE_IN_TYPES[json.slideIn];
   if (json.bend) projectBend(note, json.bend);
+  if (json.harmonic) {
+    const harmonic = HARMONIC_TYPES[json.harmonic];
+    note.harmonicType = harmonic.type;
+    note.harmonicValue = harmonic.value(note.fret);
+  }
   return note;
 }
 
@@ -244,6 +267,18 @@ function dynamicsLeaving(bar: AtBar | null | undefined, voiceCount: number): AtD
   return Array.from({ length: voiceCount }, (_, voice) => bar?.voices[voice]?.beats.at(-1)?.dynamics ?? START_DYNAMIC);
 }
 
+/**
+ * By projected bar, for each of its voices: whether a dynamic written on a rest is still to be
+ * drawn where the bar ends, on the next beat of that voice that is not a rest (#97).
+ */
+const undrawnLeaving = new WeakMap<AtBar, boolean[]>();
+
+/** Whether each voice of a projected bar leaves a dynamic to draw, for the bar after it (none: the start of the score). */
+function dynamicsUndrawn(bar: AtBar | null | undefined, voiceCount: number): boolean[] {
+  const undrawn = bar ? undrawnLeaving.get(bar) : undefined;
+  return Array.from({ length: voiceCount }, (_, voice) => undrawn?.[voice] ?? false);
+}
+
 function rest(value: NoteValue, dynamic: AtDynamic): AtBeat {
   const beat = new model.Beat();
   beat.duration = value as alphaTab.model.Duration;
@@ -259,6 +294,7 @@ function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined
   const beat = rest(json.value, dynamic);
   // A dynamic is drawn where it is written only: alphaTab would draw one where the dynamic in force
   // changes, and its own f on the first note of a voice that has none (`shouldCreateDynamicsGlyph`).
+  // One written on a rest, which alphaTab never draws, is drawn on a later beat (`projectBar`).
   beat.showDynamics = json.dynamic !== undefined;
   beat.dots = json.dots;
   if (json.tuplet) {
@@ -282,17 +318,40 @@ function projectBeat(part: PartJSON, json: BeatJSON, after: BeatJSON | undefined
   return beat;
 }
 
+/** Where a bar sits in the score: what it takes from the bars around it. */
+interface BarPlace {
+  /** The bar after it, where the links of its last beats go (none for the last). */
+  next: BarJSON | undefined;
+  /** The key in force in it (docs/spec/schema.md, section 3). */
+  key: KeySignature;
+  /**
+   * How long a pickup bar is, in ticks: what its voices are filled to with rests; null for a
+   * full bar, filled to its time signature.
+   */
+  pickup: number | null;
+}
+
+const KEY_SIGNATURE_TYPES = { major: model.KeySignatureType.Major, minor: model.KeySignatureType.Minor } as const;
+
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat
  * on, in its voice (docs/spec/schema.md, section 8): each voice starts at the dynamic in force at
- * the end of the same voice in `previous`, the bar before (none for the first). The links of its
- * last beats go on to the first beats of `next`, the bar after (none for the last). Returns the ids
- * of its beats by voice.
+ * the end of the same voice in `previous`, the bar before (none for the first). A dynamic written
+ * on a rest is drawn on the next beat of its voice that is not a rest, in this bar or a later one,
+ * unless one is written on that beat or a rest before it: alphaTab draws none on a rest (#97).
+ * Returns the ids of its beats by voice.
  */
-function projectBar(part: PartJSON, bar: BarJSON, next: BarJSON | undefined, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
+function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }: BarPlace, staff: number, voiceCount: number, previous: AtBar | undefined): { bar: AtBar; beatIds: string[][] } {
   const entering = dynamicsLeaving(previous, voiceCount);
+  const undrawnEntering = dynamicsUndrawn(previous, voiceCount);
+  const undrawnLeavingBar: boolean[] = [];
   const atBar = new model.Bar();
   atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
+  // A drum staff has no key: it would only draw sharps and flats on it.
+  if (part.kind !== "percussion") {
+    atBar.keySignature = keySig.fifths as alphaTab.model.KeySignature;
+    atBar.keySignatureType = KEY_SIGNATURE_TYPES[keySig.mode];
+  }
   const beatIds: string[][] = [];
   const content = part.content[bar.id] ?? {};
   for (let voice = 0; voice < voiceCount; voice++) {
@@ -304,43 +363,64 @@ function projectBar(part: PartJSON, bar: BarJSON, next: BarJSON | undefined, sta
     beatIds.push(beats.map((beat) => beat.id));
     // The rests that fill a voice carry its dynamic too: the bar after reads it off its last beat.
     let dynamic = entering[voice];
+    // Whether a dynamic is written that no beat has been drawn with yet: the beat that draws it
+    // draws the one in force there, the last written.
+    let undrawn = undrawnEntering[voice] as boolean;
     for (const [index, beat] of beats.entries()) {
       if (beat.dynamic) dynamic = DYNAMIC_VALUES[beat.dynamic];
-      atVoice.addBeat(projectBeat(part, beat, beatAfter(beats, index, following), dynamic));
+      const atBeat = projectBeat(part, beat, beatAfter(beats, index, following), dynamic);
+      if (beat.dynamic) undrawn = true;
+      if (undrawn && !atBeat.isRest) {
+        atBeat.showDynamics = true;
+        undrawn = false;
+      }
+      atVoice.addBeat(atBeat);
     }
-    if (beats.length === 0) {
-      // An empty first voice is a whole-bar rest; other voices stay invisible.
+    undrawnLeavingBar.push(undrawn);
+    if (beats.length === 0 && (pickup === null || voice > 0)) {
+      // An empty first voice is a whole-bar rest; other voices stay invisible, and take no time.
       const filler = rest(1, dynamic);
       filler.isEmpty = voice > 0;
       atVoice.addBeat(filler);
       continue;
     }
-    // A voice that does not fill its bar is completed with rests, here only (it stays flagged).
+    // A voice that does not fill its bar is completed with rests, here only (it stays flagged); in
+    // a pickup bar, up to the longest voice of the bar in any part, which alphaTab takes as its length.
     const held = beats.reduce((sum, beat) => sum + beatTicks(beat), 0);
-    for (const value of restsFilling(held, barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
+    for (const value of restsFilling(held, pickup ?? barTicks(bar.timeSig))) atVoice.addBeat(rest(value, dynamic));
   }
+  undrawnLeaving.set(atBar, undrawnLeavingBar);
   return { bar: atBar, beatIds };
 }
 
-function projectTrack(part: PartJSON, channels: { next: number }): AtTrack {
+/**
+ * Where each bar of a score sits: the bar after it, the key in force, and for the first bar when
+ * it is a pickup (docs/spec/schema.md, section 3), its length: that of its longest voice in any
+ * part, up to its time signature. A pickup bar with nothing in it is as long as its time signature.
+ */
+function placesOf(json: ScoreJSON): BarPlace[] {
+  const keys = keySigsOf(json.bars);
+  return json.bars.map((bar, index) => {
+    let pickup: number | null = null;
+    if (index === 0 && bar.anacrusis) {
+      const full = barTicks(bar.timeSig);
+      const held = json.parts.flatMap((part) => Object.values(part.content[bar.id] ?? {}).map((beats) => beats.reduce((sum, beat) => sum + beatTicks(beat), 0)));
+      const longest = Math.max(0, ...held);
+      pickup = longest > 0 ? Math.min(longest, full) : full;
+    }
+    return { next: json.bars[index + 1], key: keys[index] as KeySignature, pickup };
+  });
+}
+
+function projectTrack(part: PartJSON, channels: PartChannels): AtTrack {
   const track = new model.Track();
   track.name = part.name;
   track.shortName = part.name;
   const info = track.playbackInfo;
-  if (part.kind === "percussion") {
-    info.program = 0;
-    info.primaryChannel = PERCUSSION_CHANNEL;
-    info.secondaryChannel = PERCUSSION_CHANNEL;
-  } else {
-    const take = (): number => {
-      if (channels.next === PERCUSSION_CHANNEL) channels.next++;
-      // Out of channels (more than seven pitched parts): share the last one rather than fail.
-      return Math.min(channels.next++, 15);
-    };
-    info.program = part.program;
-    info.primaryChannel = take();
-    info.secondaryChannel = take();
-  }
+  // Drums play program 0 on the percussion channel (docs/spec/playback.md, section 5).
+  info.program = part.kind === "percussion" ? 0 : part.program;
+  info.primaryChannel = channels.primary;
+  info.secondaryChannel = channels.secondary;
   return track;
 }
 
@@ -378,6 +458,10 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
   const started = performance.now();
   const score = new model.Score();
   score.title = json.title;
+  // The tuning of each fretted part is written beside its own tablature on the first system, not
+  // as one list above the score, where those of several parts were drawn over each other
+  // (docs/spike-report.md, 其他意外).
+  score.stylesheet.tuningDisplayMode = model.TuningDisplayMode.Staff;
   const projection: Projection = {
     score,
     barIds: json.bars.map((bar) => bar.id),
@@ -388,18 +472,28 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
     voiceBeatIds: new Map(),
   };
 
+  const places = placesOf(json);
   json.bars.forEach((bar, index) => {
     const masterBar = new model.MasterBar();
     masterBar.timeSignatureNumerator = bar.timeSig.numerator;
     masterBar.timeSignatureDenominator = bar.timeSig.denominator;
     const tempo = bar.tempo ?? (index === 0 ? DEFAULT_TEMPO : undefined);
     if (tempo !== undefined) masterBar.tempoAutomations.push(model.Automation.buildTempoAutomation(false, 0, tempo, 2));
+    if (bar.repeatStart) masterBar.isRepeatStart = true;
+    if (bar.repeatEnd !== undefined) masterBar.repeatCount = bar.repeatEnd;
+    // One bit a pass, the first pass the lowest bit.
+    for (const pass of bar.voltas ?? []) masterBar.alternateEndings |= 1 << (pass - 1);
+    if (bar.section !== undefined) {
+      masterBar.section = new model.Section();
+      masterBar.section.text = bar.section;
+    }
+    masterBar.isAnacrusis = places[index]?.pickup !== null;
     score.addMasterBar(masterBar);
   });
 
-  const channels = { next: 0 };
+  const channels = channelsOf(json.parts.map((part) => part.kind));
   json.parts.forEach((part, trackIndex) => {
-    const track = projectTrack(part, channels);
+    const track = projectTrack(part, channels[trackIndex] as PartChannels);
     const voiceCounts = staffVoiceCounts(part);
     track.ensureStaveCount(voiceCounts.length);
     score.addTrack(track);
@@ -407,7 +501,7 @@ export function projectScore(json: ScoreJSON, settings: alphaTab.Settings, timin
       setUpStaff(staff, part);
       const voiceCount = voiceCounts[staffIndex] as number;
       json.bars.forEach((bar, barIndex) => {
-        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, places[barIndex] as BarPlace, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         staff.addBar(built.bar);
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
       });
@@ -463,18 +557,27 @@ function scoreLinksOutOf(json: ScoreJSON, index: number): boolean {
 /**
  * Rebuild the bars named by `barIds` inside an existing projection, leaving every other bar of
  * the alphaTab model as it is (same objects). A bar that leaves another dynamic in force than it
- * did has the bar after it rebuilt too, and so on up to a bar whose voices go on as before: the
- * next written dynamic in each voice that changed. A bar line that a link crosses, before the
+ * did, or another dynamic written on a rest still to draw (#97), has the bar after it rebuilt too,
+ * and so on up to a bar whose voices go on as before: the next written dynamic in each voice that
+ * changed, or, for one still to draw, the next beat that is not a rest, past any bars of rests
+ * only in between. A bar line that a link crosses, before the
  * change or after it, has the bars on both sides of it rebuilt: both notes of a link hold it, and
  * alphaTab sets it up when it finishes the bar of the note it starts from. Returns the index of
  * the first rebuilt bar, or null when the change is not one this can do (a bar, a part or a voice
- * count changed): the caller then projects the whole score again.
+ * count changed, or the length of a pickup bar): the caller then projects the whole score again.
  */
 export function replaceBars(projection: Projection, json: ScoreJSON, barIds: readonly string[], settings: alphaTab.Settings, timings?: ProjectionTimings): number | null {
   const started = performance.now();
   if (json.bars.length !== projection.barIds.length || json.parts.length !== projection.partIds.length) return null;
   const indexes = barIds.map((id) => projection.barIndex.get(id));
   if (indexes.some((index) => index === undefined)) return null;
+  const places = placesOf(json);
+  // A pickup bar is as long as its longest voice, and every bar after it starts where it ends:
+  // alphaTab works those out only when the whole score is finished. While its length stays (a
+  // change in a voice shorter than the longest), its bars are replaced like any other; the model
+  // still has the old bars here, so the master bar measures the old length.
+  const pickup = places[0]?.pickup ?? null;
+  if (pickup !== null && pickup !== projection.score.masterBars[0]?.calculateDuration()) return null;
   const voiceCounts = json.parts.map(staffVoiceCounts);
   const tracks = projection.score.tracks;
   const sameShape = json.parts.every((part, trackIndex) => {
@@ -526,7 +629,7 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
           for (const id of projection.voiceBeatIds.get(voiceKey(trackIndex, staffIndex, barIndex, voice)) ?? []) projection.addresses.delete(id);
         });
         const voiceCount = (voiceCounts[trackIndex] as number[])[staffIndex] as number;
-        const built = projectBar(part, bar, json.bars[barIndex + 1], staffIndex, voiceCount, staff.bars[barIndex - 1]);
+        const built = projectBar(part, bar, places[barIndex] as BarPlace, staffIndex, voiceCount, staff.bars[barIndex - 1]);
         const atBar = built.bar;
         atBar.staff = staff;
         atBar.index = barIndex;
@@ -537,9 +640,12 @@ export function replaceBars(projection: Projection, json: ScoreJSON, barIds: rea
         staff.bars[barIndex] = atBar;
         recordBeatIds(projection, trackIndex, staffIndex, barIndex, built.beatIds);
         replaced.push({ old, atBar });
-        // The bar after starts at the dynamic this one leaves: when that changed, it is rebuilt as well.
+        // The bar after starts at the dynamic this one leaves, and draws one this one leaves undrawn:
+        // when either changed, it is rebuilt as well.
         const before = dynamicsLeaving(old, voiceCount);
-        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice])) rebuilt.add(barIndex + 1);
+        const undrawnBefore = dynamicsUndrawn(old, voiceCount);
+        const undrawnAfter = dynamicsUndrawn(atBar, voiceCount);
+        if (dynamicsLeaving(atBar, voiceCount).some((dynamic, voice) => dynamic !== before[voice] || undrawnAfter[voice] !== undrawnBefore[voice])) rebuilt.add(barIndex + 1);
       });
     });
   }

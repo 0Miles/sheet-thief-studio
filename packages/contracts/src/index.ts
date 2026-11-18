@@ -43,6 +43,9 @@ export {
 // The recognizer's answers (docs/spec/recognizer.md, section 5).
 export * from "./recognizer";
 
+// The presence of the members on a score (docs/spec/views.md, section 8).
+export * from "./presence";
+
 export const health = z.object({ status: z.literal("ok") });
 export type Health = z.infer<typeof health>;
 
@@ -76,6 +79,48 @@ export const me = z.object({
   mustChangePassword: z.boolean(),
 });
 export type Me = z.infer<typeof me>;
+
+/** A new display name of one's own (`PATCH /api/me`). */
+export const updateMeRequest = z.object({ displayName });
+export type UpdateMeRequest = z.infer<typeof updateMeRequest>;
+
+/**
+ * A new password of one's own (`POST /api/me/password`). The current one is only bounded, like
+ * the one typed to log in; it is not asked of someone who must change a temporary password.
+ */
+export const changePasswordRequest = z.object({
+  currentPassword: z.string().min(1).max(256).optional(),
+  newPassword: password,
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequest>;
+
+// The admin's page (docs/spec/routes.md, 3.2; docs/spec/accounts.md, section 2).
+/** A way an account logs in (docs/spec/accounts.md, 1.1). */
+export const identityProvider = z.enum(["password", "karyl-chan"]);
+export type IdentityProvider = z.infer<typeof identityProvider>;
+
+/** An account as an admin sees it on /admin. */
+export const adminAccount = z.object({
+  accountId: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  isAdmin: z.boolean(),
+  disabled: z.boolean(),
+  identities: z.array(z.object({ id: z.string(), provider: identityProvider })),
+});
+export type AdminAccount = z.infer<typeof adminAccount>;
+
+/** Every account, by username (`GET /api/admin/accounts`). */
+export const adminAccountList = z.object({ accounts: z.array(adminAccount) });
+export type AdminAccountList = z.infer<typeof adminAccountList>;
+
+/** A new account with a temporary password, which its person must change first (`POST /api/admin/accounts`). */
+export const createAccountRequest = z.object({ username, displayName, password });
+export type CreateAccountRequest = z.infer<typeof createAccountRequest>;
+
+/** A new temporary password (`POST /api/admin/accounts/:id/reset-password`). */
+export const resetPasswordRequest = z.object({ password });
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequest>;
 
 // Scores (docs/spec/routes.md, 3.3; docs/spec/collab.md, section 3).
 /** A member's role in a score (docs/spec/accounts.md, section 3). */
@@ -150,6 +195,21 @@ export type ScoreSummary = z.infer<typeof scoreSummary>;
 export const scoreList = z.object({ scores: z.array(scoreSummary) });
 export type ScoreList = z.infer<typeof scoreList>;
 
+/** How many days a deleted score can still be restored, before it is deleted for good (docs/spec/accounts.md, section 8). */
+export const DELETED_SCORE_DAYS = 30;
+
+/** A score I own and deleted, as the "deleted" block of `/` lists them (`GET /api/scores/deleted`), most recently deleted first. */
+export const deletedScore = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string().nullable(),
+  deletedAt: z.string(),
+});
+export type DeletedScore = z.infer<typeof deletedScore>;
+
+export const deletedScoreList = z.object({ scores: z.array(deletedScore) });
+export type DeletedScoreList = z.infer<typeof deletedScoreList>;
+
 /** A score I am a member of (`GET /api/scores/:id`). */
 export const scoreDetails = z.object({
   id: z.string(),
@@ -163,6 +223,67 @@ export type ScoreDetails = z.infer<typeof scoreDetails>;
 /** A one-time ticket to open the score on /collab, valid 60 seconds (`POST /api/scores/:id/collab-ticket`). */
 export const collabTicket = z.object({ ticket: z.string(), role });
 export type CollabTicket = z.infer<typeof collabTicket>;
+
+// Members (docs/spec/routes.md, 3.4; docs/spec/accounts.md, sections 4 to 6).
+/** The roles an Owner gives: there is one Owner, who changes by transfer only. */
+export const memberRole = role.exclude(["owner"]);
+export type MemberRole = z.infer<typeof memberRole>;
+
+/** A member of a score, as every member sees them on its settings page. */
+export const scoreMember = z.object({
+  accountId: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  role,
+  disabled: z.boolean(),
+});
+export type ScoreMember = z.infer<typeof scoreMember>;
+
+/** The members of a score (`GET /api/scores/:id/members`): its Owner first, then in the order they were added. */
+export const scoreMemberList = z.object({ members: z.array(scoreMember) });
+export type ScoreMemberList = z.infer<typeof scoreMemberList>;
+
+/**
+ * An account to add as a member (`POST /api/scores/:id/members`), by its whole username: only
+ * bounded, since a name no account can have is just an account that is not found. An Editor
+ * unless told otherwise.
+ */
+export const addMemberRequest = z.object({ username: z.string().trim().min(1).max(64), role: memberRole.default("editor") });
+export type AddMemberRequest = z.input<typeof addMemberRequest>;
+
+/** A member's new role (`PATCH /api/scores/:id/members/:accountId`). */
+export const changeRoleRequest = z.object({ role: memberRole });
+export type ChangeRoleRequest = z.infer<typeof changeRoleRequest>;
+
+/** The member who becomes the Owner (`POST /api/scores/:id/transfer`, `POST /api/admin/scores/:id/transfer`). */
+export const transferRequest = z.object({ accountId: z.string().min(1).max(64) });
+export type TransferRequest = z.infer<typeof transferRequest>;
+
+/**
+ * A score whose Owner is disabled, as an admin sees it on /admin (docs/spec/accounts.md, section
+ * 2): its title, its Owner, and its members who can log in, to one of whom it can be handed over;
+ * none of its content. The members in the order they were added.
+ */
+export const orphanedScore = z.object({
+  id: z.string(),
+  title: z.string(),
+  owner: z.object({ accountId: z.string(), username: z.string(), displayName: z.string() }),
+  members: z.array(z.object({ accountId: z.string(), username: z.string(), displayName: z.string(), role: memberRole })),
+});
+export type OrphanedScore = z.infer<typeof orphanedScore>;
+
+/** Every score whose Owner is disabled, by the Owner's username, then title (`GET /api/admin/orphaned-scores`). */
+export const orphanedScoreList = z.object({ scores: z.array(orphanedScore) });
+export type OrphanedScoreList = z.infer<typeof orphanedScoreList>;
+
+/**
+ * What the collab server tells a connection about its document, as the JSON payload of a
+ * Hocuspocus stateless message (docs/spec/collab.md, section 2.1). `readOnly`: the server drops
+ * every change to this score, whatever the role, because the score is of a newer schema than the
+ * server, misses a migration step, or has one that failed on it; sent once, as the connection is made.
+ */
+export const collabNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration", "migrationFailed"]) });
+export type CollabNotice = z.infer<typeof collabNotice>;
 
 // Read-only links (docs/spec/routes.md, 3.5; docs/spec/accounts.md, section 7).
 /** The score's read-only link, for its Owner (`GET`, `POST /api/scores/:id/link`): null when it has none. */
@@ -235,6 +356,7 @@ export const errorCode = z.enum([
   "unauthenticated",
   "invalid_credentials",
   "password_change_required",
+  "wrong_current_password",
   "bad_origin",
   "forbidden",
   "not_found",

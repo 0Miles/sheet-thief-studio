@@ -6,9 +6,10 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 
 - Session cookie：`__Host-` 前綴，`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，不設 `Domain`。**補充**：名稱是 `__Host-studio_session`。
 - Session 存在 Redis，sliding 30 天：每次帶著有效 session 的請求，把到期時間延長成 30 天後。
-- **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt }`；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
+- **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt, via }`；`via` 是登入方式（`'password'` 或 `'karyl-chan'`，#7），強制改密碼只看用密碼登入的 session，沒有 `via` 的舊 session 視為密碼登入；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
 - 登入成功時換一個新的 session id（避免 session fixation，補充）。
 - 停用帳號或重設密碼時，刪除該帳號所有的 Redis session，並關閉它的 `/collab` 連線（[`accounts.md`](accounts.md)）。
+- **補充**（#87）：結束單一 session 時，只要已經請 Redis 刪除它，就通知關閉該 session 的 `/collab` 連線，不論 Redis 回覆成功或失敗（刪除可能已執行、只是回覆遺失）；唯一不通知的情況是 Redis 明確回答沒有這個 session。回覆遺失時不知道帳號，通知只帶 session id；錯誤照樣丟給呼叫端。
 - **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：環境變數是 `INSECURE_COOKIES=1`；名稱是 `studio_session` 與 `karyl_result`（[`karyl-login.md`](karyl-login.md) 第 5 節的 cookie 也跟著同一個設定）。
   - WebKit（Safari）在 http 上不接受 `__Host-` cookie，所以 CI 的 WebKit 打譜 smoke、在 Mac 上用 Safari 開發，以及手機的區網實機測試都要用這個設定（owner 在 2026-11-13 裁定桌面 Safari 要能打譜）。
   - Firefox 要不要用，看 [`testing.md`](testing.md) 第 5 節確認檢查 1 的結果。
@@ -16,8 +17,8 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 
 ## 2. Origin 檢查
 
-- 所有非 GET（`POST`、`PUT`、`PATCH`、`DELETE`）的 `/api/*` 請求都檢查 `Origin`：必須等於設定的公開 origin（環境變數 `PUBLIC_ORIGIN`）。沒有 `Origin` 標頭也拒絕。拒絕時回 403 `bad_origin`。做法同前身 `app/security.py` 的 `OriginCheckMiddleware`。
-- **補充**：伺服器實際上檢查所有路徑的非 GET（與 HEAD）請求，不只 `/api/*`：router 先把路徑解碼再比對，只看原始網址開頭的話，`/%61pi/…` 會繞過檢查（#5）。
+- `GET` 與 `HEAD` 以外的請求，任何路徑都檢查 `Origin`：必須等於設定的公開 origin（環境變數 `PUBLIC_ORIGIN`）。沒有 `Origin` 標頭也拒絕。拒絕時回 403 `bad_origin`。做法同前身 `app/security.py` 的 `OriginCheckMiddleware`。
+- **補充**：不限於 `/api/*`，因為 router 先把路徑解碼再比對，只看原始網址開頭的話，`/%61pi/…` 會繞過檢查（#5）。
 - WebSocket upgrade 不使用 cookie，驗證靠 collab ticket，所以不做 Origin 檢查（ADR 0005）。
 
 ## 3. 密碼
@@ -34,9 +35,9 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 |---|---|---|
 | 登入（`POST /api/auth/login`） | 同一帳號名稱、同一 IP，各自 15 分鐘內最多 10 次。代價：別人可以故意把某個成員鎖住 15 分鐘 | 設計決定；owner 已確認數字 |
 | 加入成員的帳號名稱查詢（`POST /api/scores/:id/members`） | 同一帳號 15 分鐘內最多 20 次 | 補充 |
-| 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼） | 補充 |
+| 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼）。和登入一樣只計猜錯的次數；強制改密碼不檢查目前的密碼，所以不計（#7） | 補充 |
 | 訪客取 ticket（`POST /api/s/:token`） | 同一 IP 每分鐘最多 30 次 | 補充 |
-| 成員取 ticket（`POST /api/scores/:id/collab-ticket`） | 同一帳號每分鐘最多 60 次 | 補充 |
+| 成員取 ticket（`POST /api/scores/:id/collab-ticket`） | 同一帳號每分鐘最多 60 次；每次請求都計，不論團譜、不論結果（#18） | 補充 |
 | karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |
 | 其他 API | 不另設限制：平台只對登入的成員開放，辨識另有「每個帳號同時一件」的限制 | 補充 |
 
@@ -55,6 +56,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | 辨識的圖片（`POST /api/recognitions`） | 每張 10 MB、合計 40 MB、最多 15 張、每張最多 40 百萬像素 | 補充：沿用前身 `app/config.py` 的預設值 |
 | 其他 JSON 請求 | 64 KB | 補充 |
 
+- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出）。
 - body 上限的做法沿用前身 `app/security.py` 的 `BodySizeLimitMiddleware`：先看 `Content-Length`，再在讀取時累計，不先整個讀進記憶體。超過時回 413 `payload_too_large`。
 
 ## 6. 回應標頭
@@ -70,10 +72,18 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 | `Cross-Origin-Resource-Policy` | `same-origin` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`（只在設定啟用 HSTS 時） |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`（只在設定啟用 HSTS 時。**補充**：環境變數 `HSTS=1`） |
 | `X-Robots-Tag` | `noindex`（補充：全站都帶；平台不對外公開） |
 
 `Cache-Control`（沿用前身的規則）：`/api/*` 與 `/healthz` 是 `no-store`；`/assets/*`（檔名帶內容雜湊）是 `public, max-age=31536000, immutable`；其他（頁面本身）是 `no-cache`。
+
+**補充**（#18）：「所有回應」也包括 Fastify 在任何 hook 之前就回的：網址無法解碼（400，`frameworkErrors`）與 Node 解析不了的請求（標頭過大 431、不是 HTTP 400、逾時 408，`clientErrorHandler` 直接寫在 socket 上）。這些都帶上表的標頭與 `no-store`，body 是 `{ code: "invalid_request" }`。
+
+**補充**（#18）：正式環境的網頁由 server 提供。環境變數 `WEB_ROOT` 指向 web 的 build 目錄（`apps/web/dist`）；沒設就不提供網頁（開發時由 Vite 提供）。
+
+- build 裡有的檔案照原樣送出，其他 `GET` 回 `index.html`。例外回 404：`/api`、`/collab` 底下的路徑；`/assets/` 底下不存在的檔案；最後一段帶副檔名而不存在的路徑（`/favicon.ico`、`/soundfont/x.sf2`），因為頁面的路由都不長那樣。
+- 路徑先 `realpath`，結果必須在 build 目錄（同樣 `realpath` 過）裡面；build 裡指向外面的 symlink 或 junction 不會送出外面的檔案。
+- 只有實際送出的 `/assets/*` 檔案帶 `immutable`。每個檔案（含 `index.html`）帶以大小與修改時間做的弱 `ETag`；`If-None-Match` 相符時回 304（照樣帶安全標頭），所以 `no-cache` 的字型與音色不會每次重抓。
 
 `Permissions-Policy` 的 `camera=()` 管的是頁面自己使用相機（`getUserMedia`）。手機上傳圖片用的 `<input type="file">` 叫出的是系統的相機或相簿，不必放寬這個標頭（[`phrases.md`](phrases.md) 第 4 節）；實機結果是人工判定項目（[`testing.md`](testing.md) 第 6 節第 4 項）。
 
@@ -93,6 +103,9 @@ object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
 （實際送出時是一行，各段之間以 `; ` 分隔。）
 
 - 行內樣式允許，因為 UI 元件與 alphaTab 會在執行時設定樣式；script 維持嚴格，這才是擋 XSS 的地方。
+- **補充**（#18）：頁面不向別的 host 要任何東西，也不在執行時產生程式碼，所以上面的字串不必放寬：
+  - 圖示打包在 `apps/web/src/icons.ts`。`@karyl-chan/ui` 用的 `@iconify/vue` 預設會向 `api.iconify.design` 取圖示，`apps/web/vite.config.ts` 把它換成 `icons.ts` 匯出的 `Icon`（包著不連線的 `@iconify/vue/offline`）。UI 或 `@karyl-chan/ui` 用到新的圖示時要加進 `icons.ts`：`apps/web/tests/icons.test.ts` 檢查原始碼裡任何 `prefix:name` 形狀的字串與 `icon` 的字串值；執行時才組出來的名稱（`:icon="…"`）測試看不到，由 `Icon` 在找不到時 `console.error`，e2e 會因此失敗。
+  - zod 預設會試一次 `new Function("")` 來決定要不要編譯 parser；CSP 會擋下並回報違規。網頁在最前面 import `@studio/contracts/without-eval`（`z.config({ jitless: true })`），server 不受影響。
 - `connect-src 'self'` 也涵蓋同一個 host 的 `wss:`（CSP Level 3）。**補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0；三種瀏覽器都要過，任何瀏覽器擋了 WebSocket，就把 `wss://<公開 host>` 明確加進 `connect-src`。
 
 ## 8. 404 規則

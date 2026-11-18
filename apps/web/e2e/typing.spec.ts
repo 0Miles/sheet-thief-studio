@@ -1,20 +1,16 @@
 // Typing on a score the server keeps, in the edit view (#19; docs/spec/views.md, sections 1-4
 // and 9). Every key goes through the real keyboard, every click through the real mouse; the page
 // is read through `window.__studioTest` and the DOM only.
-import { expect, test } from "@playwright/test";
-import type { BeatJSON, Cursor, ScoreJSON } from "@studio/score-model";
+import { expect, test } from "./test";
+import type { Cursor } from "@studio/score-model";
 import type { Rect } from "@studio/score-render";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
+import { beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
 
 /** The beats of the first voice of a bar (by index) of the first part. */
-function beatsIn(score: ScoreJSON, bar: number): BeatJSON[] {
-  return score.parts[0]!.content[score.bars[bar]!.id]?.["0:0"] ?? [];
-}
-
 function seed(bars?: number): string {
   return seedScore({
     title: "打譜測試",
@@ -44,7 +40,7 @@ test("an Editor moves with the arrows, types a fret and shortens it; after reloa
 
   await page.reload();
   await drawn(page);
-  const typed = beatsIn(await scoreOf(page), 1);
+  const typed = beatsIn(await scoreOf(page), 0, 1);
   expect(typed).toHaveLength(1);
   expect(typed[0]).toMatchObject({ value: 8, dots: 0, notes: { s2: { fret: 5 } } });
   expect(errors).toEqual([]);
@@ -60,7 +56,7 @@ test("a digit in the append slot makes a new beat, and the cursor is on it; anot
 
   // The append slot of the empty voice of the first bar.
   await editor.keyboard.press("5");
-  const first = beatsIn(await scoreOf(editor), 0);
+  const first = beatsIn(await scoreOf(editor), 0, 0);
   expect(first).toHaveLength(1);
   expect(await cursorOf(editor)).toMatchObject({ beatId: first[0]!.id, at: "on" });
 
@@ -68,13 +64,13 @@ test("a digit in the append slot makes a new beat, and the cursor is on it; anot
   await editor.keyboard.press("ArrowRight");
   expect(await cursorOf(editor)).toMatchObject({ beatId: first[0]!.id, at: "after" });
   await editor.keyboard.press("7");
-  const both = beatsIn(await scoreOf(editor), 0);
+  const both = beatsIn(await scoreOf(editor), 0, 0);
   expect(both.map((beat) => beat.notes.s1?.fret)).toEqual([5, 7]);
   expect(await cursorOf(editor)).toMatchObject({ beatId: both[1]!.id, at: "on" });
   await synced(editor);
 
   // The Owner, in a browser context of their own, gets both frets.
-  await expect.poll(async () => beatsIn(await scoreOf(owner), 0).map((beat) => beat.notes.s1?.fret)).toEqual([5, 7]);
+  await expect.poll(async () => beatsIn(await scoreOf(owner), 0, 0).map((beat) => beat.notes.s1?.fret)).toEqual([5, 7]);
   expect(errors.flat()).toEqual([]);
 });
 
@@ -91,12 +87,12 @@ test("an Editor jumps a bar with Ctrl+→, dots a beat with ., goes back with Ho
   await page.keyboard.press(".");
   await page.keyboard.press("End");
   await page.keyboard.press("Home");
-  const beat = beatsIn(await scoreOf(page), 1)[0]!;
+  const beat = beatsIn(await scoreOf(page), 0, 1)[0]!;
   expect(beat).toMatchObject({ value: 4, dots: 1, notes: { s1: { fret: 3 } } });
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[1]!.id, beatId: beat.id, at: "on" });
 
   await page.keyboard.press("Control+z");
-  expect(beatsIn(await scoreOf(page), 1)[0]).toMatchObject({ dots: 0 });
+  expect(beatsIn(await scoreOf(page), 0, 1)[0]).toMatchObject({ dots: 0 });
 
   const notice = page.getByRole("status").filter({ hasText: strings.score.hints.oneVoice });
   await page.keyboard.press("Alt+2");
@@ -113,7 +109,7 @@ test("an Editor bends a note with Shift+B, 2 semitones, takes it a semitone up a
   await openScore(page, id);
 
   await page.keyboard.press("7");
-  const bendOf = async () => beatsIn(await scoreOf(page), 0)[0]!.notes.s1;
+  const bendOf = async () => beatsIn(await scoreOf(page), 0, 0)[0]!.notes.s1;
   expect(await bendOf()).toEqual({ fret: 7 });
   await page.keyboard.press("Shift+B");
   expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
@@ -122,12 +118,39 @@ test("an Editor bends a note with Shift+B, 2 semitones, takes it a semitone up a
   await page.keyboard.press("Shift+ArrowDown");
   expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
   // The cursor stays on the note and its string: Shift with the arrows is not a move.
-  expect(await cursorOf(page)).toMatchObject({ beatId: beatsIn(await scoreOf(page), 0)[0]!.id, at: "on", line: 1 });
+  expect(await cursorOf(page)).toMatchObject({ beatId: beatsIn(await scoreOf(page), 0, 0)[0]!.id, at: "on", line: 1 });
   await synced(page);
 
   await page.reload();
   await drawn(page);
   expect(await bendOf()).toEqual({ fret: 7, bend: { type: "bend", semitones: 2 } });
+  expect(errors).toEqual([]);
+});
+
+test("an Editor steps a note through the harmonics with Shift+N, each drawn without an error; after reloading the score holds the harmonic", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+
+  await page.keyboard.press("1");
+  await page.keyboard.press("2");
+  const noteOf = async () => beatsIn(await scoreOf(page), 0, 0)[0]!.notes.s1;
+  expect(await noteOf()).toEqual({ fret: 12 });
+  for (const harmonic of ["natural", "pinch", "artificial"] as const) {
+    await page.keyboard.press("Shift+N");
+    expect(await noteOf()).toEqual({ fret: 12, harmonic });
+    await drawn(page);
+  }
+  await page.keyboard.press("Shift+N");
+  expect(await noteOf()).toEqual({ fret: 12 });
+  await page.keyboard.press("Shift+N");
+  expect(await noteOf()).toEqual({ fret: 12, harmonic: "natural" });
+  await synced(page);
+
+  await page.reload();
+  await drawn(page);
+  expect(await noteOf()).toEqual({ fret: 12, harmonic: "natural" });
   expect(errors).toEqual([]);
 });
 
@@ -200,7 +223,7 @@ test("at the top of a score of more than 10 bars, the cursor never covers an are
     await page.keyboard.press("ArrowRight");
     await clearAt(lastOfFirstSystem, "after");
   }
-  expect(beatsIn(await scoreOf(page), lastOfFirstSystem)).toHaveLength(4);
+  expect(beatsIn(await scoreOf(page), 0, lastOfFirstSystem)).toHaveLength(4);
   expect(errors).toEqual([]);
 });
 
@@ -213,7 +236,7 @@ test("a click on a beat of the score puts the cursor on that beat", async ({ bro
   await page.keyboard.press("5");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("7");
-  const [first, second] = beatsIn(await scoreOf(page), 0);
+  const [first, second] = beatsIn(await scoreOf(page), 0, 0);
   // Where the first beat is drawn: the cursor shows it.
   await page.keyboard.press("ArrowLeft");
   expect(await cursorOf(page)).toMatchObject({ beatId: first!.id, at: "on" });

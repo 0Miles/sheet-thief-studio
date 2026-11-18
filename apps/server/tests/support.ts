@@ -11,9 +11,10 @@ import * as decoding from "lib0/decoding";
 import type { Sequelize } from "sequelize";
 import * as Y from "yjs";
 
+import { createAccount } from "../src/accounts";
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
-import { migrate } from "../src/db/migrate";
+import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_test";
 export const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://localhost:6388/1";
@@ -37,17 +38,46 @@ export function e2eDatabaseUrl(script: string): string {
   return DATABASE_URL;
 }
 
-/** Drop every table of the test database, migrations included. */
-export async function emptyDatabase(sequelize: Sequelize): Promise<void> {
-  await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
-}
-
-/** A connection to an empty, migrated test database (the server's tests' own, unless told another). */
-export async function freshDatabase(url = TEST_DATABASE_URL): Promise<Sequelize> {
+/**
+ * A connection to this database rebuilt from nothing: every table dropped, migrations included,
+ * then migrated. Once per run of the server's tests (tests/globalSetup.ts), and for the
+ * end-to-end tests' database (seedE2e.ts).
+ */
+export async function rebuiltDatabase(url: string): Promise<Sequelize> {
   const sequelize = connectDatabase(url);
-  await emptyDatabase(sequelize);
+  await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await migrate(sequelize);
   return sequelize;
+}
+
+/**
+ * A connection to the server's tests' database, migrated once for the run (tests/globalSetup.ts),
+ * with every row of the previous test files gone: the tables are emptied, not rebuilt. The
+ * files run one after another (vitest.config.ts), each emptying it as it starts.
+ */
+export async function freshDatabase(): Promise<Sequelize> {
+  const sequelize = connectDatabase(TEST_DATABASE_URL);
+  await sequelize.query(`
+    DO $$
+    DECLARE tables text;
+    BEGIN
+      SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables
+        FROM pg_tables WHERE schemaname = 'public' AND tablename <> ${sequelize.escape(MIGRATIONS_TABLE)};
+      IF tables IS NOT NULL THEN
+        EXECUTE 'TRUNCATE ' || tables || ' RESTART IDENTITY CASCADE';
+      END IF;
+    END $$;
+  `);
+  return sequelize;
+}
+
+/**
+ * Open the connections of the pool: it opens them as they are needed, and transactions that
+ * start together on a pool with one connection open would run almost one after another, so that
+ * a test of requests at once would pass without any lock.
+ */
+export async function warmPool(sequelize: Sequelize): Promise<void> {
+  await Promise.all(Array.from({ length: 5 }, () => sequelize.query("SELECT pg_sleep(0.05)")));
 }
 
 /** A connection to the emptied test Redis database (the server's tests' own, unless told another). */
@@ -109,6 +139,23 @@ export function whoAmI(app: FastifyInstance, sessionId: string, name = COOKIE) {
   return app.inject({ method: "GET", url: "/api/me", cookies: { [name]: sessionId } });
 }
 
+/** Whether the session is still one: `GET /api/me` answers it. */
+export async function isActiveSession(app: FastifyInstance, sessionId: string): Promise<boolean> {
+  return (await whoAmI(app, sessionId)).statusCode === 200;
+}
+
+/** A call to the API from our own origin, with this session's cookie, or with none for null. */
+export function apiCall(app: FastifyInstance, method: "GET" | "POST" | "PATCH" | "DELETE", url: string, session: string | null, payload?: object) {
+  return app.inject({ method, url, headers: { origin: ORIGIN }, ...(session === null ? {} : { cookies: { [COOKIE]: session } }), ...(payload === undefined ? {} : { payload }) });
+}
+
+/** Accounts that are no admins and need no new password, each named "<username> 的名字"; their ids by username. */
+export async function createMembers(usernames: readonly string[], password: string): Promise<Record<string, string>> {
+  const ids: Record<string, string> = {};
+  for (const username of usernames) ids[username] = (await createAccount({ username, displayName: `${username} 的名字`, password, isAdmin: false, mustChangePassword: false })).id;
+  return ids;
+}
+
 /** A new score made through the API by the account of this session; returns its id. */
 export async function createScore(app: FastifyInstance, sessionId: string, title = "測試團譜"): Promise<string> {
   const response = await app.inject({ method: "POST", url: "/api/scores", headers: { origin: ORIGIN }, cookies: { [COOKIE]: sessionId }, payload: { title } });
@@ -143,9 +190,10 @@ export interface OpenScore {
 /**
  * Open a score on /collab with a real provider, as the web app does: `token` is a function, asked
  * again at every connection. Resolves once in sync both ways (see `insync`); rejects with the
- * reason when it is refused.
+ * reason when it is refused. `onStateless` hears what the server tells the connection about the
+ * document from the start: it does so as the connection is made, before it is in sync.
  */
-export function openScore(url: string, scoreId: string, token: () => Promise<string>): Promise<OpenScore> {
+export function openScore(url: string, scoreId: string, token: () => Promise<string>, onStateless?: (payload: string) => void): Promise<OpenScore> {
   const doc = new Y.Doc();
   return new Promise((resolve, reject) => {
     const provider = new HocuspocusProvider({
@@ -153,6 +201,7 @@ export function openScore(url: string, scoreId: string, token: () => Promise<str
       name: scoreId,
       document: doc,
       token,
+      onStateless: ({ payload }) => onStateless?.(payload),
       onAuthenticationFailed: ({ reason }) => {
         provider.destroy();
         reject(new Error(`refused: ${reason}`));

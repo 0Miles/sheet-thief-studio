@@ -2,10 +2,11 @@
 import * as alphaTab from "@coderline/alphatab";
 import type { Cursor, PartKind, ScoreJSON, Selection } from "@studio/score-model";
 
-import { cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
-import { type Projection, projectScore, replaceBars } from "./projection";
-import { barAtTick } from "./ticks";
-import type { NoteHead, PlayedBar, PlayerPosition, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import { channelMixOf, NEUTRAL_MIX, type PartMix } from "./channels";
+import { barRangeRects, cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "./geometry";
+import { beatOf, type Projection, projectScore, replaceBars } from "./projection";
+import { barAtTick, placeAtTick, tickAtPlace } from "./ticks";
+import type { NoteHead, PlayedBar, PlayerPosition, PlayerSettings, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -50,6 +51,14 @@ class Listeners<T> {
 }
 
 const NO_TIMINGS: RenderTimings = { project: 0, finish: 0, render: 0 };
+
+/** A place in the music by bar id (`placeAtTick`), and the tick lookup it was found in. */
+interface Place {
+  barId: string;
+  pass: number;
+  offset: number;
+  cache: alphaTab.midi.MidiTickLookup;
+}
 
 class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private api: alphaTab.AlphaTabApi;
@@ -96,6 +105,26 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private loadsAfterDrawing: (() => void)[] = [];
   /** The model changed in place since the sound was made: `load()` has something to do. */
   private soundStale = false;
+  /**
+   * The member's mix, by part id: alphaTab's own is by MIDI channel, and the channels of the parts
+   * move when parts are added, deleted or moved (`channelsOf`). It is given to alphaTab anew with
+   * every new sound (`applyMix`).
+   */
+  private mix = new Map<string, PartMix>();
+  /** The range played again and again; alphaTab forgets it with every new sound. */
+  private loop: PlayRange | null = null;
+  /**
+   * Where the loop starts and ends in the music (its first tick and its last), found in the tick
+   * lookup its ticks were given in: a new sound whose ticks moved (a repeat or a time signature
+   * changed) takes the loop to the same music, whether or not the page has set it again by then.
+   */
+  private loopPlaces: { start: Place; last: Place } | null = null;
+  /**
+   * Where playback was in the music when a new sound started being made, by bar id: once it is in
+   * place, playback goes back there, at the ticks of the new sound. Null when playback was sent
+   * somewhere meanwhile, or that place could not be told.
+   */
+  private resumeAt: Place | null = null;
   private destroyed = false;
 
   constructor(
@@ -163,10 +192,21 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
         if (event.currentTick < this.sentTo.tick && performance.now() - this.sentTo.at < 500) return;
         this.sentTo = null;
       }
-      this.lastPosition = { tick: event.currentTick, endTick: event.endTick, milliseconds: event.currentTime, endMilliseconds: event.endTime };
+      // At the end of a loop alphaTab reports where it got to, at or past the end, before it goes
+      // back: playback has not left the loop.
+      const loop = this.loop;
+      const tick = loop && event.currentTick >= loop.endTick ? Math.max(loop.endTick - 1, loop.startTick) : event.currentTick;
+      this.lastPosition = { tick, endTick: event.endTick, milliseconds: event.currentTime, endMilliseconds: event.endTime };
       this.positions.emit(this.lastPosition);
     });
-    api.midiLoaded.on(() => this.onSoundSettled());
+    api.midiLoaded.on(() => {
+      // The worker keeps the mutes and solos of the channels through a new sound, whatever parts
+      // play on them now, and forgets the loop: both are given anew, before playback goes on.
+      this.applyMix();
+      this.relocateLoop();
+      this.sendLoop();
+      this.onSoundSettled();
+    });
     // A sound the worker could not take is over too (alphaTab tells the API only as an error):
     // nothing is to wait for it, and playback goes back to where it was.
     api.player?.midiLoadFailed.on(() => this.onSoundSettled());
@@ -213,6 +253,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const lookup = this.api.boundsLookup;
     if (lookup === null || this.projection === null) return [];
     return selectionRects(lookup, this.projection, this.parts, selection, this.metrics()).map((rect) => this.fromSurface(rect));
+  }
+
+  boundsOfBars(anchorBarId: string, focusBarId: string): Rect[] {
+    const lookup = this.api.boundsLookup;
+    if (lookup === null || this.projection === null) return [];
+    return barRangeRects(lookup, this.projection, this.parts, anchorBarId, focusBarId, this.metrics()).map((rect) => this.fromSurface(rect));
   }
 
   noteHeadsOf(cursor: Cursor): NoteHead[] {
@@ -281,8 +327,9 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   // --- ScorePlayer ---
 
   load(): Promise<void> {
-    // Before the player is ready alphaTab makes the sound itself, once it is.
-    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady) return Promise.resolve();
+    // Before the player is ready alphaTab makes the sound itself, once it is. Nothing is drawn
+    // (`drawNothing`), nothing to hear: alphaTab's model is an older score's.
+    if (this.options.soundFont === null || this.api.score === null || !this.playerIsReady || this.projection === null) return Promise.resolve();
     return new Promise((resolve) => {
       // A change waiting for the drawing under way is not in the model yet: the sound is made once it is.
       if (this.waiting !== null) this.loadsAfterDrawing.push(resolve);
@@ -311,11 +358,14 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // A new model's sound is being made already, of the model as it is now.
     if (!this.soundStale) return;
     this.soundStale = false;
+    if (previous === null) this.resumeAt = this.placeOf(this.currentTick(), this.projection);
     this.reload.loads += 1;
     this.api.loadMidiForScore();
   }
 
   play(): void {
+    // A score with no bars or no parts plays nothing; alphaTab still holds an older score's sound.
+    if (this.projection === null) return;
     this.intendsToPlay = true;
     // While a new sound is made, it plays once that is in place.
     if (this.reload === null) this.api.play();
@@ -330,7 +380,12 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   stop(): void {
     this.intendsToPlay = false;
-    this.sentTo = { tick: 0, at: performance.now() };
+    // alphaTab stops at the start of the loop, when there is one: playback is there from now on,
+    // before alphaTab reports it.
+    const start = this.loop?.startTick ?? 0;
+    this.resumeAt = null;
+    this.sentTo = { tick: start, at: performance.now() };
+    this.lastPosition = { ...this.lastPosition, tick: start };
     this.api.stop();
     if (this.reload) this.setState("paused");
   }
@@ -340,23 +395,36 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   get position(): PlayerPosition {
-    return this.lastPosition;
+    // While a new sound is made, the page reads positions with the tick lookup of the new score
+    // already: where playback was is told in its ticks.
+    const place = this.resumeAt;
+    const tick = place && this.api.tickCache !== place.cache ? this.tickOfPlace(place) : null;
+    return tick === null ? this.lastPosition : { ...this.lastPosition, tick };
   }
 
   seek(tick: number): void {
-    // While a new sound is made, alphaTab goes back to the start after this: it comes back here then.
-    this.sentTo = { tick, at: performance.now() };
-    this.api.tickPosition = tick;
+    // Within the loop, when there is one, as alphaTab keeps it: outside it, to its nearer end.
+    const loop = this.loop;
+    const within = loop ? Math.min(Math.max(tick, loop.startTick), loop.endTick) : tick;
+    // While a new sound is made, alphaTab goes back to the start after this: it comes back here
+    // then, not to where it was before (the tick is the new sound's: `tickOf` reads its lookup).
+    this.resumeAt = null;
+    this.sentTo = { tick: within, at: performance.now() };
+    this.api.tickPosition = within;
   }
 
   /** Send playback to where a beat starts, the first time its bar is played (as alphaTab's own seek on a click). */
   private seekToBeat(beat: alphaTab.model.Beat): void {
     const cache = this.api.tickCache;
     if (cache === null) return;
-    const tick = cache.getMasterBarStart(beat.voice.bar.masterBar) + (cache.getRelativeBeatPlaybackRange(beat)?.startTick ?? beat.playbackStart);
-    // Within the loop, when there is one: a click outside it goes to its nearer end.
-    const range = this.api.playbackRange;
-    this.seek(range ? Math.min(Math.max(tick, range.startTick), range.endTick) : tick);
+    // Within the loop, when there is one: a click outside it goes to its nearer end (`seek`).
+    this.seek(cache.getMasterBarStart(beat.voice.bar.masterBar) + this.beatTicks(cache, beat).startTick);
+  }
+
+  /** Where a beat is played in its bar, as the sound has it; a beat changed since the sound was made, as the model has it. */
+  private beatTicks(cache: alphaTab.midi.MidiTickLookup, beat: alphaTab.model.Beat): PlayRange {
+    const played = cache.getRelativeBeatPlaybackRange(beat);
+    return played ? { startTick: played.startTick, endTick: played.endTick } : { startTick: beat.playbackStart, endTick: beat.playbackStart + beat.playbackDuration };
   }
 
   tickOf(barId: string): number | null {
@@ -374,19 +442,42 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return played && barId ? { barId, index: played.index } : null;
   }
 
+  loopOf(selection: Selection): PlayRange | null {
+    const cache = this.api.tickCache;
+    const projection = this.projection;
+    if (cache === null || projection === null) return null;
+    const masterBarOf = (barId: string) => {
+      const index = projection.barIndex.get(barId);
+      return index === undefined ? undefined : projection.score.masterBars[index];
+    };
+    if (selection.kind === "bars") {
+      const ends = [masterBarOf(selection.anchorBarId), masterBarOf(selection.focusBarId)];
+      if (ends[0] === undefined || ends[1] === undefined) return null;
+      const [first, last] = ends[0].index <= ends[1].index ? [ends[0], ends[1]] : [ends[1], ends[0]];
+      // A bar the sound does not have yet is looked up as starting and ending at 0.
+      const range = { startTick: cache.getMasterBar(first).start, endTick: cache.getMasterBar(last).end };
+      return range.endTick > range.startTick ? range : null;
+    }
+    const masterBar = masterBarOf(selection.barId);
+    const anchor = beatOf(projection, selection.anchorBeatId);
+    const focus = beatOf(projection, selection.focusBeatId);
+    if (masterBar === undefined || anchor === null || focus === null) return null;
+    const start = cache.getMasterBar(masterBar).start;
+    const ticks = [this.beatTicks(cache, anchor), this.beatTicks(cache, focus)];
+    const range = { startTick: start + Math.min(...ticks.map((each) => each.startTick)), endTick: start + Math.max(...ticks.map((each) => each.endTick)) };
+    return range.endTick > range.startTick ? range : null;
+  }
+
   setMute(partId: string, mute: boolean): void {
-    const track = this.trackOf(partId);
-    if (track) this.api.changeTrackMute([track], mute);
+    this.changeMix(partId, { mute });
   }
 
   setSolo(partId: string, solo: boolean): void {
-    const track = this.trackOf(partId);
-    if (track) this.api.changeTrackSolo([track], solo);
+    this.changeMix(partId, { solo });
   }
 
   setVolume(partId: string, volume: number): void {
-    const track = this.trackOf(partId);
-    if (track) this.api.changeTrackVolume([track], volume);
+    this.changeMix(partId, { volume });
   }
 
   setSpeed(speed: number): void {
@@ -394,16 +485,33 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   }
 
   setLoop(range: PlayRange | null): void {
-    if (range === null) {
-      this.api.playbackRange = null;
-      this.api.isLooping = false;
-      return;
-    }
-    const playbackRange = new alphaTab.synth.PlaybackRange();
-    playbackRange.startTick = range.startTick;
-    playbackRange.endTick = range.endTick;
-    this.api.playbackRange = playbackRange;
-    this.api.isLooping = true;
+    const loop = this.loop;
+    if (range === null ? loop === null : loop !== null && loop.startTick === range.startTick && loop.endTick === range.endTick) return;
+    this.loop = range && { startTick: range.startTick, endTick: range.endTick };
+    this.loopPlaces = this.placesOf(this.loop);
+    this.sendLoop();
+    // alphaTab goes to the start of a new range: playback stays where it was, when that is inside
+    // it. While a new sound is made, it goes back there once that is in place, within the loop.
+    if (range !== null && this.reload === null) this.seek(this.currentTick());
+  }
+
+  setMetronome(on: boolean): void {
+    this.api.metronomeVolume = on ? 1 : 0;
+  }
+
+  setCountIn(on: boolean): void {
+    this.api.countInVolume = on ? 1 : 0;
+  }
+
+  settings(): PlayerSettings {
+    const api = this.api;
+    return {
+      speed: api.playbackSpeed,
+      metronome: api.metronomeVolume > 0,
+      countIn: api.countInVolume > 0,
+      loop: this.loop && { ...this.loop },
+      parts: Object.fromEntries([...this.mix].map(([partId, mix]) => [partId, { ...mix }])),
+    };
   }
 
   onState(listener: (state: PlayerState) => void): Unsubscribe {
@@ -434,6 +542,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
 
   private run({ score, barIds }: Request): void {
     this.parts = new Map(score.parts.map((part) => [part.id, { kind: part.kind as PartKind, strings: part.tuning.length }]));
+    if (score.bars.length === 0 || score.parts.length === 0) {
+      this.drawNothing();
+      return;
+    }
     const settings = this.api.settings;
     const projectionTimings = { build: 0, finish: 0 };
     const previous = this.projection;
@@ -463,10 +575,29 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // back to the start, playing or paused: playback goes on from where it was.
     this.soundStale = false;
     if (this.playerIsReady && this.options.soundFont !== null) {
+      // Where playback is, in the old score's sound (alphaTab makes the new one's tick lookup with the model).
+      if (this.reload === null) this.resumeAt = this.placeOf(this.currentTick(), previous);
       this.reload ??= { loads: 0, done: () => {} };
       this.reload.loads += 1;
     }
     this.api.renderScore(projection.score, this.trackIndexes(projection), hints);
+  }
+
+  /**
+   * A score with no bars or no parts, as two members who each delete one of the last two bars, or
+   * of the last two parts, at once leave it (docs/spec/commands.md, sections 7.3 and 9): alphaTab
+   * can neither lay one out nor make its sound (it throws), so it is not given one. What it drew
+   * before is taken off the page, nothing is placed on it, and playback stops; until the score has
+   * bars and parts again nothing plays, and the next such score is a new model, drawn and heard anew.
+   */
+  private drawNothing(): void {
+    this.projection = null;
+    this.layoutChanged = false;
+    const surface = this.element.querySelector<HTMLElement>(".at-surface");
+    surface?.replaceChildren();
+    if (surface) surface.style.height = "0px";
+    if (this.playerIsReady) this.api.stop();
+    this.rendered.emit({ partial: false, timings: { ...NO_TIMINGS } });
   }
 
   /** Draw the score again as it is, with the parts shown and at the scale asked for now; once alphaTab is free. */
@@ -509,9 +640,81 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return indexes.length > 0 ? indexes.sort((a, b) => a - b) : projection.partIds.map((_, index) => index);
   }
 
-  private trackOf(partId: string): alphaTab.model.Track | undefined {
-    const index = this.projection?.partIndex.get(partId);
-    return index === undefined ? undefined : this.projection?.score.tracks[index];
+  private changeMix(partId: string, change: Partial<PartMix>): void {
+    this.mix.set(partId, { ...(this.mix.get(partId) ?? NEUTRAL_MIX), ...change });
+    this.applyMix();
+  }
+
+  /**
+   * Give alphaTab the member's mix, by the channels the parts play on now: what it had before is
+   * cleared first, the mute or solo of a channel another part played on then included. (Clearing
+   * also clears the transpositions of the channels: the projection writes none.)
+   */
+  private applyMix(): void {
+    const player = this.api.player;
+    const projection = this.projection;
+    if (player === null || projection === null) return;
+    player.resetChannelStates();
+    const channels = projection.score.tracks.map((track) => ({ primary: track.playbackInfo.primaryChannel, secondary: track.playbackInfo.secondaryChannel }));
+    const mixes = projection.partIds.map((partId) => this.mix.get(partId) ?? NEUTRAL_MIX);
+    for (const [channel, mix] of channelMixOf(channels, mixes)) {
+      player.setChannelVolume(channel, mix.volume);
+      if (mix.mute) player.setChannelMute(channel, true);
+      if (mix.solo) player.setChannelSolo(channel, true);
+    }
+  }
+
+  /** The place in the music played at a tick of the sound in place, with the bar ids of a projection. */
+  private placeOf(tick: number, projection: Projection | null): Place | null {
+    const cache = this.api.tickCache;
+    const place = cache && placeAtTick(cache, tick);
+    const barId = place && projection?.barIds[place.index];
+    return cache && place && barId ? { barId, pass: place.pass, offset: place.offset, cache } : null;
+  }
+
+  /** The tick of a place in the music, in the sound in place now; null for a bar it does not have. */
+  private tickOfPlace(place: Place): number | null {
+    const cache = this.api.tickCache;
+    const index = this.projection?.barIndex.get(place.barId);
+    return cache === null || index === undefined ? null : tickAtPlace(cache, { index, pass: place.pass, offset: place.offset });
+  }
+
+  /** Where a range starts and ends in the music, in the tick lookup in place; null before there is one. */
+  private placesOf(range: PlayRange | null): { start: Place; last: Place } | null {
+    if (range === null) return null;
+    const start = this.placeOf(range.startTick, this.projection);
+    const last = this.placeOf(range.endTick - 1, this.projection);
+    return start && last ? { start, last } : null;
+  }
+
+  /**
+   * A new sound is in: the loop covers the same music in its ticks. Set in this sound's ticks
+   * already (the page set it again once the new score was drawn), it stays as it is.
+   */
+  private relocateLoop(): void {
+    const places = this.loopPlaces;
+    if (this.loop === null || places === null || places.start.cache === this.api.tickCache) return;
+    const start = this.tickOfPlace(places.start);
+    const last = this.tickOfPlace(places.last);
+    // A bar of it gone: the page sets the loop of the selection as it is now.
+    if (start === null || last === null || last < start) return;
+    this.loop = { startTick: start, endTick: last + 1 };
+    this.loopPlaces = this.placesOf(this.loop);
+  }
+
+  /** Tell alphaTab the loop, or that there is none. */
+  private sendLoop(): void {
+    const loop = this.loop;
+    if (loop === null) {
+      this.api.playbackRange = null;
+      this.api.isLooping = false;
+      return;
+    }
+    const range = new alphaTab.synth.PlaybackRange();
+    range.startTick = loop.startTick;
+    range.endTick = loop.endTick;
+    this.api.playbackRange = range;
+    this.api.isLooping = true;
   }
 
   /** alphaTab draws into a child of the element; its coordinates start at that child's corner. */
@@ -547,7 +750,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const reload = this.reload;
     if (reload === null || --reload.loads > 0) return;
     this.reload = null;
-    this.seek(this.currentTick());
+    // The same place in the music: a repeat or a time signature changed, or bars added before it,
+    // move it to other ticks.
+    const place = this.resumeAt;
+    const tick = place && this.tickOfPlace(place);
+    this.seek(tick ?? this.currentTick());
+    // Where playback is now, in the ticks of the new sound, before alphaTab reports from there.
+    this.lastPosition = { ...this.lastPosition, tick: this.currentTick() };
     if (this.intendsToPlay) this.api.play();
     // A pause asked for while the sound was made: alphaTab reported nothing of it.
     else this.setState("paused");

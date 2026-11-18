@@ -23,6 +23,10 @@ Y.Doc
 - 音符是整顆 JSON（`NoteJSON`），以位置為鍵，同一個音符的同時修改是後寫者勝。
 - 每個聲部、每個小節、每條聲線是一個 `Y.Array<拍點>`。
 - 小節與聲部的順序由各自的 `order` 欄位決定：fractional index 排序鍵，同鍵時依 id 排（`schema.ts` 的 `ordered`）。
+  - **補充**（#22）：fractional-indexing 在兩個鍵之間產生的鍵是確定的，兩個人同時插在同一個地方（例如都在同一個小節按 `Ctrl+Insert`、同時新增聲部）會拿到相同的鍵，而兩個相同的鍵之間產生不出鍵。所以指令產生的鍵一律經過 `commands.ts` 的 `keysAfter`，在產生的鍵後面加 5 個隨機的 base-62 字元（`withSuffix`；最後一個字元不是 `0`，因為鍵的小數部分不能以 `0` 結尾）。加了之後仍嚴格介於前後兩個鍵之間。產生的鍵是後一個鍵的前綴時（例如 `a1` 在 `a1Y…` 之下；後一個鍵帶後綴時常見），加了後綴可能超過後一個鍵：這時先在兩者之間再產生一個鍵，直到加上後綴放得下，所以每個鍵都帶後綴。指令不改寫其他項目的 `order`。
+    - 舊的資料裡同鍵的項目照樣依 id 排：插在其中一個之後時，新項目排在這一群同鍵的項目之後，不丟例外。
+    - `jsonToDoc` 從零依序產生鍵，不加後綴。
+    - 測試在 `packages/score-model/tests/bars.test.ts`：兩人同時插在同一處；一人插在 X 之後、另一人同時插在 Y 之後，跑 200 次；三人同時插在同一處，抵達順序不同；產生的鍵是後一個鍵的前綴，跑 50 次；舊的同鍵資料；同時新增聲部。每個測試都斷言插入落在指定的位置、各份文件順序一致，之後在任何位置插入都不丟例外。
 - id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
 ### 1.1 內容容器
@@ -184,7 +188,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 | `palmMute?` | `true` | fretted | `isPalmMute` |
 | `letRing?` | `true` | fretted | `isLetRing` |
 | `tap?` | `true` | fretted | 拍點上任一音符有 `tap` 時，`Beat.tap = true` |
-| `harmonic?` | `"natural" \| "pinch" \| "artificial"` | fretted | `harmonicType`：`Natural`、`Pinch`、`Artificial`；`artificial` 的 `harmonicValue` 是 12（補充） |
+| `harmonic?` | `"natural" \| "pinch" \| "artificial"` | fretted | `harmonicType`：`Natural`、`Pinch`、`Artificial`；`artificial` 的 `harmonicValue` 是 12（補充）；`natural` 的 `harmonicValue` 是自己的格號、`pinch` 是 12（補充，#29） |
 | `spell?` | 見 8.1 | pitched | `accidentalMode`（`projection.ts:100-117`） |
 
 - 欄位出現在不適用的聲部種類，或值超出範圍：讀取時略過整個音符並標 `invalidContent`。
@@ -201,11 +205,20 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
     - `preBendRelease` → `BendType.PrebendRelease`：`(0, q)`、`(15, 0)`：先推好再撥，在前四分之一放回來。
     - 點數照 alphaTab 1.9 畫推弦的方式：除了 `BendRelease` 讀四個點裡的第 1、2、4 個，其他型只讀前兩個點（`TabBendGlyph` 的 `_createRenderingPoints`）；多給的點會畫錯。點先加，型後設：沒有型的音加上點時，alphaTab 會把它當成自訂（`Custom`）。
     - 聲音（`MidiFileGenerator`，GuitarPro 記譜模式）照這些點送出音符自己的 pitch bend（MIDI 2.0 的 per-note pitch bend，32 位元，`2^31` 是不推）；聲道的 pitch bend range 是 alphaTab 設的 16 個半音。最高點就是 `semitones` 個半音。測試：`packages/score-render/tests/sound.test.ts`。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
+- **補充**（#29）：`harmonic` 的值在 `schema.ts` 的 `HARMONICS`，投影是 `projection.ts` 的 `HARMONIC_TYPES`。`harmonicValue` 是「在弦上哪一格碰出泛音」（alphaTab 的格數）：
+  - `natural` → `HarmonicType.Natural`，`harmonicValue` 是音符自己的格號。alphaTab 1.9 的自然泛音發出「那一格的節點」在空弦上的音（`Note.calculateRealValue` 與 `ModelUtils.harmonicValueToPitch`）：12 格高一個八度、7 格高一個八度加五度（19 個半音）、5 格高兩個八度（24 個半音），其他格照它的表；表裡對不到音程的整數格（0、1、2、11、13、18、20、21，以及 25 以上）發出空弦的音。2 格也在其中：表裡靠近它的節點是 2.4（兩格之間，Guitar Pro 匯入時才會用到），而這裡給的是整數格號 2（`sound.test.ts` 實測 0、1、2、11、13、25）。TAB 上把這個值畫成 `<格號>`，所以給的是格號本身；不給（0）時發出空弦的音。沒有節點的格不標 Flag。
+  - `pinch` → `HarmonicType.Pinch`、`artificial` → `HarmonicType.Artificial`，`harmonicValue` 都是 12（`HARMONIC_OCTAVE`）：發出比按的音高一個八度的音，和 alphaTab 匯入 Guitar Pro 檔時一樣。`pinch` 不給值時，alphaTab 發出和沒有泛音相同的音。
+  - 測試：`packages/score-render/tests/projection.test.ts` 比對型與值；`sound.test.ts` 比對 MIDI 音高（12 格的自然泛音比空弦高 12 個半音，pinch、artificial 和沒有泛音的音不同）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
 - 拍點層級的投影對照：`stroke` → `Beat.brushType`（`down` → `BrushDown`、`up` → `BrushUp`）；`slap`、`pop` → `Beat.slap`、`Beat.pop`；`dynamic` → `Beat.dynamics`；`text` → `Beat.text`；`lyric` → `Beat.lyrics`。
   - **補充**（#30）：`stroke` 另外設 `Beat.brushDuration` 為 60 tick（`projection.ts` 的 `STROKE_TICKS`，64 分音符，120 BPM 時約 30 ms），短的拍點最多是拍點長度的四分之一：alphaTab 在 `brushDuration` 是 0 時所有弦同時發聲。down 從最低的弦開始，up 從最高的弦開始（alphaTab 的 `_fillBrushInfo`）。聽起來如何由人工判定（[`testing.md`](testing.md) 第 6 節第 2 項，#41）。
   - **補充**（#30，host 在 2026-11-14 的兩次裁定）：`dynamic` 表示「從這個拍點起」，和樂譜的寫法一樣：在同一個聲部、同一條聲線（`"譜表:聲線"`）裡往後延續，跨小節也延續，直到下一個寫著 `dynamic` 的拍點；在那之前沒有任何 `dynamic` 時是 alphaTab 的 `F`。投影時每個 alphaTab 拍點（包括補滿小節的休止）的 `Beat.dynamics` 都是當時生效的力度，所以後面沒寫的拍點聲音一樣小（`projection.ts` 的 `projectBar`：每條聲線以前一小節同一條聲線最後一個拍點的力度開始）。`replaceBars` 重建一個小節之後，若它留給下一小節的力度和原本不同，就連下一小節一起重建，直到某個小節的每條聲線都和原本接得上，也就是下一個寫著力度的地方。
-  - **補充**（#30）：力度記號只畫在寫著 `dynamic` 的拍點上：每個拍點的 `Beat.showDynamics` 是「這個拍點寫著 `dynamic`」（alphaTab 1.9 的欄位；有設定時直接決定畫不畫，`shouldCreateDynamicsGlyph`）。不設的話，alphaTab 會在力度改變的地方畫，而且在每個譜表第一條聲線的第一個非休止拍點畫它預設的 `f`，從沒寫過力度的團譜也會出現 `f`。寫在休止拍點上的 `dynamic` 照樣往後延續，但 alphaTab 從不在休止上畫力度記號，所以看不到。測試：`packages/score-render/tests/dynamics.test.ts` 以 SVG 畫出整份譜，數力度記號。
+  - **補充**（#30）：力度記號只畫在寫著 `dynamic` 的拍點上：每個拍點的 `Beat.showDynamics` 是「這個拍點寫著 `dynamic`」（alphaTab 1.9 的欄位；有設定時直接決定畫不畫，`shouldCreateDynamicsGlyph`）。不設的話，alphaTab 會在力度改變的地方畫，而且在每個譜表第一條聲線的第一個非休止拍點畫它預設的 `f`，從沒寫過力度的團譜也會出現 `f`。寫在休止拍點上的 `dynamic` 照樣往後延續，但 alphaTab 從不在休止上畫力度記號，所以改畫在後面的拍點（下一條 #97 補充）。測試：`packages/score-render/tests/dynamics.test.ts` 以 SVG 畫出整份譜，數力度記號。
+  - **補充**（#97，使用者在 2026-11-17 的裁定）：寫在休止拍點上的 `dynamic`，記號畫在同一個聲部、同一條聲線裡下一個非休止拍點（投影後的 alphaTab `Beat.isRest` 為假，也就是至少投影出一個音），同一小節或之後的小節都可以：那個拍點的 `Beat.showDynamics` 設成 true，畫的是它的 `Beat.dynamics`，也就是當時生效的力度。所以那個拍點、或它之前的休止拍點自己也寫著 `dynamic` 時，只畫最後寫的那一個，休止上的被覆蓋，不重複畫。到譜尾都沒有非休止拍點就不畫。各聲線、各聲部各自獨立。只改繪製：文件內容不變，聲音照上面兩條從休止拍點開始生效。做法在 `projection.ts` 的 `projectBar`：每條聲線帶著「還沒畫的力度」，跨小節時從前一小節讀（`dynamicsUndrawn`，存在以 alphaTab `Bar` 為鍵的 `WeakMap`）；`replaceBars` 重建一個小節後，這個狀態和原本不同時也重建下一小節。測試：`dynamics.test.ts`（數 SVG 的力度記號）、`projection.test.ts`（部分重建與整份投影相同）、`sound.test.ts`（發聲和寫在休止後第一個音上相同）。
 - 小節層級的投影對照：`keySig` → 每個聲部每個 `Bar` 的 `keySignature` 與 `keySignatureType`（`MasterBar` 上的同名欄位在 1.9 已 deprecated，`alphaTab.d.ts:11229-11250`）；`repeatStart` → `MasterBar.isRepeatStart`；`repeatEnd` → `repeatCount`；`voltas` → `alternateEndings` 的位元；`section` → `MasterBar.section`；`anacrusis` → `isAnacrusis`；`tempo` → 小節開頭的速度 automation。
+  - **補充**（#23）：寫法在 `projection.ts` 的 `projectScore` 與 `placesOf`。`keySig` 投影成該小節「生效的調號」（`keySigsOf`），所以 alphaTab 在調號改變的地方畫新調號；鼓聲部的 `Bar` 一律是 C 大調，不畫升降記號。`voltas` 的第 n 遍是 `alternateEndings` 的第 n−1 個位元；`section` 是 `Section` 的 `text`（`marker` 空白）。
+  - **補充**（#23）：弱起小節（第一小節帶 `anacrusis`）的長度是它在所有聲部、所有聲線裡最長的那一條（不超過拍號；全部是空的時就是拍號的長度）：每條聲線只用休止補到這個長度，空的第一條聲線也是，不畫整小節休止；alphaTab 以最長的聲線當這個小節的長度，下一小節緊接在它之後發聲。
+  - **補充**（#24）：多個 fretted 聲部一起顯示時，alphaTab 預設把每個聲部的調弦列在譜的上方，會疊在一起（`spike-report.md` 的「其他意外」）。投影設 `score.stylesheet.tuningDisplayMode = TuningDisplayMode.Staff`：調弦的音名寫在各自 TAB 譜的弦旁，只在第一行譜（`projection.ts` 的 `projectScore`）。
+  - **補充**（#23）：ADR 0003 只在小節、聲部或聲線數變動時整份重新投影；這裡多一個例外：**弱起小節的長度改變時**。長度變了，後面每個小節的起點都跟著移動，alphaTab 只在整份 `finish` 時重算，所以 `replaceBars` 在新算出的弱起長度（`placesOf`）和模型裡舊的長度（`masterBars[0].calculateDuration()`，此時還是舊的小節）不同時回傳 null。長度不變的修改（例如改一條比最長聲線短的聲線）照常就地換小節，避免大譜在第一小節每打一個音都整份排版。測試：`projection.test.ts` 的「a change that keeps the length of a pickup bar …」與「a change of the length of a pickup bar …」。
 - 以上每一項 alphaTab 1.9 都有對應的欄位：`Beat` 的 `slap`、`pop`、`tap`、`brushType`、`dynamics`、`text`、`lyrics`（`alphaTab.d.ts:5018-5062,5203`），`Note` 的 `accentuated`（:13283）等，`MasterBar` 的 `isAnacrusis`（:11331）、`repeatCount`、`alternateEndings`、`section`。
 
 不做：
@@ -228,7 +241,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
 - 客戶端遇到比自己新的 `schemaVersion`：以唯讀開啟（`EditorSession` 的唯讀旗標），並顯示「這份團譜由較新的版本建立，請重新整理頁面」（ADR 0002:22）。
-- **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。
+- **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。伺服器怎麼做、怎麼告訴客戶端，見 [`collab.md`](collab.md) 2.1。
 
 ## 10. 遷移
 
@@ -238,7 +251,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - **`Y.Doc` 那一面**：伺服器在 `onLoadDocument` 載入狀態之後，以參與者身分、在一筆交易裡依序跑 `doc` 遷移，最後把 `meta.schemaVersion` 設成目前的版本。不要在 `onStoreDocument` 裡改文件，否則會再觸發一次儲存。
 - **`ScoreJSON` 那一面**：版本存的是 `docToJson` 的結果，帶著當時的 `schemaVersion`。讀取版本時，伺服器先依序跑 `json` 遷移，回傳目前版本的 JSON（補充：由伺服器遷移，客戶端拿到的一律是目前的版本）。還原、預覽都用遷移後的 JSON。
 - **補充**：`schemaVersion` 沒寫或讀不懂（不是 0 以上的整數）時，兩面都當成目前的版本，和讀取時（第 11 節）相同：不遷移，也不會因此被判定為較新。
-- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
+- **補充**：找不到某一步的遷移（部署漏了遷移，或文件被寫成一個沒有遷移可走的舊版本）時，`migrateDoc` 丟例外、不改文件；伺服器寫 error log，這份文件比照「比自己新」處理：不執行 `fillMissingContent`，所有連線設成 readOnly，直到部署補上那一步（[`collab.md`](collab.md) 2.1）。**補充**（#12）：缺步驟時丟的是 `MissingMigration`；遷移步驟自己丟出的例外原樣往外丟，伺服器同樣凍結這份文件，回報的原因是 `migrationFailed`。`migrateJson` 同樣丟例外：伺服器對那個版本回應錯誤，不能預覽或還原。
 - **`jsonToDoc`**：放在 `score-model`，把 `ScoreJSON` 寫進一份 `Y.Doc`。匯入與還原共用；保留 JSON 裡的 id，依陣列順序重新產生 `order`，建好所有內容容器。
 - **測試**（M1a）：一份假的舊版 fixture（`schemaVersion: 0`）與一個只在測試裡註冊的 0 → 1 遷移，兩面都要測：`Y.Doc` 從舊狀態遷移後的 `docToJson`，等於 JSON 遷移後的結果。正式的遷移清單在第一版是空的。
 
@@ -260,6 +273,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
+- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。複製只做到合法值的深度（兩層：帶 `bend` 的音符、`staves` 的陣列與物件、帶 `tuplet` 的拍點欄位）；更深的陣列或物件，落在認得的欄位上就是讀不懂（照上面各條標記），落在不認得的欄位下則照樣忽略、不標記、原樣保留，所以巢狀再深也不會丟例外，也不妨礙日後的加法欄位。
+- **補充**（#78）：`ScoreJSON` 與 phrase fragment 裡的 record（聲部的 `content`、小節的聲線、拍點的 `notes`、fragment 的 `voices`）帶有自有的 `__proto__` 鍵時，驗證不通過（匯入與儲存樂句會被拒絕）；zod 的 `z.record` 本來會不經驗證就把這個鍵丟掉。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
 - 驗證結果用 `WeakMap` 快取，鍵是拍點的 `Y.Map`；某個小節有變動時，作廢那個小節的快取，只有變動的小節重新驗證。**補充**：作廢在交易結束、任何 observer 被呼叫之前做（Yjs 的 `beforeObserverCalls`，依 `transaction.changed`），所以在 observer 裡讀取也看得到這次的修改；交易進行中讀取時不用快取。

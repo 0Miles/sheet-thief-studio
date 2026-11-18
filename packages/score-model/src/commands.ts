@@ -1,13 +1,15 @@
 // Editing commands: each changes the document in one transaction (one undo step) and returns
 // where the cursor is afterwards. They never touch the DOM or the renderer.
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import * as Y from "yjs";
+import type { z } from "zod";
 
 import {
   BEND_SEMITONES,
   BEND_TYPES,
   type BendType,
+  barSchema,
   barsOf,
   beatFieldFits,
   COMMON_TIME,
@@ -16,19 +18,28 @@ import {
   type Duration,
   durationOf,
   emptyBarContent,
+  HARMONICS,
   KIND_DEFAULTS,
+  type KeySignature,
+  keySigSchema,
   LOCAL,
   MAIN_VOICE,
+  MAX_BARS,
   metaOf,
+  metaSchema,
   NOTE_VALUES,
   type NoteJSON,
   type NoteValue,
   ordered,
+  parsePlain,
   type PartKind,
   partKindOf,
+  partSchemas,
   partsOf,
   readNote,
+  readableVoicesOf,
   SCHEMA_VERSION,
+  type ScoreJSON,
   SLIDE_INS,
   SLIDE_OUTS,
   type Staff,
@@ -41,6 +52,7 @@ import {
   stringCountOf,
   contentMapOf,
   type TimeSignature,
+  timeSigSchema,
   type Tuplet,
   type VoiceAddress,
   type YBar,
@@ -49,6 +61,7 @@ import {
   voiceIn,
   type YVoice,
   voiceKeys,
+  withinPartLimits,
 } from "./schema";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -115,9 +128,9 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KI
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
-    const last = ordered(parts).at(-1);
+    const order = ordered(parts);
     const part: YPart = new Y.Map();
-    part.set("order", generateKeyBetween(last === undefined ? null : orderOf(parts.get(last)), null));
+    part.set("order", keysAfter(parts, order, order.length - 1, 1)[0]);
     part.set("name", name);
     part.set("kind", kind);
     part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
@@ -140,18 +153,70 @@ export interface NewBars {
   timeSig?: TimeSignature;
 }
 
-/** Insert empty bars for every part; returns their ids in order. */
+/** The digits of an ordering key (fractional-indexing's base 62). */
+const KEY_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const keySuffix = customAlphabet(KEY_DIGITS, 5);
+
+/**
+ * A key above `key` and below `upper`, ending in a random suffix: the keys fractional-indexing
+ * makes between two keys are the same for everyone, so two members inserting at the same place
+ * at once would make the same key, and no key lies between two equal keys. A suffix of five
+ * base-62 digits makes that all but impossible. The fractional part of a key must not end in 0.
+ * When `key` is a prefix of `upper` (`a1` below `a1Yx3pQ`, which is common: keys made between
+ * suffixed keys often are), `key` and a suffix may reach past `upper`: a key between `key` and
+ * `upper` is taken first, until the suffix fits.
+ */
+function withSuffix(key: string, upper: string | null): string {
+  const suffix = keySuffix().replace(/0$/, "1");
+  let base = key;
+  // Each step at least one digit closer to `upper`, which has finitely many: a few at most.
+  while (upper !== null && base + suffix >= upper) base = generateKeyBetween(base, upper);
+  return base + suffix;
+}
+
+/**
+ * Ordering keys for `count` items put right after the one at `index` of `order` (-1: first), the
+ * ids of `map` in score order (`ordered`), each with a random suffix (`withSuffix`) so that no
+ * two members make the same key (docs/spec/schema.md, section 1). No other item's key is
+ * changed. Equal keys sort by id; none lies strictly between them, so after an item whose key the
+ * next items share (left by members who inserted before the suffix), the new ones go after all
+ * of those.
+ */
+function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
+  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
+  const lower = index < 0 ? null : keyAt(index);
+  let end = index + 1;
+  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
+  const upper = end < order.length ? keyAt(end) : null;
+  const keys = generateNKeysBetween(lower, upper, count);
+  return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
+}
+
+/** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
+function timeSigOf(bar: YBar | undefined): TimeSignature {
+  const read = parsePlain(timeSigSchema, bar?.get("timeSig"));
+  return read.success ? read.data : COMMON_TIME;
+}
+
+/**
+ * Insert empty bars for every part; returns their ids in order. They take the time signature
+ * given, else the one of the bar they follow, else (first) of the bar they precede, and nothing
+ * else of it (docs/spec/commands.md, section 6). Put first, they take the pickup away from the bar
+ * that was first. None, and nothing changes, when `after` is gone or the score would have more
+ * than `MAX_BARS` bars.
+ */
 export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): string[] {
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  const index = after === null ? -1 : order.indexOf(after);
+  if ((after !== null && index < 0) || count < 1 || order.length + count > MAX_BARS) return [];
   const ids = Array.from({ length: count }, newId);
   doc.transact(() => {
-    const bars = barsOf(doc);
-    const order = ordered(bars);
-    const index = after === null ? -1 : order.indexOf(after);
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = generateNKeysBetween(orderOf(before), orderOf(next), count);
-    const signature = timeSig ?? ((before ?? next)?.get("timeSig") as TimeSignature | undefined) ?? COMMON_TIME;
+    const keys = keysAfter(bars, order, index, count);
+    const signature = timeSig ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);
@@ -160,8 +225,265 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
       // The member who makes a bar makes its place in every part, in the same transaction.
       for (const part of partsOf(doc).values()) contentOf(part).set(id, emptyBarContent(staffCountOf(part)));
     });
+    // Only the first bar can be a pickup (docs/spec/schema.md, section 3).
+    if (before === undefined && next?.has("anacrusis")) next.delete("anacrusis");
   }, LOCAL);
   return ids;
+}
+
+/** Why a structural command did nothing: the score would have more than `MAX_BARS` bars, or none left. */
+export type BarRefusal = "tooManyBars" | "lastBar";
+
+/** Where a bar is inserted: before the cursor's bar (Ctrl+Insert) or after it (Ctrl+Shift+Insert). */
+export type BarSide = "before" | "after";
+
+/** The cursor at the first place of its own voice in another bar: its first beat, or the append slot when it is empty. */
+function firstPlaceIn(doc: Y.Doc, cursor: Cursor, barId: string): Cursor {
+  const voice = voiceIn(doc, { ...cursor, barId });
+  const beatId = voice && voice.length > 0 ? (voice.get(0).get("id") as string) : null;
+  return { ...cursor, barId, beatId, at: beatId === null ? "after" : "on" };
+}
+
+/**
+ * Insert one empty bar before or after the cursor's bar, for every part, one command; the cursor
+ * moves to its first place, in its own voice and on its own line (docs/spec/commands.md, section 6).
+ * `"tooManyBars"` at `MAX_BARS` bars; the cursor as it is when its bar is gone.
+ */
+export function insertBarAt(doc: Y.Doc, cursor: Cursor, side: BarSide): Cursor | BarRefusal {
+  const order = ordered(barsOf(doc));
+  const index = order.indexOf(cursor.barId);
+  if (index < 0) return cursor;
+  if (order.length >= MAX_BARS) return "tooManyBars";
+  const [barId] = insertBars(doc, { after: side === "after" ? cursor.barId : (order[index - 1] ?? null), count: 1 });
+  return barId === undefined ? cursor : firstPlaceIn(doc, cursor, barId);
+}
+
+/**
+ * The toolbar's +bar at the end of the score: one bar after the last, the cursor moving there as
+ * `insertBarAt` moves it. In a score left with no bars (two members deleted the last two at once,
+ * docs/spec/commands.md, section 9) it makes the first one, in 4/4, and the cursor goes to the
+ * start of the score: what a member with no cursor (null) left can do to go on. Null when there
+ * is still nowhere to put the cursor (no part that can be drawn).
+ */
+export function appendBar(doc: Y.Doc, cursor: Cursor | null): Cursor | BarRefusal | null {
+  const last = ordered(barsOf(doc)).at(-1);
+  if (last === undefined) {
+    const [barId] = insertBars(doc, { after: null, count: 1 });
+    if (barId === undefined) return cursor;
+    const kept = cursor && partKindOf(partsOf(doc).get(cursor.partId)) !== undefined ? firstPlaceIn(doc, cursor, barId) : null;
+    return kept ?? startOfScore(doc);
+  }
+  const at = cursor ?? startOfScore(doc);
+  return at && insertBarAt(doc, { ...at, barId: last }, "after");
+}
+
+/**
+ * The bars a structural command works on (docs/spec/commands.md, section 6): a bar range's, or a
+ * beat range's one bar; null without a selection, when each command says what it works on.
+ */
+export function structuralRange(doc: Y.Doc, selection: Selection | null): string[] | null {
+  if (selection === null) return null;
+  return selection.kind === "beats" ? [selection.barId] : selectedBars(doc, selection);
+}
+
+/**
+ * Ctrl+Delete: delete the bars of the selection (`structuralRange`), else the cursor's bar, from
+ * every part, one command and no question asked: an undo brings them back with what they held
+ * then. Beats others send into them meanwhile are lost, the explicit exception to nothing
+ * disappearing silently (docs/spec/commands.md, section 9). The cursor moves to the first place of
+ * its voice in the bar after them, else in the bar before. `"lastBar"` rather than leave a score
+ * with no bars; the cursor as it is when its bars are gone.
+ */
+export function deleteBarsAt(doc: Y.Doc, cursor: Cursor, selection: Selection | null): Cursor | BarRefusal {
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  const range = (structuralRange(doc, selection) ?? [cursor.barId]).filter((barId) => order.includes(barId));
+  if (range.length === 0) return cursor;
+  if (range.length >= order.length) return "lastBar";
+  const first = order.indexOf(range[0] as string);
+  const last = order.indexOf(range.at(-1) as string);
+  const landing = (order[last + 1] ?? order[first - 1]) as string;
+  doc.transact(() => {
+    for (const barId of range) {
+      bars.delete(barId);
+      for (const part of partsOf(doc).values()) contentMapOf(part)?.delete(barId);
+    }
+  }, LOCAL);
+  return firstPlaceIn(doc, cursor, landing);
+}
+
+/**
+ * Give bars a time signature, one command (docs/spec/commands.md, section 6): those of the
+ * selection (`structuralRange`); without one, the cursor's bar and the bars after it that have
+ * the same time signature, up to the next that differs. Only bars whose time signature changes
+ * are written. False, and nothing set, for a time signature out of range (docs/spec/schema.md,
+ * section 3), or when the cursor's bar is gone.
+ */
+export function setTimeSig(doc: Y.Doc, cursor: Cursor, selection: Selection | null, timeSig: TimeSignature): boolean {
+  const valid = parsePlain(timeSigSchema, timeSig);
+  if (!valid.success) return false;
+  const bars = barsOf(doc);
+  const order = ordered(bars);
+  let range = structuralRange(doc, selection);
+  if (range === null) {
+    const start = order.indexOf(cursor.barId);
+    if (start < 0) return false;
+    const was = timeSigOf(bars.get(cursor.barId));
+    const end = order.findIndex((barId, index) => index > start && !sameTimeSig(timeSigOf(bars.get(barId)), was));
+    range = order.slice(start, end < 0 ? undefined : end);
+  }
+  if (range.length === 0) return false;
+  const { numerator, denominator } = valid.data;
+  // A time signature that cannot be read (read as 4/4) is written too.
+  const changed = range.filter((barId) => !storedAs(timeSigSchema, bars.get(barId)?.get("timeSig"), valid.data));
+  if (changed.length > 0) doc.transact(() => changed.forEach((barId) => bars.get(barId)?.set("timeSig", { numerator, denominator })), LOCAL);
+  return true;
+}
+
+function sameTimeSig(a: TimeSignature, b: TimeSignature): boolean {
+  return a.numerator === b.numerator && a.denominator === b.denominator;
+}
+
+const tempoSchema = barSchema.shape.tempo.unwrap();
+
+/**
+ * Change the tempo from the cursor's bar on, written on that bar only, one command; null takes
+ * that change away (docs/spec/commands.md, section 6). False, and nothing set, for a tempo out of
+ * 20 to 400, or when the cursor's bar is gone. The same tempo writes nothing.
+ */
+export function setTempo(doc: Y.Doc, cursor: Cursor, tempo: number | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  if (bar === undefined || (tempo !== null && !tempoSchema.safeParse(tempo).success)) return false;
+  writeField(bar, "tempo", tempoSchema, tempo ?? undefined);
+  return true;
+}
+
+/** Whether a stored value reads as `value` (docs/spec/schema.md, section 11): one that cannot be read never does. */
+function storedAs<Schema extends z.ZodType>(schema: Schema, stored: unknown, value: z.output<Schema>): boolean {
+  const read = parsePlain(schema, stored);
+  return read.success && JSON.stringify(read.data) === JSON.stringify(value);
+}
+
+/** A copy of a value of the document, down to the plain objects in a list (the staves of a part). */
+function copyOf(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(copyOf);
+  return typeof value === "object" && value !== null ? { ...value } : value;
+}
+
+/**
+ * Write a field of a bar, a part or the meta, or take it away (undefined), one command: none when
+ * it already reads so. The value is copied, so that no two of them share it.
+ */
+function writeField<Schema extends z.ZodType>(map: Y.Map<unknown>, name: string, schema: Schema, value: z.output<Schema> | undefined): void {
+  if (value === undefined ? !map.has(name) : storedAs(schema, map.get(name), value)) return;
+  (map.doc as Y.Doc).transact(() => {
+    if (value === undefined) map.delete(name);
+    // Every value of a bar or a part is a number, a string, a list or an object of plain fields, or a list of such objects.
+    else map.set(name, copyOf(value));
+  }, LOCAL);
+}
+
+/**
+ * Change the key from the cursor's bar on, written on that bar only, one command; null takes that
+ * change away (docs/spec/commands.md, section 6). False, and nothing set, for a key out of range
+ * (docs/spec/schema.md, section 3), or when the cursor's bar is gone. The same key writes nothing.
+ */
+export function setKeySig(doc: Y.Doc, cursor: Cursor, keySig: KeySignature | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  const valid = keySig === null ? null : parsePlain(keySigSchema, keySig);
+  if (bar === undefined || (valid !== null && !valid.success)) return false;
+  writeField(bar, "keySig", keySigSchema, valid?.data);
+  return true;
+}
+
+const sectionSchema = barSchema.shape.section.unwrap();
+
+/**
+ * Name the section that starts at the cursor's bar, one command; null takes the name away
+ * (docs/spec/commands.md, section 6). False, and nothing set, for a name not of 1 to 64
+ * characters, or when the cursor's bar is gone. The same name writes nothing.
+ */
+export function setSection(doc: Y.Doc, cursor: Cursor, section: string | null): boolean {
+  const bar = barsOf(doc).get(cursor.barId);
+  if (bar === undefined || (section !== null && !sectionSchema.safeParse(section).success)) return false;
+  writeField(bar, "section", sectionSchema, section ?? undefined);
+  return true;
+}
+
+/** What `setRepeat` does: repeat its bars `times` times in all, or clear the start or the end of a repeat. */
+export type RepeatChange = { times: number } | { clear: "start" | "end" };
+
+const repeatEndSchema = barSchema.shape.repeatEnd.unwrap();
+const repeatStartSchema = barSchema.shape.repeatStart.unwrap();
+
+/**
+ * The bars a structural command that writes on bars where they are works on: those of the
+ * selection (`structuralRange`) still in the score, else the cursor's bar; none when they are gone.
+ */
+function barsWorkedOn(doc: Y.Doc, cursor: Cursor, selection: Selection | null): string[] {
+  const bars = barsOf(doc);
+  return (structuralRange(doc, selection) ?? [cursor.barId]).filter((barId) => bars.has(barId));
+}
+
+/**
+ * A repeat, one command (docs/spec/commands.md, section 6): its start on the first bar of the
+ * selection (`structuralRange`), its end, how many times it is played in all (2 to 32), on the
+ * last; without a selection, both on the cursor's bar. Either can be cleared alone, from the same
+ * bar it is written on. Nothing else is changed: a repeat begun or ended elsewhere stays. False,
+ * and nothing set, for a count out of range, or when the bars are gone.
+ */
+export function setRepeat(doc: Y.Doc, cursor: Cursor, selection: Selection | null, change: RepeatChange): boolean {
+  const range = barsWorkedOn(doc, cursor, selection);
+  const bars = barsOf(doc);
+  const first = bars.get(range[0] as string);
+  const last = bars.get(range.at(-1) as string);
+  if (first === undefined || last === undefined) return false;
+  if ("clear" in change) {
+    if (change.clear === "start") writeField(first, "repeatStart", repeatStartSchema, undefined);
+    else writeField(last, "repeatEnd", repeatEndSchema, undefined);
+    return true;
+  }
+  if (!repeatEndSchema.safeParse(change.times).success) return false;
+  // One transaction: the two writes, when both are needed, are one undo step.
+  doc.transact(() => {
+    writeField(first, "repeatStart", repeatStartSchema, true);
+    writeField(last, "repeatEnd", repeatEndSchema, change.times);
+  }, LOCAL);
+  return true;
+}
+
+const voltasSchema = barSchema.shape.voltas.unwrap();
+
+/**
+ * The passes of a repeat the bars of the selection (`structuralRange`), else the cursor's bar,
+ * are played on, written on every one of them, one command; none (an empty list) clears them
+ * (docs/spec/commands.md, section 6). False, and nothing set, unless the passes are 1 to 8 in
+ * increasing order, or when the bars are gone. Bars that already read so are not written.
+ */
+export function setVoltas(doc: Y.Doc, cursor: Cursor, selection: Selection | null, passes: readonly number[]): boolean {
+  const range = barsWorkedOn(doc, cursor, selection);
+  const valid = passes.length === 0 ? null : parsePlain(voltasSchema, [...passes]);
+  if (range.length === 0 || (valid !== null && !valid.success)) return false;
+  const bars = barsOf(doc);
+  doc.transact(() => {
+    for (const barId of range) writeField(bars.get(barId) as YBar, "voltas", voltasSchema, valid?.data);
+  }, LOCAL);
+  return true;
+}
+
+/**
+ * Make the first bar a pickup bar, or a full one again, one command (docs/spec/commands.md,
+ * section 6). False, and nothing changed, on any bar but the first: only the first bar can be a
+ * pickup (docs/spec/schema.md, section 3). A pickup that cannot be read is no pickup: it is set.
+ */
+export function toggleAnacrusis(doc: Y.Doc, cursor: Cursor): boolean {
+  const bars = barsOf(doc);
+  const [first] = ordered(bars);
+  const bar = first === cursor.barId ? bars.get(first) : undefined;
+  if (bar === undefined) return false;
+  const schema = barSchema.shape.anacrusis.unwrap();
+  writeField(bar, "anacrusis", schema, storedAs(schema, bar.get("anacrusis"), true) ? undefined : true);
+  return true;
 }
 
 /**
@@ -414,7 +736,7 @@ export const tieToggle: NoteToggle<boolean> = {
  * every note to the kind after the one of the first note seen, as the beat markings do
  * (`markingCycle`), on the notes there are; it makes none.
  */
-function noteCycle<F extends "slideOut" | "slideIn">(field: F, kinds: readonly NonNullable<NoteJSON[F]>[]): NoteToggle<NoteJSON[F]> {
+function noteCycle<F extends "slideOut" | "slideIn" | "harmonic">(field: F, kinds: readonly NonNullable<NoteJSON[F]>[]): NoteToggle<NoteJSON[F]> {
   return {
     decide: (seen) => nextOf(kinds, seen[0]?.[field]),
     turn(stored, kind) {
@@ -429,6 +751,9 @@ export const slideOutCycle: NoteToggle<NoteJSON["slideOut"]> = noteCycle("slideO
 
 /** Shift+E: a slide into the note, from below, from above, then none. */
 export const slideInCycle: NoteToggle<NoteJSON["slideIn"]> = noteCycle("slideIn", SLIDE_INS);
+
+/** Shift+N: a harmonic of the note, natural, pinch, artificial, then none. */
+export const harmonicCycle: NoteToggle<NoteJSON["harmonic"]> = noteCycle("harmonic", HARMONICS);
 
 /**
  * Shift+B: a bend of the note, bend, bend and release, pre-bend, pre-bend and release, then none,
@@ -553,15 +878,7 @@ function runsOf(doc: Y.Doc, selection: Selection): SelectedRun[] {
     const found = isVoiceKey(selection.voice, staffCountOf(part)) ? selectedBeats(doc, selection) : undefined;
     return found ? [{ barId: selection.barId, voiceKey: selection.voice, ...found }] : [];
   }
-  const keys = voiceKeys(staffCountOf(part));
-  return selectedBars(doc, selection).flatMap((barId) => {
-    const voices: unknown = contentMapOf(part)?.get(barId);
-    if (!(voices instanceof Y.Map)) return [];
-    return keys.flatMap((voiceKey) => {
-      const voice: unknown = voices.get(voiceKey);
-      return voice instanceof Y.Array ? [{ barId, voiceKey, voice: voice as YVoice, first: 0, last: voice.length - 1 }] : [];
-    });
-  });
+  return selectedBars(doc, selection).flatMap((barId) => readableVoicesOf(part, barId).map(([voiceKey, voice]) => ({ barId, voiceKey, voice, first: 0, last: voice.length - 1 })));
 }
 
 /** A beat of a selection that reading keeps, its notes, and where it is. */
@@ -922,16 +1239,184 @@ export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
   return read ? (read.markings.text ?? "") : null;
 }
 
-/** Make the beat of the cursor one note value shorter (`step` 1) or longer (-1), keeping its dots. */
-export function stepDuration(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
-  return changeBeatAt(doc, cursor, durationStep(step));
-}
-
-/** Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false, and nothing set, for any other length. */
+/**
+ * Give the score a title, one command (docs/spec/commands.md, 7.3): 1 to 100 characters; false,
+ * and nothing set, for any other length. The same title writes nothing.
+ */
 export function setTitle(doc: Y.Doc, title: string): boolean {
   if (title.length < 1 || title.length > MAX_TITLE) return false;
-  doc.transact(() => metaOf(doc).set("title", title), LOCAL);
+  writeField(metaOf(doc), "title", metaSchema.shape.title, title);
   return true;
+}
+
+const artistSchema = metaSchema.shape.artist.unwrap();
+
+/**
+ * Name who plays the score, one command (docs/spec/commands.md, 7.3): up to 100 characters, an
+ * empty name taking it away. False, and nothing set, for a longer one. The same name writes nothing.
+ */
+export function setArtist(doc: Y.Doc, artist: string): boolean {
+  if (artist.length > MAX_TITLE) return false;
+  writeField(metaOf(doc), "artist", artistSchema, artist === "" ? undefined : artist);
+  return true;
+}
+
+// Parts (docs/spec/commands.md, 7.1 and 7.2) ------------------------------------------------------
+
+/**
+ * Why a command on parts did nothing: the score has as many parts as it may (`MAX_PARTS`, or
+ * `MAX_NON_PERCUSSION_PARTS` but drums), or the part is the last one, which cannot be deleted.
+ */
+export type PartRefusal = "tooManyParts" | "lastPart";
+
+/**
+ * Whether a part of `kind` may be added (docs/spec/commands.md, 7.1): the parts of the score, in
+ * score order, with it, stay within both limits (`withinPartLimits`). A part whose kind cannot be
+ * read counts as one that is not drums: never fewer parts than the document holds.
+ */
+export function canAddPart(doc: Y.Doc, kind: PartKind): boolean {
+  const parts = partsOf(doc);
+  const kinds = ordered(parts).map((id) => partKindOf(parts.get(id)) ?? "fretted");
+  return withinPartLimits([...kinds, kind]);
+}
+
+/**
+ * Add a part after the last one, as `addPart` does, one command: refused when the score would
+ * have more parts than it may (`canAddPart`). Two members adding parts at once can still pass the
+ * limits; such a score reads as usual (docs/spec/commands.md, 7.1).
+ */
+export function addPartWithin(doc: Y.Doc, part: NewPart): string | PartRefusal {
+  return canAddPart(doc, part.kind) ? addPart(doc, part) : "tooManyParts";
+}
+
+/**
+ * Delete a part, with all it holds, one command: an undo brings it back as it was
+ * (docs/spec/commands.md, 7.1). The member is asked first (`barsWithContent`), not here. False
+ * when the part is gone; `"lastPart"` for the only part of the score, which is kept.
+ */
+export function deletePart(doc: Y.Doc, partId: string): boolean | PartRefusal {
+  const parts = partsOf(doc);
+  if (!parts.has(partId)) return false;
+  if (ordered(parts).every((id) => id === partId)) return "lastPart";
+  doc.transact(() => parts.delete(partId), LOCAL);
+  return true;
+}
+
+/**
+ * Move a part right after another (`after`; null puts it first), one command: only its own
+ * ordering key changes, a new one from `keysAfter`, so that two members moving parts at once each
+ * keep theirs where they put it (docs/spec/schema.md, section 1). False, and nothing changed, when
+ * either part is gone or they are the same; true, writing nothing, when it is already there.
+ */
+export function movePart(doc: Y.Doc, partId: string, after: string | null): boolean {
+  const parts = partsOf(doc);
+  const part = parts.get(partId);
+  const order = ordered(parts);
+  if (part === undefined || !order.includes(partId) || after === partId) return false;
+  const rest = order.filter((id) => id !== partId);
+  const index = after === null ? -1 : rest.indexOf(after);
+  if (after !== null && index < 0) return false;
+  if (order[index + 1] === partId) return true;
+  doc.transact(() => part.set("order", keysAfter(parts, rest, index, 1)[0]), LOCAL);
+  return true;
+}
+
+const partNameSchema = partSchemas.fretted.shape.name;
+
+/** Rename a part, one command: 1 to 64 characters, else false and nothing set; false when the part is gone. The same name writes nothing. */
+export function setPartName(doc: Y.Doc, partId: string, name: string): boolean {
+  const part = partsOf(doc).get(partId);
+  if (part === undefined || name.length < 1 || !partNameSchema.safeParse(name).success) return false;
+  writeField(part, "name", partNameSchema, name);
+  return true;
+}
+
+/** A part whose kind reads as one of `kinds`; undefined when it is gone or of another kind. */
+function partOfKind(doc: Y.Doc, partId: string, kinds: readonly PartKind[]): YPart | undefined {
+  const part = partsOf(doc).get(partId);
+  const kind = partKindOf(part);
+  return kind !== undefined && kinds.includes(kind) ? part : undefined;
+}
+
+const tuningSchema = partSchemas.fretted.shape.tuning;
+
+/**
+ * Tune a fretted part, one command (docs/spec/commands.md, 7.2): the whole tuning replaced, from
+ * the first string, as many strings as it has. Frets stay, so the notes sound at new pitches.
+ * False, and nothing set, for another number of strings or a pitch out of 0 to 127, or for a part
+ * that is not fretted, is gone, or whose tuning cannot be read. The same tuning writes nothing.
+ */
+export function setTuning(doc: Y.Doc, partId: string, tuning: readonly number[]): boolean {
+  const part = partOfKind(doc, partId, ["fretted"]);
+  const valid = parsePlain(tuningSchema, [...tuning]);
+  if (part === undefined || !valid.success || valid.data.length !== stringCountOf(part)) return false;
+  writeField(part, "tuning", tuningSchema, valid.data);
+  return true;
+}
+
+const capoSchema = partSchemas.fretted.shape.capo;
+
+/** Put the capo of a fretted part on a fret, 0 (none) to 24, one command; false, and nothing set, otherwise or for any other part. The same fret writes nothing. */
+export function setCapo(doc: Y.Doc, partId: string, capo: number): boolean {
+  const part = partOfKind(doc, partId, ["fretted"]);
+  if (part === undefined || !capoSchema.safeParse(capo).success) return false;
+  writeField(part, "capo", capoSchema, capo);
+  return true;
+}
+
+const programSchema = partSchemas.fretted.shape.program;
+
+/**
+ * Give a part the General MIDI program, 0 to 127, it is played with, one command; false, and
+ * nothing set, otherwise or for drums, which play on the percussion channel. The same program
+ * writes nothing.
+ */
+export function setProgram(doc: Y.Doc, partId: string, program: number): boolean {
+  const part = partOfKind(doc, partId, ["fretted", "pitched"]);
+  if (part === undefined || !programSchema.safeParse(program).success) return false;
+  writeField(part, "program", programSchema, program);
+  return true;
+}
+
+const pitchedStavesSchema = partSchemas.pitched.shape.staves;
+
+/** A clef a staff of a pitched part can have. */
+export type PitchedClef = z.output<typeof pitchedStavesSchema>[number]["clef"];
+
+/** The clefs a staff of a pitched part can have, in the order the panel offers them. */
+export const PITCHED_CLEFS: readonly PitchedClef[] = pitchedStavesSchema.element.shape.clef.options;
+
+/**
+ * Give a staff of a pitched part (0 is the first) a clef, one command (docs/spec/commands.md,
+ * 7.2): the staves are replaced whole, as many as before. It only changes how the staff is drawn:
+ * notes are keyed by pitch. False, and nothing set, for a staff it has not or a clef it cannot
+ * have, or for a part that is not pitched: neither a fretted part's tablature nor the drum staff
+ * changes. Staves that cannot be read are read as the default (one treble staff) and written over
+ * from that. The same clef writes nothing.
+ */
+export function setClef(doc: Y.Doc, partId: string, staff: number, clef: PitchedClef): boolean {
+  const part = partOfKind(doc, partId, ["pitched"]);
+  if (part === undefined) return false;
+  const read = parsePlain(pitchedStavesSchema, part.get("staves"));
+  const staves = read.success ? read.data : KIND_DEFAULTS.pitched.staves;
+  if (!Number.isInteger(staff) || staff < 0 || staff >= staves.length) return false;
+  const next = parsePlain(
+    pitchedStavesSchema,
+    staves.map((each, index) => ({ clef: index === staff ? clef : each.clef })),
+  );
+  if (!next.success) return false;
+  writeField(part, "staves", pitchedStavesSchema, next.data);
+  return true;
+}
+
+/**
+ * How many bars of the score a part holds something in: a beat, a rest too, in any voice it has
+ * (docs/spec/commands.md, 7.1). What the member is told before deleting it.
+ */
+export function barsWithContent(score: ScoreJSON, partId: string): number {
+  const part = score.parts.find((each) => each.id === partId);
+  if (part === undefined) return 0;
+  return score.bars.filter((bar) => Object.values(part.content[bar.id] ?? {}).some((beats) => beats.length > 0)).length;
 }
 
 /**
@@ -942,4 +1427,19 @@ export function cursorAt(doc: Y.Doc, partId: string, barId: string, line = start
   const cursor: Cursor = { partId, barId, voice: MAIN_VOICE, beatId: null, at: "after", line };
   const voice = voiceAt(doc, cursor);
   return voice && voice.length > 0 ? { ...cursor, beatId: voice.get(0).get("id") as string, at: "on" } : cursor;
+}
+
+/**
+ * Where a cursor goes when its part or bar is gone (docs/spec/commands.md, section 2): the first
+ * place of the first bar of the first part that is drawn (its kind can be read), on the line it
+ * had there last (`lines`, by part), else where the part starts. Null for a score with no such
+ * part or no bars.
+ */
+export function startOfScore(doc: Y.Doc, lines: ReadonlyMap<string, number> = new Map()): Cursor | null {
+  const parts = partsOf(doc);
+  const partId = ordered(parts).find((id) => partKindOf(parts.get(id)) !== undefined);
+  const barId = ordered(barsOf(doc))[0];
+  if (partId === undefined || barId === undefined) return null;
+  const line = lines.get(partId);
+  return line === undefined ? cursorAt(doc, partId, barId) : cursorAt(doc, partId, barId, line);
 }

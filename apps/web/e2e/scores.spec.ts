@@ -1,7 +1,7 @@
 // Creating a score and opening it as the server keeps it (#6; docs/spec/routes.md, section 1;
 // docs/spec/security.md, section 8), with the parts, time signature and tempo chosen in its
 // dialog (#11; docs/spec/commands.md, section 10). The page is read through `window.__studioTest` only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import type { ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";

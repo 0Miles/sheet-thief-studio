@@ -2,7 +2,7 @@
 // Owner makes one on the settings page, a browser with no cookie opens it and follows the score
 // live, and revoking it disconnects that browser. The page is read through `window.__studioTest`
 // and the DOM only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import type { BeatJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
@@ -55,6 +55,17 @@ test("an Owner makes a read-only link; a browser without cookies opens it read-o
   await editing.keyboard.press("5");
   await expect(editing.locator('[data-sync="synced"]')).toBeVisible();
   await expect.poll(async () => (await firstBeats(guest)).map((beat) => beat.notes.s1?.fret)).toEqual([5]);
+
+  // The Owner changes the title in the title bar: the guest's page shows the new one.
+  const renamed = `${title}（改）`;
+  await editing.locator("[data-edit-title]").click();
+  await editing.locator("[data-title-form]").getByLabel(strings.score.heading.title).fill(renamed);
+  await editing.keyboard.press("Enter");
+  await expect(editing.getByRole("heading", { name: renamed })).toBeVisible();
+  await expect(guest.getByRole("heading", { name: renamed })).toBeVisible();
+  await expect(editing.locator('[data-sync="synced"]')).toBeVisible();
+  // The score has the keyboard again.
+  await editing.locator("[data-scroller]").focus();
 
   // From here on, whether the Owner's score page ever loses its connection, even for a moment.
   await editing.evaluate(() => {

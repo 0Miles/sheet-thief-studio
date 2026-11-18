@@ -3,28 +3,19 @@
 // without logging in.
 import { Forbidden } from "@hocuspocus/common";
 import { guestTicket, scoreLink } from "@studio/contracts";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Score } from "./db/models";
 import { notFound, rateLimited } from "./http";
 import { GUEST_TICKET_BY_IP, type RateLimiter } from "./rateLimit";
-import { membership } from "./scores";
+import { ownedScore } from "./scores";
+import { routedPath } from "./security";
 import { isToken, newToken } from "./tokens";
 
 /** The page of a read-only link and the API behind it, with the token as the segment after `s/`. */
 const LINK_PATH = /^(\/(?:api\/)?s\/)[^/]*/;
-
-/** The path of a URL as the router matches it: decoded. */
-function routedPath(url: string): string {
-  const path = url.split("?", 1)[0]!;
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
 
 /**
  * The URL as the logs may show it: without the token of a read-only link, in the path or in a
@@ -45,25 +36,18 @@ export async function scoreOfLink(token: string): Promise<Score | null> {
 }
 
 /**
- * The score when the session's account is its Owner; otherwise null, the refusal sent: 404 to
- * anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
+ * Give the score this link token (null: none), and return the one it had; `undefined`, nothing
+ * written, when the score is deleted. Its column only: the score's `updated_at` stays.
  */
-async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<Score | null> {
-  const member = await membership(request.params.id, request.account!.id);
-  if (member?.role === "owner") return member.score;
-  if (member === null) notFound(reply);
-  else reply.code(403).send({ code: "forbidden" });
-  return null;
-}
-
-/** Give the score this link token (null: none), and return the one it had. Its column only: the score's `updated_at` stays. */
-async function replaceLink(scoreId: string, token: string | null): Promise<string | null> {
+async function replaceLink(scoreId: string, token: string | null): Promise<string | null | undefined> {
   return Score.sequelize!.transaction(async (transaction) => {
     // Locked, so that two requests at once cannot both replace the same token and leave the
-    // connections of the one between them open.
-    const score = await Score.findByPk(scoreId, { attributes: ["id", "linkToken"], lock: transaction.LOCK.UPDATE, transaction });
+    // connections of the one between them open. Deleted since its Owner was checked: a deleted
+    // score gets no link, which a restoration would bring back with it (docs/spec/accounts.md, section 8).
+    const score = await Score.findOne({ where: { id: scoreId, deletedAt: null }, attributes: ["id", "linkToken"], lock: transaction.LOCK.UPDATE, transaction });
+    if (score === null) return undefined;
     await Score.update({ linkToken: token }, { where: { id: scoreId }, silent: true, transaction });
-    return score?.linkToken ?? null;
+    return score.linkToken;
   });
 }
 
@@ -93,14 +77,18 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
     const score = await ownedScore(request, reply);
     if (score === null) return reply;
     const token = newToken();
-    revoked(score.id, await replaceLink(score.id, token));
+    const before = await replaceLink(score.id, token);
+    if (before === undefined) return notFound(reply);
+    revoked(score.id, before);
     return scoreLink.parse({ token });
   });
 
   app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
     const score = await ownedScore(request, reply);
     if (score === null) return reply;
-    revoked(score.id, await replaceLink(score.id, null));
+    const before = await replaceLink(score.id, null);
+    if (before === undefined) return notFound(reply);
+    revoked(score.id, before);
     return reply.code(204).send();
   });
 

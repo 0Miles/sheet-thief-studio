@@ -2,7 +2,7 @@
 // toolbar's button taking the cursor to the next one, a box on a bar and a mark on a note in
 // every view, clear of the reserved areas. Every key goes through the real keyboard; the page is
 // read through `window.__studioTest` and the DOM only.
-import { type BrowserContextOptions, expect, type Page, test } from "@playwright/test";
+import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";

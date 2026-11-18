@@ -5,11 +5,13 @@ import {
   addPart,
   barsOf,
   beatPositionOf,
+  changeBeatAt,
   contentOf,
   createScore,
   type Cursor,
   cursorAt,
   docToJson,
+  durationStep,
   insertBars,
   insertBeat,
   LOCAL,
@@ -29,7 +31,7 @@ import {
   setFret,
   settleCursor,
   startLine,
-  stepDuration,
+  VOICE_NOT_OFFERED,
 } from "../src/index";
 import { appendBeat } from "./support";
 
@@ -319,7 +321,7 @@ test("in the append slot the cursor stands at the end of its beats: in another v
 test("a voice the cursor is in already leaves the cursor where it is; a fretted part's second voice is not offered", () => {
   const { doc, barIds, guitar, keys, beats } = band();
   const onGuitar: Cursor = { ...cursorAt(doc, guitar, barIds[0]!), beatId: beats.guitar[1]! };
-  expect(moveToVoice(doc, onGuitar, 1)).toBe("notOffered");
+  expect(moveToVoice(doc, onGuitar, 1)).toBe(VOICE_NOT_OFFERED);
   expect(moveToVoice(doc, onGuitar, 0)).toEqual(onGuitar);
   const lower: Cursor = { ...cursorAt(doc, keys, barIds[0]!), voice: "1:0", beatId: beats.lower[0]! };
   expect(moveToVoice(doc, lower, 1)).toMatchObject({ voice: "1:1", beatId: null, at: "after" });
@@ -417,16 +419,16 @@ test("a beat gets shorter or longer one note value at a time, within the values 
   const { doc, barIds, partId } = score();
   const cursor = cursorAt(doc, partId, barIds[0]!);
   const value = () => docToJson(doc).parts[0]!.content[barIds[0]!]!["0:0"]![0]!.value;
-  stepDuration(doc, cursor, 1);
+  changeBeatAt(doc, cursor, durationStep(1));
   expect(value()).toBe(8);
-  stepDuration(doc, cursor, -1);
-  stepDuration(doc, cursor, -1);
-  stepDuration(doc, cursor, -1);
+  changeBeatAt(doc, cursor, durationStep(-1));
+  changeBeatAt(doc, cursor, durationStep(-1));
+  changeBeatAt(doc, cursor, durationStep(-1));
   expect(value()).toBe(1);
   const before = docToJson(doc);
-  stepDuration(doc, cursor, -1);
+  changeBeatAt(doc, cursor, durationStep(-1));
   // An empty voice's append slot has no beat to change.
-  stepDuration(doc, cursorAt(doc, partId, barIds[1]!), 1);
+  changeBeatAt(doc, cursorAt(doc, partId, barIds[1]!), durationStep(1));
   expect(docToJson(doc)).toEqual(before);
 });
 
@@ -440,7 +442,7 @@ test("a change inside bars names those bars; anything else is a change of struct
   insertBeat(doc, cursorAt(doc, partId, barIds[1]!), { value: 8 });
   doc.transact(() => {
     setFret(doc, first, 7);
-    stepDuration(doc, cursorAt(doc, partId, barIds[2]!), 1);
+    changeBeatAt(doc, cursorAt(doc, partId, barIds[2]!), durationStep(1));
   }, LOCAL);
   insertBars(doc, { after: barIds[4]!, count: 1 });
   addPart(doc, { name: "Bass", kind: "fretted" });

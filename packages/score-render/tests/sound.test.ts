@@ -14,8 +14,11 @@ import {
   insertBeat,
   type NoteJSON,
   setNote,
+  setRepeat,
+  setVoltas,
   slapPopCycle,
   strokeCycle,
+  toggleAnacrusis,
 } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
@@ -228,6 +231,26 @@ test("a dynamic holds from its beat on, in its part and voice: the beats after i
   expect(soft[0]).toBeLessThan(velocityOf(59, 3840));
 });
 
+test("a dynamic written on a rest holds from the rest, drawn on a later beat or not: it sounds as written on the first note after it (#97)", () => {
+  /** A guitar: a rest, two notes, and a note in the next bar; `marked` is the beat given a pp (none: none). */
+  const played = (marked?: 0 | 1) => {
+    const doc = new Y.Doc();
+    createScore(doc, "Softly");
+    const barIds = insertBars(doc, { after: null, count: 2 });
+    const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+    let cursor = cursorAt(doc, guitar, barIds[0]!);
+    const beats = [null, 0, 1, 2].map((fret, index) => {
+      cursor = insertBeat(doc, { ...cursor, ...(index === 3 ? { barId: barIds[1]!, beatId: null } : {}), at: "after" }, { value: 4 });
+      if (fret !== null) setNote(doc, cursor, "s3", { fret });
+      return cursor;
+    });
+    if (marked !== undefined) changeBeatAt(doc, beats[marked]!, dynamicCycle);
+    return eventsOf(doc);
+  };
+  expect(played(0)).toEqual(played(1));
+  expect(played(0)).not.toEqual(played());
+});
+
 /** Every event alphaTab generates for the guitar of a score, in a form that can be compared: what, when, which key, how loud or how bent. */
 function eventsOf(doc: Y.Doc): string[] {
   const { score } = projectScore(docToJson(doc), settings);
@@ -344,4 +367,216 @@ test("each shape of bend goes its own way: up and held, up and down, struck bent
 
 test("a note with no bend is sent only the pitch bend that sets it to none", () => {
   expect(bendOf(undefined)).toEqual([0]);
+});
+
+/** The MIDI key the note on string 3 of a guitar (G3, MIDI 55 open) sounds when it is `note` (`midiOf`): the first note-on. */
+function keyOf(note: NoteJSON): number {
+  const { file } = midiOf(note);
+  return file.events.find((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent && event.tick === 0)!.noteKey;
+}
+
+test("a natural harmonic at the 12th fret sounds an octave over the open string; at the 7th and 5th, an octave and a fifth, and two octaves; at a fret with no node, the open string", () => {
+  const open = keyOf({ fret: 0 });
+  expect(open).toBe(55);
+  expect(keyOf({ fret: 12, harmonic: "natural" })).toBe(open + 12);
+  expect(keyOf({ fret: 7, harmonic: "natural" })).toBe(open + 19);
+  expect(keyOf({ fret: 5, harmonic: "natural" })).toBe(open + 24);
+  // A whole fret alphaTab's table gives no interval sounds the open string, as the spec says
+  // (schema.md, section 8). Fret 2 is one: the table's node near it is at 2.4, between frets, and
+  // a natural harmonic is given its own fret, 2.
+  for (const fret of [0, 1, 2, 11, 13, 25]) expect(keyOf({ fret, harmonic: "natural" })).toBe(open);
+});
+
+test("a pinch or an artificial harmonic sounds otherwise than the note plain: an octave over its fret", () => {
+  const plain = keyOf({ fret: 5 });
+  expect(plain).toBe(60);
+  for (const harmonic of ["pinch", "artificial"] as const) {
+    const key = keyOf({ fret: 5, harmonic });
+    expect(key).not.toBe(plain);
+    expect(key).toBe(plain + 12);
+  }
+});
+
+/** Four bars of 4/4 for a guitar, a quarter on its first string in each, fret 1 to 4: which bar sounds is the key less 64. */
+function fourBars() {
+  const doc = new Y.Doc();
+  createScore(doc, "Repeats");
+  const barIds = insertBars(doc, { after: null, count: 4 });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted" });
+  barIds.forEach((barId, index) => setNote(doc, insertBeat(doc, cursorAt(doc, guitar, barId), { value: 4 }), "s1", { fret: index + 1 }));
+  const at = (bar: number) => cursorAt(doc, guitar, barIds[bar]!);
+  const range = (first: number, last: number) => ({ kind: "bars" as const, partId: guitar, anchorBarId: barIds[first]!, focusBarId: barIds[last]! });
+  const barsPlayed = () => notesPlayed(doc).map((note) => note.key - 64);
+  return { doc, at, range, barsPlayed };
+}
+
+test("bars 2 to 3 repeated, played twice, bar 3 the first ending and bar 4 the second: the bars sound 1, 2, 3, 2, 4", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+  setRepeat(doc, at(1), range(1, 2), { times: 2 });
+  setVoltas(doc, at(2), null, [1]);
+  setVoltas(doc, at(3), null, [2]);
+  expect(barsPlayed()).toEqual([1, 2, 3, 2, 4]);
+  // One after another, a bar of 4/4 each.
+  expect(notesPlayed(doc).map((note) => note.tick)).toEqual([0, 1, 2, 3, 4].map((bar) => bar * 3840));
+});
+
+test("a repeat played three times in all plays its bars three times", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  setRepeat(doc, at(1), range(1, 2), { times: 3 });
+  expect(barsPlayed()).toEqual([1, 2, 3, 2, 3, 2, 3, 4]);
+});
+
+// Repeats two members can leave by setting them at once (docs/spec/commands.md, section 6): legal,
+// not flagged, played by alphaTab's rules. The orders are alphaTab 1.9.0's: an upgrade that plays
+// them otherwise shows here.
+test("repeats over 1-4 and 2-3 set at once, or over 1-3 and 2-4 (the same marks), play the inner one twice inside each pass of the outer", () => {
+  const pairs: [[number, number], [number, number]][] = [
+    [
+      [0, 3],
+      [1, 2],
+    ],
+    [
+      [0, 2],
+      [1, 3],
+    ],
+  ];
+  for (const [outer, inner] of pairs) {
+    const { doc, at, range, barsPlayed } = fourBars();
+    setRepeat(doc, at(outer[0]), range(...outer), { times: 2 });
+    setRepeat(doc, at(inner[0]), range(...inner), { times: 2 });
+    expect(barsPlayed()).toEqual([1, 2, 3, 2, 3, 4, 1, 2, 3, 2, 3, 4]);
+  }
+});
+
+test("the end of a repeat whose start was taken away goes back to the start of the score", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  setRepeat(doc, at(2), null, { times: 2 });
+  setRepeat(doc, at(2), null, { clear: "start" });
+  expect(barsPlayed()).toEqual([1, 2, 3, 1, 2, 3, 4]);
+});
+
+test("the start of a repeat whose end was taken away repeats nothing", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  setRepeat(doc, at(1), null, { times: 2 });
+  setRepeat(doc, at(1), null, { clear: "end" });
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+});
+
+test("a bar whose voltas are all past the count of its repeat never sounds", () => {
+  const { doc, at, range, barsPlayed } = fourBars();
+  setRepeat(doc, at(1), range(1, 2), { times: 2 });
+  setVoltas(doc, at(2), null, [3]);
+  expect(barsPlayed()).toEqual([1, 2, 2, 4]);
+});
+
+test("a pickup bar sounds only as long as what is in it: the bar after comes right after", () => {
+  const { doc, at, barsPlayed } = fourBars();
+  toggleAnacrusis(doc, at(0));
+  expect(barsPlayed()).toEqual([1, 2, 3, 4]);
+  expect(notesPlayed(doc).map((note) => note.tick)).toEqual([0, 960, 960 + 3840, 960 + 2 * 3840]);
+});
+
+/**
+ * The channels each part sounds on, in score order (docs/spec/playback.md, section 5): every part
+ * gets a bar with a plain note and a bent one, so that both its channels sound.
+ */
+function channelsHeard(doc: Y.Doc): { notes: number[]; bent: number[]; programs: Map<number, number[]> }[] {
+  const json = docToJson(doc);
+  const { score } = projectScore(json, settings);
+  const file = new alphaTab.midi.MidiFile();
+  new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file)).generate();
+  const programs = new Map<number, number[]>();
+  for (const event of file.events) {
+    if (event instanceof alphaTab.midi.ProgramChangeEvent) programs.set(event.channel, [...(programs.get(event.channel) ?? []), event.program]);
+  }
+  const ons = file.events.filter((event): event is alphaTab.midi.NoteOnEvent => event instanceof alphaTab.midi.NoteOnEvent);
+  return json.parts.map((_, track) => {
+    const own = ons.filter((event) => event.track === track);
+    return {
+      notes: [...new Set(own.filter((event) => event.tick === 0).map((event) => event.channel))],
+      bent: [...new Set(own.filter((event) => event.tick > 0).map((event) => event.channel))],
+      programs,
+    };
+  });
+}
+
+/** A score of one bar with parts of these kinds, each with a plain note, then a bent one but in the drums. */
+function partsOfKinds(kinds: ("fretted" | "pitched" | "percussion")[], doc = new Y.Doc()): { doc: Y.Doc; partIds: string[] } {
+  createScore(doc, "Band");
+  const [barId] = insertBars(doc, { after: null, count: 1, timeSig: { numerator: 2, denominator: 4 } });
+  const partIds = kinds.map((kind, index) => {
+    const partId = addPart(doc, { name: `Part ${index + 1}`, kind, ...(kind === "percussion" ? {} : { program: 20 + index }) });
+    writeChannelBar(doc, partId, barId!, kind);
+    return partId;
+  });
+  return { doc, partIds };
+}
+
+function writeChannelBar(doc: Y.Doc, partId: string, barId: string, kind: "fretted" | "pitched" | "percussion"): void {
+  const key = kind === "fretted" ? "s3" : kind === "pitched" ? "n60" : "p38";
+  const plain: NoteJSON = kind === "fretted" ? { fret: 5 } : {};
+  let cursor = insertBeat(doc, cursorAt(doc, partId, barId), { value: 4 });
+  setNote(doc, cursor, key, plain);
+  cursor = insertBeat(doc, { ...cursor, at: "after" }, { value: 4 });
+  setNote(doc, cursor, key, kind === "fretted" ? { fret: 5, bend: { type: "bend", semitones: 2 } } : plain);
+}
+
+test("sixteen parts, fifteen not drums: each sounds on a primary channel of its own, none 9; the drums on 9", () => {
+  const kinds = [...Array.from({ length: 8 }, () => "fretted" as const), "percussion" as const, ...Array.from({ length: 7 }, () => "pitched" as const)];
+  const heard = channelsHeard(partsOfKinds(kinds).doc);
+  const own = heard.filter((_, index) => kinds[index] !== "percussion").map((part) => part.notes);
+  expect(own).toEqual([[0], [1], [2], [3], [4], [5], [6], [7], [8], [10], [11], [12], [13], [14], [15]]);
+  expect(heard[8]?.notes).toEqual([9]);
+  expect(heard[8]?.bent).toEqual([9]);
+});
+
+test("three parts that are not drums each bend on a secondary channel of their own; fifteen bend on their primary", () => {
+  const three = channelsHeard(partsOfKinds(["fretted", "fretted", "percussion", "fretted"]).doc);
+  expect(three.map((part) => [part.notes, part.bent])).toEqual([
+    [[0], [3]],
+    [[1], [4]],
+    [[9], [9]],
+    [[2], [5]],
+  ]);
+  const fifteen = channelsHeard(partsOfKinds(Array.from({ length: 15 }, () => "fretted")).doc);
+  expect(fifteen.every((part) => part.bent.length === 1 && part.bent[0] === part.notes[0])).toBe(true);
+});
+
+test("the program on each channel is the program of the part that plays on it", () => {
+  const kinds = [...Array.from({ length: 3 }, () => "fretted" as const), "percussion" as const, ...Array.from({ length: 12 }, () => "pitched" as const)];
+  const { doc } = partsOfKinds(kinds);
+  const heard = channelsHeard(doc);
+  const { parts } = docToJson(doc);
+  parts.forEach((part, index) => {
+    for (const channel of [...(heard[index]?.notes ?? []), ...(heard[index]?.bent ?? [])]) expect(heard[index]?.programs.get(channel)).toEqual([part.program]);
+  });
+  expect(heard[3]?.programs.get(9)).toEqual([0]);
+  // And with secondaries: every program change on a channel is the one of its part.
+  const few = channelsHeard(partsOfKinds(["fretted", "pitched"]).doc);
+  expect(few[0]?.programs.get(0)).toEqual([20]);
+  expect(few[0]?.programs.get(2)).toEqual([20]);
+  expect(few[1]?.programs.get(1)).toEqual([21]);
+  expect(few[1]?.programs.get(3)).toEqual([21]);
+});
+
+test("parts added at once past the limit share the channels of the fifteenth, the same on both sides", () => {
+  // Two members each add parts to a score of fourteen at once: seventeen, sixteen not drums.
+  const one = partsOfKinds(Array.from({ length: 14 }, () => "pitched")).doc;
+  const other = new Y.Doc();
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(one));
+  const [barId] = docToJson(one).bars.map((bar) => bar.id);
+  writeChannelBar(one, addPart(one, { name: "Mine", kind: "fretted", program: 40 }), barId!, "fretted");
+  writeChannelBar(other, addPart(other, { name: "Theirs", kind: "fretted", program: 41 }), barId!, "fretted");
+  writeChannelBar(other, addPart(other, { name: "Drums", kind: "percussion" }), barId!, "percussion");
+  Y.applyUpdate(one, Y.encodeStateAsUpdate(other));
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(one));
+  expect(docToJson(one).parts.map((part) => part.id)).toEqual(docToJson(other).parts.map((part) => part.id));
+  const heard = channelsHeard(one);
+  expect(channelsHeard(other).map((part) => [part.notes, part.bent])).toEqual(heard.map((part) => [part.notes, part.bent]));
+  const kinds = docToJson(one).parts.map((part) => part.kind);
+  const own = heard.filter((_, index) => kinds[index] !== "percussion");
+  expect(own.map((part) => part.notes)).toEqual([[0], [1], [2], [3], [4], [5], [6], [7], [8], [10], [11], [12], [13], [14], [15], [15]]);
+  expect(own.every((part) => part.bent[0] === part.notes[0])).toBe(true);
+  expect(heard.filter((_, index) => kinds[index] === "percussion").map((part) => part.notes)).toEqual([[9]]);
 });

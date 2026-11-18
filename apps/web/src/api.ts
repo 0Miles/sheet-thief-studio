@@ -1,6 +1,8 @@
 // Calls to the server's JSON API (docs/spec/routes.md, section 3). The session cookie goes along
 // by itself: the page and the API share one origin.
-import { apiError, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
+import { apiError, type CollabTicket, collabTicket, type ErrorCode, type GuestTicket, guestTicket } from "@studio/contracts";
+
+import { errorText, strings } from "./strings";
 
 /** An answer other than 2xx, with the stable code the server sent (`internal_error` when none). */
 export class ApiError extends Error {
@@ -10,6 +12,11 @@ export class ApiError extends Error {
   ) {
     super(`${status} ${code}`);
   }
+}
+
+/** What to tell the person about a call that failed: the text of the code the server answered with, when it answered. */
+export function refusal(failure: unknown): string {
+  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
 }
 
 async function call(method: string, path: string, body?: unknown): Promise<Response> {
@@ -53,9 +60,12 @@ export function collabUrl(): string {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
 }
 
-/** A new collab ticket for the score. A provider's `token` calls it for every connection, reconnections included (ADR 0005). */
-export async function newCollabTicket(scoreId: string): Promise<string> {
-  return (await postFor(`/api/scores/${scoreId}/collab-ticket`, undefined, collabTicket)).ticket;
+/**
+ * A new collab ticket for the score, with the member's role as it is now. A provider's `token`
+ * calls it for every connection, reconnections included (ADR 0005).
+ */
+export function newCollabTicket(scoreId: string): Promise<CollabTicket> {
+  return postFor(`/api/scores/${scoreId}/collab-ticket`, undefined, collabTicket);
 }
 
 /** What a read-only link opens, with a new collab ticket: no session needed (docs/spec/collab.md, section 3). */

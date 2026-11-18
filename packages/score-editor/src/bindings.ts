@@ -26,6 +26,9 @@ export type SessionEffect =
   | "deselect"
   | "insertBeat"
   | "delete"
+  | "insertBarBefore"
+  | "insertBarAfter"
+  | "deleteBars"
   | "shorter"
   | "longer"
   | "dots"
@@ -40,6 +43,7 @@ export type SessionEffect =
   | "bend"
   | "bendUp"
   | "bendDown"
+  | "harmonic"
   | OnOffTechnique
   | "stroke"
   | "slapPop"
@@ -54,10 +58,10 @@ export type NativeEffect = "copy" | "cut" | "paste";
 
 /**
  * What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4),
- * and going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
- * section 4).
+ * going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
+ * section 4), and opening or closing the panel of the cursor's bar (keymap.md, section 5).
  */
-export type PageEffect = "playPause" | "nextFlag";
+export type PageEffect = "playPause" | "nextFlag" | "barPanel";
 
 /**
  * What a key does in a text box of the score (keymap.md, section 6): the text of a beat, typed
@@ -177,6 +181,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "insertBeat", context: "score", keys: ["Insert"], mac: ["Alt+Enter"], keymap: { other: ["Insert"], mac: ["Option+Enter"] } },
   // The key marked delete on a Mac keyboard sends Backspace, and comes first there; Fn+delete sends Delete.
   { effect: "delete", context: "score", keys: ["Delete", "Backspace"], mac: ["Backspace", "Delete"], keymap: both("Delete", "Backspace") },
+  // Structural commands, with Mod (keymap.md, section 2). A Mac has no Insert key: Return there
+  // (whose code is Enter); its delete key sends Backspace, and Fn+delete sends Delete.
+  { effect: "insertBarBefore", context: "score", keys: ["Mod+Insert"], mac: ["Mod+Enter"], keymap: { other: ["Ctrl+Insert"], mac: ["Cmd+Enter"] } },
+  { effect: "insertBarAfter", context: "score", keys: ["Mod+Shift+Insert"], mac: ["Mod+Shift+Enter"], keymap: { other: ["Ctrl+Shift+Insert"], mac: ["Cmd+Shift+Enter"] } },
+  { effect: "deleteBars", context: "score", keys: ["Mod+Delete"], mac: ["Mod+Backspace", "Mod+Delete"], keymap: { other: ["Ctrl+Delete"], mac: ["Cmd+Backspace", "Cmd+Delete"] } },
   // `+` is Shift+= on most keyboards: with or without Shift.
   { effect: "shorter", context: "score", keys: ["Equal", "Shift+Equal", "NumpadAdd"], repeat: true, keymap: both("Equal", "Shift+Equal", "NumpadAdd") },
   { effect: "longer", context: "score", keys: ["Minus", "NumpadSubtract"], repeat: true, keymap: both("Minus", "NumpadSubtract") },
@@ -197,6 +206,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "playPause", context: "score", keys: ["Space"], page: true, keymap: both("Space") },
   // Fn+F8 on a Mac, whose function keys are its own: the toolbar has the same button (keymap.md, section 5).
   { effect: "nextFlag", context: "score", keys: ["F8"], page: true, keymap: both("F8") },
+  // Fn+F2 on a Mac, as F8: the toolbar has the same button (keymap.md, section 5).
+  { effect: "barPanel", context: "score", keys: ["F2"], page: true, keymap: both("F2") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
@@ -214,6 +225,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "bend", context: "fretted", keys: ["Shift+KeyB"], keymap: both("Shift+KeyB") },
   { effect: "bendUp", context: "fretted", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "bendDown", context: "fretted", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
+  // A harmonic steps through natural, pinch and artificial back to none.
+  { effect: "harmonic", context: "fretted", keys: ["Shift+KeyN"], keymap: both("Shift+KeyN") },
   ...ON_OFF_TECHNIQUES.map((technique): SessionBinding => {
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };

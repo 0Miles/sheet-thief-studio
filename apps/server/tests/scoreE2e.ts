@@ -2,7 +2,8 @@
 // server runs (apps/web/e2e/pages.ts, `seedScore`): its Owner, its other members, how many bars
 // it starts with and the parts it has besides the first, or its whole content (the measure
 // suite's scores), given as JSON on stdin; prints its id.
-// Members are added here until the pages that add them exist (#13). The score is new, so no
+// Members are added here to set a test up; the page that adds them has a test of its own (#13,
+// apps/web/e2e/members.spec.ts). The score is new, so no
 // server holds it in memory yet. It refuses any database whose name does not end in `_e2e`.
 import { text } from "node:stream/consumers";
 

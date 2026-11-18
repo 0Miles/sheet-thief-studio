@@ -1,27 +1,41 @@
 // Sessions in Redis (docs/spec/security.md, section 1): `session:<id>` holds the account, and
 // `account-sessions:<accountId>` lists the ids of an account so that all of them can end at once.
 // Both slide: every use moves their expiry 30 days ahead.
+import { parsePlain } from "@studio/score-model";
 import type { Redis } from "ioredis";
+import { z } from "zod";
 
 import { isToken, newToken } from "./tokens";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+/** How a session logged in: a provider of the `identities` table (docs/spec/accounts.md, 1.1). */
+const loginMethod = z.enum(["password", "karyl-chan"]);
+export type LoginMethod = z.infer<typeof loginMethod>;
+
 export interface Session {
   id: string;
   accountId: string;
   createdAt: string;
+  /** Having to change a temporary password concerns the sessions that logged in with it only. */
+  via: LoginMethod;
 }
+
+/**
+ * What Redis holds of a session. One stored before sessions said how they logged in did so with
+ * a password, the only way there was.
+ */
+const storedSession = z.object({ accountId: z.string(), createdAt: z.string(), via: loginMethod.default("password") });
 
 /**
  * Which sessions ended: one (`sessionId`, on logging out), or every session of the account
  * (`sessionId` null) — and with them every connection the account has, those of a session that
  * was kept included (they reconnect with a new ticket), and those whose document is still loading.
+ *
+ * The account of one session is null when Redis did not say whose it was (its reply to deleting
+ * the session was lost, or what it stored cannot be read): the session id is all a listener has.
  */
-export interface SessionsEnded {
-  accountId: string;
-  sessionId: string | null;
-}
+export type SessionsEnded = { accountId: string; sessionId: null } | { accountId: string | null; sessionId: string };
 
 export type SessionsEndedListener = (ended: SessionsEnded) => void | Promise<void>;
 
@@ -43,9 +57,9 @@ export class Sessions {
     private readonly log: Logger,
   ) {}
 
-  async start(accountId: string): Promise<string> {
+  async start(accountId: string, via: LoginMethod): Promise<string> {
     const id = newToken();
-    const session = { accountId, createdAt: new Date().toISOString() };
+    const session: z.input<typeof storedSession> = { accountId, createdAt: new Date().toISOString(), via };
     await this.redis
       .multi()
       .set(sessionKey(id), JSON.stringify(session), "EX", SESSION_TTL_SECONDS)
@@ -55,15 +69,16 @@ export class Sessions {
     return id;
   }
 
-  /** The session with this id, its expiry moved 30 days ahead; null when there is none. */
+  /** The session with this id, its expiry moved 30 days ahead; null when there is none, or what is stored is no session. */
   async resume(id: string): Promise<Session | null> {
     if (!isToken(id)) return null;
     const stored = await this.redis.getex(sessionKey(id), "EX", SESSION_TTL_SECONDS);
     if (stored === null) return null;
-    const { accountId, createdAt } = JSON.parse(stored) as Omit<Session, "id">;
+    const session = readJson(stored, storedSession);
+    if (session === null) return null;
     // The list of the account's sessions outlives each of them.
-    await this.redis.expire(accountKey(accountId), SESSION_TTL_SECONDS);
-    return { id, accountId, createdAt };
+    await this.redis.expire(accountKey(session.accountId), SESSION_TTL_SECONDS);
+    return { id, ...session };
   }
 
   /** Whether the session with this id has not ended. Unlike `resume`, it does not move the expiry. */
@@ -78,14 +93,24 @@ export class Sessions {
   async end(which: SessionsToEnd): Promise<void> {
     if ("sessionId" in which) {
       if (!isToken(which.sessionId)) return;
-      const stored = await this.redis.getdel(sessionKey(which.sessionId));
-      if (stored === null) return;
-      const { accountId } = JSON.parse(stored) as Omit<Session, "id">;
-      // The session is gone from here on: its connections close even when the bookkeeping fails.
+      const { sessionId } = which;
+      // Once Redis is asked to delete the session, it may be gone whatever comes back (a reply
+      // can be lost after the deletion ran): its connections close unless Redis answered that
+      // there was no such session. Better closed than left open; the error still reaches the caller.
+      let stored: string | null;
       try {
-        await this.redis.srem(accountKey(accountId), which.sessionId);
+        stored = await this.redis.getdel(sessionKey(sessionId));
+      } catch (error) {
+        await this.#notify({ accountId: null, sessionId });
+        throw error;
+      }
+      if (stored === null) return;
+      // The session is gone from here on: its connections close even when the bookkeeping fails.
+      const accountId = this.#accountOf(stored);
+      try {
+        if (accountId !== null) await this.redis.srem(accountKey(accountId), sessionId);
       } finally {
-        await this.#notify({ accountId, sessionId: which.sessionId });
+        await this.#notify({ accountId, sessionId });
       }
       return;
     }
@@ -109,6 +134,14 @@ export class Sessions {
     return () => this.#listeners.delete(listener);
   }
 
+  /** Whose session this was, from what Redis stored; null (and logged) when that cannot be read. */
+  #accountOf(stored: string): string | null {
+    const accountId = readJson(stored, storedSession.pick({ accountId: true }))?.accountId;
+    if (accountId !== undefined) return accountId;
+    this.log.error({}, "an ended session's stored value names no account");
+    return null;
+  }
+
   async #notify(ended: SessionsEnded): Promise<void> {
     // The sessions have ended whatever a listener does: one failing does not stop the others.
     const results = await Promise.allSettled([...this.#listeners].map(async (listener) => listener(ended)));
@@ -116,4 +149,16 @@ export class Sessions {
       if (result.status === "rejected") this.log.error({ err: result.reason, ended }, "a listener to ended sessions failed");
     }
   }
+}
+
+/** What a stored string holds, read by the fields of its shape; null when it is not JSON or not of that shape. */
+function readJson<Schema extends z.ZodType>(stored: string, schema: Schema): z.output<Schema> | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(stored);
+  } catch {
+    return null;
+  }
+  const parsed = parsePlain(schema, value);
+  return parsed.success ? parsed.data : null;
 }

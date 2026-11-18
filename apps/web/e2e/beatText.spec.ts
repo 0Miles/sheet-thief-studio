@@ -1,7 +1,7 @@
 // The text over a beat (#30; docs/spec/keymap.md, 6.1; docs/spec/views.md, section 9): Enter opens
 // a box for it next to the cursor, Enter saves, Esc leaves, an empty text takes it away. Every key
 // goes through the real keyboard; the page is read through `window.__studioTest` and the DOM only.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 
 import { overlaps } from "../src/overlay";
 import { ADMIN, EDITOR } from "./environment";

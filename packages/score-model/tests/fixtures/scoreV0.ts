@@ -3,6 +3,8 @@
 // voices their content uses. Nothing real was ever stored in it.
 import * as Y from "yjs";
 
+import { type Migration, partsOf } from "../../src/index";
+
 /** A score of schema 0 as a version holds it. */
 export const SCORE_V0 = {
   schemaVersion: 0,
@@ -74,3 +76,18 @@ export function docV0(): Y.Doc {
   });
   return doc;
 }
+
+const STAVES: Record<string, { clef: string }[]> = { fretted: [{ clef: "tab" }], percussion: [{ clef: "neutral" }], pitched: [{ clef: "treble" }] };
+
+/** Schema 0 to 1, registered by tests only: every part gets the staves of its kind. */
+export const zeroToOne: Migration = {
+  from: 0,
+  to: 1,
+  doc(doc) {
+    for (const part of partsOf(doc).values()) part.set("staves", STAVES[part.get("kind") as string]);
+  },
+  json(json) {
+    const score = json as typeof SCORE_V0;
+    return { ...score, parts: score.parts.map((part) => ({ ...part, staves: STAVES[part.kind] })) };
+  },
+};

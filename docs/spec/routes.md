@@ -21,8 +21,8 @@
 | 找不到頁面 | 404 頁 | M1a |
 
 - 除了 `/login` 與 `/s/:token`，所有頁面都要登入；沒有 session 時導向 `/login`，登入後回到原本的頁面（補充）。M0 的技術驗證頁 `/spike/<團譜 id>` 與 `/local` 已在 #37 移除。
-- `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。
-- `/admin`：非 admin 看到 404 頁（補充）。
+- `must_change_password` 為真時，除了 `/account/password` 與登出，所有頁面都導向 `/account/password`。**補充**（#7）：原本要去的頁面帶在 `redirect` 參數裡，改完密碼後回到那一頁（沒有就是 `/`）；不必改密碼的人打開 `/account/password` 會被導到 `/account`。
+- `/admin`：非 admin 看到 404 頁（補充）。**補充**（#8）：網址維持 `/admin`；admin 的頁首有「後台」連結。
 - `/scores/:id/settings`（補充）：Owner 看到所有管理功能；Editor 與 Viewer 只看到成員名單與「離開團譜」。
 - `/scores/:id/versions` 和 `/scores/:id` 共用同一個 `Y.Doc` 與 provider（[`collab.md`](collab.md) 8.5）。
 
@@ -51,6 +51,7 @@
 - 成功但沒有內容時回 204。
 - 所有非 GET 請求都檢查 `Origin`（[`security.md`](security.md)）。
 - **補充**：`/api/*` 的 route 預設都要 session，沒有就回 401 `unauthenticated`；不需要登入的 route（登入、登出、訪客取 ticket）要在 route 設定上明確標成 public，忘了標就是要登入（#5）。
+- **補充**（#7）：要先改密碼的 session（3.1 的 `mustChangePassword` 為真）只能用 `GET /api/me`、`POST /api/me/password`、`POST /api/auth/logout`、`POST /api/auth/logout-all`；其他 `/api/*` 的 route 一律回 403 `password_change_required`。和 public 一樣是 route 設定上的標記（`beforePasswordChange`），忘了標就是被擋。
 - 資料形狀用 zod 定義在 `packages/contracts`；團譜文件的 schema 從 `score-model` re-export。
 
 ### 3.1 登入與自己的帳號
@@ -59,47 +60,57 @@
 |---|---|
 | `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
 | `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
-| `POST /api/auth/logout-all` | 刪除這個帳號所有的 session，關閉它的所有連線 |
-| `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401 |
-| `PATCH /api/me` | `{ displayName }` |
-| `POST /api/me/password` | `{ currentPassword?, newPassword }`；強制改密碼時不必 `currentPassword`。成功後 `mustChangePassword` 變成 false |
+| `POST /api/auth/logout-all` | 刪除這個帳號所有的 session（包含目前這一個，並清掉 cookie），關閉它的所有連線 → 204 |
+| `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401。**補充**（#7）：`mustChangePassword` 說的是這個 session 要不要先改密碼：帳號的 `must_change_password` 為真，而且這個 session 是用密碼登入的；karyl-chan 登入的 session 一律是 false |
+| `PATCH /api/me` | `{ displayName }` → 改完之後的帳號，形狀同 `GET /api/me`（補充，#7） |
+| `POST /api/me/password` | `{ currentPassword?, newPassword }` → 204；強制改密碼時不必 `currentPassword`（給了也不檢查）。成功後 `mustChangePassword` 變成 false，保留目前的 session，其餘失效（密碼已改而其餘 session 刪除失敗時仍回 204，伺服器記 error log）。**補充**（#7）：不是強制改密碼時，沒給 `currentPassword` 回 400 `invalid_request`，給錯回 403 `wrong_current_password`；429 `rate_limited` |
 
 ### 3.2 後台（只有 admin）
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式 |
-| `POST /api/admin/accounts` | `{ username, displayName, password }` → 201；帳號名稱重複時 409 `username_taken` |
-| `POST /api/admin/accounts/:id/reset-password` | `{ password }`；刪除該帳號的所有 session、關閉連線 |
-| `POST /api/admin/accounts/:id/disable`、`/enable` | 停用時刪除 session、關閉連線；不能停用自己（409 `cannot_disable_self`） |
+| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式。**補充**（#8）：`{ accounts: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`isAdmin`、`disabled`、`identities: [{ id, provider }]`，依帳號名稱排序 |
+| `POST /api/admin/accounts` | `{ username, displayName, password }` → 201，回建立的帳號（形狀同列表的一筆，補充，#8）；帳號名稱重複時 409 `username_taken`。新帳號一律不是 admin、`must_change_password` 為真 |
+| `POST /api/admin/accounts/:id/reset-password` | `{ password }` → 204；`must_change_password` 設為真，刪除該帳號的所有 session、關閉連線 |
+| `POST /api/admin/accounts/:id/disable`、`/enable` | → 204。停用時刪除 session、關閉連線；不能停用自己（409 `cannot_disable_self`）。**補充**（#8）：已經停用的再停用、啟用中的再啟用都回 204，不改變什麼 |
 | `GET /api/admin/orphaned-scores` | Owner 已停用的團譜：標題、Owner、啟用中的成員 |
 | `POST /api/admin/scores/:id/transfer` | `{ accountId }`：只允許「Owner 已停用」且接收者是啟用中的現有成員 |
 | `POST /api/admin/accounts/:id/identities` | M5：`{ provider: "karyl-chan", subject }`；同一個 `subject` 已綁到別的帳號時 409 `identity_taken` |
 | `DELETE /api/admin/accounts/:id/identities/:identityId` | M5：解除綁定（不能解除密碼那一筆） |
+
+- **補充**（#16）：`GET /api/admin/orphaned-scores` 回 `{ scores: [...] }`，每一筆是 `id`、`title`、`owner: { accountId, username, displayName }`、`members: [{ accountId, username, displayName, role }]`（Owner 以外、啟用中的成員，依加入的先後），依 Owner 的帳號名稱、再依標題排序；沒有啟用中成員的團譜也列出（`members` 是空陣列），只是不能轉移。已刪除的團譜不列出。形狀在 contracts 的 `orphanedScoreList`。
+- **補充**（#16）：`POST /api/admin/scores/:id/transfer` 成功回 204。團譜不存在、已刪除、`:id` 不是 UUID、或 Owner 沒有停用時一律 404 `not_found`（對 admin 而言，Owner 啟用中的團譜和不存在一樣，不透露它存在），這個檢查在 body 驗證之前；之後與 Owner 自己的轉移相同：對方不是成員 404 `not_found`，對方是 Owner 或停用的帳號、body 不合法 400 `invalid_request`。走 `members.ts` 的 `changeMembers`（`{ by: "admin" }`）與共用的 `handOver`：鎖住團譜列之後再確認一次 Owner 已停用（Owner 的帳號列以 `FOR SHARE` 鎖住，同時被啟用的話要等轉移結束），接收者的帳號列同樣 `FOR SHARE`。交易完成後以 `ResetConnection` 關閉原 Owner 與新 Owner 對這份團譜的連線。
+- **補充**（#8）：非 admin 呼叫 `/api/admin/` 底下任何 route 都回 404 `not_found`（[`security.md`](security.md) 第 8 節）；這是對整個路徑前綴的檢查，之後加在底下的 route 不必各自檢查。沒有 session 仍然是 401，要先改密碼的 session 仍然是 403 `password_change_required`：這兩個檢查在前。帳號不存在、`:id` 不是 UUID 時回 404 `not_found`。
 
 ### 3.3 團譜
 
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
 | `GET /api/scores` | `{ scores: [...] }`：我是成員的團譜，每一筆是 `id`、`title`、`artist`、`role`、`updatedAt`，依 `updatedAt` 由新到舊 | 任何帳號 |
-| `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜 | 任何帳號 |
+| `GET /api/scores/deleted` | 我是 Owner、30 天內刪除的團譜。**補充**（#15）：`{ scores: [...] }`，每一筆是 `id`、`title`、`artist`、`deletedAt`，依 `deletedAt` 由新到舊；不是任何已刪除團譜的 Owner 時是空陣列 | 任何帳號 |
 | `POST /api/scores` | `{ title, parts: [{ preset, count, tuning? }], timeSig, tempo, bars }` → 201 `{ id }`。伺服器建立文件與初始內容（[`commands.md`](commands.md) 第 10 節）。**補充**（#11）：`preset` 是 `PART_PRESETS` 的 id；`tuning` 只給 fretted，弦數要和預設相同，不給就是預設的調弦；`title` 以外都可以省略，省略時是一個「吉他 6 弦」、4/4、120、8 小節（`NEW_SCORE`）；第一小節一定寫上 `tempo`。驗證在 contracts 的 `createScoreRequest` | 任何帳號 |
 | `POST /api/scores/import` | M5：`{ score: ScoreJSON }` → 201 `{ id }`。伺服器用 zod 驗證後以 `jsonToDoc` 建立（[`import-export.md`](import-export.md)） | 任何帳號 |
 | `GET /api/scores/:id` | `{ id, title, artist, role, owner: { accountId, displayName } }` | 成員 |
 | `POST /api/scores/:id/collab-ticket` | → `{ ticket, role }`（[`collab.md`](collab.md) 第 3 節） | 成員 |
-| `DELETE /api/scores/:id` | 軟刪除 | Owner |
-| `POST /api/scores/:id/restore` | 從「已刪除」還原 | Owner |
-| `POST /api/scores/:id/transfer` | `{ accountId }`：轉移擁有權 | Owner |
-| `POST /api/scores/:id/leave` | 離開團譜 | Editor、Viewer |
+| `DELETE /api/scores/:id` | 軟刪除 → 204。**補充**（#15）：非成員、已刪除的團譜回 404 `not_found`，其他成員回 403 `forbidden` | Owner |
+| `POST /api/scores/:id/restore` | 從「已刪除」還原 → 204。**補充**（#15）：Owner 以外的任何人（包含這份團譜的其他成員）、沒有被刪除的團譜、刪除超過 30 天的團譜，一律回 404 `not_found`（[`security.md`](security.md) 第 8 節） | Owner |
+| `POST /api/scores/:id/transfer` | `{ accountId }`：轉移擁有權 → 204。**補充**（#13）：對方不是成員回 404 `not_found`；對方是自己或是停用的帳號回 400 `invalid_request`（設定頁不提供這兩種） | Owner |
+| `POST /api/scores/:id/leave` | 離開團譜 → 204。Owner 回 409 `owner_cannot_leave` | Editor、Viewer |
 
 ### 3.4 成員
 
 | 方法與路徑 | 說明 | 角色 |
 |---|---|---|
-| `GET /api/scores/:id/members` | `accountId`、`username`、`displayName`、`role`、`disabled` | 成員 |
-| `POST /api/scores/:id/members` | `{ username, role }`：加入成員。404 `account_not_found`、409 `already_member`、429 | Owner |
-| `PATCH /api/scores/:id/members/:accountId` | `{ role: "editor" \| "viewer" }` | Owner |
-| `DELETE /api/scores/:id/members/:accountId` | 移除成員 | Owner |
+| `GET /api/scores/:id/members` | `{ members: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`role`、`disabled`。**補充**（#13）：Owner 排第一，其餘依加入的先後 | 成員 |
+| `POST /api/scores/:id/members` | `{ username, role }`：加入成員 → 201，回這名成員（同上的形狀）。`role` 省略時是 `"editor"`。404 `account_not_found`、409 `already_member`（加入自己也是）、429 | Owner |
+| `PATCH /api/scores/:id/members/:accountId` | `{ role: "editor" \| "viewer" }` → 200，回這名成員 | Owner |
+| `DELETE /api/scores/:id/members/:accountId` | 移除成員 → 204 | Owner |
+
+- **補充**（#13）：`:accountId` 不是這份團譜的成員時回 404 `not_found`。Owner 的角色只能經由轉移改變：對 Owner 自己那一筆 `PATCH` 或 `DELETE` 回 409 `owner_cannot_leave`。
+- **補充**（#13）：先檢查角色，再檢查內容：不是 Owner 的成員一律 403 `forbidden`、非成員一律 404，不論內容對不對。加入成員的速率限制只計 Owner 送出的、內容合法的查詢，找到帳號的也算（[`security.md`](security.md) 第 4 節）。
+- **補充**（#13）：加入成員時，帳號名稱和登入時一樣讀法：去掉前後空白、轉成小寫（`Ben` 就是 `ben`）。
+- **補充**（#13）：改變成員的每個操作都在一筆交易裡先鎖住這份團譜的列，所以同時送到的兩個操作不會讓團譜沒有 Owner。轉移時接收者的帳號列以 `FOR SHARE` 鎖住，同時被停用的帳號不會成為 Owner；轉移沒有恰好改到兩筆時整筆交易撤回。之後會動 `score_members` 的操作（admin 的轉移）共用同一個入口（`members.ts` 的 `changeMembers`）。
+- **補充**（#13）：角色改變時（降級與升級都是）、被移除、離開、轉移（雙方），伺服器在交易完成後關閉該帳號對這份團譜的連線（[`accounts.md`](accounts.md) 第 9 節）。升級也關，是為了讓連線的唯讀與否永遠等於放行當時的角色。
 
 ### 3.5 唯讀連結
 
@@ -154,6 +165,7 @@
 | `unauthenticated` | 401 | 沒有 session 或已失效 |
 | `invalid_credentials` | 401 | 帳號名稱或密碼錯誤，或帳號已停用（三者不區分） |
 | `password_change_required` | 403 | 要先改密碼 |
+| `wrong_current_password` | 403 | 自己改密碼時，目前的密碼不對（補充，#7；不用 401，session 仍然有效） |
 | `bad_origin` | 403 | Origin 檢查失敗 |
 | `forbidden` | 403 | 是成員，但角色不夠 |
 | `not_found` | 404 | 不存在，或不是成員（兩者不區分） |

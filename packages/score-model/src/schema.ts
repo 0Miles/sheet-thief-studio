@@ -31,6 +31,12 @@ export const MAX_BARS = 1000;
 /** The longest title of a score (docs/spec/commands.md, 7.3). */
 export const MAX_TITLE = 100;
 
+/** The longest name of a part (docs/spec/schema.md, sections 4 and 13). */
+export const MAX_PART_NAME = 64;
+
+/** The longest name of a section (docs/spec/schema.md, section 3). */
+export const MAX_SECTION_NAME = 64;
+
 /** The dynamics a beat can be marked with, softest first. */
 export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
 
@@ -45,6 +51,10 @@ export type SlideIn = (typeof SLIDE_INS)[number];
 /** The preset shapes of a bend, in the order Shift+B steps through them (docs/spec/commands.md, 5.4). */
 export const BEND_TYPES = ["bend", "bendRelease", "preBend", "preBendRelease"] as const;
 export type BendType = (typeof BEND_TYPES)[number];
+
+/** The harmonics of a note, in the order Shift+N steps through them (docs/spec/commands.md, 5.4). */
+export const HARMONICS = ["natural", "pinch", "artificial"] as const;
+export type Harmonic = (typeof HARMONICS)[number];
 
 /** How far a bend goes, in semitones: 1 to 4, a new one 2 (docs/spec/schema.md, section 8). */
 export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
@@ -64,6 +74,50 @@ function text(min: number, max: number) {
 }
 
 const midi = z.int().min(0).max(127);
+
+/**
+ * How deep lists and objects go in a legal value of the document: a note with a bend, the staves
+ * of a part (a list of objects), the fields of a beat with a tuplet.
+ */
+const PLAIN_DEPTH = 2;
+
+/** What stands for a list or an object nested deeper than any legal value: no schema reads it. */
+const TOO_DEEP = Symbol("nested too deep");
+
+/**
+ * A value of the document as every member holds it (#78): the fields it has of its own, but one
+ * named __proto__. The member who writes such a field holds it as a field; the others decode it
+ * as the prototype of the value (lib0's readAny), and zod would read the fields of a prototype.
+ * Copied down to the depth of a legal value only, so that a value nested without end costs
+ * nothing and cannot overflow the stack: fields no schema knows are dropped by zod whatever they
+ * hold. A shared type is not a value.
+ */
+function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
+  if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
+  const fields: [string, unknown][] = [];
+  for (const [name, field] of Object.entries(value)) if (name !== "__proto__") fields.push([name, plain(field, depth - 1)]);
+  return Object.fromEntries(fields);
+}
+
+/**
+ * Check a value stored in the document against its schema: every read of one goes through here,
+ * so that all members read it alike (see `plain`). Never throws.
+ */
+export function parsePlain<Schema extends z.ZodType>(schema: Schema, value: unknown): z.ZodSafeParseResult<z.output<Schema>> {
+  return schema.safeParse(plain(value));
+}
+
+/**
+ * A record, keyed by any string but __proto__: zod's records leave that key out without checking
+ * what it holds, so a score or a fragment with one would be read without it. It is refused.
+ */
+export function recordOf<Value extends z.ZodType>(value: Value) {
+  return z
+    .custom<Record<string, unknown>>((record) => typeof record !== "object" || record === null || !Object.hasOwn(record, "__proto__"), "a key named __proto__")
+    .pipe(z.record(z.string(), value));
+}
 
 export const partKindSchema = z.enum(["fretted", "percussion", "pitched"]);
 export type PartKind = z.infer<typeof partKindSchema>;
@@ -117,11 +171,17 @@ export const barSchema = z.object({
     .min(1)
     .refine((passes) => passes.every((pass, index) => index === 0 || pass > (passes[index - 1] as number)), "in increasing order")
     .optional(),
-  section: text(1, 64).optional(),
+  section: text(1, MAX_SECTION_NAME).optional(),
   /** A pickup bar: only the first bar can be one. */
   anacrusis: z.literal(true).optional(),
 });
 export type BarJSON = z.infer<typeof barSchema>;
+
+/** Quarter notes per minute of a score whose first bar gives no tempo (docs/spec/schema.md, section 3). */
+export const DEFAULT_TEMPO = 120;
+
+/** The key of a score whose bars give none: C major, no sharps or flats. */
+export const DEFAULT_KEY_SIG: Readonly<KeySignature> = Object.freeze({ fifths: 0, mode: "major" });
 
 // Notes and beats -------------------------------------------------------------------------------
 
@@ -146,7 +206,8 @@ export const noteSchema = z.object({
   palmMute: z.literal(true).optional(),
   letRing: z.literal(true).optional(),
   tap: z.literal(true).optional(),
-  harmonic: z.enum(["natural", "pinch", "artificial"]).optional(),
+  /** A natural harmonic sounds the node of its fret on the open string; pinch and artificial an octave over the fret. */
+  harmonic: z.enum(HARMONICS).optional(),
   /** Pitched parts: how the pitch of the key is spelled ("C#", "Db", "F##" or "Fx", "Bbb"). */
   spell: z
     .string()
@@ -174,7 +235,7 @@ const beatFieldsSchema = z.object({
 /** Every field a beat can have, whatever its part. */
 export const beatSchema = beatFieldsSchema.extend({
   /** Keyed by position: "s3" a string, "p38" a drum piece, "n60" a pitch. Empty is a rest. */
-  notes: z.record(z.string(), noteSchema),
+  notes: recordOf(noteSchema),
 });
 export type BeatJSON = z.infer<typeof beatSchema>;
 
@@ -261,7 +322,7 @@ export function stringOfNoteKey(key: string): number | undefined {
  */
 export function readNote(kind: PartKind, strings: number, key: string, value: unknown): NoteJSON | undefined {
   if (!isNoteKey(kind, strings, key) || value instanceof Y.AbstractType) return undefined;
-  const note = kindSchemas[kind].note.safeParse(value);
+  const note = parsePlain(kindSchemas[kind].note, value);
   return note.success ? note.data : undefined;
 }
 
@@ -289,10 +350,10 @@ export function voiceKeys(staves: number): string[] {
 // Parts -----------------------------------------------------------------------------------------
 
 /** Bar id, then voice ("staff:voice"), to its beats. A bar or voice left out is empty. */
-const contentSchema = z.record(z.string(), z.record(z.string(), z.array(beatSchema)));
+const contentSchema = recordOf(recordOf(z.array(beatSchema)));
 
 /** The name may be empty when read: an unreadable name reads as empty (section 11). */
-const partName = text(0, 64);
+const partName = text(0, MAX_PART_NAME);
 
 /**
  * The fields of a part of each kind. `tuning` is the MIDI pitch of each open string, from the
@@ -407,6 +468,54 @@ export const scoreSchema = metaSchema
   });
 export type ScoreJSON = z.infer<typeof scoreSchema>;
 
+/** The key in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_KEY_SIG`; none for a bar not in the score. */
+export function keySigAt(score: ScoreJSON, barId: string): KeySignature | undefined {
+  const index = score.bars.findIndex((bar) => bar.id === barId);
+  if (index < 0) return undefined;
+  return keySigsOf(score.bars)[index];
+}
+
+/**
+ * The key in force in each bar, in order: from the bar that changes it on, `DEFAULT_KEY_SIG` before
+ * any does. Each a copy of its own: changing one changes neither the score nor another bar's.
+ */
+export function keySigsOf(bars: readonly BarJSON[]): KeySignature[] {
+  let key: Readonly<KeySignature> = DEFAULT_KEY_SIG;
+  return bars.map((bar) => {
+    key = bar.keySig ?? key;
+    return { ...key };
+  });
+}
+
+/**
+ * How many times in all the repeat that voltas on `barIds` belong to is played
+ * (docs/spec/commands.md, section 6): the count of the repeat that ends inside the run of bars
+ * with voltas around them (they count as having some), else of one that ends on the bar just
+ * before that run; 1, played once, when no repeat does. A pass past it never sounds. Bars not in
+ * the score are left out; none at all is 1.
+ */
+export function voltaRepeatTimes(score: ScoreJSON, barIds: readonly string[]): number {
+  const indexes = barIds.map((barId) => score.bars.findIndex((bar) => bar.id === barId)).filter((index) => index >= 0);
+  if (indexes.length === 0) return 1;
+  let first = Math.min(...indexes);
+  let last = Math.max(...indexes);
+  while (first > 0 && score.bars[first - 1]?.voltas !== undefined) first--;
+  while (last < score.bars.length - 1 && score.bars[last + 1]?.voltas !== undefined) last++;
+  const ending = score.bars.slice(first, last + 1).find((bar) => bar.repeatEnd !== undefined) ?? score.bars[first - 1];
+  return ending?.repeatEnd ?? 1;
+}
+
+/** The tempo in force in a bar: that of the last bar up to it that changes it, else `DEFAULT_TEMPO`; none for a bar not in the score. */
+export function tempoAt(score: ScoreJSON, barId: string): number | undefined {
+  const index = score.bars.findIndex((bar) => bar.id === barId);
+  if (index < 0) return undefined;
+  for (let at = index; at >= 0; at--) {
+    const tempo = score.bars[at]?.tempo;
+    if (tempo !== undefined) return tempo;
+  }
+  return DEFAULT_TEMPO;
+}
+
 /** How many bytes a string takes in UTF-8. */
 function utf8Length(value: string): number {
   let bytes = 0;
@@ -504,13 +613,13 @@ export type BeatDuration = Duration & { dots: 0 | 1 | 2 };
 
 /** The duration of a beat as stored; undefined when it cannot be read. */
 export function durationOf(beat: YBeat): BeatDuration | undefined {
-  const duration = durationSchema.safeParse({ value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  const duration = parsePlain(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
   return duration.success ? duration.data : undefined;
 }
 
 /** The kind of a part, or undefined when it is not a part or its kind cannot be read (docs/spec/schema.md, section 11). */
 export function partKindOf(part: unknown): PartKind | undefined {
-  const kind = partKindSchema.safeParse(part instanceof Y.Map ? part.get("kind") : undefined);
+  const kind = parsePlain(partKindSchema, part instanceof Y.Map ? part.get("kind") : undefined);
   return kind.success ? kind.data : undefined;
 }
 
@@ -541,15 +650,34 @@ export function voicesOffered(kind: PartKind | undefined): 1 | 2 {
 export function staffCountOf(part: YPart): number {
   const kind = partKindOf(part);
   if (kind === undefined) return 1;
-  const staves = partSchemas[kind].shape.staves.safeParse(part.get("staves"));
+  const staves = parsePlain(partSchemas[kind].shape.staves, part.get("staves"));
   return staves.success ? staves.data.length : KIND_DEFAULTS[kind].staves.length;
 }
 
 /** How many strings a part has, as reading counts them: those of its tuning; none when its kind or its tuning cannot be read. */
 export function stringCountOf(part: YPart): number {
   const kind = partKindOf(part);
-  const tuning = kind === undefined ? undefined : partSchemas[kind].shape.tuning.safeParse(part.get("tuning"));
+  const tuning = kind === undefined ? undefined : parsePlain(partSchemas[kind].shape.tuning, part.get("tuning"));
   return tuning?.success ? tuning.data.length : 0;
+}
+
+/**
+ * The voices of a bar's content that reading reads (docs/spec/schema.md, section 11), in the
+ * order of `voiceKeys`, whatever order the map holds them in: not a voice of a staff the part has
+ * not (`isVoiceKey`), nor one stored as something else than a list of beats. Reading, the
+ * commands over a bar range and nothing else go through it, so that all see the same voices.
+ */
+export function readableVoicesIn(voices: Y.Map<unknown>, staves: number): [key: string, voice: YVoice][] {
+  return voiceKeys(staves).flatMap((key) => {
+    const voice: unknown = voices.get(key);
+    return voice instanceof Y.Array ? [[key, voice as YVoice] as [string, YVoice]] : [];
+  });
+}
+
+/** The voices of a part in a bar that reading reads (`readableVoicesIn`); none when the part has no content for that bar it can read. */
+export function readableVoicesOf(part: YPart, barId: string): [key: string, voice: YVoice][] {
+  const voices: unknown = contentMapOf(part)?.get(barId);
+  return voices instanceof Y.Map ? readableVoicesIn(voices, staffCountOf(part)) : [];
 }
 
 /**

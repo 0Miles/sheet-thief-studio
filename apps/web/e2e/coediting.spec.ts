@@ -1,7 +1,7 @@
 // Two members, each logged in in a browser of their own, typing in the same bar of one score at
 // the same time, in the edit view (docs/ROADMAP.md, question S4; docs/spec/commands.md, section 2).
 // Every key goes through the real keyboard; the pages are read through `window.__studioTest`.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import type { BeatJSON, ScoreJSON } from "@studio/score-model";
 
 import { ADMIN, EDITOR } from "./environment";

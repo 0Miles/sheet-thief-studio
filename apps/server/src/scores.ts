@@ -2,13 +2,14 @@
 // creating one, listing mine, opening one, and the collab ticket to edit it.
 import { collabTicket, createdScore, createScoreRequest, eachPart, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
 import { addPart, barsOf, createScore, insertBars, PART_PRESETS, partNames, SCHEMA_VERSION } from "@studio/score-model";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Account, Score, ScoreMember } from "./db/models";
-import { invalidRequest, isUuid, notFound } from "./http";
+import { invalidRequest, isUuid, notFound, rateLimited } from "./http";
+import { MEMBER_TICKET_BY_ACCOUNT, type RateLimiter } from "./rateLimit";
 
 /** The score with this id, unless it does not exist or is deleted. */
 export async function liveScore(id: string): Promise<Score | null> {
@@ -25,6 +26,18 @@ export async function membership(scoreId: string, accountId: string): Promise<{ 
     include: [{ model: Score, as: "score", where: { deletedAt: null }, required: true, attributes: ["id", "title", "artist"] }],
   });
   return member === null ? null : { score: member.get("score") as Score, role: member.role };
+}
+
+/**
+ * The score when the session's account is its Owner; otherwise null, the refusal sent: 404 to
+ * anyone who is no member (docs/spec/security.md, section 8), 403 to the other members.
+ */
+export async function ownedScore(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply): Promise<Score | null> {
+  const member = await membership(request.params.id, request.account!.id);
+  if (member?.role === "owner") return member.score;
+  if (member === null) notFound(reply);
+  else reply.code(403).send({ code: "forbidden" });
+  return null;
 }
 
 /**
@@ -65,7 +78,7 @@ async function makeScore(collab: Collab, ownerId: string, request: NewScore): Pr
   return score.id;
 }
 
-export function registerScores(app: FastifyInstance, { collab, tickets }: { collab: Collab; tickets: CollabTickets }): void {
+export function registerScores(app: FastifyInstance, { collab, tickets, limiter }: { collab: Collab; tickets: CollabTickets; limiter: RateLimiter }): void {
   app.post("/api/scores", async (request, reply) => {
     const body = createScoreRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
@@ -103,6 +116,9 @@ export function registerScores(app: FastifyInstance, { collab, tickets }: { coll
   });
 
   app.post<{ Params: { id: string } }>("/api/scores/:id/collab-ticket", async (request, reply) => {
+    // Every attempt counts, whatever the score: a provider asks again at each reconnection.
+    const attempt = await limiter.take(MEMBER_TICKET_BY_ACCOUNT, request.account!.id);
+    if (!attempt.ok) return rateLimited(reply, attempt.retryAfterSeconds);
     const member = await membership(request.params.id, request.account!.id);
     if (member === null) return notFound(reply);
     const ticket = await tickets.issue({ kind: "member", scoreId: member.score.id, accountId: request.account!.id, sessionId: request.session!.id, role: member.role });

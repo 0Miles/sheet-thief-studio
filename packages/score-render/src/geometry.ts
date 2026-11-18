@@ -192,6 +192,38 @@ export function selectionRects(lookup: BoundsLookup, projection: Projection, par
 }
 
 /**
+ * Where a structural command's bars are drawn (docs/spec/commands.md, section 6): one box for each
+ * system they are on, from the first bar to the last there, over every part drawn, so that it
+ * shows the command works on all of them. Each part's staves reach as far as its cursor does, as a
+ * bar range's box does. None when neither end is drawn.
+ */
+export function barRangeRects(lookup: BoundsLookup, projection: Projection, parts: ReadonlyMap<string, PartShape>, anchorBarId: string, focusBarId: string, metrics: StaffMetrics): Rect[] {
+  const anchor = projection.barIndex.get(anchorBarId);
+  const focus = projection.barIndex.get(focusBarId);
+  if (anchor === undefined || focus === undefined) return [];
+  const bySystem = new Map<unknown, Rect[]>();
+  for (let index = Math.min(anchor, focus); index <= Math.max(anchor, focus); index++) {
+    const masterBar = lookup.findMasterBarByIndex(index);
+    if (masterBar === null) continue;
+    for (const item of masterBar.bars) {
+      const shape = parts.get(projection.partIds[item.bar.staff.track.index] ?? "");
+      if (shape === undefined) continue;
+      const box = around([item.visualBounds], cursorHeight(shape, metrics) / 2 + metrics.lineThickness);
+      const system = bySystem.get(masterBar.staffSystemBounds);
+      if (system === undefined) bySystem.set(masterBar.staffSystemBounds, [box]);
+      else system.push(box);
+    }
+  }
+  return [...bySystem.values()].map((boxes) => {
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    const right = Math.max(...boxes.map((box) => box.x + box.width));
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  });
+}
+
+/**
  * Where playback is on the page, `offset` ticks into a bar (by index): the beat of the top staff
  * drawn that is played then, as tall as the system the bar is on. At the start of a bar it is the
  * bar's first beat, where the cursor stands in the append slot of an empty voice. Null when the

@@ -42,6 +42,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - alphaTab 的捲動已經關掉（`alphaTabEngine.ts` 的 `ScrollMode.Off`），跟隨由殼自己做，所以 `ScoreRenderer` 有「由播放位置（tick）查座標」的方法 `boundsAtTick`（#31，細節見 [`playback.md`](playback.md) 4.1）。
 - **補充**（#31）：`EngineOptions.seekOnClick` 預設關閉；Read view 要點譜面跳過去時再打開。
   - **補充**（#32）：alphaTab 1.9 只有在它自己的播放游標打開時（`enableCursor`）才會點譜面跳過去，而我們把它關掉了；所以 `seekOnClick` 由引擎自己做：聽 `beatMouseUp`，用 tick lookup 算出那個拍點第一次播到的 tick，走和 `seek` 一樣的路（聲音產生期間點的，聲音換好之後跳到那裡）。
+  - **補充**（#33）：有循環時，點擊位置夾在循環範圍內（`seek` 本身就夾，見 [`playback.md`](playback.md) 第 4 節）。目前沒有任何視圖同時有 `seekOnClick` 與循環（Read view 沒有選取，編輯視圖點譜面不跳），所以只在 `engine.test.ts` 測，沒有 e2e。
 - 排版：Page 版面、lazy loading、`useWorkers: false`、以小節為單位就地更新（ADR 0003）。
 
 ## 3. 可編輯視圖
@@ -97,7 +98,7 @@ function decideView(input: { role: Role | null; isGuest: boolean; canType: boole
 - 預設一次只顯示一個聲部，用聲部切換器換。各團譜上次選的聲部存在 localStorage（補充：鍵是 `studio.narrowPart.<scoreId>`）；沒有紀錄時用第一個聲部。
 - 用 Page 版面，每行小節數交給 alphaTab 依寬度決定。
 - 播放列固定在底部，混音面板收在抽屜裡。
-  - **補充**（#32）：播放列是頁面版面的最後一列，譜面捲動區在它上面結束，所以播放列從不疊在譜面上；抽屜打開時在播放列上方，把譜面往上推，也不疊在譜面上。目前抽屜裡只有縮放，混音的內容由 #33 加上。聲部切換器在上方的工具列。
+  - **補充**（#32）：播放列是頁面版面的最後一列，譜面捲動區在它上面結束，所以播放列從不疊在譜面上；抽屜打開時在播放列上方，把譜面往上推，也不疊在譜面上。抽屜裡是縮放與混音（#33）；抽屜最高 45vh，放不下就在抽屜裡捲動。聲部切換器在上方的工具列。
   - **補充**（#32）：窄螢幕與否和視圖一樣，只在載入頁面時判定一次。
 - 捲動到頂端時，底部的播放列不能蓋住 alphaTab 的標記（見第 9 節）。
 
@@ -136,6 +137,14 @@ interface PresenceState {
 - 其他人的游標在遠端修改後，用 `settleCursor` 重新解析位置（`navigation.ts` 的 `settleCursor`）。
 - 名牌貼在游標旁，遵守 `reservedRects`。
 - 停用的帳號在成員列表上，名稱旁顯示「已停用」（[`accounts.md`](accounts.md)）。
+- **補充**（#34）：客戶端的寫法在 `apps/web/src/presence.ts`。
+  - 寫入：`joinPresence` 包住 provider 的 awareness，殼在每次 `onPresence`、視圖改變時以 `localStateOf(view, presence)` 整份寫入本機狀態（Read view 一律 `cursor: null`、`selection: null`）。`ScoreView` 被關掉（#35 換新的 `ScoreView`）或卸載時先 `leave()`（本機狀態設為 null），新的 `ScoreView` 是新的 `Y.Doc`、新的 client，不留幽靈游標；伺服器在連線關閉時也會移除那條連線的狀態。
+  - 斷線重連：y-protocols 不套用 clock 沒有變新的狀態，而伺服器移除狀態、provider 丟掉別人的狀態時都不改 clock，重連後雙方要等各自每 15 秒的更新才看得到彼此。所以 provider 關閉時（`onClose`）刪掉別人的 clock（`disconnected`），重新同步時（`onSynced`）再寫一次本機狀態讓 clock 加一（`reconnected`），重連後雙方立刻看得到彼此。
+  - 只有自己的狀態變動時（每次移動游標）不重讀別人的狀態；別人的狀態只重新解析變動的那幾個。
+  - 讀取：其他分頁的狀態用 `packages/contracts` 的 `presenceState` 解析，形狀不對的略過；成員列表（`membersOf`）每個帳號一列，不列自己的帳號（自己的其他分頁仍畫出游標），任一分頁是 `edit` 就算 `edit`，`read` 的成員標「（檢視中）」。成員也看得到其他人的游標，三種視圖都畫；訪客的 provider 沒有 awareness，什麼都不畫。
+  - 其他人的游標每次排版後與 awareness 改變時重新放置（`peerMarksOf`）：`settleCursor` 不帶位置，聲部、小節或聲線不在時不畫（含 0 小節、0 聲部），`line` 夾在聲部的範圍內。選取照畫，指到的拍點或小節不在時不畫。編輯中的游標用成員的顏色，`read` 的淡色；選取框更淡。
+  - 名牌是 HTML 文字（只當文字渲染），大小由 `tagWidth` 估算並以這個大小畫出（名字太長就截斷），放在游標上方、左緣對齊；上方會碰到保留區域或超出頁面頂端時改放游標下方，仍碰到就移到保留區域下方（`tagRect`）。
+  - 小節範圍的選取框（自己的與其他人的）只在保留區域底下的那一段切掉（`overlay.ts` 的 `clearPieces`），同一行的其他小節保持原高度（#21 審查）；拍點範圍仍照 `clearOf`。
 
 ## 9. 疊層與 alphaTab 的標記
 
@@ -153,7 +162,10 @@ interface PresenceState {
 - **離線**：連線中斷時顯示「離線」橫幅；已開啟的分頁可以繼續編輯，重連時由 Yjs 合併（[`collab.md`](collab.md)）。
 - **權限改變**：被降級或移除、或 session 失效時，丟掉本機文件並以唯讀重新載入，提示原因。
 - **較新的 schema**：以唯讀開啟，提示重新整理（[`schema.md`](schema.md) 第 9 節）。
-- **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
+  - **補充**（#35）：判斷是 `apps/web/src/access.ts` 的 `readOnlyReasonOf`（文件的 `meta.schemaVersion` 比 `SCHEMA_VERSION` 新）與 `openedView`（可編輯視圖變成唯讀編輯視圖，另外兩種不變）。每次畫譜時都檢查：同步後第一次畫就發現的，以唯讀編輯視圖開始；已經在可編輯視圖打譜時才變新的（新版伺服器遷移過），丟掉本機文件、以唯讀重新開啟。伺服器的 `readOnly` 通知（#109）走同一個入口（`ScoreView.vue` 的 `lockReadOnly`，理由是通知的 `reason`）。
+  - **補充**（#35）：被鎖成唯讀的 Owner 或 Editor 按了會修改的鍵時，提示的是鎖住的理由，不是「檢視者無法修改」。
+- **補充**：**缺少遷移步驟**：伺服器回報這份團譜缺少遷移步驟（連線被設成 readOnly，[`schema.md`](schema.md) 第 10 節；回報是 `reason: "missingMigration"` 或 `"migrationFailed"` 的 `readOnly` 通知，[`collab.md`](collab.md) 2.1）時，客戶端也以唯讀開啟並提示原因，免得 Editor 打的字被伺服器丟掉。
 - **播放中修改的 (b) 模式**：顯示「播放的是修改前的內容」（[`playback.md`](playback.md)）。
+  - **補充**（#33）：和離線橫幅一樣在譜面上方（`data-behind`），聲音換好就消失。
 - **補充**：同步狀態以畫面上的指示器呈現（例如「已同步」「同步中」「離線」），並帶 `data-sync` 屬性給 e2e 讀。
   - **補充**（#19）：`synced` 表示已和伺服器同步，而且本機的修改都已經由伺服器確認收到（`provider.isSynced && provider.unsyncedChanges === 0`；`unsyncedChanges` 在伺服器回覆 SyncStatus 時才減少）；還有修改沒被確認時是 `syncing`；連線中斷時是 `offline`，離線時繼續輸入不會讓它變回 `syncing`。

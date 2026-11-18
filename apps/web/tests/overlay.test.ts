@@ -3,7 +3,7 @@ import type { Cursor, Flag, Selection } from "@studio/score-model";
 import type { NoteHead } from "@studio/score-render";
 import { expect, test } from "vitest";
 
-import { clearOf, ENTRY_BOX, entryRect, flagMarksOf, overlaps } from "../src/overlay";
+import { clearOf, clearPieces, ENTRY_BOX, entryRect, flagMarksOf, overlaps, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../src/overlay";
 
 /** A reserved area 100 px wide above a staff whose first line is at y 40. */
 const AREA = { x: 200, y: 10, width: 100, height: 30 };
@@ -28,6 +28,25 @@ test("a rectangle that reaches into an area from below is cut at the area's bott
 
 test("a rectangle inside an area moves below it, its size kept", () => {
   expect(clearOf({ x: 250, y: 15, width: 10, height: 10 }, [AREA])).toEqual({ x: 250, y: 40, width: 10, height: 10 });
+});
+
+test("a box over a whole system is cut only under an area: the rest of it keeps its height", () => {
+  const system = { x: 0, y: 35, width: 400, height: 60 };
+  expect(clearPieces(system, [AREA])).toEqual([
+    { x: 0, y: 35, width: 200, height: 60 },
+    { x: 200, y: 40, width: 100, height: 55 },
+    { x: 300, y: 35, width: 100, height: 60 },
+  ]);
+  // Clear of every area, or reaching the area at one end only: one piece, or two.
+  expect(clearPieces({ ...system, y: 40 }, [AREA])).toEqual([{ ...system, y: 40 }]);
+  expect(clearPieces({ x: 250, y: 35, width: 150, height: 60 }, [AREA])).toEqual([
+    { x: 250, y: 40, width: 50, height: 55 },
+    { x: 300, y: 35, width: 100, height: 60 },
+  ]);
+  const areas = [AREA, { x: 20, y: 0, width: 30, height: 45 }];
+  const pieces = clearPieces(system, areas);
+  expect(pieces).toHaveLength(5);
+  for (const piece of pieces) for (const area of areas) expect(overlaps(piece, area)).toBe(false);
 });
 
 // Flags on the page (docs/spec/flags.md, section 4): a box on a bar, a mark on a note, out of the reserved areas.
@@ -93,4 +112,33 @@ test("a box of a beat's text that would open into a reserved area opens below it
   const lower = { x: 200, y: 40, width: 100, height: 20 };
   const below = entryRect(cursor, [AREA, lower]);
   expect([overlaps(below, AREA), overlaps(below, lower), below.y, below.height]).toEqual([false, false, 60, 28]);
+});
+
+// Structural boxes (docs/spec/commands.md, section 6): dashed over every part, for a bar range, or the panel of the cursor's bar.
+
+test("a bar range is drawn over every part; with the panel open, a beat range's bar or the cursor's bar is too", () => {
+  const cursor: Cursor = { partId: "p", barId: "c", voice: "0:0", beatId: null, at: "after", line: 1 };
+  const bars: Selection = { kind: "bars", partId: "p", anchorBarId: "a", focusBarId: "z" };
+  const beats: Selection = { kind: "beats", partId: "p", barId: "b", voice: "0:0", anchorBeatId: "x", focusBeatId: "y" };
+  expect(structuralEnds(bars, cursor, false)).toEqual(["a", "z"]);
+  expect(structuralEnds(bars, cursor, true)).toEqual(["a", "z"]);
+  expect(structuralEnds(beats, cursor, false)).toBeNull();
+  expect(structuralEnds(beats, cursor, true)).toEqual(["b", "b"]);
+  expect(structuralEnds(null, cursor, false)).toBeNull();
+  expect(structuralEnds(null, cursor, true)).toEqual(["c", "c"]);
+  expect(structuralEnds(null, null, true)).toBeNull();
+});
+
+test("a structural box keeps out of the reserved areas, its stroke inside it", () => {
+  const asked: [string, string][] = [];
+  const renderer = {
+    boundsOfBars: (anchor: string, focus: string) => {
+      asked.push([anchor, focus]);
+      return [{ x: 250, y: 30, width: 100, height: 60 }];
+    },
+  };
+  expect(structureBoxesOf(renderer, null, [AREA])).toEqual([]);
+  const half = STRUCTURE_STROKE / 2;
+  expect(structureBoxesOf(renderer, ["a", "z"], [AREA])).toEqual([{ x: 250 + half, y: 40 + half, width: 100 - 2 * half, height: 50 - 2 * half }]);
+  expect(asked).toEqual([["a", "z"]]);
 });

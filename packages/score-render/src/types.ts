@@ -2,6 +2,8 @@
 // engine behind it (docs/adr/0003): everything is addressed by the ids of the score.
 import type { Cursor, ScoreJSON, Selection } from "@studio/score-model";
 
+import type { PartMix } from "./channels";
+
 /** A rectangle in CSS pixels, relative to the top-left corner of the element the score is drawn in. */
 export interface Rect {
   x: number;
@@ -54,6 +56,12 @@ export interface ScoreRenderer {
    */
   boundsOfSelection(selection: Selection): Rect[];
   /**
+   * Where the bars a structural command works on are drawn, from one to the other: a box for each
+   * system they are on, over every part shown (docs/spec/commands.md, section 6). None when they
+   * are not drawn (yet).
+   */
+  boundsOfBars(anchorBarId: string, focusBarId: string): Rect[];
+  /**
    * Where the note heads of the cursor's beat are drawn, as the engine reports them; none in an
    * append slot, or when the beat is not drawn. Diagnostic: the measurements compare them with
    * `boundsOf`.
@@ -100,6 +108,15 @@ export interface PlayerPosition {
   endMilliseconds: number;
 }
 
+/** What `ScorePlayer.settings` tells: the mix by part id, of the parts given one only. */
+export interface PlayerSettings {
+  speed: number;
+  metronome: boolean;
+  countIn: boolean;
+  loop: PlayRange | null;
+  parts: Record<string, PartMix>;
+}
+
 /** A stretch of the score to play, in ticks. */
 export interface PlayRange {
   startTick: number;
@@ -107,8 +124,9 @@ export interface PlayRange {
 }
 
 /**
- * Playing the score the renderer shows. The mixer settings (mute, solo, volume, speed, loop)
- * belong to the member, not to the score.
+ * Playing the score the renderer shows. The mixer settings (mute, solo, volume, speed, loop,
+ * metronome, count-in) belong to the member, not to the score (docs/spec/playback.md, section 1):
+ * the player keeps them, by part id, through every new sound until they are changed.
  */
 export interface ScorePlayer {
   /**
@@ -126,14 +144,35 @@ export interface ScorePlayer {
   tickOf(barId: string): number | null;
   /** The bar played at a tick; null before the sound is made. */
   barAt(tick: number): PlayedBar | null;
+  /**
+   * The ticks a selection is played over, the first time it is: from the start of its first beat
+   * to the end of its last, or from the start of its first bar to the end of its last
+   * (docs/spec/playback.md, section 4). Null before the sound is made, or for what is not in the
+   * score drawn.
+   */
+  loopOf(selection: Selection): PlayRange | null;
+  /**
+   * Parts sharing a MIDI channel (drums with drums, parts past the limit) cannot be told apart:
+   * the channel is muted when any of them is, played alone when any of them is, and as loud as the
+   * quietest of them.
+   */
   setMute(partId: string, mute: boolean): void;
   setSolo(partId: string, solo: boolean): void;
   /** 0 is silent, 1 the volume written in the score. */
   setVolume(partId: string, volume: number): void;
   /** 1 is the tempo of the score. */
   setSpeed(speed: number): void;
-  /** Play a range again and again; null plays the whole score once. */
+  /**
+   * Play a range again and again; null plays the whole score once. Playback inside the new range
+   * stays where it is; outside it, it goes to the nearer end.
+   */
   setLoop(range: PlayRange | null): void;
+  /** A click on every beat while playing; off at first. */
+  setMetronome(on: boolean): void;
+  /** One bar of clicks before playing starts; off at first. */
+  setCountIn(on: boolean): void;
+  /** The settings it plays with now, as the engine holds them. Diagnostic: the e2e tests read it. */
+  settings(): PlayerSettings;
   onState(listener: (state: PlayerState) => void): Unsubscribe;
   onPosition(listener: (position: PlayerPosition) => void): Unsubscribe;
   /** Called when playback reaches the end of the score and stops there; not at the end of a loop. */

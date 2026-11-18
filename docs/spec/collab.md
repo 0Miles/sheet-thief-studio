@@ -27,15 +27,39 @@
 | 掛鉤 | 做什麼 |
 |---|---|
 | `onAuthenticate` | 用 collab ticket 查出帳號或唯讀連結，以及角色（第 3 節）。不存在、已刪除、或和 ticket 不符的團譜 id 一律拒絕，避免建出空文件（`spike-report.md:348`）。Viewer 與訪客設 `readOnly` |
-| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡 |
+| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡。**補充**（#12）：遷移之後也執行一次 `fillMissingContent`（第 4 節）。文件比伺服器新、或缺少遷移步驟時，凍結這份文件（2.1） |
 | `onChange` | debounce 過之後，以參與者身分執行 `fillMissingContent`（第 4 節） |
-| `onStoreDocument` | 整份覆寫 `doc_state`；把 `title`、`artist` 鏡射到 `scores` 表；更新 `schema_version`、`updated_at`。**不要**在這裡修改文件，否則會再觸發一次儲存 |
+| `beforeHandleMessage` | **補充**（#12）：文件被凍結時，把這條連線設成 `readOnly`（2.1） |
+| `connected` | 連線進對照表（第 6 節）。**補充**（#12）：文件被凍結時，送出 `readOnly` 通知（2.1） |
+| `onStoreDocument` | 整份覆寫 `doc_state`；把 `title`、`artist` 鏡射到 `scores` 表；更新 `schema_version`、`updated_at`。**不要**在這裡修改文件，否則會再觸發一次儲存。**補充**（#12）：`title`、`artist`、`schemaVersion` 用 `readScore` 讀，讀不懂的 `title` 鏡射成空字串、`artist` 鏡射成 null、`schemaVersion` 鏡射成目前的版本，不丟例外；被凍結的文件完全不寫（`updated_at` 也不動） |
 | `beforeHandleAwareness` | 覆寫身分欄位、移除訪客的狀態（第 5 節） |
 | `onDisconnect` | 剩 0 個連線時建立版本（第 8 節） |
 | `afterLoadDocument`、`afterUnloadDocument` | 開始、停止這份文件的 10 分鐘版本計時器（補充） |
+| `beforeUnloadDocument` | **補充**（#131）：只卸載記憶體裡以這個名稱登記的那一份文件，其餘一律拒絕。Hocuspocus 以名稱卸載，而且儲存完成後是用一個 0 ms 的計時器去卸載；這個計時器可能在原本的文件已經卸載（例如伺服器自己的 direct connection 結束時立刻卸載）、團譜又為成員重新載入之後才執行，若照做會把新載入、成員正在用的文件從記憶體移走：下一位打開的成員會從 Postgres 再載入另一份，兩份文件的儲存互相覆蓋 |
 
 - 新團譜的初始內容（聲部、小節、拍號、速度）由伺服器以參與者身分建立，客戶端不建：`POST /api/scores` 在伺服器端建好 `Y.Doc`、寫進 `scores.doc_state`，然後回傳 id。
 - 讀取用的函式（建立版本、鏡射標題）和客戶端是同一個 `docToJson`，讀取時容錯（[`schema.md`](schema.md) 第 11 節）。
+- **補充**（#12）：Hocuspocus 在 `onLoadDocument` 結束之後才開始監聽文件的變動，而且沒人修改過的文件在最後一條連線離開時直接卸載、不儲存。所以載入時的遷移或補齊**確實改了文件**時，`onLoadDocument` 自己立刻存一次（`doc_state`、`title`、`artist`、`schema_version`、`updated_at`，和 `onStoreDocument` 同一個函式）；沒有改動時不存。理由：不存的話，下次載入會用新的 Yjs client id 重做一次，還留著上一次那些操作的分頁（斷線重連、離線編輯）把它們推回來時，同一個小節的兩個內容容器只留一個，寫在另一個裡的音符會無聲消失。這次儲存失敗時只寫 error log，文件照常開啟，隨下一次修改儲存。載入時的補齊丟例外時也只寫 error log、照常開啟。
+
+### 2.1 凍結的文件與 `readOnly` 通知（補充，#12）
+
+伺服器載入時發現文件比自己新（[`schema.md`](schema.md) 第 9 節）、缺少遷移步驟（第 10 節）、或某個遷移步驟執行時丟出例外，這份文件在記憶體裡的期間就是**凍結**的：
+
+- 不遷移、不執行 `fillMissingContent`、不儲存（關閉伺服器時的儲存也跳過）。遷移在一份複本上執行，所以步驟執行到一半失敗時，成員拿到的仍是資料庫裡原本的內容。
+- 每一條連線都是 readOnly，Owner 與 Editor 也一樣。第一批連線在文件載入之前就通過了 `onAuthenticate`，那時還不知道要凍結，所以不在那裡設，而是在 `beforeHandleMessage` 設 `connection.readOnly`：每則訊息（包含載入期間排隊的）套用之前都會經過它。Hocuspocus 在驗證通過時回給 provider 的 `scope` 因此可能仍是 `read-write`，客戶端不能靠它判斷。
+- 伺服器自己的修改（`app.collab.change`）也被拒絕（丟例外）。
+- 文件卸載後解除；下次載入重新判定（部署補上遷移之後就恢復正常）。
+
+**回報管道**：伺服器在 `connected` 掛鉤對這條連線送一則 Hocuspocus stateless 訊息（`connection.sendStateless`），內容是 JSON，形狀是 `packages/contracts` 的 `collabNotice`：
+
+```ts
+{ type: "readOnly", reason: "newerSchema" | "missingMigration" | "migrationFailed" }
+```
+
+- 每條連線建立時（包含重連）送一次；文件沒有被凍結時不送。訪客與 Viewer 也收得到（他們本來就唯讀，可以忽略）。
+- 這則訊息在連線建立時就送出，通常早於同步完成：客戶端要在建立 provider 時就給 `onStateless`，不能等 `synced` 之後才掛。
+- 客戶端收到後以唯讀開啟並提示原因（[`views.md`](views.md)）。`newerSchema` 客戶端自己也讀得出來（`meta.schemaVersion`）；`missingMigration`（缺步驟，`migrateDoc` 丟 `MissingMigration`）與 `migrationFailed`（步驟執行失敗；log 裡兩者的訊息不同）只有這則通知能告訴它。
+- `type` 留給日後其他通知使用；客戶端忽略不認得的 `type`。
 
 ## 3. Collab ticket
 
@@ -58,6 +82,7 @@
 - 只有伺服器補齊缺少的內容容器：在 debounce 過的 `onChange` 裡，以參與者身分執行 `fillMissingContent`（`commands.ts`）。客戶端不補（ADR 0002:21）。
 - `fillMissingContent` 也補齊缺少的聲線（[`schema.md`](schema.md) 1.1）。
 - **補充**：debounce 1000 ms。沒有缺漏時不開交易，避免觸發多餘的儲存。
+- **補充**（#12）：補齊直接在伺服器記憶體裡的文件上執行，像任何修改一樣廣播給成員並排進 debounce 的儲存。所有連線在 debounce 到期之前就離開、文件已卸載時，這次補齊不做；下次載入時在 `onLoadDocument` 補上並立刻儲存（第 2 節）。凍結的文件不補（2.1）。
 
 ## 5. 在場（awareness）
 
@@ -67,6 +92,10 @@
 - **補充**（#14）：訪客因此收不到任何 awareness；文件沒有人修改時，訪客的 socket 會完全沒有訊息進來，而 provider 30 秒沒收到訊息就重連（`messageReconnectTimeout`），每次都要取一張新 ticket。所以訪客的 provider 設 `forceSyncInterval: 15000`，每 15 秒送一次 SyncStep1，伺服器的回覆讓連線保持活著。
 - 顏色的雜湊與調色盤見 [`views.md`](views.md) 第 8 節。
 - `displayName` 改了之後，下一次該成員送出 awareness 時就會帶上新名稱（補充：伺服器在每條連線的 context 裡保存顯示名稱，改名時一併更新）。
+- **補充**（#34）：寫法在 `apps/server/src/presence.ts` 與 `collab.ts` 的 `beforeHandleAwareness`。
+  - 成員的狀態一律重建（`presenceOf`）：`accountId`、`displayName`（`onAuthenticate` 從資料庫讀，`PATCH /api/me` 經 `app.collab.renamed` 更新）、`color`（`colorOf`）來自連線；`mode`、`cursor`、`selection` 照 `packages/contracts` 的 `presenceCursor`、`presenceSelection` 檢查，形狀不對就是 null（id 最長 64 字元、`line` 是 −64..64 的整數），`mode` 讀不懂就是 `read`；其他欄位一律丟掉，所以一個狀態的大小有上限，不會把大量資料廣播給每個成員。readOnly 的連線（Viewer、凍結的文件）一律是 `read`。
+  - 一條連線只能代表一個 awareness client：它第一個提到的、而且不屬於同一份文件其他連線的那個（`clientsAllowed`）。其他 client 的狀態與移除都丟掉，所以 Editor 不能改寫或移除別人的游標。
+  - 判斷集中在 `screenAwareness`：只有確定是成員的連線才套用；訪客、以及伺服器說不出是誰的連線（context 不明），整份更新都不套用（fail-closed）。伺服器自己的直接連線不送 awareness，不經過這裡。
 
 ## 6. 伺服器主動斷線
 
@@ -82,11 +111,15 @@
 
 - 已開啟的分頁可以繼續編輯，重連時由 Yjs 合併；畫面顯示「離線」橫幅。
 - 不做 IndexedDB 離線保存。
-- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`provider.unsyncedChanges` 在 `ScoreView.vue` 的 `updateSync` 裡讀得到）。
+- `provider.unsyncedChanges > 0` 時，用 `beforeunload` 警告（`provider.unsyncedChanges` 在 `ScoreView.vue` 的 `updateSync` 裡讀得到）。**補充**（#35）：只在可編輯視圖警告；只有那裡會有本機的修改。
+- **補充**（#35）：瀏覽器的 `offline` 事件一來就算離線（同步指示器是 `offline`、顯示橫幅；只有可編輯視圖的橫幅說可以繼續編輯，其他視圖與訪客的只說恢復連線後會繼續更新），並斷開 provider（`websocketProvider.disconnect()`）：關掉 socket，而且在 `online` 之前不再嘗試連線（每一次嘗試都只會失敗，瀏覽器還會把它記成 console error）；之後輸入的修改等下一次連線再送；不等 provider 30 秒收不到訊息才發現。`online` 事件時立刻重連，不等 provider 下一次嘗試；上一條 socket 還沒關完時 provider 的 `connect()` 什麼都不做，所以也把 `shouldConnect` 設回 true，讓它在那條 socket 關掉時自己重連。瀏覽器說離線的期間，指示器一直是 `offline`。
 - 重連時：
   - 取 ticket 失敗（401 或 404），或拿到的 `role` 比原本低：客戶端丟掉本機的 `Y.Doc`，重新以唯讀載入並提示；本機未同步的修改放棄。只切換介面不夠，因為本機文件已經和伺服器分歧了。
-  - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」並導向 `/`；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
+  - **補充**：401 時提示「登入已失效」並導向 `/login`；404 時提示「你已經不是這份團譜的成員，或團譜已被刪除」；角色降低時提示「你的角色已改為檢視者」，以唯讀編輯視圖或 Read view 重新載入。
   - 角色變高（例如 Viewer 被改成 Editor）：**補充**：重新載入頁面，以新的角色開啟。
+  - **補充**（#35）：判斷都在 provider 取 ticket 的函式裡（`POST /api/scores/:id/collab-ticket` 回的 `role`），在把 ticket 交給伺服器之前，所以伺服器不會再套用本機文件的內容。等 ticket 的期間打的字仍可能寫進這條還沒驗證的 socket（provider 取完 ticket 之後，不論成敗都會開始同步），但 Hocuspocus 對還沒驗證的連線只把訊息排隊，等不到 Auth 就不套用：這條 socket 隨 provider 一起關掉，或在 `timeout` 後被伺服器關掉，排隊的訊息一起丟棄。角色的比較只看「能不能修改」（`apps/web/src/access.ts` 的 `afterRoleChange`）：能改變成不能改、或反過來，丟掉本機文件、重新開啟；Owner 與 Editor 之間的改變（擁有權轉移的雙方）不丟本機文件，照常重連，只提示「你的角色已改為…」。
+  - **補充**（#35）：「重新載入」是在同一頁換一個新的 `ScoreView`（新的 `Y.Doc` 與 provider，`ScorePage.vue`），不是重新整理瀏覽器；提示顯示在新開的譜上。404 時就地顯示 404 頁並帶上那句提示，網址不變（ticket #35 的驗收條件要的是 404 頁，所以不導向 `/`）。401 時登出這個分頁（session store 的 `expire`），導向 `/login`、帶 `redirect` 回到這份團譜，登入頁顯示「登入已失效，請重新登入。」。
+  - **補充**（#35）：取 ticket 的其他失敗（429、5xx、網路）視為暫時的：provider 停在沒有驗證的 socket 上，伺服器在 `timeout`（60 秒）後關掉它，provider 再重連、再取一次 ticket。
 - 訪客的連結被撤銷或重新產生：伺服器關閉連線，重連時取 ticket 回 404。**補充**（#14）：頁面停止重連，狀態顯示「已斷線」，並提示「這個唯讀連結已經失效。」；已經畫出的譜留在畫面上（內容本來就在訪客的瀏覽器裡）。重新整理之後，取 ticket 回 404，顯示 404 頁。
 
 ## 8. 版本
@@ -109,6 +142,8 @@
 | `name` | 手動命名（M5）；null 表示自動版本 |
 | `created_by` | 補充：`before_restore` 是發起還原的帳號；自動版本是 null |
 
+**補充**（#17）：`created_at` 是寫入那一刻資料庫的時鐘（`clock_timestamp()`），不是交易開始的時間；同一份團譜的版本在鎖住該團譜列的交易裡一次建一個，所以 `created_at` 的順序就是建立的順序。`content` 存的是鍵排序後的 JSON，`content_hash` 就是這段文字的 SHA-256（hex）。`reason` 有 check constraint；`created_by` 的外鍵是 `ON DELETE SET NULL`。
+
 ### 8.3 什麼時候建立
 
 兩者都只在內容和該團譜最新的版本不同時才建（比較 `content_hash`）：
@@ -116,6 +151,19 @@
 1. **最後一個連線離開時**：Hocuspocus 的 `onDisconnect`，剩 0 個連線時，用記憶體裡的文件建立。**補充**：只用 `onDisconnect`，不在 `afterUnloadDocument` 再建一次（內容比較也會擋掉重複，但文件卸載後就不在記憶體裡了）。
 2. **連續編輯中，每 10 分鐘一次**：文件載入期間的計時器。
 3. **還原前**（`reason = 'before_restore'`）：見 8.5。**補充**：內容和最新版本相同時不另建，直接回傳最新版本的 id。
+
+**補充**（#17）：
+
+- 團譜還沒有任何版本時，「和最新的版本不同」一定成立：第一次有成員離開（或第一個 10 分鐘）就會建立第一個版本，即使沒有人改過內容。
+- 伺服器自己的連線（`collab.change`，例如 `POST /api/scores` 建立初始內容）結束時不建立版本；版本在成員離開時才建。
+- 凍結的文件（2.1）不建立版本：這台伺服器不保證讀得懂它。
+- `onDisconnect` 會等版本建完才讓文件卸載。建立失敗只寫 error log，不影響儲存與卸載；下一次建立時用當時的內容。
+- 伺服器關閉時（`preClose`），替每一份還在記憶體裡的文件建立一次版本（`reason = 'last_disconnect'`），並等進行中的版本建完，再關資料庫。
+- 已軟刪除的團譜照樣建立版本（刪除時成員的連線被關閉，就是「最後一個連線離開」），還原後版本都在；團譜列已經永久刪除時不建。
+- 版本的大小上限是 8 MB（未壓縮的 JSON 位元組數，`MAX_VERSION_BYTES`），和 WebSocket 單則訊息的上限相同（[`security.md`](security.md) 第 5 節）：還原是把整份內容當一筆交易送出，更大的版本本來就還原不了。超過時不建立版本、寫 error log，儲存與關閉照常。M5 讀取版本時，解壓要以同一個上限設 `maxOutputLength`。
+- 10 分鐘的計時器從 `afterLoadDocument` 跑到 `afterUnloadDocument`，不看有沒有人在編輯；內容沒變的那一次不會建立版本。
+- **補充**（#114）：內容在鎖住團譜列之後才讀（`createVersion` 收的是讀內容的函式），所以同一份團譜的版本依「讀內容」的順序提交，最新一筆一定是最後讀到的內容。計時器那一次若等到鎖時內容已經變了，建立的是當時的內容（`reason` 仍是 `interval`）；和最新版本相同就不建。
+  - 讀內容時，若團譜已卸載、又以另一份文件重新載入，原本那份文件不建立版本（否則舊內容會排在新一輪的版本之後）。記憶體裡已沒有這份團譜時：計時器那一次不建（那一輪已由成員離開時的版本收尾）；成員離開或伺服器關閉那一次照樣讀原本的文件（卸載後沒有人能再改它）。
 
 M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原。
 
