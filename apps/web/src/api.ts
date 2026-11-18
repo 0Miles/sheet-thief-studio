@@ -4,14 +4,27 @@ import { apiError, type CollabTicket, collabTicket, type ErrorCode, type GuestTi
 
 import { errorText, strings } from "./strings";
 
-/** An answer other than 2xx, with the stable code the server sent (`internal_error` when none). */
+/**
+ * An answer other than 2xx, with the stable code the server sent (`internal_error` when none), and
+ * how long its `Retry-After` asks to wait, in milliseconds, when it says (a 429 does).
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: ErrorCode,
+    readonly retryAfterMs: number | null = null,
   ) {
     super(`${status} ${code}`);
   }
+}
+
+/** A `Retry-After` header in milliseconds from now: seconds, or a date; null when there is none or it cannot be read. */
+export function retryAfterOf(header: string | null, now = Date.now()): number | null {
+  if (header === null || header.trim() === "") return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
 }
 
 /** What to tell the person about a call that failed: the text of the code the server answered with, when it answered. */
@@ -27,7 +40,7 @@ async function call(method: string, path: string, body?: unknown): Promise<Respo
   });
   if (response.ok) return response;
   const error = apiError.safeParse(await response.json().catch(() => null));
-  throw new ApiError(response.status, error.success ? error.data.code : "internal_error");
+  throw new ApiError(response.status, error.success ? error.data.code : "internal_error", retryAfterOf(response.headers.get("retry-after")));
 }
 
 /** GET, the answer checked against its shape in @studio/contracts. */
@@ -48,6 +61,11 @@ export async function del(path: string): Promise<void> {
 /** POST, the answer checked against its shape in @studio/contracts. */
 export async function postFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
   return shape.parse(await (await call("POST", path, body)).json());
+}
+
+/** PUT, the answer checked against its shape in @studio/contracts. */
+export async function putFor<T>(path: string, body: unknown, shape: { parse(value: unknown): T }): Promise<T> {
+  return shape.parse(await (await call("PUT", path, body)).json());
 }
 
 /** PATCH, the answer checked against its shape in @studio/contracts. */
