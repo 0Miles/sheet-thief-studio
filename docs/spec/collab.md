@@ -27,9 +27,10 @@
 | 掛鉤 | 做什麼 |
 |---|---|
 | `onAuthenticate` | 用 collab ticket 查出帳號或唯讀連結，以及角色（第 3 節）。不存在、已刪除、或和 ticket 不符的團譜 id 一律拒絕，避免建出空文件（`spike-report.md:348`）。Viewer 與訪客設 `readOnly` |
-| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡。**補充**（#12）：遷移之後也執行一次 `fillMissingContent`（第 4 節）。文件比伺服器新、或缺少遷移步驟時，凍結這份文件（2.1） |
+| `onLoadDocument` | 從 `scores.doc_state` 載入；跑 `Y.Doc` 那一面的遷移（[`schema.md`](schema.md) 第 10 節）。遷移只放在這裡。**補充**（#12）：遷移之後也執行一次 `fillMissingContent`（第 4 節）。文件比伺服器新、或缺少遷移步驟時，凍結這份文件（2.1）。**補充**（#102）：任何讀取之前，先檢查儲存的狀態（`updateWithinDepth`）；含有巢狀超過 `MAX_VALUE_DEPTH` 的值（這個上限之前寫進去的）時，在副本上拿掉（`dropTooDeep`）再載入，所以沒有成員收到這種值。凍結的文件也拿掉，但只在記憶體裡（不儲存）；沒有凍結的照下面的規則立刻存一次。伺服器自己也解不開的狀態：寫 error log，`onLoadDocument` 丟例外，這份團譜開不了，process 與其他團譜不受影響 |
 | `onChange` | debounce 過之後，以參與者身分執行 `fillMissingContent`（第 4 節） |
 | `beforeHandleMessage` | **補充**（#12）：文件被凍結時，把這條連線設成 `readOnly`（2.1） |
+| `beforeSync` | **補充**（#102）：非唯讀連線送來的 SyncStep2 與 Update，套用之前檢查（`updateWithinDepth`，第 9 節）：含有巢狀超過上限的值、或解碼本身失敗（lib0 `readAny` 的 `RangeError`）時，寫 warn log，以 `ResetConnection` 關閉這條連線與它的 socket（和第 6 節的 `close` 相同，provider 帶新的 ticket 重連），這則訊息與它之後排隊的訊息都不套用。文件不變，其他成員收不到 |
 | `connected` | 連線進對照表（第 6 節）。**補充**（#12）：文件被凍結時，送出 `readOnly` 通知（2.1） |
 | `onStoreDocument` | 整份覆寫 `doc_state`；把 `title`、`artist` 鏡射到 `scores` 表；更新 `schema_version`、`updated_at`。**不要**在這裡修改文件，否則會再觸發一次儲存。**補充**（#12）：`title`、`artist`、`schemaVersion` 用 `readScore` 讀，讀不懂的 `title` 鏡射成空字串、`artist` 鏡射成 null、`schemaVersion` 鏡射成目前的版本，不丟例外；被凍結的文件完全不寫（`updated_at` 也不動） |
 | `beforeHandleAwareness` | 覆寫身分欄位、移除訪客的狀態（第 5 節） |
@@ -197,3 +198,7 @@ M1a 只做自動建立，沒有介面；M5 做列表、預覽、命名、還原�
 ## 9. 信任模型
 
 - Editor 視為可信任。伺服器只靠 readOnly 與訊息大小上限把關，不檢查更新的內容；容錯在讀取時做（[`schema.md`](schema.md) 第 11 節）。
+- **補充**（#102，使用者裁定：寫入端限制深度；是 ADR 0002 增補「伺服器不檢查更新的內容」的例外，見該 ADR 2026-11-18 的增補）：伺服器另外檢查更新裡每一個 JSON 值的巢狀深度，超過 `MAX_VALUE_DEPTH`（64 層，[`schema.md`](schema.md) 第 13 節）就拒絕（第 2 節的 `beforeSync`）。只看深度，不看語意。理由：lib0 的 `readAny` 解碼時每一層遞迴一次；幾千層的值（幾十 KB，擋不住訊息大小上限）寫入者自己讀得到，其他成員套用時 `Y.applyUpdate` 丟 `RangeError`，那位成員的文件從此停在那裡。伺服器自己解得開的深度和每個瀏覽器不同，所以要在遠低於任何 stack 的地方設上限。檢查放在 score-model 的 `updateWithinDepth`（`Y.decodeUpdate` 之後逐一看 `ContentAny`、`ContentJSON`、`ContentEmbed`、`ContentFormat`、`ContentDoc` 的值），伺服器載入時的修整是同一個模組的 `dropTooDeep`。
+  - 伺服器轉送給其他成員的是自己重新編碼的更新（Yjs 的 `update` 事件），不是原始的位元組；寫入者手上名為 `__proto__` 的欄位，伺服器解碼後是 prototype，重新編碼時不會帶出去，所以 `__proto__` 底下的深度不必另外算。
+  - 被拒絕的寫入者（只有修改過的客戶端寫得出這種值：指令不寫，[`commands.md`](commands.md) 第 1 節）重連後會再送一次、再被關閉；只影響它自己。
+  - 測試：`apps/server/tests/collabDepth.test.ts`、`packages/score-model/tests/depth.test.ts`。
