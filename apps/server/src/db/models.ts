@@ -1,7 +1,7 @@
 // The tables as Sequelize models (docs/spec/accounts.md, section 1.2; docs/spec/collab.md, 1.1). Columns are snake_case
 // in Postgres and camelCase here. The tables themselves come from the migrations, never from
 // `sync()`.
-import type { BarsFragment, PartKind, Role, VersionReason } from "@studio/contracts";
+import type { BarsFragment, PartKind, RecognitionError, RecognitionReport, RecognitionStatus, Role, VersionReason } from "@studio/contracts";
 import {
   type CreationOptional,
   DataTypes,
@@ -101,6 +101,31 @@ export class Version extends Model<InferAttributes<Version>, InferCreationAttrib
   declare createdAt: CreationOptional<Date>;
 }
 
+/** A recognition an account started (docs/spec/recognizer.md, 7.1): its result once the recognizer answers. */
+export class Recognition extends Model<InferAttributes<Recognition>, InferCreationAttributes<Recognition>> {
+  declare id: CreationOptional<string>;
+  declare accountId: ForeignKey<Account["id"]>;
+  declare status: RecognitionStatus;
+  /** How many images it reads. */
+  declare pageCount: number;
+  /** Failed only. */
+  declare error: CreationOptional<RecognitionError | null>;
+  /** Succeeded only: checked with the phrase schema before it is written. */
+  declare fragment: CreationOptional<BarsFragment | null>;
+  declare report: CreationOptional<RecognitionReport | null>;
+  /** By the clock of the database: what the 7 days are counted from. */
+  declare createdAt: CreationOptional<Date>;
+  declare finishedAt: CreationOptional<Date | null>;
+}
+
+/** One image of a recognition, its page counted from 1. */
+export class RecognitionImage extends Model<InferAttributes<RecognitionImage>, InferCreationAttributes<RecognitionImage>> {
+  declare recognitionId: ForeignKey<Recognition["id"]>;
+  declare page: number;
+  declare mime: string;
+  declare data: Buffer;
+}
+
 /** Bind the models to a connection. The classes are shared, so a process uses one connection. */
 export function initModels(sequelize: Sequelize): void {
   Account.init(
@@ -185,4 +210,30 @@ export function initModels(sequelize: Sequelize): void {
     },
     { sequelize, tableName: "versions", underscored: true, timestamps: false },
   );
+  Recognition.init(
+    {
+      id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+      accountId: { type: DataTypes.UUID, allowNull: false },
+      status: { type: DataTypes.STRING(16), allowNull: false },
+      pageCount: { type: DataTypes.INTEGER, allowNull: false },
+      error: { type: DataTypes.JSONB, allowNull: true },
+      fragment: { type: DataTypes.JSONB, allowNull: true },
+      report: { type: DataTypes.JSONB, allowNull: true },
+      // The clock of the database, as the table's own default.
+      createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: literal("now()") },
+      finishedAt: { type: DataTypes.DATE, allowNull: true },
+    },
+    { sequelize, tableName: "recognitions", underscored: true, timestamps: false },
+  );
+  RecognitionImage.init(
+    {
+      recognitionId: { type: DataTypes.UUID, primaryKey: true },
+      page: { type: DataTypes.INTEGER, primaryKey: true },
+      mime: { type: DataTypes.STRING(16), allowNull: false },
+      data: { type: DataTypes.BLOB, allowNull: false },
+    },
+    { sequelize, tableName: "recognition_images", underscored: true, timestamps: false },
+  );
+  Recognition.hasMany(RecognitionImage, { foreignKey: { name: "recognitionId", allowNull: false }, as: "images" });
+  RecognitionImage.belongsTo(Recognition, { foreignKey: { name: "recognitionId", allowNull: false }, as: "recognition" });
 }
