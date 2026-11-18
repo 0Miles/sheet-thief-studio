@@ -1,6 +1,5 @@
-/// <reference types="node" />
 // The sample files of the import and export tests (tests/fixtures, README.md there). Node's types
-// are for the tests that read them only: the package itself runs in the browser.
+// reach the tests only (tests/tsconfig.json): the package itself runs in the browser.
 import { readFileSync } from "node:fs";
 
 /** The bytes of a file in tests/fixtures. */

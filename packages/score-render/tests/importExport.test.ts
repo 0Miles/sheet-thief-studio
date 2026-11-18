@@ -181,6 +181,59 @@ describe("the import report", () => {
   });
 });
 
+describe("what parts and bars are read as", () => {
+  const bar = { id: "b", timeSig: { numerator: 4, denominator: 4 }, tempo: 120 } as const;
+  const guitar = (tuning: number[], program = 25): PartJSON => ({
+    id: "g",
+    name: "Guitar",
+    kind: "fretted",
+    tuning,
+    capo: 0,
+    program,
+    staves: [{ clef: "tab" }],
+    content: { b: { "0:0": [{ id: "1", value: 1, dots: 0, notes: { s1: { fret: 3 } } }] } },
+  });
+  const drums: PartJSON = { id: "d", name: "Drums", kind: "percussion", tuning: [], capo: 0, program: 0, staves: [{ clef: "neutral" }], content: { b: { "0:0": [] } } };
+
+  test("the key of a bar is that of the first staff that is not a drum staff, which has none", () => {
+    const score: ScoreJSON = { schemaVersion: 1, title: "Key", bars: [{ ...bar, keySig: { fifths: 3, mode: "minor" } }], parts: [drums, guitar([64, 59, 55, 50, 45, 40])] };
+    // A Guitar Pro 7 file has one key a bar: the export writes it on the drum staff too.
+    expect(again(score).score.bars[0]?.keySig).toEqual({ fifths: 3, mode: "minor" });
+    // MusicXML has a key a part: the drums' is not read.
+    const rest = `<note><rest/><duration>16</duration><voice>1</voice></note>`;
+    const part = (clef: string, fifths: number) =>
+      `<measure number="1"><attributes><divisions>4</divisions><key><fifths>${fifths}</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef>${clef}</clef></attributes>${rest}</measure>`;
+    const xml = xmlOf("Key", [part("<sign>percussion</sign>", -2), part("<sign>G</sign><line>2</line>", 3)]);
+    const read = imported(importScore(xml, "key.musicxml")).score;
+    expect(read.parts.map((item) => item.kind)).toEqual(["percussion", "pitched"]);
+    expect(read.bars[0]?.keySig).toEqual({ fifths: 3, mode: "major" });
+  });
+
+  test("a part with strings outside 4 to 7 is read as pitched, its notes at their pitch, and reported", () => {
+    // The projection draws whatever tuning it is given; the score itself has 4 to 7 strings only.
+    const score: ScoreJSON = { schemaVersion: 1, title: "Strings", bars: [bar], parts: [guitar([50, 45, 40])] };
+    const { score: read, report } = again(score);
+    expect(read.parts[0]).toMatchObject({ kind: "pitched", tuning: [], staves: [{ clef: "treble" }] });
+    expect(Object.keys(Object.values(read.parts[0]!.content)[0]!["0:0"]![0]!.notes)).toEqual(["n53"]);
+    expect(report).toContainEqual({ loss: "strings", count: 1, bars: [] });
+  });
+
+  test("a guitar or a bass shown as notes only is read as pitched and reported; a piano so shown is not", () => {
+    const settings = new alphaTab.Settings();
+    const bytesOf = (program: number) => {
+      const { score } = projectScore({ schemaVersion: 1, title: "Notes", bars: [bar], parts: [guitar([64, 59, 55, 50, 45, 40], program)] }, settings);
+      const staff = score.tracks[0]!.staves[0]!;
+      staff.showTablature = false;
+      staff.showStandardNotation = true;
+      return new alphaTab.exporter.Gp7Exporter().export(score, settings);
+    };
+    const shown = imported(importScore(bytesOf(25), "guitar.gp"));
+    expect(shown.score.parts[0]?.kind).toBe("pitched");
+    expect(shown.report).toEqual([{ loss: "tablatureHidden", count: 1, bars: [] }]);
+    expect(imported(importScore(bytesOf(0), "piano.gp")).report).toEqual([]);
+  });
+});
+
 describe("limits: a file over one makes no score, and says which", () => {
   const bar = (id: string) => ({ id, timeSig: { numerator: 4, denominator: 4 } as const });
   const part = (id: string, kind: "fretted" | "percussion"): PartJSON =>
@@ -197,6 +250,14 @@ describe("limits: a file over one makes no score, and says which", () => {
   test(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, () => {
     const guitars = Array.from({ length: MAX_NON_PERCUSSION_PARTS + 1 }, (_, index) => part(`g${index}`, "fretted"));
     expect(importScore(exportGp7(score(1, guitars)), "big.gp")).toEqual({ ok: false, failure: "tooManyNonDrumParts" });
+  });
+
+  test(`at the limits: ${MAX_PARTS} parts, ${MAX_NON_PERCUSSION_PARTS} of them not drums; or ${MAX_PARTS} drums`, () => {
+    const guitars = Array.from({ length: MAX_NON_PERCUSSION_PARTS }, (_, index) => part(`g${index}`, "fretted"));
+    const band = imported(importScore(exportGp7(score(1, [...guitars, part("d", "percussion")])), "band.gp")).score;
+    expect(band.parts.map((item) => item.kind)).toEqual([...guitars.map(() => "fretted"), "percussion"]);
+    const drums = Array.from({ length: MAX_PARTS }, (_, index) => part(`d${index}`, "percussion"));
+    expect(imported(importScore(exportGp7(score(1, drums)), "drums.gp")).score.parts).toHaveLength(MAX_PARTS);
   });
 
   test(`more than ${MAX_BARS} bars`, () => {
