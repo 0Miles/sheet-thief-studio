@@ -96,9 +96,37 @@ function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
   if (typeof value !== "object" || value === null) return value;
   if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
   if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
-  const fields: [string, unknown][] = [];
-  for (const [name, field] of Object.entries(value)) if (name !== "__proto__") fields.push([name, plain(field, depth - 1)]);
-  return Object.fromEntries(fields);
+  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, plain(field, depth - 1)]));
+}
+
+/** Whether a value of the document is an object of fields: not a list, nor a shared type. */
+function isFieldObject(value: unknown): value is object {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Y.AbstractType);
+}
+
+/** The fields a value has of its own but __proto__, each as stored; none when it is not an object of fields. */
+function ownEntries(value: unknown): [string, unknown][] {
+  return isFieldObject(value) ? Object.entries(value).filter(([name]) => name !== "__proto__") : [];
+}
+
+/** A copy of a value without __proto__ fields, `depth` lists and objects down; below, values as stored. */
+function ownCopy(value: unknown, depth: number): unknown {
+  if (depth === 0) return value;
+  if (Array.isArray(value)) return value.map((item) => ownCopy(item, depth - 1));
+  if (!isFieldObject(value)) return value;
+  return Object.fromEntries(ownEntries(value).map(([name, field]) => [name, ownCopy(field, depth - 1)]));
+}
+
+/**
+ * What a command that rewrites a value of the document starts from (#103): a note's fields.
+ * It is a new object of the fields the value has of its own. A field named __proto__ is not one
+ * (#78). The lists and objects in it are copied so too, `PLAIN_DEPTH` levels down; below that,
+ * values are kept as stored. Fields reading does not know are kept. So every member decides from
+ * the same fields and writes the same value. A value that is not an object of fields (a list, a
+ * shared type, a string) has no fields to keep.
+ */
+export function ownFields(value: unknown): Record<string, unknown> {
+  return isFieldObject(value) ? (ownCopy(value, PLAIN_DEPTH + 1) as Record<string, unknown>) : {};
 }
 
 /**
