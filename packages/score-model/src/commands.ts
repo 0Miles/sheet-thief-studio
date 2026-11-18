@@ -209,28 +209,33 @@ function withSuffix(key: string, upper: string | null): string {
  * of those.
  */
 function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
-  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
-  const lower = index < 0 ? null : keyAt(index);
-  let end = index + 1;
-  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
-  const upper = end < order.length ? keyAt(end) : null;
+  const [lower, upper] = boundsAfter(map, order, index);
   const keys = generateNKeysBetween(lower, upper, count);
   return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
 }
 
+/** The keys items put right after the one at `index` of `order` (-1: first) go between, as `keysAfter` takes them. */
+function boundsAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number): [lower: string | null, upper: string | null] {
+  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
+  const lower = index < 0 ? null : keyAt(index);
+  let end = index + 1;
+  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
+  return [lower, end < order.length ? keyAt(end) : null];
+}
+
 /**
- * `count` ordering keys in a row, for items written anew all at once (a restore), in an interval
- * of their own: a stem made as `keysAfter` makes a first key (`withSuffix`: "a0" and five random
+ * `count` ordering keys in a row, between `lower` and `upper` (none: from nothing), for items
+ * written all at once (a restore, bars inserted or appended), in an interval of their own: a stem
+ * made as `keysAfter` makes a first key (`withSuffix`: a key between the two and five random
  * digits), each key the stem followed by the fraction a key between "a0" and "a1" has, in order.
  * Every key of the run sorts after the stem and before any other stem, so two runs made at once
- * never mix. `keysAfter` itself would not do: each of its keys has a suffix of its own, so two
- * runs made from nothing would take turns (a0x, a0y, a1x, a1y…).
+ * at the same place never mix. `keysAfter` itself would not do: each of its keys has a suffix of
+ * its own, so two runs made at once would take turns (a0x, a0y, a1x, a1y…).
  */
-function keysOfARun(count: number): string[] {
+function keysOfARun(count: number, lower: string | null = null, upper: string | null = null): string[] {
   if (count === 0) return [];
-  const first = generateKeyBetween(null, null);
-  const stem = withSuffix(first, null);
-  return generateNKeysBetween(first, generateKeyBetween(first, null), count).map((key) => stem + key.slice(first.length));
+  const stem = withSuffix(generateKeyBetween(lower, upper), upper);
+  return generateNKeysBetween("a0", "a1", count).map((key) => stem + key.slice("a0".length));
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -258,7 +263,8 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = keysAfter(bars, order, index, count);
+    // A run of their own: bars two members insert at one place at once each stay together (#58, after #56's review).
+    const keys = keysOfARun(count, ...boundsAfter(bars, order, index));
     const signature = given[0] ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
@@ -580,7 +586,7 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
 const QUARTER: BeatDuration = { value: 4, dots: 0 };
 
 /** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
-interface BeatPlace {
+export interface BeatPlace {
   voice: YVoice;
   index: number;
   duration: BeatDuration;
@@ -595,9 +601,9 @@ function durationFrom(beat: YBeat | undefined): BeatDuration {
  * Where a beat made at the cursor goes: on a beat, just before it, as long as it; in the append
  * slot, just after the anchor, as long as the anchor (first and a quarter in an empty voice; when
  * the anchor is gone, after the last beat and as long as it, where the cursor settles).
- * Undefined when the cursor's beat or voice is gone.
+ * Undefined when the cursor's beat or voice is gone. Beats pasted there go the same place (`pasteBeats`).
  */
-function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+export function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
   if (cursor.at === "on") {
     const found = beatIndexAt(doc, cursor);
     return found && { ...found, duration: durationFrom(found.voice.get(found.index)) };

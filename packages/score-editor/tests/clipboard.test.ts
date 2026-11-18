@@ -76,7 +76,9 @@ test("bars copied and pasted replace the bars from the cursor's, one undo step",
   expect(session.paste(text)).toEqual({ hints: ["barsAppended"] });
   expect(docToJson(doc).bars).toHaveLength(4);
   expect(frets(all(2))).toEqual([1, 2, 3]);
-  expect(session.cursor).toMatchObject({ barId: barIds[2], beatId: all(2)[0]!.id, at: "on" });
+  // As after a drop: the cursor settles where it was, in that bar; the selection ends.
+  expect(session.cursor).toMatchObject({ barId: barIds[2] });
+  expect(session.selection).toBeNull();
   press("z", 1000, { ctrlKey: true });
   expect(docToJson(doc).bars).toHaveLength(3);
   expect(all(2)).toEqual([]);

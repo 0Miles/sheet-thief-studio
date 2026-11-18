@@ -1,17 +1,20 @@
 // The clipboard (docs/spec/phrases.md, section 2; docs/spec/commands.md, 5.6): what a copy writes
 // as `text/plain`, a prefix and a fragment's JSON, so that it goes across tabs, scores and into the
-// phrase editor; what a paste reads back, and does with it at the cursor.
+// phrase editor, and what a paste reads back. Bars pasted are dropped (`dropFragment`, through
+// the editor's drop); beats pasted are inserted (`pasteBeats`).
 import * as Y from "yjs";
 
-import type { Cursor, Selection } from "./commands";
-import { dropFragment, type DropHint, type DropRefusal, pasteBeats } from "./drop";
-import { moveToBarStart } from "./navigation";
-import { type BarsFragment, type Fragment, fragmentOfBars, fragmentSchema, withoutId } from "./phrases";
+import type { Selection } from "./commands";
+import type { DropRefusal } from "./drop";
+import { type BarsFragment, type Fragment, fragmentOfBars, fragmentOfBeats, fragmentSchema, MAX_FRAGMENT_BYTES, withoutId } from "./phrases";
 import { docToJson } from "./read";
 import { selectedBeats } from "./selection";
 
 /** What the clipboard's text starts with: `@1` becomes `@2` once the fragments change in a way that is not only additions. */
 export const CLIPBOARD_PREFIX = "sheet-thief-studio/fragment@1";
+
+/** The prefix and the line feed after it, which a clipboard of Windows may have made CR LF. */
+const HEAD = new RegExp(`^${CLIPBOARD_PREFIX.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\r?\\n`);
 
 /** A fragment as the clipboard holds it: the prefix, a line feed, its JSON. */
 export function clipboardText(fragment: Fragment): string {
@@ -20,12 +23,12 @@ export function clipboardText(fragment: Fragment): string {
 
 /**
  * The fragment the clipboard's text holds; undefined for any text without the prefix (another
- * version's too), or whose JSON is not a fragment. The line after the prefix may end with CR LF,
- * as a clipboard of Windows may have made it.
+ * version's too), or whose JSON is not a fragment. JSON longer than `MAX_FRAGMENT_BYTES` UTF-16
+ * units is not even parsed: in UTF-8 it is at least as many bytes, more than a fragment may be.
  */
 export function fragmentOfClipboard(text: string): Fragment | undefined {
-  const head = /^sheet-thief-studio\/fragment@1\r?\n/.exec(text);
-  if (head === null) return undefined;
+  const head = HEAD.exec(text);
+  if (head === null || text.length - head[0].length > MAX_FRAGMENT_BYTES) return undefined;
   let json: unknown;
   try {
     json = JSON.parse(text.slice(head[0].length));
@@ -54,34 +57,8 @@ export function fragmentOfSelection(doc: Y.Doc, selection: Selection): Fragment 
   if (part === undefined || found === undefined) return undefined;
   const ids = new Set(found.voice.slice(found.first, found.last + 1).map((beat) => (beat instanceof Y.Map ? beat.get("id") : undefined)));
   const beats = (part.content[selection.barId]?.[selection.voice] ?? []).filter((beat) => ids.has(beat.id)).map(withoutId);
-  if (beats.length === 0) return undefined;
-  if (part.kind === "fretted") return { kind: "fretted", tuning: [...part.tuning], beats } as Fragment;
-  return { kind: part.kind, beats } as Fragment;
+  return beats.length === 0 ? undefined : fragmentOfBeats(part, beats);
 }
 
 /** Why a paste did nothing: the clipboard holds no fragment (`"nothing"`), or the fragment was refused (`DropRefusal`). */
 export type PasteRefusal = "nothing" | DropRefusal;
-
-/** A paste done: where it leaves the cursor, and what to tell the member. */
-export interface Pasted {
-  cursor: Cursor;
-  hints: DropHint[];
-}
-
-/**
- * Paste a fragment at the cursor, one command (docs/spec/commands.md, 5.6). Bars replace bars as a
- * drop does (5.7), from the cursor's bar in its part; the cursor then goes to the first place of
- * that bar in its voice. Beats are inserted in the cursor's voice (`pasteBeats`); the cursor then
- * goes on the last of them.
- */
-export function pasteFragment(doc: Y.Doc, cursor: Cursor, fragment: Fragment): Pasted | DropRefusal {
-  if (isBarsFragment(fragment)) {
-    const dropped = dropFragment(doc, { partId: cursor.partId, barId: cursor.barId }, fragment);
-    if (typeof dropped === "string") return dropped;
-    // The cursor's beat went with what the bar held.
-    return { cursor: moveToBarStart(doc, { ...cursor, beatId: null, at: "after" }), hints: dropped.hints };
-  }
-  const pasted = pasteBeats(doc, cursor, fragment);
-  if (typeof pasted === "string") return pasted;
-  return { cursor: { ...cursor, beatId: pasted.beatIds.at(-1)!, at: "on" }, hints: pasted.hints };
-}

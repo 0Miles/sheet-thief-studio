@@ -5,7 +5,7 @@
 import * as Y from "yjs";
 
 import { beatToY } from "./build";
-import { type Cursor, insertBars, newId } from "./commands";
+import { type Cursor, insertBars, newId, placeFor } from "./commands";
 import { writableCopy } from "./depth";
 import { type BarsFragment, barsFragmentSchema, type BeatsFragment, beatsFragmentSchema, type BeatWithoutId } from "./phrases";
 import {
@@ -23,7 +23,6 @@ import {
   staffCountOf,
   stringOfNoteKey,
   type YPart,
-  type YVoice,
 } from "./schema";
 
 /** Where a fragment is dropped: a part, and the bar its first bar goes in. */
@@ -139,24 +138,9 @@ export interface PastedBeats {
 }
 
 /**
- * Where beats inserted at the cursor go in its voice: before its beat, or in the append slot right
- * after the anchor (first in an empty voice; after the last beat when the anchor is gone), as
- * `insertBeat` puts one. Undefined when the cursor's beat is gone.
- */
-function slotAt(voice: YVoice, cursor: Cursor): number | undefined {
-  const ids = voice.map((beat) => (beat instanceof Y.Map ? beat.get("id") : undefined));
-  if (cursor.at === "on") {
-    const index = ids.indexOf(cursor.beatId);
-    return index < 0 ? undefined : index;
-  }
-  if (cursor.beatId === null) return 0;
-  const anchor = ids.indexOf(cursor.beatId);
-  return (anchor < 0 ? ids.length - 1 : anchor) + 1;
-}
-
-/**
  * Paste a fragment of beats at the cursor, one command (docs/spec/commands.md, 5.6): inserted in
- * its voice before its beat, or in the append slot after the anchor, each with a new id. Refused,
+ * its voice where `insertBeat` puts a beat (`placeFor`: before its beat, or in the append slot
+ * after the anchor), each with a new id. Refused,
  * nothing changed, for a part of another kind, a fragment using a string the part has not (the
  * tuning differing is told, as for a drop), or one that does not pass `beatsFragmentSchema`.
  */
@@ -167,9 +151,10 @@ export function pasteBeats(doc: Y.Doc, cursor: Cursor, given: BeatsFragment): Pa
   const part = partsOf(doc).get(cursor.partId);
   const kind = partKindOf(part);
   // Only a voice reading reads: a beat put anywhere else would not be seen.
-  const voice = part && readableVoicesOf(part, cursor.barId).find(([key]) => key === cursor.voice)?.[1];
-  const index = voice && slotAt(voice, cursor);
-  if (part === undefined || kind === undefined || voice === undefined || index === undefined) return "gone";
+  const readable = part !== undefined && readableVoicesOf(part, cursor.barId).some(([key]) => key === cursor.voice);
+  const place = readable ? placeFor(doc, cursor) : undefined;
+  if (part === undefined || kind === undefined || place === undefined) return "gone";
+  const { voice, index } = place;
   if (kind !== fragment.kind) return "otherKind";
   const hints: DropHint[] = [];
   if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(fragment.beats), hints)) return "tooManyStrings";

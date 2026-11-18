@@ -50,9 +50,10 @@ interface BeatsFragment {
 - **焦點元素要先用測試確認**：現在譜面的焦點元素是 `ScoreView.vue` 的 `[data-scroller]`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
   - **補充**（#52 的結果）：三個瀏覽器都通過，焦點元素維持 `[data-scroller]`。事件在 Chromium、WebKit 送到 `[data-scroller]`，在 Firefox 送到 `<body>`，所以在 document 上聽 `copy`、`cut`、`paste`，只在 `document.activeElement` 是 `[data-scroller]` 時處理（[`testing.md`](testing.md) 第 5 節）。
 - **補充**（#58）：頁面這一側在 `apps/web/src/clipboard.ts` 的 `listenToClipboard`，團譜的兩種編輯視圖與樂句編輯器共用（`apps/web/tests/clipboard.test.ts`）。焦點不在譜面（文字欄位、對話框）時不處理，交給瀏覽器。複製、剪下沒有東西可寫時（沒有選取、唯讀的剪下）不呼叫 `preventDefault()`，剪貼簿不變；貼上一律 `preventDefault()`。
-  - 讀取：前綴之後的換行也接受 `\r\n`（Windows 的剪貼簿可能把 `\n` 改成 `\r\n`）。前綴前面不能有任何字元。
+  - 讀取：前綴之後的換行也接受 `\r\n`（Windows 的剪貼簿可能把 `\n` 改成 `\r\n`）。前綴前面不能有任何字元。前綴之後的文字超過 `MAX_FRAGMENT_BYTES` 個 UTF-16 單位（換成 UTF-8 至少同樣多位元組，一定超過 1 MB）時不 `JSON.parse`，直接當作沒有可以貼上的內容。名為 `__proto__` 的欄位：在音符、聲線這類 record 裡，整個片段驗證失敗（#78）；在物件上和其他不認得的欄位一樣略過，不碰 prototype。過深的值在 schema 讀的位置驗證失敗，在不認得的欄位上略過。
   - 拍點段只包含讀取讀得到的拍點（和畫出來的一樣）；拍點範圍裡沒有讀得到的拍點時，複製不動。小節段同「存成樂句」，用 `fragmentOfBars`。
   - 樂句編輯器裡也能複製、剪下、貼上；貼上小節段的規則同團譜（5.7），樂句的小節不夠時在尾端加上小節，拍號沿用前一個小節。
+  - 提示沿用 #57 的狀態區：團譜的 `.score__status`（一直存在的 live region）裡的 `.score__notice`，以 `say` 先清空再寫入，同一句話再說一次也會被朗讀。
 
 ## 3. 建立樂句的三種途徑
 
@@ -123,6 +124,15 @@ interface BeatsFragment {
 - 放置：拖到小節上放下，或按鍵放到游標所在的小節。拖曳時的目標由 `hitTest` 決定（`geometry.ts:91-129` 的 `cursorAtPoint`，由 `alphaTabEngine.ts:162` 呼叫）；種類不合的聲部，高亮成「不能放」。
 - 放置的語意見 [`commands.md`](commands.md) 5.7。
 - 側欄不做辨識。
+- **補充**（#57）：寫法。
+  - 側欄是 `apps/web/src/components/PhraseSidebar.vue`，放在譜面旁邊，和小節屬性面板、聲部面板、混音器同一時間只開一個。打開時重新讀 `GET /api/phrases`（搜尋同 `/phrases`，打字停 200 ms 後送），焦點進搜尋框；`Esc` 先關預覽，沒有預覽時關側欄；`F4` 關側欄；關掉後焦點回到譜面。四個側邊面板是同一個列舉（`ScoreView.vue` 的 `SidePanel`），同時只有一個。
+  - 預覽是 `role="dialog"`：點樂句打開時焦點移進預覽，關閉（`Esc`、「關閉預覽」、再點一次樂句）時回到打開它的樂句。`Enter` 只在兩處放置：焦點在列表的樂句上，或焦點在預覽裡（不在預覽的按鈕上）。側欄自己的按鈕、連結與輸入框（`button`、`a`、`input`、`select`、`textarea`、`[data-no-drop]`）的 `Enter` 照它們自己的作用，不放置。列表顯示的樂句資訊和樂句庫共用 `strings.phrases.details`。
+  - 相容與拖曳目標的判定是 `apps/web/src/phraseSidebar.ts` 的純函式（vitest）：`fitsPart`（樂句庫列表的 `stringCount`、`staffCount` 對聲部的弦數與譜表數）、`phrasesShown`（沒有游標時列出全部）、`dropSpotOf`。
+  - 預覽的 popover 開在側欄自己的欄位裡，不疊在譜面上，所以不會蓋住譜面的保留區域。預覽裡畫出樂句的小節框（`structureBoxesOf`，避開預覽自己的保留區域），並放上 `data-reserved`。預覽的捲動區最高 50vh、`overflow: auto`；縮放 0.75。renderer 在第一次預覽時建立，側欄關閉時不銷毀（側欄以 `v-show` 隱藏），離開譜頁才銷毀。
+  - 樂句內容（`GET /api/phrases/:id`）依 `id` 與 `revision` 快取，讀不到的下次重讀。
+  - 拖曳用 HTML5 drag and drop：`dragover` 時以 `hitTest` 找小節，`dropSpotOf` 算出要取代的小節（譜裡有的那些）；種類相同時畫成可以放（`data-drop="ok"`），種類不同時只畫游標下那個小節、標成「不能放」（`data-drop="refused"`、`data-drop-label`），不接受放下。弦數、譜表數等其他拒絕由 `dropFragment` 判斷，放下後以提示告知。
+  - 放置走 `EditorSession.drop(target, fragment)`：一個 Command、一個復原步驟；唯讀時拒絕（同其他會改動文件的鍵）；游標以 `settleCursor` 留在原處（原本的拍點被取代時移到最近的位置），選取結束。拖曳放下後焦點回到譜面，`Ctrl+Z` 直接復原。
+  - 放置的提示（`DropHint`）與拒絕（`DropRefusal`）顯示在譜頁工具列的提示（`role="status"`），**不是** issue #57 寫的 toast。理由：app 沒有掛 `@karyl-chan/ui` 的 `AppToast`；工具列的提示在譜面上方，不疊在譜面上，所以不會蓋到保留區域；session 的其他提示也在這裡。這個 `role="status"` 容器（`.score__status`）一直在頁面上，只換裡面的內容；提示本身（`.score__notice`）只在有提示時才在容器裡，所以「沒有提示」仍是沒有這個元素（#109 的 `readOnly.spec.ts` 這樣判斷）；放置的提示先清空再寫入，所以連續兩次相同的提示，螢幕閱讀器也會再念一次；成功而沒有提示的放置會清掉上一次的提示。文字在 `strings.score.phraseSidebar`。
 
 ## 7. 審核頁（`/recognitions/:id`）
 

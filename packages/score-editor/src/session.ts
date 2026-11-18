@@ -5,6 +5,7 @@ import {
   addPresetPart,
   appendBar,
   type BarRefusal,
+  type BarsFragment,
   type BarSide,
   barsOf,
   bendCycle,
@@ -18,8 +19,8 @@ import {
   type DropHint,
   fragmentOfClipboard,
   fragmentOfSelection,
-  type Pasted,
-  pasteFragment,
+  isBarsFragment,
+  pasteBeats,
   type PasteRefusal,
   type Cursor,
   type KeySignature,
@@ -29,6 +30,10 @@ import {
   deletePart,
   deleteSelection,
   dotCycle,
+  type DropRefusal,
+  type Dropped,
+  dropFragment,
+  type DropTarget,
   durationStep,
   dynamicCycle,
   extendSelection,
@@ -269,6 +274,15 @@ export interface EditorSession {
    * here (newer than this code, or not a score), or read-only.
    */
   replaceScore(version: unknown): boolean;
+  /**
+   * Drop a fragment of bars (a phrase from the sidebar) on a part, from a bar on, one command
+   * (`dropFragment`, docs/spec/commands.md, 5.7): the target is the bar dragged onto, or the
+   * cursor's. The cursor settles where it was (its beat replaced, the nearest place there now);
+   * the selection ends. What was dropped and the hints the page tells (`Dropped`), or why it was
+   * refused, nothing changed (`DropRefusal`); null when nothing ran: read-only (the member is told,
+   * as for a key), or no cursor.
+   */
+  drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null;
   destroy(): void;
 }
 
@@ -716,6 +730,20 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return execute(command);
   }
 
+  /** `EditorSession.drop`: a phrase from the sidebar, and bars pasted. */
+  function drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null {
+    let result: Dropped | DropRefusal | null = null;
+    const done = runWithoutKey({
+      changes: true,
+      run: (at) => {
+        result = dropFragment(doc, target, fragment);
+        if (typeof result === "string") return { cursor: at, selection, done: false };
+        return { cursor: settled(at), selection: null };
+      },
+    });
+    return done || typeof result === "string" ? result : null;
+  }
+
   return {
     get cursor() {
       return cursor;
@@ -795,14 +823,20 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
       }
       const fragment = fragmentOfClipboard(text);
       if (fragment === undefined) return "nothing";
+      // Bars replace bars as a drop does, from the cursor's bar of its part.
+      if (isBarsFragment(fragment)) {
+        const dropped = drop({ partId: cursor.partId, barId: cursor.barId }, fragment);
+        return dropped === null || typeof dropped === "string" ? dropped : { hints: dropped.hints };
+      }
       // What the command did, heard from inside it.
-      const outcome: { result: Pasted | PasteRefusal } = { result: "gone" };
+      const outcome: { result: ReturnType<typeof pasteBeats> } = { result: "gone" };
       runWithoutKey({
         changes: true,
         run: (at) => {
-          const result = pasteFragment(doc, at, fragment);
+          const result = pasteBeats(doc, at, fragment);
           outcome.result = result;
-          return typeof result === "string" ? { cursor: at, selection, done: false } : { cursor: result.cursor, selection: null };
+          // The cursor goes on the last beat pasted.
+          return typeof result === "string" ? { cursor: at, selection, done: false } : { cursor: { ...at, beatId: result.beatIds.at(-1)!, at: "on" }, selection: null };
         },
       });
       const { result } = outcome;
@@ -881,6 +915,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         }),
       );
     },
+    drop,
     destroy() {
       doc.off("afterTransaction", settle);
       doc.off("beforeTransaction", separate);

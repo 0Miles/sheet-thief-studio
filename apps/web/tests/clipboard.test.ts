@@ -69,6 +69,6 @@ test("what a paste tells: why it was refused, what else it did together, or noth
   expect(pasteNotice("nothing")).toBe(strings.score.clipboard.refused.nothing);
   expect(pasteNotice({ hints: ["tuningDiffers", "barsAppended"] })).toBe(`${text.hints.tuningDiffers}${text.joiner}${text.hints.barsAppended}`);
   expect(pasteNotice({ hints: [] })).toBeNull();
-  expect(pasteNotice("gone")).toBeNull();
+  expect(pasteNotice("gone")).toBe(text.refused.gone);
   expect(pasteNotice(null)).toBeNull();
 });

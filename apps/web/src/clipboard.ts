@@ -11,8 +11,8 @@ const text = strings.score.clipboard;
 
 /** What the member is told after a paste; null when there is nothing to tell. */
 export function pasteNotice(outcome: PasteOutcome): string | null {
-  // Read-only is told by the session's refusal; a cursor whose bar just went has nothing to say.
-  if (outcome === null || outcome === "gone") return null;
+  // Read-only is told by the session's refusal.
+  if (outcome === null) return null;
   if (typeof outcome === "string") return text.refused[outcome];
   return outcome.hints.length === 0 ? null : outcome.hints.map((hint) => text.hints[hint]).join(text.joiner);
 }
