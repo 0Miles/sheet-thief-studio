@@ -54,7 +54,7 @@ interface BeatsFragment {
 
 1. **空白樂句**：在 `/phrases` 按「新增」，選聲部預設（[`commands.md`](commands.md) 第 10 節的預設表），在樂句編輯器裡打。**補充**：新的空白樂句是 4/4、1 個空小節，名稱「未命名樂句」。
 2. **存成樂句**：在團譜裡選取**小節範圍**後「存成樂句」。任何成員都可以，包含 Viewer；訪客沒有帳號，所以不行。片段帶著那個聲部的 `kind`、`tuning`（fretted）、`staves`（pitched）、每個小節的拍號與所有聲線。**補充**：只有拍點範圍時，提示「請選取小節範圍」；預設名稱是「<團譜標題> 第 a–b 小節」，可以在存檔前修改。
-   - **補充**（#55）：入口是兩種編輯視圖工具列上的「存成樂句」按鈕（Read view 沒有，所以訪客、以及不能打譜的裝置上的成員都沒有）。沒有選取或只有拍點範圍時按鈕停用，外框的提示是「請選取小節範圍」。按下時以當下的內容取出片段（`apps/web/src/savePhrase.ts` 的 `barsToSave`，用 `fragmentOfBars`），對話框開著時別人的修改不算進去；存好後留在團譜，提示「已存成樂句「<名稱>」。」。只有一個小節時預設名稱是「<團譜標題> 第 a 小節」；空白標題用「未命名」；太長時從標題的尾端整個字元截掉，讓名稱不超過 100 字元（`defaultPhraseName`）。
+   - **補充**（#55）：入口是兩種編輯視圖工具列上的「存成樂句」按鈕（Read view 沒有，所以訪客、以及不能打譜的裝置上的成員都沒有）。沒有選取或只有拍點範圍時按鈕停用：用 `aria-disabled` 而不是 `disabled`，按鈕留在 Tab 順序裡，`aria-describedby` 指向「請選取小節範圍」，按下不動作。按下時以當下的內容取出片段（`apps/web/src/savePhrase.ts` 的 `barsToSave`，用 `fragmentOfBars`），對話框開著時別人的修改不算進去；按鈕狀態與取出的片段都來自 session 最後回報的選取。存好後留在團譜，提示「已存成樂句「<名稱>」。」；那個聲部在那些小節裡有讀不懂而略過的內容（`invalidContent` Flag）時，提示改成「……；讀不懂的內容已經略過，沒有存進去。」。伺服器回的任何 413（片段超過 1 MB 的 `phrase_too_large`，或請求本體超過上限的 `payload_too_large`）都顯示「樂句太大。」（`saveRefusal`，同 `phraseSaver.ts`）。只有一個小節時預設名稱是「<團譜標題> 第 a 小節」；空白標題用「未命名」；太長時從標題的尾端以字素（`Intl.Segmenter`，ZWJ 組成的 emoji 不拆開）為單位截掉，讓名稱不超過 100 個 UTF-16 單位（和 `phraseName` 的 zod 計法相同；`defaultPhraseName`）。
 3. **辨識**：見第 7 節與 [`recognizer.md`](recognizer.md)。
 
 ## 4. 樂句庫（`/phrases`）

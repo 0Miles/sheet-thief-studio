@@ -520,15 +520,20 @@ function cancelTitle(): void {
  * too, once a range of bars is selected; never a range of beats. A guest has no edit view, nor a
  * library to save to.
  */
-const canSavePhrase = computed(() => editing.value && presence.value.selection?.kind === "bars");
+const selectedBars = computed(() => {
+  const json = score.value;
+  // One source for the button and for what it saves: the selection as the session last said it, in the score drawn last.
+  return editing.value && json !== null ? barsToSave(json, presence.value.selection, flags.value) : null;
+});
 /** The bars being saved as a phrase, as they were when the member asked; null while the dialog is closed. */
 const savingPhrase = shallowRef<BarsToSave | null>(null);
 
-/** The toolbar's button: the bars selected, as they are now, wait in the dialog for a name. */
+/**
+ * The toolbar's button: the bars selected, as they are now, wait in the dialog for a name. Without
+ * a range of bars it stays where it is in the keys' order, saying why, and does nothing.
+ */
 function openSavePhrase(): void {
-  const json = score.value;
-  if (!canSavePhrase.value || json === null) return;
-  savingPhrase.value = barsToSave(json, session?.selection ?? null);
+  if (selectedBars.value !== null) savingPhrase.value = selectedBars.value;
 }
 
 function closeSavePhrase(): void {
@@ -537,7 +542,8 @@ function closeSavePhrase(): void {
 }
 
 function onPhraseSaved(name: string): void {
-  notice.value = strings.savePhrase.saved(name);
+  // What could not be read in those bars was left out: said, the score flagging where.
+  notice.value = savingPhrase.value?.skipped ? strings.savePhrase.savedSkipping(name) : strings.savePhrase.saved(name);
   closeSavePhrase();
 }
 
@@ -1099,19 +1105,25 @@ onBeforeUnmount(() => {
             {{ text.parts.panel }}
           </AppButton>
         </div>
-        <!-- Disabled, the button says why on the box around it: a disabled button gets no pointer of its own. -->
-        <span v-if="editing" :title="canSavePhrase ? undefined : strings.savePhrase.barsOnly" data-save-phrase-hint>
+        <!--
+          Without a range of bars the button is disabled only to assistive technology (aria-disabled):
+          it stays in the keys' order, its description saying why, and a press does nothing.
+        -->
+        <template v-if="editing">
           <AppButton
             variant="ghost"
             size="sm"
             data-save-phrase
-            :disabled="!canSavePhrase"
-            :title="canSavePhrase ? strings.savePhrase.openTitle : undefined"
+            :class="{ score__unavailable: selectedBars === null }"
+            :aria-disabled="selectedBars === null"
+            :aria-describedby="selectedBars === null ? 'save-phrase-why' : undefined"
+            :title="selectedBars === null ? strings.savePhrase.barsOnly : strings.savePhrase.openTitle"
             @click="openSavePhrase"
           >
             {{ strings.savePhrase.open }}
           </AppButton>
-        </span>
+          <span id="save-phrase-why" hidden>{{ strings.savePhrase.barsOnly }}</span>
+        </template>
         <FlagControls
           v-if="view"
           :count="flags.length"
@@ -1437,6 +1449,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+/* A button that does nothing yet (aria-disabled): looks it, still reachable by the keys. */
+.score__unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .score__bars {
   display: flex;
