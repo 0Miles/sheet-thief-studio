@@ -1021,21 +1021,21 @@ def build_tracks(pdfs: list[bytes], options: ConversionOptions) -> BuiltTracks:
         scores.append(score)
         track_reports.append(report)
     return BuiltTracks(
-        scores,
-        track_reports,
-        detected,
-        title,
-        artist,
-        tempo,
-        tempo_source,
-        tempo_reason,
-        numerator,
-        denominator,
-        signature_detected,
-        signature_raw,
-        signature_alternatives,
-        signature_source,
-        signature_reason,
+        scores=scores,
+        track_reports=track_reports,
+        detected=detected,
+        title=title,
+        artist=artist,
+        tempo=tempo,
+        tempo_source=tempo_source,
+        tempo_reason=tempo_reason,
+        numerator=numerator,
+        denominator=denominator,
+        signature_detected=signature_detected,
+        signature_raw=signature_raw,
+        signature_alternatives=signature_alternatives,
+        signature_source=signature_source,
+        signature_reason=signature_reason,
     )
 
 

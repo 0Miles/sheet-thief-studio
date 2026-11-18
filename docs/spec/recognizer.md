@@ -57,9 +57,10 @@
 - **補充**：埠號 8000；Node 端呼叫的逾時是 930 秒（整體上限 900 秒加 30 秒餘裕）。
 - **補充**（#61）實作的細節：
   - `recognizer/service.py`，用 Python 標準庫的 `http.server`（image 裡沒有 web 框架，也不為一個端點新增套件），`python -m recognizer.service` 啟動，聽 `0.0.0.0:8000`（`HOST` 可改）。
-  - 先讀完並檢查請求（400），再看是否忙碌（503）：忙碌時送來的壞請求仍是 400。`/healthz` 在辨識進行中也照常回 200。
+  - 照上面「立刻回 503」：先搶那一件的位置，搶不到就回 503 `busy` 並關閉連線，body 不讀（忙碌時再多請求也不佔記憶體；回應後 client 還在送的資料最多丟棄 2 秒、不保留，免得連線被重設、client 讀不到 503）。搶到之後才讀 body、檢查請求，不合就回 400 並讓出位置。`/healthz` 在辨識進行中也照常回 200。
+  - 連線閒置 60 秒（每次讀寫 socket）就關閉；整個 body 要在 120 秒內送完，否則回 400 `bad_request` 並讓出位置。
   - 400 的回應不在契約裡，形狀是 `{ code, params }`：`bad_request`（不是 `multipart/form-data`、body 不完整、沒有 `Content-Length` 或用 chunked）、`no_images`（沒有 `images` 欄位）、`too_many_images`（超過 15 張）、`empty_image` `{ page }`、`file_too_large` `{ page }`（超過 10 MB）、`unsupported_image` `{ page }`（以檔頭判斷不是 PNG、JPEG、WebP）、`upload_too_large`（合計超過 40 MB；`Content-Length` 超過 40 MB 加 64 KB 時不讀 body）。`page` 從 1 數起。server 收檔時就先擋同樣的東西，正常不會遇到；萬一遇到，server 當成 `unavailable`。
-  - 422 的 code：沙箱的 `ConversionTimeout` → `timeout`；`ConversionUnavailable` → `unavailable`；核心的 `ConversionError`（頁層級的原因放進 `pages`）與其他沒料到的例外 → `recognition_failed`。核心的句子只進 log，用英文（`i18n.use("en")`）。
+  - 422 的 code：沙箱的 `ConversionTimeout` → `timeout`；`ConversionUnavailable` → `unavailable`；核心的 `ConversionError`（頁層級的原因放進 `pages`）與其他沒料到的例外 → `recognition_failed`。核心的句子只進 log，用英文（`i18n.use("en")`）。辨識跑在 forkserver 的子行程裡，那裡沒有設定 logging：子行程的 log（`recognizer` 底下的 logger，INFO 以上，最多 200 筆）隨結果或錯誤一起傳回父行程，由父行程以同一個 logger 寫出（前面加 `(recognition child)`）。
   - 第 4 節的限制從 `config.get_settings()`（環境變數）取，傳給 `sandbox.run_isolated` 的 `recognize` 工作（圖片在子行程裡組成 PDF，再走出口）。前身的 `worker_concurrency` 刪掉：一次一件是介面的規則（503），不是設定。
 
 ## 4. 限制與逾時
@@ -81,7 +82,7 @@
 辨識服務回傳**它自己的中間模型 JSON**，帶版本號，以 JSON Schema 描述；Python 核心不認得 Studio 的 schema。
 
 - 新增的 JSON 出口放在 `_build_track` 之後、`_unify_bars` 之前（前身 `converter.py:558,738`）。理由：`_unify_bars` 會切掉超出拍號的音（前身 `converter.py:738-745`），違反 Studio「只標記、不改寫」的原則。
-- **補充**（#61）：出口在 `recognizer/contract.py`。`converter.build_tracks` 是從 `convert_many` 拆出來的前半（讀檔到每個聲部的 `_build_track`），`convert_many` 照舊接著做；出口只用 `build_tracks`。
+- **補充**（#61）：出口在 `recognizer/contract.py` 的 `result_of_pdf`。`converter.build_tracks` 是從 `convert_many` 拆出來的前半（讀檔到每個聲部的 `_build_track`），`convert_many` 照舊接著做；出口只用 `build_tracks`。
 - JSON Schema 放在 `services/recognizer/contract/recognition.schema.json`（補充：路徑），版本號從 1 開始。形狀改了就升版本號。
 - Python 與 TypeScript 兩邊用同一批契約 fixture 測試（補充：放在 `services/recognizer/contract/fixtures/`，TypeScript 的測試直接讀這個目錄）。
 - **補充**（#59）：server 讀這份 JSON 用的 zod 形狀在 `packages/contracts/src/recognizer.ts`（`recognizerResponse`、`recognizerResult`、`recognizerFailure`）。`packages/contracts/tests/recognizer.test.ts` 用 Ajv（JSON Schema 2020-12）與 zod 驗證每一份 fixture，也驗證故意改壞的版本兩者都拒絕，並檢查 schema 的每個欄位都有 `description`。欄位的意思寫在 schema 的 `description` 裡；本節只寫大綱與跨欄位的規則。
@@ -145,7 +146,7 @@
   - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出（只標記、不改寫）。
   - `sign`、`jump` 不用前身 Guitar Pro 的名稱；前身的 `"Da Coda"` 就是 `to_coda`。
   - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `\d` 也吃得到 `0.`）不輸出。
-- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。**補充**（#61）：有 code 的句子在副本裡是 `notices.Notice`（`str` 的子類別，句子不變，另帶 code 與參數），核心與它的測試照舊當字串用；調弦與「從圖片讀出」的句子標成不回報。
+- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。**補充**（#61）：有 code 的句子在副本裡是 `notices.Notice`（`str` 的子類別，句子不變，另帶 code 與參數），核心與它的測試照舊當字串用；調弦與「從圖片讀出」的句子標成不回報。每一句（有 code 的也是）都寫進 log。
 
 **補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
 

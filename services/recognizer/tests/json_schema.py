@@ -51,6 +51,10 @@ def errors(instance: object, schema: dict | None = None, root: dict | None = Non
     def valid(sub: dict, at: str = path) -> bool:
         return not errors(instance, sub, root, at)
 
+    if ("then" in schema or "else" in schema) and "if" not in schema:
+        raise ValueError("then or else without if")
+    if ("minContains" in schema or "maxContains" in schema) and "contains" not in schema:
+        raise ValueError("minContains or maxContains without contains")
     for keyword, value in schema.items():
         if keyword in _ANNOTATIONS or keyword in ("then", "else", "minContains", "maxContains"):
             continue

@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,6 +18,7 @@ import pytest
 from recognizer.config import Settings
 from recognizer.converter import ConversionError
 from recognizer.sandbox import ConversionTimeout, ConversionUnavailable
+from recognizer import service
 from recognizer.service import RecognizerServer, run_recognition
 from tests.json_schema import errors, fixture
 
@@ -135,7 +138,9 @@ def test_a_body_longer_than_all_the_images_may_be_is_not_read():
         connection.close()
 
 
-def test_a_second_request_while_one_runs_is_busy():
+@contextmanager
+def one_running() -> Iterator[RecognizerServer]:
+    """A server busy with one recognition (answered four-strings once it is let go)."""
     started, release = threading.Event(), threading.Event()
 
     def slow(images, settings):
@@ -149,14 +154,62 @@ def test_a_second_request_while_one_runs_is_busy():
         thread.start()
         try:
             assert started.wait(30)
-            assert recognize(server, PNG) == (503, fixture("error-busy"))
-            assert call(server, "GET", "/healthz")[0] == 200  # the health check still answers
+            yield server
         finally:
             release.set()
             thread.join()
         assert first == [(200, fixture("four-strings"))]
         assert len(server.calls) == 1
         assert recognize(server, PNG) == (200, fixture("four-strings"))  # free again
+
+
+def test_a_second_request_while_one_runs_is_busy():
+    with one_running() as server:
+        assert recognize(server, PNG) == (503, fixture("error-busy"))
+        assert recognize_body(server, form(b"not a picture")) == (503, fixture("error-busy"))  # not even read
+        assert call(server, "GET", "/healthz")[0] == 200  # the health check still answers
+
+
+def test_while_busy_a_large_request_is_answered_at_once_without_its_body():
+    with one_running() as server:
+        with socket.create_connection(server.server_address[:2], timeout=10) as client:
+            length = 40 * 1024 * 1024
+            client.sendall(
+                (
+                    f"POST /recognize HTTP/1.1\r\nHost: recognizer\r\nContent-Length: {length}\r\n"
+                    f"Content-Type: multipart/form-data; boundary={BOUNDARY}\r\n\r\n"
+                ).encode()
+                + b"\0" * (256 * 1024)  # a little of the 40 MB, and no more
+            )
+            started = time.monotonic()
+            answer = http.client.HTTPResponse(client)
+            answer.begin()
+            assert (answer.status, json.loads(answer.read())) == (503, fixture("error-busy"))
+            assert answer.getheader("Connection") == "close"
+            assert time.monotonic() - started < 1
+
+
+def test_while_busy_a_client_that_sends_its_whole_body_still_reads_the_answer():
+    # what the service does not read is thrown away for a moment, so the client is not reset
+    with one_running() as server:
+        assert recognize(server, PNG + b"\0" * (4 * 1024 * 1024)) == (503, fixture("error-busy"))
+
+
+def test_a_client_that_stops_sending_is_cut_off_and_frees_the_place(monkeypatch):
+    monkeypatch.setattr(service._Handler, "timeout", 0.5)
+    with serving() as server:
+        with socket.create_connection(server.server_address[:2], timeout=10) as client:
+            client.sendall(
+                (
+                    f"POST /recognize HTTP/1.1\r\nHost: recognizer\r\nContent-Length: 1000\r\n"
+                    f"Content-Type: multipart/form-data; boundary={BOUNDARY}\r\n\r\n--{BOUNDARY}"
+                ).encode()
+            )
+            answer = http.client.HTTPResponse(client)
+            answer.begin()
+            assert (answer.status, json.loads(answer.read())) == (400, {"code": "bad_request", "params": {}})
+        assert recognize(server, PNG) == (200, fixture("six-strings"))
+        assert len(server.calls) == 1
 
 
 PAGES = [{"page": 1, "code": "no_staff"}, {"page": 2, "code": "no_notes"}, {"page": 3, "code": "invalid_image"}]

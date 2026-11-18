@@ -55,6 +55,21 @@ def test_the_checker_takes_every_fixture_and_refuses_a_broken_one():
     assert errors(broken) != []
 
 
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "patternProperties": {"^x": {"type": "string"}}},
+        {"then": {"type": "string"}},
+        {"else": {"type": "string"}},
+        {"maxContains": 1},
+    ],
+    ids=["an unknown keyword", "then without if", "else without if", "maxContains without contains"],
+)
+def test_the_checker_refuses_a_schema_it_cannot_check(schema):
+    with pytest.raises(ValueError):
+        errors({"x": 1}, schema, {"$defs": {}})
+
+
 def test_a_bar_longer_than_its_time_signature_keeps_every_note():
     # five quarter notes in a 4/4 bar: _unify_bars would cut the fifth, the exit keeps it
     overfull = bar(*(quarter(ScoreNote(string=1, fret=fret)) for fret in range(5)))
@@ -182,7 +197,7 @@ def _picture(path: Path) -> bytes:
 )
 def test_the_result_of_each_fixture_picture_passes_the_schema(pages):
     pdf = images_pdf([_picture(PICTURES / name) for name in pages], PROJECT.max_image_pixels)
-    result = contract.recognize(pdf, PROJECT)
+    result = contract.result_of_pdf(pdf, PROJECT)
     assert errors(result) == []
     assert result["strings"] == 6 and any(beat["notes"] for b in result["bars"] for beat in b["beats"])
 
@@ -193,6 +208,6 @@ def test_a_picture_with_no_staff_fails_with_its_page():
     Image.new("RGB", (400, 200), "white").save(blank, "PNG")
     pdf = images_pdf([_picture(PICTURES / "single-page.png"), blank.getvalue()], PROJECT.max_image_pixels)
     with pytest.raises(ConversionError) as caught:
-        contract.recognize(pdf, PROJECT)
+        contract.result_of_pdf(pdf, PROJECT)
     answer = contract.failure("recognition_failed", caught.value.diagnostics)
     assert errors(answer) == [] and answer["error"]["pages"] == [{"page": 2, "code": "no_staff"}]

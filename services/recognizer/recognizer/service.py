@@ -2,9 +2,10 @@
 
 ``POST /recognize`` takes the pages of one TAB as ``multipart/form-data`` (a field ``images`` per
 page, in order) and answers the contract's JSON (``contract.py``): 200 with the result, 422 with a
-failure, 503 with ``busy`` while another recognition runs (one at a time). A request that is not
-one (no images, a file that is not a PNG, JPEG or WebP, an empty or too large one) is answered 400
-with ``{code, params}``, outside the contract: the Studio server checks the same before calling.
+failure, 503 with ``busy`` while another recognition runs (one at a time: at once, its body not
+read). A request that is not one (no images, a file that is not a PNG, JPEG or WebP, an empty or
+too large one) is answered 400 with ``{code, params}``, outside the contract: the Studio server
+checks the same before calling.
 ``GET /healthz`` answers 200.
 
 Python's own HTTP server, not a framework: the service has one endpoint, one request at a time,
@@ -16,7 +17,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import threading
+import time
 from collections.abc import Callable
 from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +36,14 @@ logger = logging.getLogger(__name__)
 PORT = 8000
 # Room for the form's boundaries and part headers on top of the images themselves.
 FORM_OVERHEAD = 64 * 1024
+# A connection that sends nothing for this long is closed (each read and write on the socket).
+SOCKET_TIMEOUT_S = 60
+# The whole body must arrive within this: a client trickling it in keeps the one recognition's place.
+BODY_TIMEOUT_S = 120
+# After an answer given without reading the body, what the client still sends is thrown away (never
+# kept) for at most this long before the connection closes: closing with data unread resets it, and
+# the client could lose the answer.
+DISCARD_S = 2
 
 # Runs one recognition of the pages: the contract's result, or one of the sandbox's exceptions.
 Run = Callable[[list[bytes], Settings], dict]
@@ -168,6 +179,7 @@ class RecognizerServer(ThreadingHTTPServer):
 class _Handler(BaseHTTPRequestHandler):
     server: RecognizerServer
     protocol_version = "HTTP/1.1"
+    timeout = SOCKET_TIMEOUT_S
 
     def do_GET(self) -> None:  # noqa: N802 (the name http.server calls)
         if self.path == "/healthz":
@@ -177,23 +189,27 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/recognize":
-            self.close_connection = True  # its body is not read
-            self._send(404, {"code": "not_found", "params": {}})
+            self._refuse(404, {"code": "not_found", "params": {}})
             return
-        settings = self.server.settings
-        try:
-            body = self._body(settings.max_total_upload_bytes + FORM_OVERHEAD)
-            images = images_of(self.headers.get("content-type", ""), body, settings)
-        except BadRequest as exc:
-            self._send(400, exc.answer())
-            return
+        # Busy first, before reading anything: while one runs, the others cost no memory.
         if not self.server.running.acquire(blocking=False):
-            self._send(503, failure("busy"))
+            self._refuse(503, failure("busy"))
             return
+        refused: BadRequest | None = None
         try:
-            status, answer = recognize(images, settings, self.server.run)
+            settings = self.server.settings
+            try:
+                body = self._body(settings.max_total_upload_bytes + FORM_OVERHEAD)
+                images = images_of(self.headers.get("content-type", ""), body, settings)
+            except BadRequest as exc:
+                refused = exc
+            else:
+                status, answer = recognize(images, settings, self.server.run)
         finally:
-            self.server.running.release()
+            self.server.running.release()  # before answering a request that is not one, too
+        if refused is not None:
+            (self._refuse if self.close_connection else self._send)(400, refused.answer())
+            return
         self._send(status, answer)
 
     def _body(self, limit: int) -> bytes:
@@ -211,11 +227,35 @@ class _Handler(BaseHTTPRequestHandler):
         if length > limit:
             self.close_connection = True
             raise BadRequest("upload_too_large")
-        body = self.rfile.read(length)
-        if len(body) != length:
+        chunks: list[bytes] = []
+        received = 0
+        deadline = time.monotonic() + BODY_TIMEOUT_S
+        try:
+            while received < length and time.monotonic() < deadline:
+                chunk = self.rfile.read1(min(length - received, 1024 * 1024))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                received += len(chunk)
+        except OSError:  # the socket timed out, or the client went away
+            pass
+        if received != length:
             self.close_connection = True
             raise BadRequest("bad_request")
-        return body
+        return b"".join(chunks)
+
+    def _refuse(self, status: int, body: dict) -> None:
+        """Answer without reading the rest of the request, and close the connection."""
+        self.close_connection = True
+        self._send(status, body)
+        try:
+            self.connection.shutdown(socket.SHUT_WR)
+            self.connection.settimeout(0.2)
+            stop = time.monotonic() + DISCARD_S
+            while time.monotonic() < stop and self.connection.recv(64 * 1024):
+                pass
+        except OSError:
+            pass
 
     def _send(self, status: int, body: dict) -> None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")

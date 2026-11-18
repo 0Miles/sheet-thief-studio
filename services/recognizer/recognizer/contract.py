@@ -14,6 +14,7 @@ from collections.abc import Iterable
 
 from .converter import ConversionError, ConversionOptions, build_tracks
 from .model import Score, ScoreBeat, ScoreMeasure, ScoreNote
+from .music_settings import tempo_in_range
 from .notices import PICTURE, TUNING, Notice
 
 logger = logging.getLogger(__name__)
@@ -41,8 +42,6 @@ JUMPS = {
 }
 # Failures of the whole job (section 5.2); "busy" is answered with HTTP 503, the others with 422.
 FAILURE_CODES = ("recognition_failed", "timeout", "unavailable", "busy")
-PAGE_CODES = ("no_staff", "no_notes", "invalid_image", "image_too_large")
-TEMPO_RANGE = (20, 400)
 
 
 def failure(code: str, pages: Iterable[dict] = ()) -> dict:
@@ -53,7 +52,7 @@ def failure(code: str, pages: Iterable[dict] = ()) -> dict:
     return {"contract": CONTRACT, "version": VERSION, "error": {"code": code, "params": {}, "pages": listed}}
 
 
-def recognize(pdf: bytes, options: ConversionOptions) -> dict:
+def result_of_pdf(pdf: bytes, options: ConversionOptions) -> dict:
     """Read one PDF (the pictures of one request, a page each) as one part: the contract's result."""
     built = build_tracks([pdf], options)
     return result(built.scores[0], built.track_reports[0])
@@ -108,7 +107,7 @@ def _bars(score: Score) -> list[dict]:
 
 
 def _bar(measure: ScoreMeasure, signature: dict | None) -> dict:
-    tempo = measure.tempo if measure.tempo and TEMPO_RANGE[0] <= measure.tempo <= TEMPO_RANGE[1] else None
+    tempo = measure.tempo if measure.tempo and tempo_in_range(measure.tempo) else None
     return {
         # A bar's signature only where it changes; null keeps the one in force.
         "timeSignature": signature,
@@ -169,18 +168,21 @@ def _note(note: ScoreNote) -> dict:
 
 
 def _warnings(score: Score, report: dict) -> list[dict]:
-    """The warnings as codes. A sentence with no code yet is "other", its text in the log only;
-    the tuning's and the picture's are left out (the result already says them)."""
+    """The warnings as codes; every sentence goes to the log only. A sentence with no code yet is
+    "other"; the tuning's and the picture's are left out (the result already says them)."""
     found: list[dict] = []
     for warning in report["warnings"]:
-        if isinstance(warning, Notice) and warning.code in (TUNING, PICTURE):
+        code = warning.code if isinstance(warning, Notice) else None
+        if code in (TUNING, PICTURE):
+            logger.info("warning, not reported (%s): %s", code, warning)
             continue
-        if isinstance(warning, Notice) and warning.code in WARNING_PARAMS:
-            params = {name: int(warning.params[name]) for name in WARNING_PARAMS[warning.code]}
-            found.append({"code": warning.code, "params": params})
-            continue
-        logger.info("a warning with no code, reported as other: %s", warning)
-        found.append({"code": "other", "params": {}})
+        if code in WARNING_PARAMS:
+            params = {name: int(warning.params[name]) for name in WARNING_PARAMS[code]}
+            found.append({"code": code, "params": params})
+        else:
+            code = "other"
+            found.append({"code": code, "params": {}})
+        logger.info("warning, reported as %s: %s", code, warning)
     # Rhythm estimated from the spacing, where the part reads its printed rhythm elsewhere: by the
     # predecessor's count of bars read (rhythm_from_notation), on the bars as _build_track numbers
     # them (its own _flag_estimated_rhythm runs after the bars are aligned and cut).

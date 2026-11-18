@@ -19,7 +19,7 @@ from collections.abc import Callable
 from multiprocessing.connection import Connection
 
 from . import i18n
-from .contract import recognize
+from .contract import result_of_pdf
 from .converter import ConversionError, ConversionOptions, convert_many, inspect, set_progress
 
 logger = logging.getLogger(__name__)
@@ -183,6 +183,44 @@ def _close_job(job: object | None) -> None:
         ctypes.WinDLL("kernel32").CloseHandle(job)
 
 
+# The child's log records travel to the parent with its reply, and the parent writes them: a
+# forkserver child has no logging set up, so what it logs (the core's sentences the contract only
+# reports as codes, docs/spec/recognizer.md 5.1) would otherwise be lost.
+MAX_LOG_RECORDS = 200
+MAX_LOG_CHARS = 4000
+_PACKAGE = __name__.rpartition(".")[0]
+
+
+class _LogCollector(logging.Handler):
+    """Keeps the child's records (INFO and up, of the package's loggers) as [level, logger, text]."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.INFO)
+        self.setFormatter(logging.Formatter("%(message)s"))  # with the traceback of logger.exception
+        self.records: list[list[object]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if len(self.records) < MAX_LOG_RECORDS:
+            self.records.append([record.levelno, record.name, self.format(record)[:MAX_LOG_CHARS]])
+
+
+def _replay_logs(records: object) -> None:
+    """Write the records the child sent, each by the logger that wrote it; anything else is dropped."""
+    if not isinstance(records, list):
+        return
+    for item in records[:MAX_LOG_RECORDS]:
+        if (
+            isinstance(item, list)
+            and len(item) == 3
+            and type(item[0]) is int
+            and isinstance(item[1], str)
+            and (item[1] == _PACKAGE or item[1].startswith(_PACKAGE + "."))
+            and isinstance(item[2], str)
+        ):
+            level = min(max(item[0], logging.DEBUG), logging.CRITICAL)
+            logging.getLogger(item[1]).log(level, "(recognition child) %s", item[2][:MAX_LOG_CHARS])
+
+
 def _reply(conn: Connection, **payload: object) -> None:
     # JSON, not pickle: the parent must never unpickle data produced while
     # parsing untrusted input (a compromised child could inject code).
@@ -199,7 +237,14 @@ def _worker(
     lang: str = i18n.DEFAULT,
 ) -> None:
     i18n.use(lang)  # the child writes its warnings and errors in the user's language
+    collector = _LogCollector()
+    package = logging.getLogger(_PACKAGE)
+    package.addHandler(collector)
+    package.setLevel(logging.INFO)
     sent = [-1]
+
+    def finish(**payload: object) -> None:  # the last message: the result or the error, and the logs
+        _reply(conn, logs=collector.records, **payload)
 
     def progress(fraction: float) -> None:  # whole percents only, each once
         percent = int(fraction * 100)
@@ -211,19 +256,18 @@ def _worker(
     try:
         _limit_resources(memory_mb, cpu_seconds)
         if job == "inspect":
-            _reply(conn, status="ok", report=inspect(pdfs[0], options))
+            finish(status="ok", report=inspect(pdfs[0], options))
             return
         if job in ("images", "recognize"):  # pdfs are pictures, one page each, read as a single track
             pdfs = [images_pdf(pdfs, options.max_image_pixels)]
         if job == "recognize":  # Studio's JSON exit (contract.py): the result instead of the report
-            _reply(conn, status="ok", report=recognize(pdfs[0], options))
+            finish(status="ok", report=result_of_pdf(pdfs[0], options))
             return
-        _reply(conn, status="ok", report=convert_many(pdfs, options).report)
+        finish(status="ok", report=convert_many(pdfs, options).report)
     except ConversionError as exc:
-        _reply(conn, status="error", message=str(exc), diagnostics=exc.diagnostics)
+        finish(status="error", message=str(exc), diagnostics=exc.diagnostics)
     except MemoryError:
-        _reply(
-            conn,
+        finish(
             status="error",
             message=i18n.tr(
                 "O PDF excede o limite de memória de processamento.", "The PDF exceeds the processing memory limit."
@@ -231,7 +275,7 @@ def _worker(
         )
     except Exception:  # never leak internals to the client
         logger.exception("conversion failed")
-        _reply(conn, status="error", message=generic_error())
+        finish(status="error", message=generic_error())
     finally:
         set_progress(None)
         conn.close()
@@ -254,6 +298,8 @@ def _progress_of(raw: bytes) -> int | None:
 def _decode_reply(raw: bytes) -> dict:
     try:
         payload = json.loads(raw)
+        if isinstance(payload, dict):
+            _replay_logs(payload.get("logs"))
         if payload["status"] == "error":
             diagnostics = payload.get("diagnostics", [])
             if not isinstance(diagnostics, list) or any(
