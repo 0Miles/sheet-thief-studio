@@ -80,7 +80,7 @@ const LOWER_STAFF = voiceKey(1, 0);
 
 /**
  * The syllables the singer sings, one an eighth, round and round: Chinese and English, a word held
- * on with "-", and a melisma (""), as docs/spec/schema.md, section 13, has them.
+ * on with "-", and a melisma (""), as docs/spec/schema.md, section 6, has them.
  */
 const SYLLABLES = ["我", "們", "一", "起", "sing-", "ing", "", "唱"];
 
