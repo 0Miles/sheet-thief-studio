@@ -9,6 +9,7 @@ import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Score } from "./db/models";
 import { notFound, rateLimited } from "./http";
+import { changeMembers, unlessRefused } from "./members";
 import { GUEST_TICKET_BY_IP, type RateLimiter } from "./rateLimit";
 import { ownedScore } from "./scores";
 import { routedPath } from "./security";
@@ -36,18 +37,18 @@ export async function scoreOfLink(token: string): Promise<Score | null> {
 }
 
 /**
- * Give the score this link token (null: none), and return the one it had; `undefined`, nothing
- * written, when the score is deleted. Its column only: the score's `updated_at` stays.
+ * Give the score this link token (null: none) as its Owner, and return the one it had. Its column
+ * only: the score's `updated_at` stays. With the score's row locked, and its Owner checked only
+ * then (`changeMembers`): two requests at once cannot both replace the same token and leave the
+ * connections of the one between them open; an Owner who hands the score over meanwhile is
+ * refused with 403 once the transfer is committed; and a score deleted meanwhile (404) gets no
+ * link, which a restoration would bring back with it (docs/spec/accounts.md, section 8).
  */
-async function replaceLink(scoreId: string, token: string | null): Promise<string | null | undefined> {
-  return Score.sequelize!.transaction(async (transaction) => {
-    // Locked, so that two requests at once cannot both replace the same token and leave the
-    // connections of the one between them open. Deleted since its Owner was checked: a deleted
-    // score gets no link, which a restoration would bring back with it (docs/spec/accounts.md, section 8).
-    const score = await Score.findOne({ where: { id: scoreId, deletedAt: null }, attributes: ["id", "linkToken"], lock: transaction.LOCK.UPDATE, transaction });
-    if (score === null) return undefined;
+async function replaceLink(scoreId: string, accountId: string, token: string | null): Promise<string | null> {
+  return changeMembers(scoreId, { accountId, by: "owner" }, async ({ transaction }) => {
+    const score = await Score.findByPk(scoreId, { attributes: ["linkToken"], transaction });
     await Score.update({ linkToken: token }, { where: { id: scoreId }, silent: true, transaction });
-    return score.linkToken;
+    return score!.linkToken;
   });
 }
 
@@ -65,32 +66,29 @@ export function registerLinks(app: FastifyInstance, { collab, tickets, limiter }
   });
 
   app.get<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const score = await ownedScore(request, reply);
+    // Read here only: the token is a secret, not part of what every membership check loads. In
+    // the same statement as the check: the Owner of a moment ago never reads the token the new
+    // Owner makes once the score is handed over.
+    const score = await ownedScore(request, reply, ["id", "linkToken"]);
     if (score === null) return reply;
-    // Read here only: the token is a secret, not part of what every membership check loads.
-    const stored = await Score.findByPk(score.id, { attributes: ["linkToken"] });
-    return scoreLink.parse({ token: stored?.linkToken ?? null });
+    return scoreLink.parse({ token: score.linkToken ?? null });
   });
 
   // Making a link anew revokes the one before (docs/spec/accounts.md, section 7).
-  app.post<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const score = await ownedScore(request, reply);
-    if (score === null) return reply;
-    const token = newToken();
-    const before = await replaceLink(score.id, token);
-    if (before === undefined) return notFound(reply);
-    revoked(score.id, before);
-    return scoreLink.parse({ token });
-  });
+  app.post<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) =>
+    unlessRefused(reply, async () => {
+      const token = newToken();
+      revoked(request.params.id, await replaceLink(request.params.id, request.account!.id, token));
+      return scoreLink.parse({ token });
+    }),
+  );
 
-  app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) => {
-    const score = await ownedScore(request, reply);
-    if (score === null) return reply;
-    const before = await replaceLink(score.id, null);
-    if (before === undefined) return notFound(reply);
-    revoked(score.id, before);
-    return reply.code(204).send();
-  });
+  app.delete<{ Params: { id: string } }>("/api/scores/:id/link", async (request, reply) =>
+    unlessRefused(reply, async () => {
+      revoked(request.params.id, await replaceLink(request.params.id, request.account!.id, null));
+      return reply.code(204).send();
+    }),
+  );
 
   // A POST, so that it goes through the Origin check (docs/spec/routes.md, 3.5).
   app.post<{ Params: { token: string } }>("/api/s/:token", { config: { public: true } }, async (request, reply) => {

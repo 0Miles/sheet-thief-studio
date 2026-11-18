@@ -121,6 +121,8 @@
 | `DELETE /api/scores/:id/link` | 撤銷；關閉使用它的連線 | Owner |
 | `POST /api/s/:token` | 訪客：→ `{ scoreId, title, ticket }`；token 錯誤一律 404（補充：用 POST，讓它經過 Origin 檢查） | 不必登入 |
 
+- **補充**（#136）：`POST`、`DELETE` 走 `members.ts` 的 `changeMembers`（`{ by: "owner" }`）：先鎖住團譜列，再確認呼叫者是 Owner，然後才讀舊 token、寫新 token。和轉移同時送到、等鎖時擁有權已經轉走的請求，回 403 `forbidden`，不寫入、不關閉任何連線；團譜已刪除回 404。`GET` 的 Owner 判斷與 token 在同一個 statement 讀出（同一個快照），前 Owner 讀不到新 Owner 之後產生的 token。之後只有 Owner 能做、會寫團譜列的操作，一律在 `changeMembers` 裡確認 Owner（刪除團譜已經是這樣，#15）。測試：`apps/server/tests/links.test.ts` 的「an Owner who hands the score over as they make or revoke its link …」與「the Owner of a moment ago, reading the link …」。
+
 ### 3.6 版本
 
 | 方法與路徑 | 說明 | 角色 |
