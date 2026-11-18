@@ -18,8 +18,10 @@ import { RouterLink, useRouter } from "vue-router";
 import { roleCanType } from "../access";
 import { ApiError, get, patchFor, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
+import DrawFailed from "../components/DrawFailed.vue";
 import PlayerControls from "../components/PlayerControls.vue";
 import { keyPlatform } from "../device";
+import { drawFailure } from "../drawFailure";
 import { type RestoreTarget, restoreVersion } from "../restore";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
@@ -60,6 +62,8 @@ const previewed = shallowRef<ScoreJSON | null>(null);
 const previewError = ref<string | null>(null);
 /** The version chosen is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const drawnVersion = ref<string | null>(null);
+/** The version could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 const host = ref<HTMLElement>();
 let engine: ScoreEngine | undefined;
 /** The version last handed to the renderer: drawn once it reports so. */
@@ -107,6 +111,7 @@ onMounted(async () => {
   engine.renderer.onRendered(() => {
     drawnVersion.value = drawing;
   });
+  watchDrawing(engine.renderer);
   engine.player.onState((state) => {
     playerState.value = state;
   });
@@ -298,6 +303,7 @@ function saveNow(): Promise<void> {
             <p class="versions__muted">{{ selected === null ? text.choose : text.previewHelp }}</p>
             <p v-if="previewError" class="versions__error" role="alert">{{ previewError }}</p>
             <div class="versions__score-host">
+              <DrawFailed v-if="drawFailed" @retry="retryDrawing" />
               <div ref="host"></div>
             </div>
           </section>

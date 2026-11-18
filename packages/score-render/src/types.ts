@@ -88,13 +88,27 @@ export interface ScoreRenderer {
    * only the pieces on screen are painted, each a moment after `onRendered`.
    */
   onPainted(listener: (barIds: string[]) => void): Unsubscribe;
+  /**
+   * What the engine needs to draw could not be had: the music font, or the worker that lays out
+   * the score (#151). Nothing is drawn until `retry()` has them; the engine retries by itself once
+   * the browser is back online.
+   */
+  readonly failed: boolean;
+  /** Called when `failed` changes: true when it fails, false when it is asked for again. */
+  onFailed(listener: (failed: boolean) => void): Unsubscribe;
+  /**
+   * When `failed`: download what could not be had again, and draw the score asked for last from
+   * scratch. The player starts over too ("loading"). Otherwise nothing.
+   */
+  retry(): void;
   destroy(): void;
 }
 
 /**
  * "loading" until the soundfont and the sound of the score are in place. "failed" when the
- * soundfont could not be had (the network went, the server refused it): `retry()` asks for it
- * again, as the player does itself once the browser is back online, "loading" meanwhile.
+ * soundfont, or the worker that makes the sound (#151), could not be had (the network went, the
+ * server refused it): `retry()` asks for it again, as the player does itself once the browser is
+ * back online, "loading" meanwhile.
  * "unavailable" from the start, and for good, in a browser that cannot play (no Web Audio):
  * nothing plays, the score is still drawn (docs/spec/playback.md, 4.1).
  */
@@ -140,7 +154,11 @@ export interface ScorePlayer {
    * was; resolves once the new sound is in place.
    */
   load(): Promise<void>;
-  /** The soundfont could not be had ("failed"): ask for it again, "loading" meanwhile. Otherwise nothing. */
+  /**
+   * The soundfont or the worker that makes the sound could not be had ("failed"): ask for it
+   * again, "loading" meanwhile. A worker is had again with the score drawn anew, as
+   * `ScoreRenderer.retry()` does. Otherwise nothing.
+   */
   retry(): void;
   play(): void;
   pause(): void;

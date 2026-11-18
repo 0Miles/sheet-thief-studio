@@ -73,6 +73,7 @@ const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} �
 /** Bars from one to another, one bar by its number alone. */
 const barsLabel = (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last));
 const SAVE_PHRASE = "存成樂句";
+const RETRY = "重試";
 const PHRASE_LIBRARY = "樂句庫";
 const NO_PHRASES = "還沒有樂句。";
 const NO_MATCHING_PHRASES = "沒有符合的樂句。";
@@ -386,11 +387,16 @@ export const strings = {
     dismiss: "關閉",
     settings: "設定",
     versions: VERSIONS,
+    // The music font, or the worker that lays out the score, could not be had (#151).
+    drawing: {
+      failed: "譜面載入失敗",
+      retry: RETRY,
+    },
     player: {
       loading: "音色載入中…",
       unavailable: "這個瀏覽器無法播放聲音",
       failed: "音色載入失敗",
-      retry: "重試",
+      retry: RETRY,
       play: "播放",
       pause: "暫停",
       stop: "停止",

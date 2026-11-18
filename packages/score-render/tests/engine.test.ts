@@ -71,10 +71,23 @@ class StandIn {
 
   /** The tracks drawn last (alphaTab's `tracks`): those of `renderScore`, or of `renderTracks`. */
   tracks: alphaTab.model.Track[] = [];
+  /** The workers alphaTab makes in its constructor, in its order: the one that lays out (`useWorkers`), then the player's. */
+  readonly layoutWorker: EventTarget | null = null;
+  readonly synthWorker: EventTarget | null = null;
+  destroyed = false;
 
   constructor(_element: unknown, settings: alphaTab.Settings) {
     this.settings = settings;
     standIns.push(this);
+    // The family alphaTab gives the music font on the page: one for each set of sources (the
+    // engine adds `?attempt=<n>` to ask for it again).
+    const attempt = /\?attempt=(\d+)$/.exec([...(settings.core.smuflFontSources?.values() ?? [])][0] ?? "")?.[1] ?? "";
+    (settings.display.resources as unknown as { smuflFontFamilyName: string }).smuflFontFamilyName = `alphaTab${attempt}`;
+    const MadeWorker = globalThis.Worker as unknown as (new () => EventTarget) | undefined;
+    if (MadeWorker !== undefined) {
+      if (settings.core.useWorkers) this.layoutWorker = new MadeWorker();
+      if (settings.player.playerMode !== alphaTab.PlayerMode.Disabled) this.synthWorker = new MadeWorker();
+    }
     // alphaTab 1.9's own listener, added before any of the page's (`_setupPlayerWrapper`): every
     // time the player is ready, each track drawn gets the volume written in its playback info.
     this.playerReady.on(() => {
@@ -159,8 +172,33 @@ class StandIn {
     return true;
   }
 
-  destroy(): void {}
+  destroy(): void {
+    this.destroyed = true;
+  }
+
+  /** The family of the music font on the page, as alphaTab set it. */
+  get fontFamily(): string {
+    return (this.settings.display.resources as unknown as { smuflFontFamilyName: string }).smuflFontFamilyName;
+  }
 }
+
+/** The fonts of the page (`document.fonts`), as far as the engine looks at them. */
+class StandInFonts extends EventTarget {
+  readonly faces: { family: string; status: FontFaceLoadStatus }[] = [];
+
+  forEach(each: (face: { family: string; status: FontFaceLoadStatus }) => void): void {
+    this.faces.forEach(each);
+  }
+
+  /** A font face of the family could not be downloaded: the browser says so once, quoting the family. */
+  failed(family: string): void {
+    const face = { family: `"${family}"`, status: "error" as const };
+    this.faces.push(face);
+    this.dispatchEvent(Object.assign(new globalThis.Event("loadingerror"), { fontfaces: [face] }));
+  }
+}
+
+let fonts: StandInFonts;
 
 /**
  * The mix of alphaTab's synthesizer, by MIDI channel, as its worker keeps it: a new sound changes
@@ -290,10 +328,12 @@ const AUDIO_GLOBALS = ["AudioContext", "webkitAudioContext", "Worker", "ScriptPr
  */
 function browserWith(present: readonly string[] = ["AudioContext", "Worker", "ScriptProcessorNode"], secure = false): void {
   vi.unstubAllGlobals();
-  for (const name of AUDIO_GLOBALS) vi.stubGlobal(name, present.includes(name) ? class {} : undefined);
+  for (const name of AUDIO_GLOBALS) vi.stubGlobal(name, present.includes(name) ? (name === "Worker" ? class extends EventTarget {} : class {}) : undefined);
   vi.stubGlobal("isSecureContext", secure);
   // Where the browser says it is back online.
   vi.stubGlobal("window", new EventTarget());
+  fonts = new StandInFonts();
+  vi.stubGlobal("document", { fonts });
 }
 
 /** The browser is back online. */
@@ -1030,4 +1070,143 @@ test("the settings tell the speed, the metronome, the count-in, the loop and the
     loop: { startTick: BAR, endTick: 2 * BAR },
     parts: { [partId]: { mute: true, solo: false, volume: 1 } },
   });
+});
+
+// --- What alphaTab needs to draw and to play, and could not have (#151) ---
+
+/** A worker reports an error before it said anything: its script could not be had. */
+function workerFailed(worker: EventTarget | null): void {
+  worker!.dispatchEvent(new globalThis.Event("error"));
+}
+
+/** The engine's alphaTab API was replaced by a new one: its stand-in is the one in use from now on. */
+function newApi(): StandIn {
+  const made = standIns.at(-1)!;
+  expect(made).not.toBe(api);
+  api = made;
+  seen = 0;
+  return made;
+}
+
+test("the music font could not be had: the score is told failed; retried, a new API asks for it from other sources and draws the score asked for last, the player starting over with the member's settings", () => {
+  const told: boolean[] = [];
+  engine.renderer.onFailed((failed) => told.push(failed));
+  const old = api;
+  engine.player.setVolume(score.parts[0]!.id, 0.5);
+  engine.player.setSpeed(0.75);
+  engine.player.setMetronome(true);
+  expect(engine.renderer.failed).toBe(false);
+  fonts.failed(api.fontFamily);
+  expect(engine.renderer.failed).toBe(true);
+  expect(told).toEqual([true]);
+  // The player is not the score's to stop.
+  expect(engine.player.state).toBe("paused");
+
+  engine.renderer.retry();
+  newApi();
+  expect(old.destroyed).toBe(true);
+  const sources = [...(api.settings.core.smuflFontSources?.values() ?? [])];
+  expect(sources).toHaveLength(3);
+  for (const source of sources) expect(source).toMatch(/^\/font\/Bravura\.\w+\?attempt=\d+$/);
+  expect(api.fontFamily).not.toBe(old.fontFamily);
+  expect(engine.renderer.failed).toBe(false);
+  expect(told).toEqual([true, false]);
+  expect(states).toEqual(["loading"]);
+  expect([api.playbackSpeed, api.metronomeVolume]).toEqual([0.75, 1]);
+  expect(asked()).toEqual(["renderScore"]);
+  const rendered: boolean[] = [];
+  engine.renderer.onRendered(({ partial }) => rendered.push(partial));
+  // What the old API still reports is told to no one.
+  old.postRenderFinished.emit();
+  old.playerReady.emit();
+  expect(rendered).toEqual([]);
+  expect(engine.player.state).toBe("loading");
+  api.postRenderFinished.emit();
+  expect(rendered).toEqual([false]);
+  // The new player has the sound font, and the sound of the score: paused at the start, with the member's mix.
+  api.ready = true;
+  api.loadMidiForScore();
+  newSound();
+  expect(engine.player.state).toBe("paused");
+  expect(api.player.volumes.get(0)).toBe(0.5);
+  engine.player.play();
+  expect(asked()).toContain("play");
+});
+
+test("a font that failed for an engine still on the page fails at once for one made with its sources; one made after the failure is told asks for it from other sources", () => {
+  // The browser said so before the second engine listened.
+  fonts.faces.push({ family: `"${api.fontFamily}"`, status: "error" });
+  expect(makeEngine().made.renderer.failed).toBe(true);
+  fonts.failed(api.fontFamily);
+  const { made, stand } = makeEngine();
+  expect(stand.fontFamily).not.toBe(api.fontFamily);
+  expect(made.renderer.failed).toBe(false);
+});
+
+test("in the Read view, the worker that lays out could not be had: the score is told failed; an error once it has started is not that", () => {
+  const Worker = globalThis.Worker;
+  const started = makeEngine({ useWorkers: true });
+  started.stand.layoutWorker!.dispatchEvent(new globalThis.Event("message"));
+  workerFailed(started.stand.layoutWorker);
+  expect(started.made.renderer.failed).toBe(false);
+
+  const { made, stand } = makeEngine({ useWorkers: true });
+  // The global constructor is alphaTab's own again once the API is made.
+  expect(globalThis.Worker).toBe(Worker);
+  workerFailed(stand.layoutWorker);
+  expect(made.renderer.failed).toBe(true);
+  expect(made.player.state).toBe("loading");
+  made.renderer.retry();
+  expect(standIns.at(-1)).not.toBe(stand);
+  expect(made.renderer.failed).toBe(false);
+});
+
+test("the worker that makes the sound could not be had: the player failed, the score as it is; retried, a new API draws the score anew and the player starts over", () => {
+  open();
+  listen();
+  workerFailed(api.synthWorker);
+  expect(engine.player.state).toBe("failed");
+  expect(engine.renderer.failed).toBe(false);
+  expect(states).toEqual(["failed"]);
+  engine.player.retry();
+  newApi();
+  expect(states).toEqual(["failed", "loading"]);
+  expect(asked()).toEqual(["renderScore"]);
+  api.ready = true;
+  api.loadMidiForScore();
+  newSound();
+  expect(engine.player.state).toBe("paused");
+});
+
+test("back online, a score that could not be drawn is asked for again; back online before it was told failed, at once, this once", () => {
+  fonts.failed(api.fontFamily);
+  backOnline();
+  newApi();
+  expect(engine.renderer.failed).toBe(false);
+  backOnline();
+  fonts.failed(api.fontFamily);
+  newApi();
+  expect(engine.renderer.failed).toBe(false);
+  fonts.failed(api.fontFamily);
+  expect(standIns.at(-1)).toBe(api);
+  expect(engine.renderer.failed).toBe(true);
+});
+
+test("with nothing failed, a retry of the renderer makes no new API", () => {
+  engine.renderer.retry();
+  expect(standIns).toEqual([api]);
+  expect(asked()).toEqual([]);
+});
+
+test("destroyed, a failure reported after is told to no one, and nothing is asked for again", () => {
+  const told: boolean[] = [];
+  engine.renderer.onFailed((failed) => told.push(failed));
+  engine.destroy();
+  fonts.failed(api.fontFamily);
+  workerFailed(api.synthWorker);
+  backOnline();
+  engine.renderer.retry();
+  expect(told).toEqual([]);
+  expect(states).toEqual([]);
+  expect(standIns).toEqual([api]);
 });

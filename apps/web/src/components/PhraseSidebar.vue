@@ -19,10 +19,12 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue
 import { RouterLink } from "vue-router";
 
 import { get, refusal } from "../api";
+import { drawFailure } from "../drawFailure";
 import { STRUCTURE_STROKE, structureBoxesOf } from "../overlay";
 import { type PhraseContents, phrasesShown } from "../phraseSidebar";
 import { strings } from "../strings";
 import { fontDirectory } from "../served";
+import DrawFailed from "./DrawFailed.vue";
 
 const props = defineProps<{
   platform: KeyPlatform;
@@ -51,6 +53,8 @@ const previewed = shallowRef<PhraseSummary | null>(null);
 const previewError = ref<string | null>(null);
 /** The preview is drawn: e2e tests wait for `data-preview-ready`. */
 const previewReady = ref(false);
+/** The preview could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+const { failed: previewFailed, watch: watchPreview, retry: retryPreview } = drawFailure();
 const previewHost = ref<HTMLElement>();
 const previewSection = ref<HTMLElement>();
 /** What had the keyboard when the preview opened (the phrase clicked): it has it again once the preview closes. */
@@ -145,6 +149,7 @@ async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise
       previewReady.value = true;
       placePreview();
     });
+    watchPreview(engine.renderer);
   }
   const score = fragmentToScore(fragment);
   previewEnds = score.bars.length === 0 ? null : [score.bars[0]!.id, score.bars.at(-1)!.id];
@@ -268,6 +273,7 @@ onBeforeUnmount(() => {
       <!-- Scrolls down: never cut to a fixed height. -->
       <div class="phrase-sidebar__preview-scroller" data-preview-scroller>
         <div class="phrase-sidebar__preview-page">
+          <DrawFailed v-if="previewFailed" @retry="retryPreview" />
           <div ref="previewHost" data-preview-host></div>
           <svg class="phrase-sidebar__preview-overlay" aria-hidden="true" data-preview-overlay>
             <rect v-for="(area, index) in previewReserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
