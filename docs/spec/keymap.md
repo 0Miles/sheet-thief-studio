@@ -136,7 +136,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#27）：`Shift+H`（legato）是 `bindings.ts` 的 `TECHNIQUE_KEYS` 裡的一項；`Shift+S`（slideOut）、`Shift+E`（slideIn）是 `slideOut`、`slideIn` 綁定。三者都只綁在 fretted 聲部（這些欄位只有 fretted 有）；有選取時作用在整個範圍，循環型的走到同一個狀態（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）跟著 M3 加上，綁在 pitched 情境，和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
+**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）綁在 pitched 情境（#48 加上，第 4.3 節的補充），和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
 
 **補充**（#29）：`Shift+N` 是 `bindings.ts` 的 `harmonic` 綁定，只綁在 fretted 聲部（這個欄位只有 fretted 有），兩個平台相同；有選取時作用在整個範圍，走到同一個泛音（[`commands.md`](commands.md) 5.4 的補充）。
 
@@ -189,6 +189,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `↑` `↓` | `ArrowUp` `ArrowDown` | 依自然音階上下：`score-model` 的純函式由「clef 加譜表位置」得出自然音的音高 |
 
 拼寫的規則見 [`schema.md`](schema.md) 8.1。
+
+**補充**（#48）：鍵在 `bindings.ts`：`A`–`G` 是 `pitch` 綁定（帶 `letter`，`KeyA`–`KeyG`，不帶修飾鍵），`]`、`[` 是 `sharpen`、`flatten`（`BracketRight`、`BracketLeft`），`Shift+↑`、`Shift+↓` 是 `octaveUp`、`octaveDown`；全部綁在情境 `pitched`，兩個平台相同，按住時不重複。和鼓的 `B`、`C`、`D`、`F`（情境 `percussion`）與 fretted 的 `Shift+↑`、`Shift+↓`（bend 的半音數）不衝突：綁定只作用在它那種聲部。指令是 `commands.ts` 的 `enterNote`、`moveNotesBySemitone`、`moveNotesByOctave`（[`commands.md`](commands.md) 5.1、5.8 的補充）。`Delete` 在五線譜刪掉畫在游標那條線上的所有音（5.2）。
 
 ## 5. 面板與模式的鍵
 

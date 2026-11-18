@@ -129,13 +129,19 @@ interface Cursor {
   - **補充**（#44）：寫法是 `commands.ts` 的 `toggleDrum(doc, cursor, id)`：拍點上沒有 `p<id>` 就加上 `{}`，有就連同它的 ghost、accent 一起移除；在附加位置上和格號一樣建立新拍點，游標移到新拍點，下一次 `→` 以它為錨點。表裡沒有的 id `line` 不動。測試：`packages/score-editor/tests/drums.test.ts`、`apps/web/e2e/drums.spec.ts`。
 - **pitched 的音高**：`score-model` 有一個純函式，由「clef 加譜表位置」得出自然音的音高；`A`–`G` 在所有同名的音裡，取和游標位置的自然音相差最少音級的那一個（7 個音名不會等距，所以沒有平手）。再依該小節生效的 `keySig` 套用升降（例如 G 大調的 F 變成 F♯），寫入 `spell`。**補充**：輸入後 `line` 移到新音所在的譜表位置。
 - 音高超出 0–127 時不輸入。
+- **補充**（#48）：寫法在 `packages/score-model` 的 `pitch.ts`（純函式）與 `commands.ts` 的 `enterNote(doc, cursor, letter)`，鍵是 `bindings.ts` 的 `pitch` 綁定（帶 `letter`）。
+  - 「clef 加譜表位置」的自然音是 `naturalAt(clef, line)`：最上面那條線在 `treble` 是 F5、`bass` 是 A3、`treble-8vb` 是 F4（照高音譜號寫、低一個八度發聲），往下每一格一個音級。
+  - 調號的升降套在音名上（`enteredPitch`）：升號依 F C G D A E B、降號依 B E A D G C F 的順序，取 `fifths` 個；`mode` 不影響（小調用關係大調的調號）。所以 C♯ 大調的 B 是 B♯（音高是上一個八度的 C）、C♭ 大調的 F 是 F♭。寫入的 `spell` 就是這個音名加升降，一律寫入（[`schema.md`](schema.md) 8.1）。調號是游標小節生效的那一個，從文件讀，讀不懂的調號當成沒寫（`keySigIn`，和 `keySigsOf` 一樣）；譜號取游標聲線所在的譜表，`staves` 讀不懂時是預設的高音譜表。
+  - 拍點上已經有同一個音符鍵的音（例如 C♯ 之後輸入 D♭）：後輸入的取代前一個，以原值的自有欄位（`ownFields`）為底、換成新的 `spell`；拼寫相同時不寫入（沒有交易、沒有復原步驟）。原值讀不懂時不保留它的欄位，寫成只有 `spell` 的音。
+  - 游標拍點是讀取時被略過的拍點時不動。輸入後 `line` 移到新音的譜表位置，夾在 `lineRange`（−4..12）裡：從 −4 輸入 E 是 E6，畫在 −6，游標停在 −4。實際上從 −4..12 的位置輸入的音都在 0–127 之內（最低是低音譜表 12（C2）往下三級的 G♭1，音高 30：從那裡 F 往上取到 F2；最高是高音譜表 −4（C6）往上三級的 F♯6，音高 90），超出範圍的檢查是防呆。
+  - 在附加位置上和格號一樣建立新拍點（`EditorSession` 的 `markAppended`），下一次 `→` 以它為錨點。
 
 ### 5.2 插入與刪除
 
 | Command | 鍵 | 語意 |
 |---|---|---|
 | `insertBeat` | `Insert` | 在游標拍點**之前**插入一個休止拍點，時值和游標拍點相同；在附加位置上就是附加（時值規則同 5.1）。游標移到新拍點 |
-| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充）；percussion 是畫在那條線上的**所有**鼓件（補充，#44：`noteKeysAt` 給出的鍵，一個 Command；表裡沒有的 id 沒有線，不刪）。fretted、percussion 已做；pitched 跟著它的音符鍵在 M3 做，在那之前不動 |
+| `deleteNote` | `Delete`（拍點上有音） | 刪掉游標那條線上的音符：fretted 是那條弦；pitched 是畫在那條線上的所有音（補充；#48：`noteKeysAt` 給出的鍵，一個 Command，見 5.8 的補充）；percussion 是畫在那條線上的**所有**鼓件（補充，#44：`noteKeysAt` 給出的鍵，一個 Command；表裡沒有的 id 沒有線，不刪）。三種都已做 |
 | `deleteBeat` | `Delete`（空拍點） | 刪掉拍點 |
 
 - percussion 的 `Delete` 刪整條線，理由：好幾個鼓件畫在同一條線上（`spike-report.md:287-301`），只刪一個會有歧義。
@@ -180,13 +186,13 @@ interface Cursor {
   - fretted：同一條聲線的前一個拍點（可以在上一小節）在同一條弦上有音時，把游標那條弦的音設成 `{ ...原值, fret: 前一個音的格號, tie: true }`；那條弦原本沒有音也一樣建立（只在游標上：有選取時不建立音符，見下面「有選取時」）。前一個拍點那條弦沒有音時：游標那條弦有音就只設 `tie: true`（之後會被標成 `danglingTie`），沒有音就不動（補充）。
   - pitched（補充）：游標那條線上有音時設 `tie: true`；那條線上沒有音、而前一個拍點同一條線上有音時，建立同一個音高與拼寫的音並設 `tie: true`。
   - 已經有 tie 時，再按一次移除 `tie`，格號不變。
-  - **補充**（#36）：寫法是 `commands.ts` 的 `tieToggle`（`NoteToggle<boolean>`）。`decide`：游標那條線上沒有音時是「加上」（才能建立音），否則「不是全部都有 tie 就加上，否則移除」，選取時一樣。`turn` 用 `place.before`：前一個音有格號時設成 `{ ...原值, fret: 前一個音的格號, tie: true }`（已經是同一個格號的 tie 就不寫入）；前一個音沒有格號（沒有音，或沒有格號的 dead note）時，有音就只設 `tie: true`，沒有音就不動，不會建立既沒有格號、也不是 dead 的音。pitched 的建立只帶前一個音的 `spell`；`noteKeysAt` 在 pitched 沒有鍵，所以目前只有直接呼叫 `toggleAt` 才會走到（見 [`keymap.md`](keymap.md) 第 3 節的補充）。在附加位置上和 dead note 一樣建立新拍點，游標移到新拍點。
+  - **補充**（#36）：寫法是 `commands.ts` 的 `tieToggle`（`NoteToggle<boolean>`）。`decide`：游標那條線上沒有音時是「加上」（才能建立音），否則「不是全部都有 tie 就加上，否則移除」，選取時一樣。`turn` 用 `place.before`：前一個音有格號時設成 `{ ...原值, fret: 前一個音的格號, tie: true }`（已經是同一個格號的 tie 就不寫入）；前一個音沒有格號（沒有音，或沒有格號的 dead note）時，有音就只設 `tie: true`，沒有音就不動，不會建立既沒有格號、也不是 dead 的音。pitched 的建立只帶前一個音的 `spell`；`Shift+L` 目前只綁在 fretted（#48 起 `noteKeysAt` 在 pitched 給出畫在那條線上的音，但 pitched 的 tie 鍵屬於 #49），所以目前只有直接呼叫 `toggleAt` 才會走到（見 [`keymap.md`](keymap.md) 第 3 節的補充）。在附加位置上和 dead note 一樣建立新拍點，游標移到新拍點。
 - **有選取時**（補充）：音符層級的切換作用在選取範圍內、目前聲部的**每一個**音符；拍點層級的切換作用在每一個拍點。全部都已經有該值時移除，否則全部設上。是一個 Command。
   - **補充**（#26）：拍點範圍是範圍內的拍點；小節範圍是目前聲部在那些小節裡所有聲線的拍點。**補充**（#20）：「所有聲線」是讀取時讀得到的聲線，依 `voiceKeys` 的順序（`commands.ts` 的 `runsOf`；#22 起和讀取共用 `schema.ts` 的 `readableVoicesOf`、`readableVoicesIn`）：聲部沒有的譜表上的聲線（例如單一譜表的吉他存著 `"5:0"`）、或存成別的形狀的聲線，不算也不改；`Delete`、技巧與時值鍵都一樣。選取裡只有休止時不動。選取時不建立音符：`Shift+X` 只切換已經有的音，沒有格號的 dead note 在關掉時移除（同上）。選取在切換之後保留，和 `Delete` 一樣。
   - **補充**（#26）：寫法在 `packages/score-model` 的 `commands.ts`。一個音符層級的技巧是一個 `NoteToggle<D>`：
     - `decide(seen)` 從看得到的音符一次決定目標狀態 `D`。游標上，`seen` 是那條線上的音（線上沒有音時是空的）；有選取時，是範圍內所有的音。所以循環型的技巧（slideOut、slideIn、bend 的型、harmonic）在選取上全部走到同一個狀態，不是各自走到自己的下一個。
     - `turn(stored, decided, place)` 把每個音符轉成那個狀態。`stored` 是儲存的原值（補充，#103：它自己的欄位的複本，見 [`schema.md`](schema.md) 第 9 節），沒有音時是 `undefined`。回傳 `null` 表示那裡沒有音（有就移除）；回傳 `stored` 本身表示不變，不寫入。`place` 帶著聲部種類（`kind`，補充，#36：tie 在 pitched 才建立同音高的音）、音符鍵，以及同一條聲線前一個拍點上同一個鍵的音（讀得懂時才有）；第一個拍點的前一個拍點，是上一小節同一條聲線的最後一個拍點。前一個拍點也在選取裡時，給的是它這次轉成的結果（被移除時是沒有音），所以 tie 套在連續幾個拍點上，全部取到第一個音的格號；小節範圍裡，結果也依序帶到下一小節的第一個拍點。tie 用它取前一個音的格號。
-    - `toggleAt(doc, cursor, key, toggle)` 作用在游標拍點上 `key` 的音；`toggleKeysAt(doc, cursor, keys, toggle)` 作用在好幾個鍵上，`decide` 看所有這些音、一次決定，是一個 Command。鍵由 `noteKeysAt` 給出（補充，#44：fretted 是那條弦；鼓是游標拍點上畫在那條線上的所有鼓件，附加位置上沒有；五線譜目前沒有，按鍵不動）。在附加位置上，`toggle` 建立的音放在新拍點上，`place.before` 是錨點拍點的音。`toggleOnSelection` 作用在選取，不建立音符。兩者都是一個 Command，只寫入有改變的音。
+    - `toggleAt(doc, cursor, key, toggle)` 作用在游標拍點上 `key` 的音；`toggleKeysAt(doc, cursor, keys, toggle)` 作用在好幾個鍵上，`decide` 看所有這些音、一次決定，是一個 Command。鍵由 `noteKeysAt` 給出（補充，#44：fretted 是那條弦；鼓是游標拍點上畫在那條線上的所有鼓件，附加位置上沒有；補充，#48：五線譜是游標拍點上畫在那條線上的所有音，附加位置上沒有，見 5.8 的補充。五線譜的技巧鍵在 #49 綁上之前，按鍵不動）。在附加位置上，`toggle` 建立的音放在新拍點上，`place.before` 是錨點拍點的音。`toggleOnSelection` 作用在選取，不建立音符。兩者都是一個 Command，只寫入有改變的音。
     - 開關型的技巧（`ON_OFF_TECHNIQUES`）由 `techniqueToggle` 給出：`onOffToggle` 的 `decide` 是「不是全部都有」，只改已經有的音；dead 是 `deadToggle`（上面兩條補充）。
     - 讀取時被略過的拍點與音符（[`schema.md`](schema.md) 第 11 節，`read.ts` 的 `readsAsBeat`、`schema.ts` 的 `readNote`）不算進 `seen`，也不改：選取時如此，游標那條線上的音讀不懂時，技巧鍵也不動它。找前一個拍點時，也跳過讀不懂的拍點，和成員看到的一樣。
     - 限制：`place.before` 只找同一個鍵的音。fretted 的 tie 這樣就夠（鍵就是弦）；pitched 的 tie 依「同一條線」找前一個音，那個音可能是另一個音高的鍵，那張票要自己找。
@@ -260,6 +266,13 @@ interface Cursor {
 - `]`／`[`：把游標那條線上的音升高／降低半音。做法是重設音符鍵（例如 `n60` 改成 `n61`），保留其他欄位，算一個 Command。**補充**：結果是黑鍵時，`]` 拼成升、`[` 拼成降；結果是白鍵時拼成本位。`line` 跟著音移到它新的譜表位置。
 - `Shift+↑`／`Shift+↓`：把游標那條線上的音移一個八度（鍵 ±12），保留拼寫；`line` 跟著移 7 格。超出 0–127 時不動。
 - 一條線上同時有好幾個音（例如 D 與 D♯）時，作用在那條線上的每一個音（補充）。
+- **補充**（#48）：寫法是 `commands.ts` 的 `moveNotesBySemitone(doc, cursor, 1 | -1)`（`]`、`[`，鍵是 `bindings.ts` 的 `sharpen`、`flatten`）與 `moveNotesByOctave(doc, cursor, 1 | -1)`（`Shift+↑`、`Shift+↓`，`octaveUp`、`octaveDown`，綁在 pitched 情境；fretted 的同一組鍵仍是 bend 的半音數）。
+  - 「畫在那條線上的音」是 `noteKeysAt`：游標拍點上每個讀得懂的音，依譜號與它的拼寫（`spell` 和音高相符時用它，否則用調號的預設拼寫，[`schema.md`](schema.md) 8.1 的補充）算出的譜表位置等於 `line` 的那些。所以 C 與 C♯ 在同一條線，D♭ 在 D 的線；B♯3（音高同 C4）畫在 B3 的位置。讀不懂的音不畫，不在任何一條線上；讀不懂的拍點、附加位置都沒有。
+  - 改寫以原值的自有欄位（`ownFields`）為底，只換音符鍵與（`]`、`[` 時的）`spell`；八度保留原本的 `spell`，原本沒有 `spell` 的照樣沒有。一筆交易：先刪掉所有被移動的鍵，再寫入新鍵（D 與 D♯ 一起升半音時，D♯ 變 E、D 變 D♯，不會互相蓋掉）。新鍵上已經有拍點上別的音（例如 E 與 F 同在、E 升半音）：被移動的音取代它，後輸入的贏，同 5.1。值經 `writableCopy`（#102），超過深度上限時整個不寫入。
+  - 任一個音會超出 0–127 時，整個不動（不只略過那一個）。那條線上沒有音時不動，沒有交易。
+  - 游標跟著移動後**最低**的那個音，到它的譜表位置，夾在 −4..12 裡：一條線上的音移動後可能分到兩條線（D 與 D♯ 升半音後是 D♯ 與 E），取最低的音，讓連按 `]` 時游標留在原本那個音上。八度一律是 ±7 格（同一個拼寫），超出範圍時停在 −4 或 12。
+  - 有選取時，`]`、`[`、`Shift+↑`、`Shift+↓` 和 `A`–`G` 一樣不作用在選取上：作用在游標那條線上，之後選取結束（第 4 節「其他不作用在選取上的 Command」）。
+  - 測試：`packages/score-model/tests/pitch.test.ts`（純函式，含 fast-check）、`staff.test.ts`；`packages/score-editor/tests/staff.test.ts`（按鍵與復原步驟）；`packages/score-render/tests/spelling.test.ts`（畫出來的位置等於 `lineOfPitch`）。
 
 ## 6. 結構操作
 

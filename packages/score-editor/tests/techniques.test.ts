@@ -108,8 +108,8 @@ test.each(["percussion", "pitched"] as const)("on a %s part, the fretted techniq
   const { press } = sessionOn(kind);
   const drums = kind === "percussion" ? ["g", "a"] : [];
   for (const [letter] of [...TECHNIQUES, ["s"], ["e"], ["b"]]) expect(press(letter!, 1000, shift), letter).toBe(drums.includes(letter!));
-  // Shift+↑ and Shift+↓ are a bend's semitones on a fretted part only (a staff's octave is M3's).
-  for (const arrow of ["ArrowUp", "ArrowDown"]) expect(press(arrow, 1000, shift)).toBe(false);
+  // Shift+↑ and Shift+↓ are a bend's semitones on a fretted part only; on a staff they are the octave (staff.test.ts), on drums nothing.
+  for (const arrow of ["ArrowUp", "ArrowDown"]) expect(press(arrow, 1000, shift)).toBe(kind === "pitched");
 });
 
 test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to the one before, taking its fret, and again unties it, one undo step each", () => {

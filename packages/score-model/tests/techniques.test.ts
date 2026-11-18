@@ -198,7 +198,7 @@ test("at the cursor, a note reading leaves out is left alone: no technique key c
   expect(storedNotes(doc, cursor).get("s3")).toEqual({ fret: 99 });
 });
 
-test("the keys of the notes on the cursor's line: its string on a fretted part, the pieces drawn on that line on drums, none yet on staves", () => {
+test("the keys of the notes on the cursor's line: its string on a fretted part, the pieces drawn on that line on drums, none in a staff's append slot (staves: staff.test.ts)", () => {
   const { doc, cursor, barId } = guitar();
   expect(noteKeysAt(doc, cursor)).toEqual(["s3"]);
   const drums = addPart(doc, { name: "Drums", kind: "percussion" });

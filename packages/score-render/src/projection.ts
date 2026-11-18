@@ -3,6 +3,7 @@
 import * as alphaTab from "@coderline/alphatab";
 import {
   DEFAULT_TEMPO,
+  drawnAccidentalOf,
   type BarJSON,
   barTicks,
   beatAfter,
@@ -22,6 +23,7 @@ import {
   type SlideIn,
   type SlideOut,
   slideGoesOn,
+  type Staff,
   WHOLE,
 } from "@studio/score-model";
 
@@ -86,17 +88,39 @@ function parseVoice(key: string): { staff: number; voice: number } {
   return { staff: staff ?? 0, voice: voice ?? 0 };
 }
 
-/** How many voices each staff of a part needs: the most any of its bars uses, at least one. */
+/**
+ * How many voices each staff of a part needs: the most any of its bars uses, at least one. A part
+ * has the staves its `staves` say (docs/spec/schema.md, section 4), whatever is written on them.
+ */
 function staffVoiceCounts(part: PartJSON): number[] {
-  const counts = [1];
+  const counts = part.staves.map(() => 1);
   for (const voices of Object.values(part.content)) {
     for (const key of Object.keys(voices)) {
       const { staff, voice } = parseVoice(key);
-      while (counts.length <= staff) counts.push(1);
+      // A voice of a staff the part has not: the reading left it out already (schema.md, section 5).
+      if (staff >= counts.length) continue;
       counts[staff] = Math.max(counts[staff] as number, voice + 1);
     }
   }
   return counts;
+}
+
+/**
+ * Each clef of the score as alphaTab's clef and octave mark. Tablature has none drawn: G2 as
+ * alphaTab's own. A treble clef an octave down draws its notes an octave over where they sound
+ * (alphaTab's `Ottavia._8vb` on the bar), as a guitar's or a tenor's.
+ */
+const CLEFS: Record<Staff["clef"], { clef: alphaTab.model.Clef; ottava: alphaTab.model.Ottavia }> = {
+  tab: { clef: model.Clef.G2, ottava: model.Ottavia.Regular },
+  neutral: { clef: model.Clef.Neutral, ottava: model.Ottavia.Regular },
+  treble: { clef: model.Clef.G2, ottava: model.Ottavia.Regular },
+  bass: { clef: model.Clef.F4, ottava: model.Ottavia.Regular },
+  "treble-8vb": { clef: model.Clef.G2, ottava: model.Ottavia._8vb },
+};
+
+/** The clef of a staff of a part, as its `staves` say: the staff is one of them (`staffVoiceCounts`). */
+function clefOf(part: PartJSON, staff: number): (typeof CLEFS)[Staff["clef"]] {
+  return CLEFS[(part.staves[staff] as Staff).clef];
 }
 
 /**
@@ -116,21 +140,25 @@ export function restsFilling(from: number, to: number): NoteValue[] {
   return rests;
 }
 
-function accidentalModeOf(spell: string | undefined): alphaTab.model.NoteAccidentalMode {
-  const accidental = spell?.slice(1) ?? "";
-  switch (accidental) {
-    case "#":
-      return model.NoteAccidentalMode.ForceSharp;
-    case "b":
-      return model.NoteAccidentalMode.ForceFlat;
-    case "##":
-    case "x":
-      return model.NoteAccidentalMode.ForceDoubleSharp;
-    case "bb":
-      return model.NoteAccidentalMode.ForceDoubleFlat;
-    default:
-      return model.NoteAccidentalMode.Default;
-  }
+/** The mode that draws each accidental `drawnAccidentalOf` asks for; none asked, alphaTab's own. */
+const ACCIDENTAL_MODES: Record<number, alphaTab.model.NoteAccidentalMode> = {
+  [-2]: model.NoteAccidentalMode.ForceDoubleFlat,
+  [-1]: model.NoteAccidentalMode.ForceFlat,
+  0: model.NoteAccidentalMode.ForceNatural,
+  1: model.NoteAccidentalMode.ForceSharp,
+  2: model.NoteAccidentalMode.ForceDoubleSharp,
+};
+
+/**
+ * How alphaTab is to spell a pitched note so that it is drawn where the editor finds it
+ * (score-model's `lineOfPitch`, docs/spec/schema.md 8.1, #48): as its own spelling when that names
+ * its pitch, a natural forced too, else a white key natural, which alphaTab left to itself spells
+ * E♯ or C♭ in a key of six or seven sharps or flats; a black key without a spelling of its own as
+ * the key has it (`Default`).
+ */
+function accidentalModeOf(spell: string | undefined, pitch: number): alphaTab.model.NoteAccidentalMode {
+  const accidental = drawnAccidentalOf(pitch, spell);
+  return accidental === undefined ? model.NoteAccidentalMode.Default : (ACCIDENTAL_MODES[accidental] ?? model.NoteAccidentalMode.Default);
 }
 
 const SLIDE_OUT_TYPES: Record<SlideOut, alphaTab.model.SlideOutType> = {
@@ -211,7 +239,7 @@ function projectNote(part: PartJSON, key: string, json: NoteJSON, after: BeatJSO
   } else if (key.startsWith("n") && part.kind === "pitched") {
     note.octave = Math.floor(number / 12);
     note.tone = number % 12;
-    note.accidentalMode = accidentalModeOf(json.spell);
+    note.accidentalMode = accidentalModeOf(json.spell, number);
   } else {
     return null;
   }
@@ -346,7 +374,9 @@ function projectBar(part: PartJSON, bar: BarJSON, { next, key: keySig, pickup }:
   const undrawnEntering = dynamicsUndrawn(previous, voiceCount);
   const undrawnLeavingBar: boolean[] = [];
   const atBar = new model.Bar();
-  atBar.clef = part.kind === "percussion" ? model.Clef.Neutral : model.Clef.G2;
+  const { clef, ottava } = clefOf(part, staff);
+  atBar.clef = clef;
+  atBar.clefOttava = ottava;
   // A drum staff has no key: it would only draw sharps and flats on it.
   if (part.kind !== "percussion") {
     atBar.keySignature = keySig.fifths as alphaTab.model.KeySignature;

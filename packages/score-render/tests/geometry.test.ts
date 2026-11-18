@@ -1,11 +1,11 @@
 // Where the cursor is drawn and which areas no overlay may cover, read from a real alphaTab layout
 // made without a browser (alphaTab lays out and draws SVG in Node).
 import * as alphaTab from "@coderline/alphatab";
-import { addPart, createScore, type Cursor, cursorAt, docToJson, DRUM_PIECES, insertBars, insertBeat, type ScoreJSON, type Selection, setFret, setNote } from "@studio/score-model";
+import { addPart, createScore, type Cursor, cursorAt, docToJson, DRUM_PIECES, insertBars, insertBeat, type NoteValue, type ScoreJSON, type Selection, setFret, setNote } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { barRangeRects, cursorRect, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
+import { barRangeRects, cursorAtPoint, cursorRect, noteHeads, type PartShape, playbackRect, reservedRects, selectionRects, type StaffMetrics } from "../src/geometry";
 import { projectScore } from "../src/projection";
 import type { Rect } from "../src/types";
 
@@ -57,6 +57,7 @@ function layOut(score: ScoreJSON, shown = score.parts.length) {
     reserved: () => reservedRects(lookup, { barCount: score.bars.length, trackCount: tracks.length }, settings.display.scale),
     played: (bar: number, offset: number) => playbackRect(lookup, bar, offset),
     heads: (cursor: Cursor) => noteHeads(lookup, projection, parts, cursor),
+    hit: (x: number, y: number) => cursorAtPoint(lookup, projection, parts, x, y, metrics),
   };
 }
 
@@ -310,5 +311,106 @@ test("each of the 18 drum pieces is drawn on the line the table gives it, under 
       const off = drawn.rect({ ...beat, line: other })!;
       expect(Math.abs(centre - (off.y + off.height / 2)), `${piece.name}, line ${other}`).toBeGreaterThan(Math.abs(centre - (on.y + on.height / 2)));
     }
+  }
+});
+
+/**
+ * A piano (a treble and a bass staff) with two voices on each, and a guitar written on a treble
+ * clef an octave down; one bar of four quarters. Each note with the staff position it is drawn on,
+ * worked out by hand from its clef (0 the top line, 8 the bottom one, a step a line or a space):
+ * the treble staff's top line is F5, the bass staff's A3, that of the treble clef an octave down F4.
+ * The same notes as `STAVES_VOICES` in apps/web/e2e/measure/scores.ts, which the browser
+ * measurement (staves.spec.ts) uses: change both together.
+ */
+function staves() {
+  const doc = new Y.Doc();
+  createScore(doc, "Staves");
+  const barIds = insertBars(doc, { after: null, count: 2 });
+  const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const guitar = addPart(doc, { name: "Guitar", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
+  const voices: { partId: string; voice: string; value: NoteValue; notes: [pitch: number, position: number][] }[] = [
+    // F5, C5, G5, D5.
+    { partId: piano, voice: "0:0", value: 4, notes: [[77, 0], [72, 3], [79, -1], [74, 2]] },
+    // E4, D4, F4, C4: under the first voice, never a second from it.
+    { partId: piano, voice: "0:1", value: 4, notes: [[64, 8], [62, 9], [65, 7], [60, 10]] },
+    // A3, F2, C4, E2.
+    { partId: piano, voice: "1:0", value: 4, notes: [[57, 0], [41, 9], [60, -2], [40, 10]] },
+    // C2, C3: halves.
+    { partId: piano, voice: "1:1", value: 2, notes: [[36, 12], [48, 5]] },
+    // E4, E3, B3, G3: drawn an octave over, E5, E4, B4, G4.
+    { partId: guitar, voice: "0:0", value: 4, notes: [[64, 1], [52, 8], [59, 4], [55, 6]] },
+  ];
+  const beats = voices.flatMap(({ partId, voice, value, notes }) => {
+    let cursor: Cursor = { ...cursorAt(doc, partId, barIds[0]!), voice };
+    return notes.map(([pitch, position]) => {
+      cursor = setNote(doc, insertBeat(doc, { ...cursor, at: "after" }, { value }), `n${pitch}`, {});
+      return { cursor, pitch, position };
+    });
+  });
+  return { doc, barIds, piano, guitar, beats };
+}
+
+const centreOf = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+
+test("on both staves of a piano and in the second voice of each, the cursor on a note's staff position is centred on its note head, to 1 px (#47)", () => {
+  const { doc, beats } = staves();
+  const drawn = layOut(docToJson(doc));
+  for (const { cursor, pitch, position } of beats) {
+    const name = `${cursor.voice} n${pitch}`;
+    const heads = drawn.heads(cursor);
+    expect(heads.map((head) => head.key), name).toEqual([`n${pitch}`]);
+    const head = centreOf(heads[0]!.rect);
+    const on = centreOf(drawn.rect({ ...cursor, line: position })!);
+    expect(Math.abs(on.x - head.x), `${name}, x`).toBeLessThanOrEqual(1);
+    expect(Math.abs(on.y - head.y), `${name}, y`).toBeLessThanOrEqual(1);
+    // The position is the note's, not merely near it.
+    for (const other of [position - 1, position + 1]) expect(Math.abs(centreOf(drawn.rect({ ...cursor, line: other })!).y - head.y), `${name}, line ${other}`).toBeGreaterThan(1);
+  }
+});
+
+test("on a position of a staff with no note there, the cursor stands where a note on that line or space is drawn, on the second staff too (#47)", () => {
+  const { doc, beats } = staves();
+  const drawn = layOut(docToJson(doc));
+  // Where the notes of each staff are drawn, by staff position.
+  const drawnAt = new Map<string, number>();
+  for (const { cursor, position } of beats) drawnAt.set(`${cursor.partId} ${cursor.voice[0]} ${position}`, centreOf(drawn.heads(cursor)[0]!.rect).y);
+  let checked = 0;
+  for (const { cursor, position: own } of beats) {
+    for (const [key, y] of drawnAt) {
+      const [partId, staff, position] = key.split(" ");
+      if (partId !== cursor.partId || staff !== cursor.voice[0] || Number(position) === own) continue;
+      expect(Math.abs(centreOf(drawn.rect({ ...cursor, line: Number(position) })!).y - y), `${cursor.voice} on ${position}`).toBeLessThanOrEqual(1);
+      checked += 1;
+    }
+  }
+  expect(checked).toBeGreaterThan(90);
+});
+
+test("an empty second voice and an empty second staff have an append slot, at the start of the bar on their own staff (#47)", () => {
+  const { doc, barIds, piano } = staves();
+  const drawn = layOut(docToJson(doc));
+  const slot = (voice: string, line: number): Cursor => ({ partId: piano, barId: barIds[1]!, voice, beatId: null, at: "after", line });
+  const first = drawn.rect(slot("0:0", 4))!;
+  for (const [voice, staffOf] of [
+    ["0:1", "0:0"],
+    ["1:0", "1:0"],
+    ["1:1", "1:0"],
+  ] as const) {
+    const rect = drawn.rect(slot(voice, 4))!;
+    expect(rect, voice).not.toBeNull();
+    expect(Math.abs(rect.x - first.x), voice).toBeLessThanOrEqual(1);
+    // On the middle line of its staff, as the first voice of that staff is.
+    expect(rect.y, voice).toBe(drawn.rect(slot(staffOf, 4))!.y);
+  }
+  expect(drawn.rect(slot("1:0", 4))!.y).toBeGreaterThan(first.y + first.height);
+});
+
+test("a click on a note head of the second staff puts the cursor on that staff, on the note's position (#47)", () => {
+  const { doc, beats } = staves();
+  const drawn = layOut(docToJson(doc));
+  for (const { cursor, pitch, position } of beats.filter((beat) => beat.cursor.voice === "1:0")) {
+    const head = centreOf(drawn.heads(cursor)[0]!.rect);
+    const hit = drawn.hit(head.x, head.y)!;
+    expect([hit.partId, hit.voice[0], hit.line], `n${pitch}`).toEqual([cursor.partId, "1", position]);
   }
 });

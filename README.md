@@ -69,7 +69,7 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 | `WEB_ROOT` | 不設 | 網頁 build 的目錄（`apps/web/dist`）：設了之後由 server 提供網頁，正式環境這樣用；開發時由 Vite 提供 |
 | `HSTS` | 不設 | `1`：回應帶 `Strict-Transport-Security`（網站走 https 時才開） |
 
-送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著，用獨立的 `studio_test` 資料庫）：
+送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著；每次執行自己建一個資料庫與挑一個 Redis database，好幾個 worktree 可以同時跑，見 [`docs/spec/testing.md`](docs/spec/testing.md) 第 1 節）：
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test
