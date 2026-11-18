@@ -43,6 +43,7 @@ test("served by the server, a score opens, is drawn and gets its sound, and so d
     ["/account", strings.account.title],
     ["/admin", strings.admin.title],
     [`/scores/${id}/settings`, strings.settings.link.title],
+    [`/scores/${id}/versions`, strings.versions.title],
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();

@@ -63,9 +63,12 @@ test("a click on the score while it plays moves the cursor there, and playback g
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[0]!.id });
 
   await recordBarsShown(page);
+  const scoreTop = (await page.locator("[data-scroller]").boundingBox())!.y;
   // Space plays, as the toolbar's button does.
   await page.keyboard.press("Space");
   await untilShown(page, 2);
+  // Where playback is, said in the toolbar, never moves the score: the click lands where bar 6 was seen.
+  expect((await page.locator("[data-scroller]").boundingBox())!.y).toBe(scoreTop);
   await page.mouse.click(sixth.x + sixth.width / 2, sixth.y + sixth.height / 2);
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[5]!.id, line: 1 });
   await untilShown(page, 3);

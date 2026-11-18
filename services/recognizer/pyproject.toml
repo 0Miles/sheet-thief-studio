@@ -1,0 +1,7 @@
+# Only the tools' settings: the service is not a package to install (see Dockerfile).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["ocr: needs the OCR packages (skipped without them, failing in the test image)"]
+# The image's files belong to root; the tests run as the service's user.
+addopts = "-p no:cacheprovider"

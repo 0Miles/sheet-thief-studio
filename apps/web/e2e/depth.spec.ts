@@ -40,7 +40,7 @@ test("a tab holding a value nested too deep is told, stops connecting, and opens
   const syncShown = await watchSync(page);
 
   // As an older tab, or what it kept offline, holds it: past the commands, which write none.
-  await page.evaluate((json) => window.__studioTest!.writeMeta("later", json), nested(MAX_VALUE_DEPTH + 1));
+  await page.evaluate((json) => window.__studioTest!.writeMeta!("later", json), nested(MAX_VALUE_DEPTH + 1));
   const closed = page.locator("[data-closed]");
   await expect(closed).toContainText(text.closed.reasons.tooDeep);
   await expect(page.locator('[data-sync="offline"]')).toBeVisible();

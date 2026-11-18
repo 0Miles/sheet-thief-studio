@@ -168,6 +168,17 @@ export async function soundReady(page: Page): Promise<void> {
   await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Wait until the player is where it stays until asked to play, as the page tells it: paused once
+ * its sound is ready, or unavailable in a browser it cannot play in (docs/spec/playback.md, 4.1;
+ * Playwright's WebKit for Windows has no Web Audio, #129). Which of the two, the page decides.
+ */
+export async function playerSettled(page: Page): Promise<"paused" | "unavailable"> {
+  const player = page.locator('[data-player="paused"], [data-player="unavailable"]');
+  await expect(player).toBeVisible({ timeout: 30_000 });
+  return (await player.getAttribute("data-player")) as "paused" | "unavailable";
+}
+
 /** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
 export async function openToPlay(page: Page, id: string): Promise<void> {
   await openScore(page, id);

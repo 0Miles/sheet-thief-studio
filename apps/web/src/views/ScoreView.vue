@@ -43,7 +43,7 @@ import {
   type TimeSignature,
   voltaRepeatTimes,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PartMix, type PlayerState, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
+import { createAlphaTabEngine, type PartMix, type PlayerState, playerUsable, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
@@ -623,7 +623,7 @@ function showStopped(): void {
 }
 
 function stop(): void {
-  if (engine === undefined || engine.player.state === "loading") return;
+  if (engine === undefined || !playerUsable(engine.player.state)) return;
   showStopped();
   engine.player.stop();
 }
@@ -1022,6 +1022,8 @@ onMounted(async () => {
     ready.value = true;
     updateOverlay();
   });
+  // A browser that cannot play says so from the start, and never tells a change.
+  playerState.value = engine.player.state;
   engine.player.onState((state) => {
     playerState.value = state;
     // Once the first sound is in, the Read view can show where playback is.
@@ -1150,6 +1152,7 @@ onBeforeUnmount(() => {
             <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
           </li>
         </ul>
+        <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>

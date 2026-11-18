@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -16,6 +16,7 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const VERSIONS = "版本記錄";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
 
@@ -217,8 +218,10 @@ export const strings = {
     },
     dismiss: "關閉",
     settings: "設定",
+    versions: VERSIONS,
     player: {
       loading: "音色載入中…",
+      unavailable: "這個瀏覽器無法播放聲音",
       play: "播放",
       pause: "暫停",
       stop: "停止",
@@ -326,6 +329,39 @@ export const strings = {
     keys: "鍵盤",
     vocals: "人聲",
   } satisfies Record<PartPresetId, string>,
+  // A score's versions (/scores/:id/versions; docs/spec/collab.md, section 8): every member looks
+  // at them, an Owner or an Editor names them.
+  versions: {
+    title: VERSIONS,
+    back: "回到團譜",
+    help: "系統會在所有人離開團譜時、以及編輯中每 10 分鐘自動存一個版本，最多保留 200 個自動版本。命名的版本不會被自動刪除。",
+    empty: "還沒有版本。",
+    list: "版本",
+    reasons: {
+      last_disconnect: "自動（所有人離開時）",
+      interval: "自動（每 10 分鐘）",
+      before_restore: "還原前",
+      manual: "手動存下",
+    } satisfies Record<VersionReason, string>,
+    named: "已命名",
+    size: (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    preview: "預覽",
+    previewOf: (when: string) => `${when} 的版本`,
+    previewHelp: "預覽只供檢視與播放，不會改動團譜。",
+    choose: "選一個版本來預覽。",
+    name: "版本名稱",
+    nameRule: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
+    nameRuleManual: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元。手動存下的版本一定要有名稱。`,
+    rename: "命名",
+    renameOf: (when: string) => `替 ${when} 的版本命名`,
+    saveName: "儲存",
+    cancel: "取消",
+    save: {
+      title: "把目前的內容存成版本",
+      help: "存下伺服器上目前的內容，並替它命名。",
+      submit: "存成版本",
+    },
+  },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
@@ -504,6 +540,9 @@ export const strings = {
     cannot_disable_self: "不能停用自己的帳號。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",
+    score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
+    version_unreadable: "伺服器讀不了這個版本，無法預覽。",
+    version_name_required: "手動存下的版本一定要有名稱。",
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",

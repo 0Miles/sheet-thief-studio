@@ -16,9 +16,10 @@ export interface StudioTestHook {
    * Write a value straight into the page's document, past the commands, as an older tab or data
    * kept offline may hold it (#102): `json` parsed, as the field `field` of the meta. The only
    * write of the hook: no command or key writes what a test needs here (a value nested deeper
-   * than a value of the document may be).
+   * than a value of the document may be). Only on the score page, which has a document; the
+   * versions page (#67) shows a version, not one.
    */
-  writeMeta(field: string, json: string): void;
+  writeMeta?(field: string, json: string): void;
 }
 
 declare global {

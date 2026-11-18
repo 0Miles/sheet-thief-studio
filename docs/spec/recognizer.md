@@ -30,6 +30,12 @@
 - 測試：pytest，加上從舊 repo 複製的 fixture 圖片（`tests/fixtures/*.png` 與它的 `README.md`）。這些圖片是合成的 smoke 圖，README 自己寫明不是準確度基準。
 - **補充**：Python 3.12（前身 `Dockerfile` 的 `python:3.12-slim-bookworm`）。依賴從前身的 requirements 檔挑出核心需要的部分；不需要 PyGuitarPro（只有 `gp5_writer` 用到）。`requirements-ocr.txt` 要用 `pip install --no-deps --ignore-requires-python -r requirements-ocr.txt` 安裝。
 - 服務有自己的 `Dockerfile`，由 repo 的 Compose 建置。
+- **補充**（#60）副本的樣子：
+  - 前身的 `app/` 改名成套件 `services/recognizer/recognizer/`，模組之間照舊用相對 import；測試在 `services/recognizer/tests/`。`tests/test_copy.py` 檢查副本裡沒有不複製的模組、沒有對它們（或 `guitarpro`）的 import，也檢查 `LICENSE`、衍生聲明與第 4 節的限制。
+  - `convert_many` 回傳 `ConversionResult(scores, report)`：`scores` 是每個聲部的 `Score`（前身拿去寫 GP5 的那些），報告裡沒有 `preview`。`sandbox.run_isolated` 的子行程只回報告（JSON），回傳值是報告；前身的 `edit` 工作（`gp_edit`）刪掉。#61 在這之上加 JSON 出口。
+  - 前身讀 GP5 驗證辨識結果的測試，改讀 `ConversionResult.scores`（`tests/scores.py`，沿用前身 GP5 writer 的名稱，期望值不變）。刪掉的只有測 GP5 寫出（`test_gp5_writer`）、Guitar Pro 編輯（`test_gp_edit`）、API（`test_api`、`test_projects`）、資料庫遷移（`test_migrations`）與 setuptools 安裝設定（`test_packaging` 的套件清單；它的相對 import 檢查搬進 `test_copy.py`）的測試。前身 `test_worker.py` 裡測辨識與 sandbox 行為的部分（圖片辨識成功、失敗頁標頁碼、`invalid_image`、`image_too_large`）改成直接呼叫 `run_isolated(job="images")`，失敗的 code 與訊息改成直接呼叫 `recognition_error`，都放在 `tests/test_sandbox.py`（另加一個 `cancel` 的測試）；其餘測 API、資料庫、佇列、MusicXML 的部分刪掉。
+  - 第 4 節的限制在 `recognizer/config.py` 的 `Settings`，欄位名稱與預設值照前身 `app/config.py`，以大寫的同名環境變數覆寫（例如 `WORKER_MEMORY_MB`）。
+  - `Dockerfile` 有兩個 target：`test`（加裝 pytest、reportlab，設 `RECOGNIZER_REQUIRE_OCR=1`，標 `ocr` 的測試在缺 OCR 套件時失敗而不是略過）與最後的 `runtime`（Compose 之後會建置的 target，#61 接上）。CI 的 `recognizer` job 建 `test` 並在裡面跑 pytest，再建 `runtime`。
 
 ### 2.1 授權聲明
 

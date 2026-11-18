@@ -243,8 +243,8 @@ test("the hourly job leaves a score deleted 29 days ago, and deletes one deleted
     const doc = new Y.Doc();
     Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
     const score = docToJson(doc);
-    expect((await createVersion(scoreId, () => score, "last_disconnect"))?.created).toBe(true);
-    expect((await createVersion(scoreId, () => ({ ...score, title: "後來的標題" }), "interval"))?.created).toBe(true);
+    expect((await createVersion(scoreId, { read: () => score, reason: "last_disconnect" }))?.created).toBe(true);
+    expect((await createVersion(scoreId, { read: () => ({ ...score, title: "後來的標題" }), reason: "interval" }))?.created).toBe(true);
   }
   expect((await call(app, "DELETE", `scores/${id}`, anna)).statusCode).toBe(204);
   const destroy = vi.spyOn(Score, "destroy");
@@ -359,9 +359,9 @@ test("a score restored while the job waits for it is not deleted", async () => {
 test("a link asked for as the score is deleted is not made, and none comes back with the restoration", async () => {
   const { app } = await startApp();
   const { id, anna } = await annasScore(app);
-  // The request for a link has passed the check of its Owner; the score is deleted before the
-  // request locks its row: the first locked read of a score is that one, and the deletion runs
-  // to its end in front of it.
+  // The score is deleted just before the request for a link locks its row (and only then checks
+  // its Owner, docs/spec/routes.md 3.5): the first locked read of a score is that one, and the
+  // deletion runs to its end in front of it.
   const find = Score.findOne.bind(Score);
   let deleted: number | null = null;
   vi.spyOn(Score, "findOne").mockImplementation(async (options) => {
