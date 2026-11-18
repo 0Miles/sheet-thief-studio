@@ -1,10 +1,10 @@
 // Sessions in Redis (docs/spec/security.md, section 1): `session:<id>` holds the account, and
 // `account-sessions:<accountId>` lists the ids of an account so that all of them can end at once.
 // Both slide: every use moves their expiry 30 days ahead.
-import { parsePlain } from "@studio/score-model";
 import type { Redis } from "ioredis";
 import { z } from "zod";
 
+import { readJson } from "./storedJson";
 import { isToken, newToken } from "./tokens";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -149,16 +149,4 @@ export class Sessions {
       if (result.status === "rejected") this.log.error({ err: result.reason, ended }, "a listener to ended sessions failed");
     }
   }
-}
-
-/** What a stored string holds, read by the fields of its shape; null when it is not JSON or not of that shape. */
-function readJson<Schema extends z.ZodType>(stored: string, schema: Schema): z.output<Schema> | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(stored);
-  } catch {
-    return null;
-  }
-  const parsed = parsePlain(schema, value);
-  return parsed.success ? parsed.data : null;
 }

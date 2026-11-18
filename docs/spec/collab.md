@@ -72,6 +72,7 @@
 
 - ticket 有效 60 秒，只能用一次，內容帶「帳號（與 session id）或連結 token」、團譜 id 與角色。
 - **補充**：ticket 是 32 bytes 的亂數（base64url），存在 Redis：鍵 `collab-ticket:<ticket>`、TTL 60 秒，用 `GETDEL` 取出保證只用一次。
+- **補充**（#106）：取出的值照 ticket 的形狀讀（`collabTickets.ts` 的 schema 經 score-model 的 `parsePlain`，只讀自有欄位，多的欄位丟掉）：不是 JSON、欄位不齊或型別不對（`kind` 不認得、`role` 不是三種之一等）時當成沒有這張 ticket，`onAuthenticate` 拒絕；這張 ticket 照樣被 `GETDEL` 用掉。理由：Redis 裡的值可能是舊版本寫的或被手動改過。伺服器從 Redis 讀回 JSON 一律經 `apps/server/src/storedJson.ts` 的 `readJson(stored, schema)`（session 也是），不直接 `JSON.parse` 轉型。
 - **補充**：`onAuthenticate` 除了檢查 ticket 的團譜 id 等於 `documentName`，也重新讀一次資料庫裡目前的角色（或連結 token 是否仍有效），以免 ticket 發出後 60 秒內的權限變動被略過。
 - provider 的 `token` **一律傳函式**，每次連線（包含重連）都重新取一張新的 ticket（`@hocuspocus/provider` 的 `.d.ts:327`，型別是 `string | (() => string) | (() => Promise<string>) | null`）。傳固定字串的話，重連時會失敗。
 - WebSocket upgrade 時不使用 cookie，所以不必處理跨站 WebSocket 劫持（CSWSH）。
