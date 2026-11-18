@@ -5,8 +5,8 @@ import { AppButton, AppTextField, Stack } from "@karyl-chan/ui";
 import { password } from "@studio/contracts";
 import { ref } from "vue";
 
-import { ApiError } from "../api";
-import { errorText, strings } from "../strings";
+import { refusal } from "../api";
+import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 
 const props = defineProps<{ askCurrent: boolean; submitLabel: string }>();
@@ -33,7 +33,7 @@ async function submit(): Promise<void> {
     current.value = next.value = again.value = "";
     emit("changed");
   } catch (failure) {
-    error.value = failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
+    error.value = refusal(failure);
   } finally {
     sending.value = false;
   }

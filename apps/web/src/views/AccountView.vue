@@ -6,10 +6,10 @@ import { accountLimits, displayName as displayNameShape } from "@studio/contract
 import { ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 
-import { ApiError } from "../api";
+import { refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PasswordForm from "../components/PasswordForm.vue";
-import { errorText, strings } from "../strings";
+import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 
 const text = strings.account;
@@ -27,10 +27,6 @@ const passwordChanged = ref(false);
 const leaveError = ref("");
 const leaving = ref(false);
 
-function say(failure: unknown): string {
-  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-}
-
 async function saveName(): Promise<void> {
   nameError.value = "";
   nameSaved.value = false;
@@ -45,7 +41,7 @@ async function saveName(): Promise<void> {
     name.value = session.me!.displayName;
     nameSaved.value = true;
   } catch (failure) {
-    nameError.value = say(failure);
+    nameError.value = refusal(failure);
   } finally {
     savingName.value = false;
   }
@@ -58,7 +54,7 @@ async function logoutAll(): Promise<void> {
     await session.logoutAll();
     await router.push({ name: "login" });
   } catch (failure) {
-    leaveError.value = say(failure);
+    leaveError.value = refusal(failure);
   } finally {
     leaving.value = false;
   }

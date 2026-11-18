@@ -48,7 +48,7 @@ import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
 import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
-import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket } from "../api";
+import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -64,7 +64,7 @@ import { measureEditView } from "../measureHook";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
-import { errorText, strings } from "../strings";
+import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
 import { exposeForTests } from "../testHook";
@@ -962,7 +962,7 @@ onMounted(async () => {
       notFound.value = true;
       return;
     }
-    loadError.value = error instanceof ApiError ? errorText(error.code) : strings.unknownError;
+    loadError.value = refusal(error);
     // Still an error of the page: it reaches the console, and the e2e tests' pageerror check.
     throw error;
   }

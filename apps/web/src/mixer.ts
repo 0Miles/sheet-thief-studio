@@ -4,6 +4,8 @@
 // comes from the selection and is not stored.
 import { NEUTRAL_MIX, type PartMix, type ScorePlayer } from "@studio/score-render";
 
+import { readStored, writeStored } from "./storage";
+
 /** The speeds offered, 1 being the tempo of the score: 0.25 to 1.5, every 0.05. */
 export const SPEEDS: readonly number[] = Array.from({ length: 26 }, (_, step) => Math.round((0.25 + step * 0.05) * 100) / 100);
 
@@ -35,24 +37,6 @@ export const mixerKey = (scoreId: string) => `studio.mixer.${scoreId}`;
 /** Where the settings of every score are stored. */
 export const PLAYBACK_KEY = "studio.playback";
 
-/** What is stored under a key; null when nothing is, or it cannot be read (storage blocked, or not JSON). */
-function read(key: string): unknown {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? null : JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage blocked or full: the settings hold for this page only.
-  }
-}
-
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** A volume as stored, to the nearest step from 0 to 1; anything else is the score's own. */
@@ -63,7 +47,7 @@ function volumeOf(value: unknown): number {
 
 /** A score's mix as stored; what cannot be read is left as the score has it. */
 export function loadMix(scoreId: string): ScoreMix {
-  const stored = read(mixerKey(scoreId));
+  const stored = readStored(mixerKey(scoreId));
   const parts = new Map<string, PartMix>();
   const storedParts = isObject(stored) ? stored.parts : undefined;
   if (isObject(storedParts)) {
@@ -83,7 +67,7 @@ export function loadMix(scoreId: string): ScoreMix {
  */
 export function saveMix(scoreId: string, mix: ScoreMix): void {
   const parts = Object.fromEntries([...mix.parts].filter(([, part]) => !isNeutral(part)));
-  write(mixerKey(scoreId), { parts, speed: mix.speed });
+  writeStored(mixerKey(scoreId), { parts, speed: mix.speed });
 }
 
 export function isNeutral(mix: PartMix): boolean {
@@ -97,13 +81,13 @@ export function partMix(mix: ScoreMix, partId: string): PartMix {
 
 /** The settings of every score, as stored; off and (a) unless stored otherwise. */
 export function loadPlayback(): PlaybackOptions {
-  const stored = read(PLAYBACK_KEY);
+  const stored = readStored(PLAYBACK_KEY);
   const fields = isObject(stored) ? stored : {};
   return { metronome: fields.metronome === true, countIn: fields.countIn === true, whilePlaying: fields.whilePlaying === "b" ? "b" : "a" };
 }
 
 export function savePlayback(options: PlaybackOptions): void {
-  write(PLAYBACK_KEY, options);
+  writeStored(PLAYBACK_KEY, options);
 }
 
 /** What `startPlayback` gives the settings to. */

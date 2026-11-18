@@ -7,9 +7,9 @@ import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, S
 import { type AdminAccount, adminAccount, adminAccountList, accountLimits, createAccountRequest, type OrphanedScore, orphanedScoreList, password as passwordShape } from "@studio/contracts";
 import { computed, onMounted, ref } from "vue";
 
-import { ApiError, get, post, postFor } from "../api";
+import { get, post, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
-import { errorText, strings } from "../strings";
+import { strings } from "../strings";
 import { useSessionStore } from "../stores/session";
 
 const text = strings.admin;
@@ -35,17 +35,13 @@ async function load(): Promise<void> {
     orphaned.value = scores.scores;
     loadError.value = null;
   } catch (failure) {
-    loadError.value = say(failure);
+    loadError.value = refusal(failure);
     // Still an error of the page: it reaches the console, and the e2e tests' pageerror check.
     throw failure;
   }
 }
 
 onMounted(load);
-
-function say(failure: unknown): string {
-  return failure instanceof ApiError ? errorText(failure.code) : strings.unknownError;
-}
 
 // Every dialog of the page: which one is open, on which account, and what it is sending.
 type Dialog = "create" | "reset" | "disable" | "transfer";
@@ -87,7 +83,7 @@ async function send(action: () => Promise<unknown>, said: string): Promise<void>
     dialog.value = null;
     done.value = said;
   } catch (failure) {
-    error.value = say(failure);
+    error.value = refusal(failure);
     if (dialog.value === null) throw failure;
   } finally {
     sending.value = false;
