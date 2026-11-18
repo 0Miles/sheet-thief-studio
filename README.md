@@ -56,7 +56,7 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
   pnpm --filter @studio/web dev --host
   ```
 
-伺服器讀的環境變數（開發時都有預設值，正式環境的前三個必須設定）：
+伺服器讀的環境變數（開發時都有預設值；正式環境的 `DATABASE_URL`、`REDIS_URL`、`PUBLIC_ORIGIN`、`RECOGNIZER_URL` 必須設定）：
 
 | 變數 | 開發時的預設 | 說明 |
 |---|---|---|
@@ -68,6 +68,11 @@ pnpm --filter @studio/web dev      # http://localhost:5183，用剛建立的管�
 | `HOST`、`PORT` | `127.0.0.1`、`8031` | |
 | `WEB_ROOT` | 不設 | 網頁 build 的目錄（`apps/web/dist`）：設了之後由 server 提供網頁，正式環境這樣用；開發時由 Vite 提供 |
 | `HSTS` | 不設 | `1`：回應帶 `Strict-Transport-Security`（網站走 https 時才開） |
+| `RECOGNIZER_URL` | `http://127.0.0.1:8000` | 辨識服務 |
+| `KARYL_PLUGIN_SETUP_SECRET` | 不設 | 設了就以 karyl-chan plugin 模式啟動（[`docs/spec/karyl-login.md`](docs/spec/karyl-login.md)） |
+| `BOT_URL`、`PLUGIN_URL` | `http://localhost:3000`、`http://localhost:<PORT>` | plugin 模式：bot 的位址，與 bot 連到 server 的位址 |
+
+正式部署（Docker Compose、nginx、獨立部署與 plugin 模式）見 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 
 送 pull request 前（伺服器的測試要 `compose.dev.yaml` 開著，用獨立的 `studio_test` 資料庫）：
 

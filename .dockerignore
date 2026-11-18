@@ -1,0 +1,20 @@
+# What the server's image (apps/server/Dockerfile) is built from: the sources, never what a
+# checkout has installed or built, nor its secrets.
+**/node_modules
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/*.log
+**/.env
+.git
+.github
+.claude
+docs
+deploy
+services
+apps/web/e2e
+apps/web/public/font
+apps/web/public/soundfont
+apps/*/tests
+packages/*/tests
