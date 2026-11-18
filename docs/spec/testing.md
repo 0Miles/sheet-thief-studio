@@ -66,6 +66,7 @@
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
   - **補充**（#18）：每個 spec 的 `test` 從 `e2e/test.ts` import，不直接從 `@playwright/test`；它對測試開的每個 browser context 監聽這個事件，測試結束時斷言沒有違規。worker 裡的違規不會送到頁面的事件，Playwright 的 worker console 也收不到；在 Chromium 上改聽 CDP 的 `Log.entryAdded`（`source: "worker"`），它記下被擋的請求（`connect-src` 等），但不記被擋的 eval，所以 worker 裡的 eval 違規目前聽不到（已知限制）。
+    - **補充**（PR 186 的紅燈）：測試自己開的 browser context（`browser.newContext`，例如 `e2e/pages.ts` 的 `loggedIn`）也由 `e2e/test.ts` 在測試結束時關掉，和 fixture 的 context 一樣。整套 e2e 只有一個 worker、一個瀏覽器，以前這些 context 從不關，跑到後段的 `versions.spec.ts` 時瀏覽器裡還開著約 240 個 context、120 個頁面（各自帶著譜、連線與音色），CI 的 runner 整台變慢（spawn 的 `seedScore` 要 26 秒、collab ticket 要 10 秒），測試因而偶發逾時。`e2e/contexts.spec.ts` 鎖住這件事：下一個測試開始時瀏覽器裡沒有上一個測試留下的 context。
   - **補充**（#64）：e2e 的 server 呼叫假的辨識服務（`apps/server/tests/recognizerE2e.ts`），由 Playwright 的 `webServer` 在 port 8034 啟動（`e2e/environment.ts` 的 `RECOGNIZER_URL`），不會連到開發用、在 8000 的真辨識服務。要別的回答時，測試先送 `PUT /fixture/<契約 fixture 名稱>`，之後都回那一份。
   - **補充**（#18）：`vite preview` 不送 CSP，所以另有一個 Playwright project `served`：第二個 server（port 8032，`WEB_ROOT` 指向剛建好的 `dist`）自己提供網頁並帶 CSP，只跑 `e2e/served.spec.ts`：登入、開一份團譜、畫出譜面、音色載入完成，再打開樂句庫、帳號設定、後台、團譜設定、樂句編輯器（畫出樂句、音色載入完成，#54），辨識的審核頁（上傳圖片、畫出辨識結果、音色載入完成、原圖載入，#64），以及在沒登入的 context 開唯讀連結（畫出譜面、音色載入完成），全程沒有違規；最後確認行內 script 與 worker 裡連別的 host 真的被擋、而且聽得到。`pnpm --filter @studio/web test:e2e` 會一起跑。
   - **補充**（#72）：Playwright project `plugin` 只跑 `e2e/plugin.spec.ts`。一個假的 karyl-chan bot（`apps/server/tests/botE2e.ts`，port 8036）讓 plugin 模式的 server（port 8035，`WEB_ROOT` 指向 `dist`）註冊，像真的 bot 一樣把它的頁面放在 `/plugin/sheet-thief-studio/` 底下代理（去掉前綴、刪掉 cookie、轉發 WebSocket Upgrade），並提供 `POST /test/studio` 簽一個 `/studio` dispatch、回傳回覆裡的連結。spec 用連結登入，在 base path 底下開一份團譜：畫出譜面、音色載入完成、打字同步到伺服器、重新整理後仍登入、登出；另外是未綁定與用過的連結在 `/login` 顯示原因，全程沒有 CSP 違規。CI 的 `e2e` job 用 `--project=plugin` 一起跑。
@@ -89,6 +90,8 @@
 - 目標仍是按鍵到畫面 p95：一個聲部 ≤ 80 ms，五個聲部 ≤ 150 ms（100 小節 × 5 聲部）。
 
 ## 5. 票裡必須執行的確認檢查
+
+**補充**（#69 的結果）：確認檢查 4 通過，但對照有幾處照 alphaTab 1.9 的實際行為修正，寫在 [`import-export.md`](import-export.md) 2.2 與 3.1：判定 fretted 要看 `showTablature`（GP6–8 匯入會替只有五線譜的譜表補上吉他調弦）、GP7 匯出鼓的 articulation 要先登記到 track（alphaTab 的寫法會把 id 當成索引）、旋律的空音節匯出時寫成 `[""]`。測試是 `packages/score-render/tests/importExport.test.ts`，樣本在 `packages/score-render/tests/fixtures/`。
 
 每一項寫進對應的票，結果寫進 PR。
 
