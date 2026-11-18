@@ -106,6 +106,12 @@ function partFields(part: Pick<PartJSON, "kind" | "tuning" | "staves">): Fragmen
   return { kind: "percussion" };
 }
 
+/** Beats of a part as a fragment of beats (the clipboard's): its kind, and its tuning when fretted; no staves, which a fragment of beats has not. */
+export function fragmentOfBeats(part: Pick<PartJSON, "kind" | "tuning" | "staves">, beats: BeatWithoutId[]): BeatsFragment {
+  const fields = partFields(part);
+  return fields.kind === "pitched" ? { kind: "pitched", beats } : { ...fields, beats };
+}
+
 /** The beat, a copy without its id. */
 export function withoutId(beat: BeatJSON): BeatWithoutId {
   const copy: Partial<BeatJSON> = { ...beat };

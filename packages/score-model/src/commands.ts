@@ -63,9 +63,15 @@ import {
   type YVoice,
   voiceKeys,
   withinPartLimits,
+  DEFAULT_KEY_SIG,
+  keySigsOf,
+  lineRange,
+  type PitchedClef,
+  staffAndVoiceOf,
 } from "./schema";
 import { writeScore } from "./build";
 import { drumLineOf, drumLineOfKey } from "./drums";
+import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling } from "./pitch";
 import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -209,28 +215,33 @@ function withSuffix(key: string, upper: string | null): string {
  * of those.
  */
 function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
-  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
-  const lower = index < 0 ? null : keyAt(index);
-  let end = index + 1;
-  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
-  const upper = end < order.length ? keyAt(end) : null;
+  const [lower, upper] = boundsAfter(map, order, index);
   const keys = generateNKeysBetween(lower, upper, count);
   return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
 }
 
+/** The keys items put right after the one at `index` of `order` (-1: first) go between, as `keysAfter` takes them. */
+function boundsAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number): [lower: string | null, upper: string | null] {
+  const keyAt = (at: number) => orderOf(map.get(order[at] as string));
+  const lower = index < 0 ? null : keyAt(index);
+  let end = index + 1;
+  while (lower !== null && end < order.length && keyAt(end) === lower) end++;
+  return [lower, end < order.length ? keyAt(end) : null];
+}
+
 /**
- * `count` ordering keys in a row, for items written anew all at once (a restore), in an interval
- * of their own: a stem made as `keysAfter` makes a first key (`withSuffix`: "a0" and five random
+ * `count` ordering keys in a row, between `lower` and `upper` (none: from nothing), for items
+ * written all at once (a restore, bars inserted or appended), in an interval of their own: a stem
+ * made as `keysAfter` makes a first key (`withSuffix`: a key between the two and five random
  * digits), each key the stem followed by the fraction a key between "a0" and "a1" has, in order.
  * Every key of the run sorts after the stem and before any other stem, so two runs made at once
- * never mix. `keysAfter` itself would not do: each of its keys has a suffix of its own, so two
- * runs made from nothing would take turns (a0x, a0y, a1x, a1y…).
+ * at the same place never mix. `keysAfter` itself would not do: each of its keys has a suffix of
+ * its own, so two runs made at once would take turns (a0x, a0y, a1x, a1y…).
  */
-function keysOfARun(count: number): string[] {
+function keysOfARun(count: number, lower: string | null = null, upper: string | null = null): string[] {
   if (count === 0) return [];
-  const first = generateKeyBetween(null, null);
-  const stem = withSuffix(first, null);
-  return generateNKeysBetween(first, generateKeyBetween(first, null), count).map((key) => stem + key.slice(first.length));
+  const stem = withSuffix(generateKeyBetween(lower, upper), upper);
+  return generateNKeysBetween("a0", "a1", count).map((key) => stem + key.slice("a0".length));
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -258,7 +269,8 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = keysAfter(bars, order, index, count);
+    // A run of their own: bars two members insert at one place at once each stay together (#58, after #56's review).
+    const keys = keysOfARun(count, ...boundsAfter(bars, order, index));
     const signature = given[0] ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
@@ -580,7 +592,7 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
 const QUARTER: BeatDuration = { value: 4, dots: 0 };
 
 /** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
-interface BeatPlace {
+export interface BeatPlace {
   voice: YVoice;
   index: number;
   duration: BeatDuration;
@@ -595,9 +607,9 @@ function durationFrom(beat: YBeat | undefined): BeatDuration {
  * Where a beat made at the cursor goes: on a beat, just before it, as long as it; in the append
  * slot, just after the anchor, as long as the anchor (first and a quarter in an empty voice; when
  * the anchor is gone, after the last beat and as long as it, where the cursor settles).
- * Undefined when the cursor's beat or voice is gone.
+ * Undefined when the cursor's beat or voice is gone. Beats pasted there go the same place (`pasteBeats`).
  */
-function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+export function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
   if (cursor.at === "on") {
     const found = beatIndexAt(doc, cursor);
     return found && { ...found, duration: durationFrom(found.voice.get(found.index)) };
@@ -872,12 +884,12 @@ export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> 
  * The keys of the notes on the cursor's line, those a technique key changes at the cursor
  * (docs/spec/commands.md, 5.4): its string on a fretted part, whether a note is there or not;
  * on drums, every piece of the cursor's beat drawn on that line (`drumLineOfKey`), none in the
- * append slot. None on staves until their keys name the notes drawn on a line (docs/ROADMAP.md,
- * M3), as with `deleteNote`.
+ * append slot; on staves, every note of the cursor's beat drawn on that line (`notesOnLine`, #48).
  */
 export function noteKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const kind = partKindOf(partsOf(doc).get(cursor.partId));
   if (kind === "fretted") return [`s${cursor.line}`];
+  if (kind === "pitched") return staffKeysAt(doc, cursor);
   if (kind !== "percussion") return [];
   const notes = notesOf(beatAt(doc, cursor));
   return [...(notes?.keys() ?? [])].filter((key) => drumLineOfKey(key) === cursor.line);
@@ -899,26 +911,33 @@ function readerOf(doc: Y.Doc, partId: string): PartReader | undefined {
   return { kind, note: (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored)) };
 }
 
-/** The notes of the last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
-function lastReadNotes(reader: PartReader, voice: YVoice, end: number): Y.Map<NoteJSON> | undefined {
+/** The last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
+function lastReadBeat(reader: PartReader, voice: YVoice, end: number): YBeat | undefined {
   for (let index = end - 1; index >= 0; index--) {
     const beat = voice.get(index);
-    if (readsAsBeat(reader.kind, beat)) return notesOf(beat);
+    if (readsAsBeat(reader.kind, beat)) return beat;
   }
   return undefined;
 }
 
 /**
- * The notes of the beat before `index` in a voice, as the members see it: the last beat before it
- * that reading keeps, else the last such beat of the same voice in the bar before.
+ * The beat before `index` in a voice, as the members see it, and the bar it is in: the last beat
+ * before it that reading keeps, else the last such beat of the same voice in the bar before.
  */
-function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
-  const own = lastReadNotes(reader, voice, index);
-  if (own !== undefined) return own;
+function beatBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): { beat: YBeat; barId: string } | undefined {
+  const own = lastReadBeat(reader, voice, index);
+  if (own !== undefined) return { beat: own, barId: address.barId };
   const bars = ordered(barsOf(doc));
   const previous = bars[bars.indexOf(address.barId) - 1];
-  const before = previous === undefined ? undefined : voiceIn(doc, { ...address, barId: previous });
-  return before && lastReadNotes(reader, before, before.length);
+  if (previous === undefined) return undefined;
+  const before = voiceIn(doc, { ...address, barId: previous });
+  const last = before && lastReadBeat(reader, before, before.length);
+  return last && { beat: last, barId: previous };
+}
+
+/** The notes of the beat before `index` in a voice (`beatBefore`). */
+function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
+  return notesOf(beatBefore(doc, reader, address, voice, index)?.beat);
 }
 
 /**
@@ -974,6 +993,173 @@ const pieceToggle: NoteToggle<boolean> = {
 export function toggleDrum(doc: Y.Doc, cursor: Cursor, id: number): Cursor {
   const next = toggleAt(doc, cursor, `p${id}`, pieceToggle);
   return { ...next, line: drumLineOf(id) ?? next.line };
+}
+
+// Staves (#48; docs/spec/commands.md, 5.1, 5.2 and 5.8) ----------------------------------------
+
+/** The key of a pitched note of a pitch ("n61"). */
+function pitchKey(pitch: number): string {
+  return `n${pitch}`;
+}
+
+/** The pitch a pitched note's key names ("n61" is 61); asked only of keys reading keeps. */
+function pitchOfKey(key: string): number {
+  return Number(key.slice(1));
+}
+
+/**
+ * The key in force in a bar of the document, as reading has it (`keySigsOf`: a key that cannot
+ * be read is no change); C major for a bar not in the score.
+ */
+function keySigIn(doc: Y.Doc, barId: string): KeySignature {
+  const bars = barsOf(doc);
+  const ids = ordered(bars);
+  const keys = keySigsOf(
+    ids.map((id) => {
+      const read = parsePlain(keySigSchema, bars.get(id)?.get("keySig"));
+      return { keySig: read.success ? read.data : undefined };
+    }),
+  );
+  return keys[ids.indexOf(barId)] ?? { ...DEFAULT_KEY_SIG };
+}
+
+/**
+ * Where the cursor stands on a staff: the clef of its staff, the key in force in its bar, how its
+ * part is read, and its beat (none in the append slot).
+ */
+interface StaffPlace {
+  clef: PitchedClef;
+  keySig: KeySignature;
+  reader: PartReader;
+  beat: YBeat | undefined;
+}
+
+/**
+ * Where the cursor stands on a staff (`StaffPlace`): the clef as reading has the staves (their
+ * default, a treble staff, when they cannot be read). None but on a pitched part, nor on a beat
+ * that is gone or that reading leaves out.
+ */
+function staffPlaceOf(doc: Y.Doc, cursor: Cursor): StaffPlace | undefined {
+  const reader = readerOf(doc, cursor.partId);
+  if (reader?.kind !== "pitched") return undefined;
+  const beat = beatAt(doc, cursor);
+  if (cursor.at === "on" && (beat === undefined || !readsAsBeat(reader.kind, beat))) return undefined;
+  const staves = parsePlain(pitchedStavesSchema, partsOf(doc).get(cursor.partId)?.get("staves"));
+  const [staff] = staffAndVoiceOf(cursor.voice);
+  const clef = staves.success ? staves.data[staff]?.clef : undefined;
+  return { clef: clef ?? "treble", keySig: keySigIn(doc, cursor.barId), reader, beat };
+}
+
+/** A note of the cursor's beat on a staff: its key, its pitch and its own fields (`ownNote`). */
+interface StaffNote {
+  key: string;
+  pitch: number;
+  stored: NoteJSON;
+}
+
+/**
+ * The notes of the beat of a place on a staff drawn on `line` (`lineOfPitch`: by the clef, and by
+ * their spelling, else the key's): C and C♯ share a line, D♭ is on D's. None in the append slot,
+ * nor a note reading leaves out, which is drawn nowhere.
+ */
+function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
+  return [...(notesOf(place.beat)?.entries() ?? [])].flatMap(([key, value]) => {
+    const note = place.reader.note(key, value);
+    const pitch = pitchOfKey(key);
+    return note !== undefined && lineOfPitch(place.clef, pitch, note.spell, place.keySig) === line ? [{ key, pitch, stored: ownNote(value) as NoteJSON }] : [];
+  });
+}
+
+/** The keys of the notes drawn on the cursor's line of a staff (`notesOnLine`). */
+function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const place = staffPlaceOf(doc, cursor);
+  return place === undefined ? [] : notesOnLine(place, cursor.line).map(({ key }) => key);
+}
+
+/**
+ * The keys of the notes a tie changes at the cursor (docs/spec/commands.md, 5.4; #49): those of
+ * the cursor's line (`noteKeysAt`). On a staff whose line holds no note at the cursor (or in the
+ * append slot), those of the notes the beat before draws on that line, by the clef of the staff and
+ * the key in force in the bar of that beat: the tie makes them there, of the same pitch and
+ * spelling (`tieToggle`). None when that beat draws none there.
+ */
+export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const keys = noteKeysAt(doc, cursor);
+  const place = keys.length === 0 ? staffPlaceOf(doc, cursor) : undefined;
+  const at = place && placeFor(doc, cursor);
+  if (place === undefined || at === undefined) return keys;
+  const before = beatBefore(doc, place.reader, cursor, at.voice, at.index);
+  if (before === undefined) return [];
+  return notesOnLine({ ...place, keySig: keySigIn(doc, before.barId), beat: before.beat }, cursor.line).map(({ key }) => key);
+}
+
+/** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */
+function staffLine(line: number): number {
+  const { first, last } = lineRange("pitched", 0);
+  return Math.min(last, Math.max(first, line));
+}
+
+/**
+ * A letter key on a staff (docs/spec/keymap.md, 4.3), one command: the note of that letter
+ * nearest the natural note of the cursor's position, with the sharp or flat of the key in force
+ * (`enteredPitch`), always spelled (docs/spec/schema.md, 8.1). On a beat with notes it joins the
+ * chord; a note of that pitch there is replaced by it, the later spelling winning (C♯ then D♭ is
+ * one note, D♭), what else it held kept (`ownFields`); spelled as it is already, nothing is
+ * written. In the append slot it goes on a new beat, the cursor then on it. The cursor goes to the
+ * position the note is drawn on, held to its range. A beat reading leaves out is left alone, as is
+ * a pitch out of 0 to 127.
+ */
+export function enterNote(doc: Y.Doc, cursor: Cursor, letter: NoteLetter): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const entered = place && enteredPitch(place.clef, cursor.line, letter, place.keySig);
+  if (place === undefined || entered === undefined) return cursor;
+  const key = pitchKey(entered.pitch);
+  const next = writeNote(doc, cursor, key, (stored) => {
+    // A note stored there that reading leaves out is not one to keep the fields of.
+    const kept = stored !== undefined && place.reader.note(key, stored) !== undefined ? stored : undefined;
+    return kept?.spell === entered.spell ? kept : { ...kept, spell: entered.spell };
+  });
+  return { ...next, line: staffLine(entered.line) };
+}
+
+/**
+ * Move every note of the cursor's line to another pitch, one command (docs/spec/commands.md, 5.8):
+ * `to` gives each its new pitch and spelling (undefined keeps its own). Its key is changed, what
+ * else it holds kept (`ownFields`); a note of the beat already at a new pitch is replaced, the note
+ * moved there winning. Nothing moves when any would leave 0 to 127, or when there is none on the
+ * line. The cursor follows the lowest moved note to its position, held to its range.
+ */
+function moveNotesOnLine(doc: Y.Doc, cursor: Cursor, to: (pitch: number) => { pitch: number; spell?: string }): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const notes = notesOf(place?.beat);
+  if (place === undefined || notes === undefined) return cursor;
+  const moved = notesOnLine(place, cursor.line).map(({ key, pitch, stored }) => {
+    const next = to(pitch);
+    return { from: key, pitch: next.pitch, note: next.spell === undefined ? stored : { ...stored, spell: next.spell } };
+  });
+  if (moved.length === 0 || moved.some(({ pitch }) => pitch < 0 || pitch > 127)) return cursor;
+  const copies = writable(...moved.map(({ note }) => note));
+  if (copies === undefined) return cursor;
+  doc.transact(() => {
+    for (const { from } of moved) notes.delete(from);
+    moved.forEach(({ pitch }, index) => notes.set(pitchKey(pitch), copies[index]!));
+  }, LOCAL);
+  const lowest = moved.reduce((low, each) => (each.pitch < low.pitch ? each : low));
+  return { ...cursor, line: staffLine(lineOfPitch(place.clef, lowest.pitch, lowest.note.spell, place.keySig)) };
+}
+
+/**
+ * `]` (`1`) and `[` (`-1`) on a staff: the notes of the cursor's line a semitone up or down, one
+ * command; on a black key spelled sharp going up, flat going down, on a white key natural
+ * (`semitoneSpelling`).
+ */
+export function moveNotesBySemitone(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + step, spell: semitoneSpelling(pitch + step, step) }));
+}
+
+/** Shift+↑ (`1`) and Shift+↓ (`-1`) on a staff: the notes of the cursor's line an octave up or down, one command, each keeping its spelling. */
+export function moveNotesByOctave(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + 12 * step }));
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -1105,13 +1291,13 @@ function afterRemoval(cursor: Cursor, voice: YVoice, index: number): Cursor {
 /**
  * Remove the notes on the line of the cursor, from its beat, one command: on a fretted part, the
  * note on its string; on drums, every piece drawn on that line (`noteKeysAt`: several pieces share
- * a line, so taking one off would be a guess, docs/spec/commands.md 5.2). Staves get theirs with
- * the keys that enter their notes (docs/ROADMAP.md, M3): until then nothing is removed from them.
+ * a line, so taking one off would be a guess, docs/spec/commands.md 5.2); on staves, every note
+ * drawn on that line (C and C♯ share one, #48).
  */
 export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
   const kind = partKindOf(partsOf(doc).get(cursor.partId));
   if (kind === "fretted") return setFret(doc, cursor, null);
-  if (kind !== "percussion" || cursor.at !== "on") return cursor;
+  if ((kind !== "percussion" && kind !== "pitched") || cursor.at !== "on") return cursor;
   return writeNotes(doc, cursor, noteKeysAt(doc, cursor), () => null);
 }
 
@@ -1547,9 +1733,6 @@ export function setProgram(doc: Y.Doc, partId: string, program: number): boolean
 }
 
 const pitchedStavesSchema = partSchemas.pitched.shape.staves;
-
-/** A clef a staff of a pitched part can have. */
-export type PitchedClef = z.output<typeof pitchedStavesSchema>[number]["clef"];
 
 /** The clefs a staff of a pitched part can have, in the order the panel offers them. */
 export const PITCHED_CLEFS: readonly PitchedClef[] = pitchedStavesSchema.element.shape.clef.options;

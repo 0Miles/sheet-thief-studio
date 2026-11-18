@@ -28,10 +28,11 @@ import {
   type TimeSignature,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type Rect, type ScoreEngine } from "@studio/score-render";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import * as Y from "yjs";
 
 import { barPanelOf } from "../barPanel";
+import { listenToClipboard } from "../clipboard";
 import { keyPlatform } from "../device";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { selectionBoxes } from "../presence";
@@ -62,6 +63,16 @@ const started = ref(false);
 const ready = ref(false);
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
 const notice = ref<string | null>(null);
+/**
+ * Tell the member something anew, as the score does (#57): the notice is emptied first, so that the
+ * same words said again are a change the screen reader reads out again.
+ */
+function say(said: string): void {
+  notice.value = null;
+  void nextTick(() => {
+    notice.value = said;
+  });
+}
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
@@ -263,9 +274,7 @@ function startEditing(json: ScoreJSON): void {
     cursorMoved();
     if (!isFollowing()) reveal(cursorRect.value);
   });
-  session.onHint((hint) => {
-    notice.value = strings.score.hints[hint];
-  });
+  session.onHint((hint) => say(strings.score.hints[hint]));
   session.onEditText(openText);
   placeCursor();
   scroller.value?.focus();
@@ -307,7 +316,11 @@ watch(
   },
 );
 
+// Copy, cut and paste while the phrase has the keyboard, as on a score: bars copied from a score go in here (docs/spec/phrases.md, section 2).
+const stopClipboard = listenToClipboard({ scroller: () => scroller.value, session: () => session, tell: say });
+
 onBeforeUnmount(() => {
+  stopClipboard();
   hideFromTests();
   sound?.destroy();
   stopObserving?.();
@@ -340,10 +353,13 @@ defineExpose({ focus, openParts });
       </div>
       <slot name="trail" />
       <p v-if="!editable && started" class="phrase__muted" data-desktop-only>{{ desktopOnly }}</p>
-      <p v-if="notice" class="phrase__notice" role="status">
-        <span>{{ notice }}</span>
-        <button type="button" class="phrase__dismiss" @click="onToolbar(() => (notice = null))">{{ strings.score.dismiss }}</button>
-      </p>
+      <!-- Always there, as the score's status region is (#57): a live region that appears with its words is not read out everywhere. -->
+      <div class="phrase__status" role="status">
+        <p v-if="notice" class="phrase__notice">
+          <span>{{ notice }}</span>
+          <button type="button" class="phrase__dismiss" @click="onToolbar(() => (notice = null))">{{ strings.score.dismiss }}</button>
+        </p>
+      </div>
     </header>
     <slot name="banners" />
     <div class="phrase__body">
@@ -415,11 +431,14 @@ defineExpose({ focus, openParts });
   display: flex;
   gap: 0.25rem;
 }
+.phrase__status {
+  margin: 0 0 0 auto;
+}
 .phrase__notice {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin: 0 0 0 auto;
+  margin: 0;
   font-size: 0.875rem;
 }
 .phrase__body {

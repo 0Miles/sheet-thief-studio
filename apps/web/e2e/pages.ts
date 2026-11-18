@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, PART_PRESETS, type PartKind, type ScoreJSON } from "@studio/score-model";
+import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, type NewPart, PART_PRESETS, type ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { RECOGNIZER_URL, SERVER_ENV } from "./environment";
@@ -119,7 +119,8 @@ export interface ScoreFixture {
   owner: string;
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
-  parts?: { name: string; kind: PartKind }[];
+  /** Parts after the first one, with their kind's staves unless told (a keyboard's two). */
+  parts?: Pick<NewPart, "name" | "kind" | "staves">[];
   state?: string;
   /** The schema version the score says it is of: the current one when left out. */
   schemaVersion?: number;

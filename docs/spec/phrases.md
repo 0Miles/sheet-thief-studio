@@ -49,6 +49,11 @@ interface BeatsFragment {
 - 剪下等於「複製加上一個清空的 Command」。Viewer 只能複製，不能剪下或貼上。
 - **焦點元素要先用測試確認**：現在譜面的焦點元素是 `ScoreView.vue` 的 `[data-scroller]`（`tabindex="0"`）。在 Chromium、Firefox、WebKit 各寫一個 e2e，焦點在譜面時按 `Ctrl+C`、`Ctrl+V`，斷言 `copy`、`paste` 事件有觸發。失敗時：把鍵盤焦點放在一個畫面外、內含被選取文字的 `<textarea>`；任何一個瀏覽器失敗，三個都改用這個做法，只維持一種焦點元素（補充）。CI 的 WebKit 跑在 Linux 上，按的是 `Ctrl`；Mac 上 Safari 的 `Cmd+C`、`Cmd+V` 由人工判定確認（[`testing.md`](testing.md) 第 6 節第 8 項）。這張確認票擋住「Viewer 複製並貼進樂句編輯器」的 e2e（[`testing.md`](testing.md)）。
   - **補充**（#52 的結果）：三個瀏覽器都通過，焦點元素維持 `[data-scroller]`。事件在 Chromium、WebKit 送到 `[data-scroller]`，在 Firefox 送到 `<body>`，所以在 document 上聽 `copy`、`cut`、`paste`，只在 `document.activeElement` 是 `[data-scroller]` 時處理（[`testing.md`](testing.md) 第 5 節）。
+- **補充**（#58）：頁面這一側在 `apps/web/src/clipboard.ts` 的 `listenToClipboard`，團譜的兩種編輯視圖與樂句編輯器共用（`apps/web/tests/clipboard.test.ts`）。焦點不在譜面（文字欄位、對話框）時不處理，交給瀏覽器。複製、剪下沒有東西可寫時（沒有選取、唯讀的剪下）不呼叫 `preventDefault()`，剪貼簿不變；貼上一律 `preventDefault()`。
+  - 讀取：前綴之後的換行也接受 `\r\n`（Windows 的剪貼簿可能把 `\n` 改成 `\r\n`）。前綴前面不能有任何字元。前綴之後的文字超過 `MAX_FRAGMENT_BYTES` 個 UTF-16 單位（換成 UTF-8 至少同樣多位元組，一定超過 1 MB）時不 `JSON.parse`，直接當作沒有可以貼上的內容。名為 `__proto__` 的欄位：在音符、聲線這類 record 裡，整個片段驗證失敗（#78）；在物件上和其他不認得的欄位一樣略過，不碰 prototype。過深的值在 schema 讀的位置驗證失敗，在不認得的欄位上略過。
+  - 拍點段只包含讀取讀得到的拍點（和畫出來的一樣）；拍點範圍裡沒有讀得到的拍點時，複製不動。小節段同「存成樂句」，用 `fragmentOfBars`。
+  - 樂句編輯器裡也能複製、剪下、貼上；貼上小節段的規則同團譜（5.7），樂句的小節不夠時在尾端加上小節，拍號沿用前一個小節。
+  - 提示沿用 #57 的狀態區：團譜的 `.score__status`（一直存在的 live region）裡的 `.score__notice`，以 `say` 先清空再寫入，同一句話再說一次也會被朗讀。樂句編輯器（`apps/web/src/components/PhraseEditor.vue`，#64；樂句頁與審核頁共用）的提示改成同樣的做法（`.phrase__status` 裡的 `.phrase__notice`）。
 
 ## 3. 建立樂句的三種途徑
 
