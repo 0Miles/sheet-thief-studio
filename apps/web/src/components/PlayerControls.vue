@@ -25,9 +25,14 @@ const usable = computed(() => playerUsable(props.state));
       {{ state === "playing" ? text.pause : text.play }}
     </AppButton>
     <AppButton variant="ghost" size="sm" :disabled="!usable || stopped" @click="emit('stop')">{{ text.stop }}</AppButton>
-    <span v-if="state === 'loading'" class="player__status">{{ text.loading }}</span>
-    <span v-else-if="state === 'unavailable'" class="player__status">{{ text.unavailable }}</span>
-    <span v-else-if="bar !== null" class="player__status" data-playing-bar :data-bar="bar">{{ text.bar(bar) }}</span>
+    <!-- Always there, as wide as the widest of what it says while the score is open: playing,
+         pausing and stopping never change the width of the toolbar, which would otherwise wrap
+         or unwrap it and move the score under the member's pointer. -->
+    <span class="player__status">
+      <span v-if="state === 'loading'">{{ text.loading }}</span>
+      <span v-else-if="state === 'unavailable'">{{ text.unavailable }}</span>
+      <span v-else-if="bar !== null" data-playing-bar :data-bar="bar">{{ text.bar(bar) }}</span>
+    </span>
   </div>
 </template>
 
@@ -38,6 +43,9 @@ const usable = computed(() => playerUsable(props.state));
   gap: 0.5rem;
 }
 .player__status {
+  /* 「音色載入中…」 and 「第 1000 小節」, the most bars a score has; the unavailable notice, which
+     never changes once shown, may be wider. */
+  min-width: 6.5em;
   color: var(--text-muted);
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;

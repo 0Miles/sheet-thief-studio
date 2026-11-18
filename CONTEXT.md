@@ -157,7 +157,7 @@ _Avoid_：action、operation、edit（當名詞用）
 _Avoid_：awareness（共編函式庫的用語）
 
 **Version（版本）**：
-某一刻整份團譜內容的存檔，由系統自動建立；可以命名，命名的版本不會被自動刪除。
+某一刻整份團譜內容的存檔。系統會自動建立；Owner 與 Editor 也可以把目前的內容存成一個版本，存的時候就要命名。版本可以命名，命名的版本不會被自動刪除；成員自己存的版本一定有名稱。
 _Avoid_：snapshot、history、revision、快照、版次
 
 **Restore（還原）**：

@@ -1130,6 +1130,7 @@ onBeforeUnmount(() => {
             <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
           </li>
         </ul>
+        <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
         <p v-if="notice" class="score__notice" role="status">
           <span>{{ notice }}</span>
