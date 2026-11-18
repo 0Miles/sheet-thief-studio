@@ -12,6 +12,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const SCREENSHOT_DIR = resolve(here, "../../../../docs/measurements");
 export const DATA_DIR = resolve(SCREENSHOT_DIR, "data");
 
+/**
+ * The milestone measured again, the first part of the name of S2's files: those of every
+ * milestone are kept side by side (m1b-s2-keys-firefox-headless.json, m2-…), for its report to
+ * compare with the one before. Change the default in the ticket that measures again;
+ * MEASURE_MILESTONE=m2 fills in an earlier milestone's missing measurements later.
+ */
+export const MILESTONE = process.env.MEASURE_MILESTONE || "m2";
+
 /** "headless" or "headed": measurements of both are kept side by side. */
 export const MODE = process.env.HEADED === "1" ? "headed" : "headless";
 

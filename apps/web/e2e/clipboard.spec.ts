@@ -17,9 +17,17 @@
 // the test asserts the events and that empty text; everywhere else, CI's Linux WebKit included, the
 // round trip. CI's WebKit presses Ctrl; Safari's Cmd+C, Cmd+V on a Mac is checked by hand
 // (docs/spec/testing.md, section 6, item 8; #77).
-import { ADMIN } from "./environment";
-import { loggedIn, openScore, pageErrors, seedScore } from "./pages";
-import { expect, test } from "./test";
+//
+// Then the clipboard itself (#58; docs/spec/commands.md, 5.6): bars copied from one score and
+// pasted into another, beats cut and pasted, and a Viewer's bars copied into their own phrase. On
+// Windows WebKit, where `paste` reads "", those tests assert that the events were taken (the cut
+// clears, the paste says there is nothing to paste) instead of the round trip.
+import { type BarsFragment, fragmentOfBars, type ScoreJSON, scoreToFragment } from "@studio/score-model";
+
+import { strings } from "../src/strings";
+import { ADMIN, VIEWER } from "./environment";
+import { createPhrase, loggedIn, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
+import { expect, type Page, test } from "./test";
 
 /** What the page heard of one clipboard event. */
 interface Heard {
@@ -94,5 +102,133 @@ test("with the score focused, Ctrl+C, Ctrl+X and Ctrl+V fire copy, cut and paste
   // The keys went to the browser, not to the score: the score is as it was, the focus where it was.
   await expect(scroller).toBeFocused();
   expect(await page.evaluate(() => window.__studioTest!.scoreJson())).toEqual(before);
+  expect(errors).toEqual([]);
+});
+
+/** Whether `paste` reads what `copy` and `cut` wrote here: not in Playwright's WebKit for Windows (see above). */
+function roundTrips(browserName: string): boolean {
+  return !(browserName === "webkit" && process.platform === "win32");
+}
+
+/** The frets of each beat of the first voice of a bar of the first part, on whatever string. */
+async function fretsIn(page: Page, bar: number): Promise<(number | undefined)[]> {
+  const score = await scoreOf(page);
+  const beats = score.parts[0]!.content[score.bars[bar]!.id]?.["0:0"] ?? [];
+  return beats.map((beat) => Object.values(beat.notes)[0]?.fret);
+}
+
+/** Type notes from the cursor's bar on, a list of frets a bar: each a beat of its own, a bar after another. */
+async function typeBars(page: Page, bars: number[][]): Promise<void> {
+  for (const [index, frets] of bars.entries()) {
+    if (index > 0) await page.keyboard.press("Control+ArrowRight");
+    for (const [at, fret] of frets.entries()) {
+      if (at > 0) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press(String(fret));
+    }
+  }
+  for (const [index, frets] of bars.entries()) await expect.poll(() => fretsIn(page, index)).toEqual(frets);
+}
+
+/** Bars of the first part, by index, as a copy of them holds them. */
+function barsOf(score: ScoreJSON, first: number, last: number): BarsFragment {
+  return fragmentOfBars(score, { partId: score.parts[0]!.id, anchorBarId: score.bars[first]!.id, focusBarId: score.bars[last]!.id })!;
+}
+
+test("bars 1–2 copied in one score and pasted at bar 5 of another are the same there", async ({ browser, browserName }) => {
+  const from = seedScore({ title: runName("複製來源"), owner: ADMIN.username, bars: 4 });
+  const to = seedScore({ title: runName("貼上目標"), owner: ADMIN.username, bars: 6 });
+  const page = await loggedIn(browser, ADMIN);
+  const errors = pageErrors(page);
+  await openScore(page, from);
+  await typeBars(page, [[1, 2], [3]]);
+  await page.keyboard.press("Control+ArrowLeft");
+  await page.keyboard.press("Control+Shift+ArrowRight");
+  const copied = barsOf(await scoreOf(page), 0, 1);
+  await page.keyboard.press("Control+KeyC");
+  await synced(page);
+
+  await openScore(page, to);
+  const before = await scoreOf(page);
+  for (let bar = 1; bar < 5; bar++) await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("Control+KeyV");
+  if (roundTrips(browserName)) {
+    await expect.poll(async () => barsOf(await scoreOf(page), 4, 5)).toEqual(copied);
+    expect((await scoreOf(page)).bars).toHaveLength(6);
+  } else {
+    await expect(page.getByText(strings.score.clipboard.refused.nothing)).toBeVisible();
+    expect(await scoreOf(page)).toEqual(before);
+  }
+  await expect(page.locator("[data-scroller]")).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
+test("three beats cut are cleared, and pasted elsewhere are inserted; each is one undo step", async ({ browser, browserName }) => {
+  const id = seedScore({ title: runName("剪下拍點"), owner: ADMIN.username, bars: 4 });
+  const page = await loggedIn(browser, ADMIN);
+  const errors = pageErrors(page);
+  await openScore(page, id);
+  await typeBars(page, [[1, 2, 3]]);
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Control+KeyX");
+  // The notes go; the beats stay, rests.
+  await expect.poll(() => fretsIn(page, 0)).toEqual([undefined, undefined, undefined]);
+
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("Control+KeyV");
+  if (roundTrips(browserName)) {
+    await expect.poll(() => fretsIn(page, 1)).toEqual([1, 2, 3]);
+    await page.keyboard.press("Control+KeyZ");
+    await expect.poll(() => fretsIn(page, 1)).toEqual([]);
+    expect(await fretsIn(page, 0)).toEqual([undefined, undefined, undefined]);
+  } else {
+    await expect(page.getByText(strings.score.clipboard.refused.nothing)).toBeVisible();
+    expect(await fretsIn(page, 1)).toEqual([]);
+  }
+  await page.keyboard.press("Control+KeyZ");
+  await expect.poll(() => fretsIn(page, 0)).toEqual([1, 2, 3]);
+  expect(errors).toEqual([]);
+});
+
+test("a Viewer copies bars of the score into their own phrase; their Ctrl+X changes nothing", async ({ browser, browserName }) => {
+  const id = seedScore({ title: runName("檢視者複製"), owner: ADMIN.username, members: [{ username: VIEWER.username, role: "viewer" }], bars: 4 });
+  const owner = await loggedIn(browser, ADMIN);
+  const ownerErrors = pageErrors(owner);
+  await openScore(owner, id);
+  await typeBars(owner, [[1], [3, 5]]);
+  await synced(owner);
+  expect(ownerErrors).toEqual([]);
+  await owner.context().close();
+
+  const page = await loggedIn(browser, VIEWER);
+  const errors = pageErrors(page);
+  const phraseId = await createPhrase(page, runName("貼進來的樂句"));
+  await openScore(page, id);
+  await expect(page.locator("main")).toHaveAttribute("data-view", "readOnlyEdit");
+  await page.keyboard.press("Control+Shift+ArrowRight");
+  await expect(page.locator("[data-selection]")).not.toHaveCount(0);
+  const score = await scoreOf(page);
+  const copied = barsOf(score, 0, 1);
+  await page.keyboard.press("Control+KeyC");
+  await page.keyboard.press("Control+KeyX");
+  await expect(page.getByText(strings.score.viewerCannotEdit)).toBeVisible();
+  expect(await scoreOf(page)).toEqual(score);
+
+  await page.goto(`/phrases/${phraseId}`);
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-scroller]")).toBeFocused();
+  const blank = scoreToFragment(await scoreOf(page));
+  await page.keyboard.press("Control+KeyV");
+  if (roundTrips(browserName)) {
+    await expect.poll(async () => scoreToFragment(await scoreOf(page))).toEqual(copied);
+    // The phrase had one bar: the second was appended, and the member told so.
+    await expect(page.getByText(strings.score.clipboard.hints.barsAppended)).toBeVisible();
+    // And it is saved so.
+    await expect.poll(async () => ((await (await page.request.get(`/api/phrases/${phraseId}`)).json()) as { fragment: BarsFragment }).fragment).toEqual(copied);
+  } else {
+    await expect(page.getByText(strings.score.clipboard.refused.nothing)).toBeVisible();
+    expect(scoreToFragment(await scoreOf(page))).toEqual(blank);
+  }
   expect(errors).toEqual([]);
 });

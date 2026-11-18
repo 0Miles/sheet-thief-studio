@@ -1,0 +1,5510 @@
+{
+ "environment": {
+  "mode": "headless",
+  "browser": "webkit 27.2",
+  "node": "v24.10.0",
+  "os": "Windows_NT 10.0.26200 x64",
+  "cpu": "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
+  "logicalCpus": 16,
+  "memoryGb": 128,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+  "hardwareConcurrency": 8,
+  "devicePixelRatio": 1,
+  "viewport": "1280x720",
+  "webAudio": false,
+  "timerStepMs": 1,
+  "measuredAt": "2026-11-18T17:30:49.814Z"
+ },
+ "runs": 50,
+ "restBetweenEditsMs": 120,
+ "flags": {
+  "plain": 0,
+  "techniques": 324
+ },
+ "cells": [
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 3,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 9,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 9,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 9,
+     "toJson": 7,
+     "flags": 3,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 5,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 9,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 9,
+     "toJson": 7,
+     "flags": 3,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 4,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 4,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 2,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 2,
+     "flags": 1,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    }
+   ]
+  },
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 50,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 5,
+     "flags": 1,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 8,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 4,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 7,
+     "flags": 3,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 6,
+     "flags": 4,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 6,
+     "flags": 4,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 5,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 7,
+     "flags": 1,
+     "partial": true,
+     "total": 11
+    }
+   ]
+  },
+  {
+   "score": "plain",
+   "shown": "one",
+   "bar": 98,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 2,
+     "flags": 2,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 2,
+     "flags": 2,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 0,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 5
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 2,
+     "flags": 1,
+     "partial": true,
+     "total": 4
+    }
+   ]
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 3,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 34,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 40
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 30,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 38
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 33,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 39
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 31,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 38
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 28,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 36
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 30,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 30,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 36
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 27,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 29,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 35
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 31,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 38
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 30,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 25,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 33,
+     "toJson": 6,
+     "flags": 2,
+     "partial": true,
+     "total": 42
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 27,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 33
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 26,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 31,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 28,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 34
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 28,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 34
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 24,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 30,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 36
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 27,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 33
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 33
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 27,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 33
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 24,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 29
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 24,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 29
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 25,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 27,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 28,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 35
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 24,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 25,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 30
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 24,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 25,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 34,
+     "toJson": 9,
+     "flags": 3,
+     "partial": true,
+     "total": 47
+    }
+   ]
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 50,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 16,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 17,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 20,
+     "toJson": 8,
+     "flags": 3,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 15,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 18,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 15,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 17,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 15,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 17,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 14,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 22
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 16,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 16,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 14,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 16,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 22
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 14,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 14,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 21
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 13,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 15,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 16,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 15,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 22
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 20,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 12,
+     "toJson": 5,
+     "flags": 1,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 25,
+     "toJson": 10,
+     "flags": 4,
+     "partial": true,
+     "total": 40
+    }
+   ]
+  },
+  {
+   "score": "plain",
+   "shown": "five",
+   "bar": 98,
+   "samples": [
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 1,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 5,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 1,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 6,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 1,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 5,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "one",
+   "bar": 3,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 12,
+     "toJson": 5,
+     "flags": 5,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 10,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 18
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 14,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 9,
+     "toJson": 6,
+     "flags": 4,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 9,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 9,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 9,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 6,
+     "flags": 2,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 12,
+     "toJson": 5,
+     "flags": 4,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 4,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 9,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 9,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 10,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 11,
+     "toJson": 7,
+     "flags": 4,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 8,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 7,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 7,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 7,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 15
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "one",
+   "bar": 50,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 5,
+     "flags": 4,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 6,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 14
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 5,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 6,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 12,
+     "toJson": 3,
+     "flags": 5,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 4,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 8,
+     "toJson": 5,
+     "flags": 6,
+     "partial": true,
+     "total": 19
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 6,
+     "toJson": 5,
+     "flags": 5,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 6,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "one",
+   "bar": 98,
+   "samples": [
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 1,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 0,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 1,
+     "toJson": 5,
+     "flags": 4,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 8,
+     "flags": 5,
+     "partial": true,
+     "total": 16
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 6
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 7,
+     "flags": 4,
+     "partial": true,
+     "total": 15
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 1,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 7
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 0,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "five",
+   "bar": 3,
+   "samples": [
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 50,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 62
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 66,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 77
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 45,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 53
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 43,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 51
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 50
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 49
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 41,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 48
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 39,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 47
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 41,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 49
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 43,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 51
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 50
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 42,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 50
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 39,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 38,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 47
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 39,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 39,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 47
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 43,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 51
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 45
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 41,
+     "toJson": 8,
+     "flags": 4,
+     "partial": true,
+     "total": 56
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 36,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 45
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 38,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 35,
+     "toJson": 2,
+     "flags": 2,
+     "partial": true,
+     "total": 41
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 39,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 36,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 45
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 36,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 43
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 6,
+     "flags": 3,
+     "partial": true,
+     "total": 52
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 36,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 34,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 40
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 34,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 41
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 40,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 48
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 44,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 53
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 45
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 34,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 42
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 50
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 40,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 49
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 43,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 52
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 34,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 40
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 45
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 36,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 43
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 36,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 48,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 56
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 33,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 41
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 37,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 38,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 46
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 42,
+     "toJson": 5,
+     "flags": 4,
+     "partial": true,
+     "total": 53
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 36,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 42
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 33,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 40
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "five",
+   "bar": 50,
+   "samples": [
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 26,
+     "toJson": 7,
+     "flags": 3,
+     "partial": true,
+     "total": 39
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 19,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 18,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 21,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 20,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 22,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 31
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 20,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 24,
+     "toJson": 5,
+     "flags": 4,
+     "partial": true,
+     "total": 35
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 30,
+     "toJson": 6,
+     "flags": 4,
+     "partial": true,
+     "total": 44
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 20,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 19,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 21,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 20,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 18,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 20,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 29
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 22,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 21,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 26,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 33
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 17,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 17,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 17,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 24
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 27,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 20,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 25,
+     "toJson": 7,
+     "flags": 4,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 17,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 23
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 19,
+     "toJson": 2,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 21,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 29
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 19,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 21,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 32
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 25,
+     "toJson": 6,
+     "flags": 4,
+     "partial": true,
+     "total": 37
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 27
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 18,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 19,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 25
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 20,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 28
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 20,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 18,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 26
+    }
+   ]
+  },
+  {
+   "score": "techniques",
+   "shown": "five",
+   "bar": 98,
+   "samples": [
+    {
+     "project": 0,
+     "finish": 1,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 5,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 1,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 5,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 1,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 8
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 6,
+     "flags": 5,
+     "partial": true,
+     "total": 17
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 5,
+     "toJson": 8,
+     "flags": 5,
+     "partial": true,
+     "total": 20
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 3,
+     "flags": 3,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 1,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 2,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 11
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 12
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 4,
+     "toJson": 4,
+     "flags": 3,
+     "partial": true,
+     "total": 13
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 3,
+     "flags": 2,
+     "partial": true,
+     "total": 9
+    },
+    {
+     "project": 0,
+     "finish": 0,
+     "render": 3,
+     "toJson": 4,
+     "flags": 2,
+     "partial": true,
+     "total": 10
+    }
+   ]
+  }
+ ]
+}

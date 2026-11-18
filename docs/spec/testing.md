@@ -24,6 +24,7 @@
   - **補充**（#114）：遷移只在 vitest 的 `globalSetup`（`apps/server/tests/globalSetup.ts`）跑一次，每個測試檔開頭用 `TRUNCATE ... RESTART IDENTITY CASCADE` 清空（`tests/support.ts` 的 `freshDatabase`），不再每檔重建 schema（CPU 忙碌時重建會超過 hook 的 10 秒上限）。測試檔共用一個資料庫與一個 Redis database，所以 server 的測試檔依序執行（`fileParallelism: false`）。`migrations.test.ts` 在自己的資料庫（`<測試資料庫>_migrations`，跑完刪掉）從零遷移，不影響其他檔。等待「之後不會再寫入」的測試用 fake timer 推過去，不用真的 sleep。
   - **補充**（#116）：CLI（`apps/server/src/cli.ts`）的 seam 是 `runCli(args, io, { sequelize })`：給了連線就直接用（models 必須已綁到它），不讀環境變數、不另外連線、不關閉。測試平常用 `tests/support.ts` 的 `cli(sequelize, args, input)`，在測試行程內、用測試檔自己的連線跑；它給 CLI 的環境變數一讀就丟例外，以免測試連到開發用的資料庫。只有要確認「以 `cli` script 啟動的行程」本身（argv、`DATABASE_URL`、管線 stdin、exit code）時才用 `cliProcess(args, input)` 開子行程；每個子行程都要冷啟動 Node 與 tsx，CPU 忙碌時要好幾秒，所以 `cli.test.ts` 只留一個這樣的測試，而且不同時開兩個。
   - **補充**（PR 150 的紅燈）：速率限制是依牆鐘時間切的固定時間窗（[`security.md`](security.md) 第 4 節），計數 key 的 Redis TTL 則照真實時間倒數。所以凡是要數到上限的測試，開頭都要呼叫 `apps/server/tests/clock.ts` 的 `holdClock()`：它只 fake `Date`，把時鐘對齊到時間窗的開頭並停住，直到測試結束。不這樣做，請求跨過窗的邊界、或 TTL 在窗尾提早到期時，超過上限的那一次都會被放行。時鐘停住時，用 `while (Date.now() < until)` 等待的 helper 永遠不會結束，同一個測試不要用。這個 helper 不放在 `tests/support.ts`，因為 e2e 腳本會在 vitest 外 import 那個檔。
+  - **補充**（#138）：同一台機器上可以同時跑好幾份 server 的測試（例如好幾個 worktree），彼此不碰對方的資料。`globalSetup` 先佔一個「位置」（slot）：在 `studio_test` 資料庫開一個 transaction，用 `pg_try_advisory_xact_lock` 鎖住第一個沒人鎖的號碼（3–15），一直開到這次執行結束。號碼決定這次執行專用的 Postgres 資料庫 `studio_test_run<號碼>`（在 `globalSetup` 建立並遷移，結束時刪掉）與 Redis database index `<號碼>`（0 是開發用、1 是舊的預設、2 是 e2e），再用 `TEST_DATABASE_URL`、`TEST_REDIS_URL` 交給測試檔（`tests/support.ts`）。執行中途被砍掉的話，鎖跟著連線一起放掉，下一次拿到同一個號碼的執行會先刪掉留下的資料庫。明確設了 `TEST_DATABASE_URL` 或 `TEST_REDIS_URL` 時照用，不另外建：設的資料庫照舊原地重建，沒設的那一項仍然用位置。`migrations.test.ts` 的資料庫跟著變成 `studio_test_run<號碼>_migrations`，所以也不會撞。13 個位置都被佔走時 `globalSetup` 直接失敗。
 
 ## 2. 測試掛鉤與 build
 
@@ -60,6 +61,7 @@
 - CI 的 e2e job 跑在 Playwright 官方 image `mcr.microsoft.com/playwright:v<版本>-noble` 裡，版本由 `playwright-version` job 從 `pnpm-lock.yaml` 的 `@playwright/test` 讀出，瀏覽器與它們要的系統套件都在 image 裡，不再從 Ubuntu mirror 用 `--with-deps` 安裝（#145：mirror 慢的時候，單是安裝就吃掉整個 job 的時間）。容器以 runner 的 uid 1001 執行（Firefox 不肯以 root 跑）。容器裡的 service containers 用名稱與原本的 port 連（`postgres:5432`、`redis:6379`），由 `E2E_DATABASE_URL`、`E2E_REDIS_URL` 交給 `apps/web/e2e/environment.ts`；沒設時用 `compose.dev.yaml` 的 `localhost:5438`、`localhost:6388`。時間預算分開：`pnpm install` 5 分鐘、瀏覽器檢查 3 分鐘、e2e 本身 20 分鐘、整個 job 30 分鐘。本機第一次要自己裝瀏覽器，見 `README.md`。
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project。
   - **補充**（#52）：第 5 節確認檢查 3 的 `apps/web/e2e/clipboard.spec.ts` 不是 smoke，三個 project 都跑：`chromium` 照常收進完整的 e2e，`firefox`、`webkit` 的 `testMatch` 另外列出它。
+    - **補充**（#58）：剪貼簿本身的 e2e（跨團譜複製小節、剪下並貼上拍點、Viewer 複製進樂句編輯器）也放在這個檔案，三個 project 都跑。Windows 上的 Playwright WebKit 讀不回 `copy`、`cut` 寫入的內容，那裡改斷言事件有被頁面處理：剪下照樣清空、貼上提示「剪貼簿裡沒有可以貼上的內容」、文件不變；round trip 以其他瀏覽器與 CI 的 Linux WebKit 為準。
   - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。
@@ -74,7 +76,8 @@
   - **補充**（#37）：量測用的團譜（100 小節 × 5 聲部的種子譜、S1／S3／S6 的示範譜）在測試裡建好 `Y.Doc`，以 Yjs update 交給 server 的 `apps/server/tests/scoreE2e.ts`（`seedScore` 的 `state`），寫進 e2e 資料庫，擁有者是 admin（`e2e/measure/scores.ts`）。網頁的任何 build 都沒有量測專用的路由或 API。
   - 只顯示一個聲部用成員自己的顯示選項（存在瀏覽器的 `localStorage`，`src/display.ts`），和成員實際的做法相同。
   - 數字寫到 `docs/measurements/data/`，截圖寫到 `docs/measurements/`；M0 的結果留在 `docs/spike/`。`MEASURE_RUNS=3` 把每項量測縮短，只用來確認套件能跑。
-  - **補充**（#39）：瀏覽器用 `--project` 選（`chromium`、`firefox`、`webkit`）。`chromium` 跑全部量測，`firefox` 與 `webkit` 只跑 S2；WebKit 和 smoke 一樣從 8033 的 `INSECURE_COOKIES=1` server 取頁面。資料檔名帶瀏覽器（`s2-keys-firefox-headless.json`），報告寫在 `docs/measurements.md`，每個里程碑一節。
+  - **補充**（#39）：瀏覽器用 `--project` 選（`chromium`、`firefox`、`webkit`）。`chromium` 跑全部量測，`firefox` 與 `webkit` 只跑 S2；WebKit 和 smoke 一樣從 8033 的 `INSECURE_COOKIES=1` server 取頁面。資料檔名帶瀏覽器（`m1b-s2-keys-firefox-headless.json`（#46 起帶里程碑前綴）），報告寫在 `docs/measurements.md`，每個里程碑一節。
+  - **補充**（#46）：S2 的資料檔名前面加上重測的里程碑（`e2e/measure/output.ts` 的 `MILESTONE`，`MEASURE_MILESTONE` 可覆寫，用來補量前一個里程碑缺的項目；例如 `m2-s2-keys-firefox-headless.json`），各里程碑的檔案並存，報告和前一次比較；重測的票改這個常數。100 × 5 種子譜的鼓從 M2 起是兩條聲線（手在第一聲線、腳在第二聲線），每小節都有。
 - M1b、M2、M3 的結尾各有一張「重跑並回報」的票，結果寫進報告。範圍包含：
   - `docToJson` 加 zod 驗證與 `WeakMap` 快取之後的延遲；
   - Firefox 與 WebKit 的數字；
