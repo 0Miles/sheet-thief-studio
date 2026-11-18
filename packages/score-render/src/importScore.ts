@@ -76,6 +76,7 @@ export const IMPORT_LOSSES = [
   "repeatCount",
   // Parts and staves.
   "strings",
+  "tablatureHidden",
   "capo",
   "clef",
   "staves",
@@ -169,6 +170,9 @@ function kindOf(staff: AtStaff | undefined): PartKind {
 }
 
 const STRINGS = { min: 4, max: 7 } as const;
+
+/** The General MIDI programs of guitars and basses, from 0. */
+const STRINGED_PROGRAMS: readonly number[] = Array.from({ length: 16 }, (_, index) => 24 + index);
 const MAX_CAPO = 24;
 const MAX_FRET = 36;
 
@@ -493,7 +497,13 @@ function readPart(track: AtTrack, kind: PartKind, barIds: readonly string[], rep
   if (track.staves.length > staffCount) report.add("staves");
   const staves = track.staves.slice(0, staffCount);
   const tuning = kind === "fretted" ? [...first.stringTuning.tunings] : [];
-  if (kind === "pitched" && first.stringTuning.tunings.length > 0 && first.showTablature) report.add("strings");
+  if (kind === "pitched" && first.stringTuning.tunings.length > 0) {
+    if (first.showTablature) report.add("strings");
+    // A guitar or a bass shown as notes only: read as notes, its tuning and frets left out. Every
+    // staff written as notes has a tuning too when read from Guitar Pro 6 to 8 (`kindOf`), a piano
+    // or a voice of this score among them: the program tells a guitar or a bass (General MIDI 25 to 40).
+    else if (STRINGED_PROGRAMS.includes(track.playbackInfo.program)) report.add("tablatureHidden");
+  }
   let capo = 0;
   if (kind === "fretted") {
     capo = Math.min(MAX_CAPO, Math.max(0, first.capo));
@@ -525,7 +535,10 @@ function readPart(track: AtTrack, kind: PartKind, barIds: readonly string[], rep
   return { id, name, kind, tuning, capo, program, staves: staffClefs, content } as PartJSON;
 }
 
-/** The staff whose bars give the key of each bar: the first that is not a drum staff (which has none). */
+/**
+ * The staff whose bars give the key of each bar: the first that is not a drum staff. A drum staff has
+ * no key: alphaTab reads it in C major, whatever the other staves are in.
+ */
 function keyStaffOf(score: AtScore): AtStaff | undefined {
   const staves = score.tracks.flatMap((track) => track.staves);
   return staves.find((staff) => !staff.isPercussion) ?? staves[0];

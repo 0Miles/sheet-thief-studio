@@ -1,7 +1,7 @@
 // Export (docs/spec/import-export.md, section 3): the projection of a score, written by alphaTab as a
 // Guitar Pro 7 file or a MIDI file. What the projection leaves out cannot be exported.
 import * as alphaTab from "@coderline/alphatab";
-import type { ScoreJSON } from "@studio/score-model";
+import { type KeySignature, keySigsOf, SCHEMA_VERSION, type ScoreJSON } from "@studio/score-model";
 
 import { beatOf, type Projection, projectScore } from "./projection";
 
@@ -13,6 +13,20 @@ import { beatOf, type Projection, projectScore } from "./projection";
 function projectForExport(json: ScoreJSON, settings: alphaTab.Settings): Projection {
   const projection = projectScore(json, settings);
   projection.score.artist = json.artist ?? "";
+  // A drum staff is drawn with no key (C major), but a Guitar Pro 7 file has one key a bar, which
+  // alphaTab writes from the first staff of the score: a score whose first part is drums would lose
+  // its keys. In the file, drum staves are in the key in force too.
+  const keys = keySigsOf(json.bars);
+  for (const track of projection.score.tracks) {
+    if (!track.staves[0]?.isPercussion) continue;
+    for (const staff of track.staves) {
+      staff.bars.forEach((bar, index) => {
+        const key = keys[index] as KeySignature;
+        bar.keySignature = key.fifths as alphaTab.model.KeySignature;
+        bar.keySignatureType = key.mode === "minor" ? alphaTab.model.KeySignatureType.Minor : alphaTab.model.KeySignatureType.Major;
+      });
+    }
+  }
   for (const part of json.parts) {
     for (const voices of Object.values(part.content)) {
       for (const beats of Object.values(voices)) {
@@ -29,26 +43,22 @@ function projectForExport(json: ScoreJSON, settings: alphaTab.Settings): Project
 
 type Articulation = alphaTab.model.InstrumentArticulation;
 
-let kit: Map<number, Articulation> | undefined;
-
 /**
  * alphaTab's drum kit, by articulation id (the score's drum keys, docs/spec/schema.md section 7).
  * Its table is not public: it is read back from a Guitar Pro 7 file of a drum part with none of its
- * own, which alphaTab writes with the whole kit in it.
+ * own, which alphaTab writes with the whole kit in it. Made for each export that has drums, with its
+ * settings: a file of one empty bar.
  */
 function drumKit(settings: alphaTab.Settings): Map<number, Articulation> {
-  if (kit === undefined) {
-    const empty: ScoreJSON = {
-      schemaVersion: 1,
-      title: "",
-      bars: [{ id: "bar", timeSig: { numerator: 4, denominator: 4 } }],
-      parts: [{ id: "drums", name: "", kind: "percussion", tuning: [], capo: 0, program: 0, staves: [{ clef: "neutral" }], content: {} }],
-    };
-    const bytes = new alphaTab.exporter.Gp7Exporter().export(projectScore(empty, settings).score, settings);
-    const articulations = alphaTab.importer.ScoreLoader.loadScoreFromBytes(bytes, settings).tracks[0]?.percussionArticulations ?? [];
-    kit = new Map(articulations.map((articulation) => [articulation.id, articulation]));
-  }
-  return kit;
+  const empty: ScoreJSON = {
+    schemaVersion: SCHEMA_VERSION,
+    title: "",
+    bars: [{ id: "bar", timeSig: { numerator: 4, denominator: 4 } }],
+    parts: [{ id: "drums", name: "", kind: "percussion", tuning: [], capo: 0, program: 0, staves: [{ clef: "neutral" }], content: {} }],
+  };
+  const bytes = new alphaTab.exporter.Gp7Exporter().export(projectScore(empty, settings).score, settings);
+  const articulations = alphaTab.importer.ScoreLoader.loadScoreFromBytes(bytes, settings).tracks[0]?.percussionArticulations ?? [];
+  return new Map(articulations.map((articulation) => [articulation.id, articulation]));
 }
 
 /**
@@ -59,14 +69,16 @@ function drumKit(settings: alphaTab.Settings): Map<number, Articulation> {
  * kit, an agogo).
  */
 function listDrums(score: alphaTab.model.Score, settings: alphaTab.Settings): void {
-  for (const track of score.tracks) {
-    if (!track.staves[0]?.isPercussion) continue;
+  const drums = score.tracks.filter((track) => track.staves[0]?.isPercussion);
+  if (drums.length === 0) return;
+  const kit = drumKit(settings);
+  for (const track of drums) {
     for (const staff of track.staves) {
       for (const bar of staff.bars) {
         for (const voice of bar.voices) {
           for (const beat of voice.beats) {
             for (const note of beat.notes) {
-              const articulation = drumKit(settings).get(note.percussionArticulation);
+              const articulation = kit.get(note.percussionArticulation);
               if (articulation) note.percussionArticulation = track.getOrRegisterPercussionArticulation(articulation);
             }
           }
