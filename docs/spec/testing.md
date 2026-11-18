@@ -74,6 +74,7 @@
   - 只顯示一個聲部用成員自己的顯示選項（存在瀏覽器的 `localStorage`，`src/display.ts`），和成員實際的做法相同。
   - 數字寫到 `docs/measurements/data/`，截圖寫到 `docs/measurements/`；M0 的結果留在 `docs/spike/`。`MEASURE_RUNS=3` 把每項量測縮短，只用來確認套件能跑。
   - **補充**（#39）：瀏覽器用 `--project` 選（`chromium`、`firefox`、`webkit`）。`chromium` 跑全部量測，`firefox` 與 `webkit` 只跑 S2；WebKit 和 smoke 一樣從 8033 的 `INSECURE_COOKIES=1` server 取頁面。資料檔名帶瀏覽器（`s2-keys-firefox-headless.json`），報告寫在 `docs/measurements.md`，每個里程碑一節。
+  - **補充**（#46）：S2 的資料檔名前面加上重測的里程碑（`e2e/measure/output.ts` 的 `MILESTONE`，例如 `m2-s2-keys-firefox-headless.json`），各里程碑的檔案並存，報告和前一次比較；重測的票改這個常數。100 × 5 種子譜的鼓從 M2 起是兩條聲線（手在第一聲線、腳在第二聲線），每小節都有。
 - M1b、M2、M3 的結尾各有一張「重跑並回報」的票，結果寫進報告。範圍包含：
   - `docToJson` 加 zod 驗證與 `WeakMap` 快取之後的延遲；
   - Firefox 與 WebKit 的數字；
