@@ -179,6 +179,10 @@ const drawerOpen = ref(false);
 const notice = ref<string | null>(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
+/** The keyboard back on the score, where it is. */
+function focusScore(): void {
+  scroller.value?.focus({ preventScroll: true });
+}
 const score = shallowRef<ScoreJSON | null>(null);
 /** The parts of the score, to choose from. */
 const parts = computed(() => score.value?.parts ?? []);
@@ -335,7 +339,7 @@ function toggleMixer(): void {
 
 function closeMixer(): void {
   mixerOpen.value = false;
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function onPartMix(partId: string, change: Partial<PartMix>): void {
@@ -459,7 +463,7 @@ function toggleParts(): void {
 
 function closeParts(): void {
   partsOpen.value = false;
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function onAddPart(preset: PartPresetId, tuning: number[] | undefined): void {
@@ -480,7 +484,7 @@ function confirmDelete(): void {
 /** The question is answered, either way: the score has the keyboard again. */
 function closeDeletion(): void {
   deleting.value = null;
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function onPartName(partId: string, name: string): void {
@@ -508,18 +512,18 @@ function applyTitle(title: string, artist: string): void {
   editingTitle.value = false;
   if (title !== score.value?.title) session?.setTitle(title);
   if (artist !== (score.value?.artist ?? "")) session?.setArtist(artist);
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function cancelTitle(): void {
   editingTitle.value = false;
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function closePanel(): void {
   panelOpen.value = false;
   placeCursor();
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function onTimeSig(timeSig: TimeSignature): void {
@@ -627,7 +631,7 @@ function togglePlay(): void {
 /** A button of the toolbar did its work: the score has the keyboard again. */
 function onToolbar(action: () => void): void {
   action();
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 /** The member looks over the score themselves: playback is no longer kept on screen, until they press play. */
@@ -795,7 +799,7 @@ function closeText(text: string | null): void {
   const entry = textEntry.value;
   textEntry.value = null;
   if (entry !== null && text !== null) session?.setText(entry.request.cursor, text);
-  scroller.value?.focus({ preventScroll: true });
+  focusScore();
 }
 
 function startEditing(json: ScoreJSON): void {
@@ -832,7 +836,7 @@ function start(): void {
   stopObserving = observeScore(doc, draw);
   if (editing.value && score.value) startEditing(score.value);
   // Space plays and pauses in the Read view too.
-  else scroller.value?.focus({ preventScroll: true });
+  else focusScore();
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -902,6 +906,13 @@ function lockReadOnly(reason: ReadOnlyReason): void {
 }
 
 /** Closed once: the provider goes at once, so that nothing more of this document reaches the server; ScorePage does the rest. */
+/** The provider goes, destroyed once the current call is over: not from within its own call (the ticket is asked for by it). */
+function dropProvider(): void {
+  const dropped = provider;
+  provider = undefined;
+  queueMicrotask(() => dropped?.destroy());
+}
+
 let closed = false;
 function close(closing: Closing): void {
   if (closed) return;
@@ -912,10 +923,7 @@ function close(closing: Closing): void {
   presenceLink = null;
   peers.value = [];
   peerMarks.value = [];
-  const dropped = provider;
-  provider = undefined;
-  // Not from within the provider's own call (the ticket is asked for by it).
-  queueMicrotask(() => dropped?.destroy());
+  dropProvider();
   emit("closed", closing);
 }
 
@@ -1016,9 +1024,7 @@ onMounted(async () => {
       if (!gone.value) return;
       // Its link opens nothing any more: stop, rather than ask it for tickets again and again.
       sync.value = "offline";
-      const dropped = provider;
-      provider = undefined;
-      queueMicrotask(() => dropped?.destroy());
+      dropProvider();
     },
     onSynced: () => {
       updateSync();
@@ -1254,20 +1260,7 @@ onBeforeUnmount(() => {
       <BarPanel
         v-if="panel"
         :platform="keyPlatform()"
-        :bar="panel.bar"
-        :range="panel.range"
-        :time-sig="panel.timeSig"
-        :tempo="panel.tempo"
-        :tempo-in-force="panel.tempoInForce"
-        :key-sig="panel.keySig"
-        :key-sig-in-force="panel.keySigInForce"
-        :section="panel.section"
-        :repeat-start="panel.repeatStart"
-        :repeat-end="panel.repeatEnd"
-        :voltas="panel.voltas"
-        :volta-repeat-times="panel.voltaRepeatTimes"
-        :first-bar="panel.firstBar"
-        :anacrusis="panel.anacrusis"
+        v-bind="panel"
         @time-sig="onTimeSig"
         @tempo="onTempo"
         @key-sig="onKeySig"
