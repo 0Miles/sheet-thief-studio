@@ -113,8 +113,6 @@ function barMarksOf(bars: readonly RecognizerBar[]): RecognitionSkipped[] {
 export function fragmentOfRecognition(result: RecognizerResult): { fragment: FrettedFragment; report: RecognitionReport } {
   const tally: Tally = { graceNotes: 0, bendsClamped: 0 };
   let timeSig: TimeSignature = result.timeSignature;
-  // A dynamic holds from its beat on, across bars: written only where it changes.
-  let dynamicInForce: Dynamic | undefined;
   const bars = result.bars.map((bar) => {
     timeSig = bar.timeSignature ?? timeSig;
     const beats = bar.beats.map((beat): BeatWithoutId => {
@@ -123,10 +121,7 @@ export function fragmentOfRecognition(result: RecognizerResult): { fragment: Fre
       const stroke = sharedValue(beat.notes, (note) => note.stroke);
       if (stroke !== undefined) made.stroke = stroke;
       const dynamic = sharedValue(beat.notes, (note) => (note.velocity === null ? null : dynamicOf(note.velocity)));
-      if (dynamic !== undefined && dynamic !== dynamicInForce) {
-        made.dynamic = dynamic;
-        dynamicInForce = dynamic;
-      }
+      if (dynamic !== undefined) made.dynamic = dynamic;
       for (const note of beat.notes) made.notes[`s${note.string}`] = noteOf(note, tally);
       return made;
     });

@@ -233,7 +233,9 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 - **補充**（#63）實作的細節：
   - 辨識服務的網址是環境變數 `RECOGNIZER_URL`（開發時預設 `http://127.0.0.1:8000`，正式環境必填）。Node 端用 `node:http` 呼叫，不用 `fetch`：`fetch` 等回應標頭最多 300 秒，辨識可能跑到 900 秒。回應最多讀 32 MB（`limits.ts` 的 `RECOGNIZER_ANSWER_LIMIT`）。
   - 上傳的 `multipart/form-data` 用 Node 內建的 `Response.formData()` 解析（lockfile 裡沒有 `@fastify/multipart`），只在 `POST /api/recognitions` 的封裝範圍裡註冊；body 上限是 40 MB 加 64 KB（`RECOGNITION_BODY_LIMIT`），照 Fastify 的做法先看 `Content-Length` 再累計。
-  - 「伺服器上已經有一件在跑」指辨識服務還沒回答：服務一回答就讓出，不等結果寫進資料庫，所以看到上一件結束的人馬上可以再送一件。每個帳號最多一件由資料庫的部分唯一索引（`status = 'running'`）保證，兩個同時的請求只會建立一筆。
+  - 檢查的順序：先看這個帳號（資料庫裡有它執行中的那一列，或這個行程已經接下它的一件、辨識服務還沒回答）→ 409；再看辨識服務是否正被別的帳號用 → 503。從資料庫回答到接下這一件之間沒有任何 `await`，所以同一個帳號同時到的兩個請求，一件 202、另一件 409（不是 503）。資料庫的部分唯一索引（`status = 'running'`）是最後一道保證，萬一兩件都通過，第二筆寫入失敗也回 409。
+  - 同樣的檢查在讀 body 之前（`preParsing`）先做一次：會被拒的請求不會先把最多 40 MB 讀進來。讀完、驗完圖片後再查一次，因為上傳的期間情況可能變了。
+  - 「伺服器上已經有一件在跑」指辨識服務還沒回答：服務一回答就讓出，不等結果寫進資料庫，所以看到上一件結束的人馬上可以再送一件。
   - 失敗的 code：辨識服務回 503 → `busy`；回 422 → 它的 `error`；連不上、回其他狀態、或回答不符合契約 → `unavailable`（細節只進 log）；Node 端 930 秒沒有回答 → `timeout`；回答符合契約但轉出的片段過不了樂句的 zod（例如超過 1 MB）→ `recognition_failed`；server 關閉時正在跑的那件 → `interrupted`（和重新啟動時殘留的一樣）。
   - 捨棄一件還在跑的辨識：那一列與原圖立刻刪除，辨識服務的回答到了也不寫回。
   - 原圖的回應帶 `Cache-Control: private, no-store`：存成樂句或捨棄後就不存在，瀏覽器與中間的快取都不留。
@@ -277,7 +279,6 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 | 音符的 `velocity` | 聚合成拍點的 `dynamic` |
 
 - 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。**補充**（#63）：`null` 的音不算票，有一個音有值就取那個值；力度先把每個音的 velocity 換成力度再聚合。
-- **補充**（#63）：`dynamic` 是「從這個拍點起」（[`schema.md`](schema.md) 第 8 節的 #30 補充），所以只在聚合出的力度和當時生效的不同時才寫（跨小節也延續）；每個拍點都寫的話，每個拍點都會畫一個力度記號。
 - velocity → dynamic（補充，依前身 `app/extract/annotations.py:35` 的對照取最接近的）：≤ 39 → `pp`（含 ppp），40–55 → `p`，56–71 → `mp`，72–87 → `mf`，88–103 → `f`，≥ 104 → `ff`（含 fff）。
 - 小節層級的 `marker`、`tempo`、`repeatOpen`、`repeatTimes`、`endings`、`sign`、`jump` 不放進片段（樂句不帶這些），各自列在略過項目裡（補充）。
 - 略過項目（`report.skipped`，補充）：`{ code: "grace_notes", count }`、`{ code: "capo", fret }`（capo 不是 0 時）、`{ code: "tuning_unrecognized", raw }`、`{ code: "bend_clamped", count }`、`{ code: "sections" }`、`{ code: "tempo" }`、`{ code: "repeats" }`、`{ code: "jumps" }`。審核頁依 code 顯示。

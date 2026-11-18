@@ -16,11 +16,18 @@ import { RECOGNIZER_ANSWER_LIMIT } from "./limits";
  */
 export const RECOGNIZER_TIMEOUT_MS = 930_000;
 
-/** An image to recognize: its bytes and their type, one of the three the server takes. */
+/** The types of image the server takes (docs/spec/recognizer.md, section 1). */
+export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
+
+/** An image to recognize: its bytes and their type. */
 export interface PageImage {
-  mime: string;
+  mime: ImageMime;
   data: Buffer;
 }
+
+/** How many issues of an answer not of the contract go to the log, and how much of an answer of an unexpected status. */
+const LOGGED_ISSUES = 20;
+const LOGGED_BODY_BYTES = 1024;
 
 export type Recognized = { status: "succeeded"; result: RecognizerResult } | { status: "failed"; error: RecognitionError };
 
@@ -28,12 +35,12 @@ export function failure(code: RecognitionError["code"]): Recognized & { status: 
   return { status: "failed", error: { code, params: {}, pages: [] } };
 }
 
-const EXTENSIONS: Readonly<Record<string, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+const EXTENSIONS: Readonly<Record<ImageMime, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
 /** The images as `multipart/form-data`, each in a field `images`, in the order of their pages. */
 async function formOf(images: readonly PageImage[]): Promise<{ type: string; body: Buffer }> {
   const form = new FormData();
-  images.forEach(({ mime, data }, index) => form.append("images", new Blob([new Uint8Array(data)], { type: mime }), `page-${index + 1}.${EXTENSIONS[mime] ?? "bin"}`));
+  images.forEach(({ mime, data }, index) => form.append("images", new Blob([new Uint8Array(data)], { type: mime }), `page-${index + 1}.${EXTENSIONS[mime]}`));
   const encoded = new Response(form);
   return { type: encoded.headers.get("content-type")!, body: Buffer.from(await encoded.arrayBuffer()) };
 }
@@ -76,10 +83,16 @@ function readJson(body: Buffer): unknown {
 /**
  * Recognize these images as the pages of one TAB. `stop` aborts the call when the server closes:
  * the recognition is then `interrupted`. The recognizer still busy is `busy`; an answer that is
- * not the contract's, or none, `unavailable`; no answer within 930 seconds `timeout`.
+ * not the contract's, or none, `unavailable`; no answer within `timeoutMs` (930 seconds) `timeout`.
  */
-export async function recognize(recognizerUrl: string, images: readonly PageImage[], stop: AbortSignal, log: FastifyBaseLogger): Promise<Recognized> {
-  const timeout = AbortSignal.timeout(RECOGNIZER_TIMEOUT_MS);
+export async function recognize(
+  recognizerUrl: string,
+  images: readonly PageImage[],
+  stop: AbortSignal,
+  log: FastifyBaseLogger,
+  timeoutMs = RECOGNIZER_TIMEOUT_MS,
+): Promise<Recognized> {
+  const timeout = AbortSignal.timeout(timeoutMs);
   let answer: { status: number; body: Buffer };
   try {
     answer = await post(new URL("/recognize", recognizerUrl), await formOf(images), AbortSignal.any([stop, timeout]));
@@ -94,13 +107,13 @@ export async function recognize(recognizerUrl: string, images: readonly PageImag
   if (answer.status === 200) {
     const result = recognizerResult.safeParse(body);
     if (result.success) return { status: "succeeded", result: result.data };
-    log.error({ issues: result.error.issues }, "the recognizer answered a result not of the contract");
+    log.error({ issues: result.error.issues.slice(0, LOGGED_ISSUES) }, "the recognizer answered a result not of the contract");
   } else if (answer.status === 422) {
     const failed = recognizerFailure.safeParse(body);
     if (failed.success) return { status: "failed", error: failed.data.error };
-    log.error({ issues: failed.error.issues }, "the recognizer answered a failure not of the contract");
+    log.error({ issues: failed.error.issues.slice(0, LOGGED_ISSUES) }, "the recognizer answered a failure not of the contract");
   } else {
-    log.error({ status: answer.status, body: answer.body.subarray(0, 1024).toString("utf8") }, "the recognizer answered an unexpected status");
+    log.error({ status: answer.status, body: answer.body.subarray(0, LOGGED_BODY_BYTES).toString("utf8") }, "the recognizer answered an unexpected status");
   }
   return failure("unavailable");
 }

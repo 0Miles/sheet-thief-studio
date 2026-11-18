@@ -75,16 +75,16 @@ test.each([...resultFixtures()])("the fixture %s turns into a fragment of bars t
   expect(fragment.bars.map((each) => Object.keys(each.voices))).toEqual(recognized.bars.map(() => ["0:0"]));
 });
 
-test("strokes and dynamics of the notes become the beat's, a dynamic written only where it changes; grace notes are counted and dropped", () => {
+test("strokes and dynamics of the notes become the beat's; grace notes are counted and dropped", () => {
   const recognized = fixture("grace-and-strokes") as RecognizerResult;
   const { fragment, report } = fragmentOfRecognition(recognized);
   const [first, second] = fragment.bars.map((each) => each.voices["0:0"]!);
-  // Six notes down at 95; three up at 95 (the same dynamic: not written again); no stroke at 79, twice.
+  // Six notes down at 95; three up at 95; no stroke at 79, twice.
   expect(first!.map(({ stroke, dynamic }) => ({ stroke, dynamic }))).toEqual([
     { stroke: "down", dynamic: "f" },
-    { stroke: "up", dynamic: undefined },
+    { stroke: "up", dynamic: "f" },
     { stroke: undefined, dynamic: "mf" },
-    { stroke: undefined, dynamic: undefined },
+    { stroke: undefined, dynamic: "mf" },
   ]);
   // Two notes down and one up, one with none; two at 111 and two at 47, string 2 the lowest
   // numbered of them: p. Then a note with neither.
@@ -130,12 +130,12 @@ test.each([
   expect(only!.dynamic).toBe(dynamic);
 });
 
-test("a dynamic is written again after a rest only when it changes, across bars too", () => {
+test("every beat whose notes have a velocity has a dynamic, the same one again too; a rest has none", () => {
   const [first, second] = beatsOf(
     result([bar([beat([note({ velocity: 80 })]), beat([])]), bar([beat([note({ velocity: 80 })]), beat([note({ velocity: 100 })]), beat([note({ velocity: 100 })])])]),
   );
   expect(first!.map((each) => each.dynamic)).toEqual(["mf", undefined]);
-  expect(second!.map((each) => each.dynamic)).toEqual([undefined, "f", undefined]);
+  expect(second!.map((each) => each.dynamic)).toEqual(["mf", "f", "f"]);
 });
 
 test.each([

@@ -14,8 +14,9 @@ import { Recognition, RecognitionImage } from "../src/db/models";
 import { PURGE_INTERVAL_MS } from "../src/deletion";
 import { MB } from "../src/limits";
 import { fragmentOfRecognition } from "../src/recognitionFragment";
+import { recognize } from "../src/recognizer";
 import { answers, type FakeAnswer, type FakeRecognizer, fixture, fixtureNames, startFakeRecognizer } from "./fakeRecognizer";
-import { apiCall, COOKIE, createMembers, freshDatabase, freshRedis, NO_RECOGNIZER, ORIGIN, sessionOf, testConfig } from "./support";
+import { apiCall, COOKIE, createMembers, freshDatabase, freshRedis, NO_RECOGNIZER, ORIGIN, sessionOf, testConfig, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -53,6 +54,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const release of holding.splice(0)) release(answers.recognized());
   vi.useRealTimers();
   vi.restoreAllMocks();
   await Promise.all(ownApps.splice(0).map((each) => each.close()));
@@ -111,10 +113,14 @@ async function finished(id: string, session: string, on: FastifyInstance = app):
   throw new Error(`recognition ${id} is still running`);
 }
 
+/** The answers held back, let go after each test whatever became of it, so that a failing test leaves the recognizer free. */
+const holding: Array<(answer: FakeAnswer) => void> = [];
+
 /** An answer the stand-in holds back until the test lets it go. */
 function heldBack() {
   let release!: (answer: FakeAnswer) => void;
   const answer = new Promise<FakeAnswer>((resolve) => (release = resolve));
+  holding.push(release);
   return { answering: () => answer, release };
 }
 
@@ -213,6 +219,31 @@ test("while an account's recognition runs, its second one is refused with 409 an
   expect(recognizer.received).toHaveLength(3);
 });
 
+test("two requests of the same account at once: one starts, the other is refused with 409, and only one is recorded", async () => {
+  await warmPool(sequelize);
+  const held = heldBack();
+  recognizer.answer(held.answering);
+  const both = await Promise.all([upload(anna, [{ data: png() }]), upload(anna, [{ data: jpeg() }])]);
+  expect(both.map((response) => response.statusCode).sort()).toEqual([202, 409]);
+  expect(both.find((response) => response.statusCode === 409)!.json()).toEqual({ code: "recognition_in_progress" });
+  expect(await Recognition.count()).toBe(1);
+  held.release(answers.recognized());
+  const { id } = both.find((response) => response.statusCode === 202)!.json() as { id: string };
+  expect((await finished(id, anna)).status).toBe("succeeded");
+});
+
+test("a request that would be refused is refused before its body is read: over the limit, it still answers 409 or 503", async () => {
+  const held = heldBack();
+  recognizer.answer(held.answering);
+  const id = await started(anna);
+  await receivedCount(1);
+  const tooMuch = Array.from({ length: 5 }, (_, index) => ({ data: png(index, 9 * MB) }));
+  expect((await upload(anna, tooMuch)).json()).toEqual({ code: "recognition_in_progress" });
+  expect((await upload(ben, tooMuch)).json()).toEqual({ code: "recognizer_busy" });
+  held.release(answers.recognized());
+  expect((await finished(id, anna)).status).toBe("succeeded");
+});
+
 test("someone else's recognition, its images and an id of none answer 404, to read and to discard", async () => {
   const id = await started(anna);
   await finished(id, anna);
@@ -280,6 +311,30 @@ test("an answer not of the contract, an unexpected status, or no recognizer at a
   const session = await sessionOf(nowhere, "ben", PASSWORD);
   const id = await started(session, undefined, nowhere);
   expect(await finished(id, session, nowhere)).toMatchObject({ status: "failed", error: { code: "unavailable" } });
+});
+
+test("an answer with a key __proto__ is not of the contract: unavailable", async () => {
+  const six = JSON.stringify(fixture("six-strings"));
+  for (const raw of [six.replace('"strings":', '"__proto__": {"polluted": true}, "strings":'), six.replace('"units":', '"__proto__": null, "units":')]) {
+    recognizer.answer({ status: 200, raw });
+    const id = await started(anna);
+    expect(await finished(id, anna)).toMatchObject({ status: "failed", error: { code: "unavailable" } });
+  }
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+});
+
+test("no answer within the time the server waits is a failure with the code timeout; the server closing, interrupted", async () => {
+  const held = heldBack();
+  recognizer.answer(held.answering);
+  const images = [{ mime: "image/png" as const, data: png() }];
+  const log = app.log;
+  expect(await recognize(recognizer.url, images, new AbortController().signal, log, 50)).toEqual({ status: "failed", error: { code: "timeout", params: {}, pages: [] } });
+  const stop = new AbortController();
+  const stopped = recognize(recognizer.url, images, stop.signal, log, 60_000);
+  await receivedCount(2);
+  stop.abort();
+  expect(await stopped).toEqual({ status: "failed", error: { code: "interrupted", params: {}, pages: [] } });
+  held.release(answers.recognized());
 });
 
 test("a result that makes no fragment of bars is a failure with the code recognition_failed", async () => {

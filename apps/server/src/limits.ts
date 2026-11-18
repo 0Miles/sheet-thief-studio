@@ -1,8 +1,12 @@
 // The size limits of the server, in one place (docs/spec/security.md, section 5).
+import { recognitionLimits } from "@studio/contracts";
 import { MAX_FRAGMENT_BYTES } from "@studio/score-model";
 
 // The most a fragment takes, 1 MB of JSON: defined in score-model, which the web app reads it from too.
 export { MAX_FRAGMENT_BYTES };
+
+/** The most images one recognition reads: defined in contracts, which the web app reads it from too. */
+export const MAX_RECOGNITION_IMAGES = recognitionLimits.images.max;
 
 export const MB = 1024 * 1024;
 

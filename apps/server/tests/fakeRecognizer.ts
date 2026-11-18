@@ -34,10 +34,11 @@ export function resultFixtures(): Map<string, RecognizerResult> {
   return results;
 }
 
-/** What the stand-in answers: an HTTP status and a JSON body. */
+/** What the stand-in answers: an HTTP status and a body, as JSON or as it is written in `raw`. */
 export interface FakeAnswer {
   status: number;
-  body: unknown;
+  body?: unknown;
+  raw?: string;
 }
 
 /** The answers the real service gives (docs/spec/recognizer.md, section 3), from the fixtures. */
@@ -83,7 +84,7 @@ export async function startFakeRecognizer({ port = 0, answering = answers.recogn
   let current = answering;
   const received: ReceivedImage[][] = [];
   const server = createServer((request, response) => {
-    const send = ({ status, body }: FakeAnswer) => response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    const send = ({ status, body, raw }: FakeAnswer) => response.writeHead(status, { "content-type": "application/json" }).end(raw ?? JSON.stringify(body));
     if (request.method === "GET" && request.url === "/healthz") return send({ status: 200, body: { status: "ok" } });
     if (request.method !== "POST" || request.url !== "/recognize") return send({ status: 404, body: {} });
     void imagesOf(request).then(

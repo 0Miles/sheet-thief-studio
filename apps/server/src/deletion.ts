@@ -16,7 +16,7 @@ import { purgeExpiredRecognitions } from "./recognitions";
 export const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 
 /** The clock of the database, as a value of `deleted_at`. */
-const NOW = literal("now()") as unknown as Date;
+export const NOW = literal("now()") as unknown as Date;
 
 /**
  * The moment 30 days ago, by the clock of the database, which also says when a score is deleted:

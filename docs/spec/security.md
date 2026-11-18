@@ -56,7 +56,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | 辨識的圖片（`POST /api/recognitions`） | 每張 10 MB、合計 40 MB、最多 15 張、每張最多 40 百萬像素（像素由辨識服務檢查，該頁回報 `image_too_large`）；請求的 body 上限 40 MB 加 64 KB | 補充：沿用前身 `app/config.py` 的預設值；body 的餘量是補充（#63） |
 | 其他 JSON 請求 | 64 KB | 補充 |
 
-- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出）。
+- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出；辨識的 15 張來自 contracts 的 `recognitionLimits`，同樣由這裡轉出成 `MAX_RECOGNITION_IMAGES`，#63）。
 - body 上限的做法沿用前身 `app/security.py` 的 `BodySizeLimitMiddleware`：先看 `Content-Length`，再在讀取時累計，不先整個讀進記憶體。超過時回 413 `payload_too_large`。
 
 ## 6. 回應標頭
