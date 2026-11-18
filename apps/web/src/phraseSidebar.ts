@@ -1,7 +1,7 @@
 // What the phrase sidebar of the editable view decides without the DOM (docs/spec/phrases.md,
 // section 6): which phrases fit the cursor's part, and where a phrase dragged over the score goes.
 import { phraseDetails, type PhraseSummary } from "@studio/contracts";
-import type { BarsFragment, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import type { BarsFragment, Cursor, DropTarget, PartKind, ScoreJSON } from "@studio/score-model";
 
 import { get } from "./api";
 
@@ -38,12 +38,9 @@ export function phrasesShown<T extends PhraseShape>(phrases: readonly T[], part:
  * part of another kind takes none: it is drawn as "cannot drop" (`refused`), and a drop there does
  * nothing. Null outside any bar.
  */
-export interface DropSpot {
-  partId: string;
-  barId: string;
+export interface DropSpot extends DropTarget {
   refused: boolean;
-  /** The first and the last bar the phrase would replace, of those the score has. */
-  first: string;
+  /** The last bar the phrase would replace, of those the score has: from `barId` to it. */
   last: string;
 }
 
@@ -54,7 +51,7 @@ export function dropSpotOf(score: ScoreJSON, hit: Cursor | null, phrase: Pick<Ph
   if (part === undefined || index < 0) return null;
   const refused = part.kind !== phrase.kind;
   const last = refused ? index : Math.min(index + Math.max(phrase.barCount, 1), score.bars.length) - 1;
-  return { partId: part.id, barId: hit.barId, refused, first: hit.barId, last: score.bars[last]!.id };
+  return { partId: part.id, barId: hit.barId, refused, last: score.bars[last]!.id };
 }
 
 /** The content of a phrase, asked for by its id. */

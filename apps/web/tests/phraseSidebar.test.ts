@@ -56,15 +56,15 @@ describe("a phrase dragged over the score", () => {
   const at = (partId: string, barId: string): Cursor => ({ partId, barId, voice: "0:0", beatId: null, at: "after", line: 1 });
 
   test("goes on the bar under the pointer, over as many bars as it has", () => {
-    expect(dropSpotOf(score, at("guitar", "b2"), { kind: "fretted", barCount: 2 })).toEqual({ partId: "guitar", barId: "b2", refused: false, first: "b2", last: "b3" });
+    expect(dropSpotOf(score, at("guitar", "b2"), { kind: "fretted", barCount: 2 })).toEqual({ partId: "guitar", barId: "b2", refused: false, last: "b3" });
   });
 
   test("takes the bars to the end of the score when it has more: the rest are appended on the drop", () => {
-    expect(dropSpotOf(score, at("guitar", "b3"), { kind: "fretted", barCount: 5 })).toMatchObject({ first: "b3", last: "b4", refused: false });
+    expect(dropSpotOf(score, at("guitar", "b3"), { kind: "fretted", barCount: 5 })).toMatchObject({ last: "b4", refused: false });
   });
 
   test("cannot be dropped on a part of another kind: only the bar under the pointer is marked so", () => {
-    expect(dropSpotOf(score, at("drums", "b1"), { kind: "fretted", barCount: 2 })).toEqual({ partId: "drums", barId: "b1", refused: true, first: "b1", last: "b1" });
+    expect(dropSpotOf(score, at("drums", "b1"), { kind: "fretted", barCount: 2 })).toEqual({ partId: "drums", barId: "b1", refused: true, last: "b1" });
   });
 
   test("goes nowhere outside any bar, or on a part or bar the score no longer has", () => {

@@ -6,9 +6,10 @@
 // without a player, drawn as a page that wraps to its width and scrolls down, never cut to a fixed
 // height (alphaTab's mark shows for a score of more than 10 bars). A phrase is dragged onto a bar
 // of the score, the page dropping it there, or Enter drops it on the cursor's bar: on the phrase
-// focused, or anywhere in the sidebar while its preview is open. No recognition here.
-// Esc closes the preview, else the sidebar; F4 closes the sidebar. Keys are matched by the
-// keymap's platform layer, as every key is.
+// focused, or in its preview, which takes the keyboard when it opens; never on the sidebar's own
+// buttons, link and fields, whose Enter is theirs. No recognition here.
+// Esc closes the preview, the keyboard back where it was, else the sidebar; F4 closes the sidebar.
+// Keys are matched by the keymap's platform layer, as every key is.
 import { AppButton } from "@karyl-chan/ui";
 import { phraseList, type PhraseSummary } from "@studio/contracts";
 import { type KeyPlatform, pageEffectOf, textEntryEffectOf } from "@studio/score-editor";
@@ -38,7 +39,6 @@ const emit = defineEmits<{
   drag: [phrase: PhraseSummary | null];
 }>();
 const text = strings.score.phraseSidebar;
-const kinds = strings.phrases;
 
 const search = ref("");
 const showAll = ref(false);
@@ -51,6 +51,9 @@ const previewError = ref<string | null>(null);
 /** The preview is drawn: e2e tests wait for `data-preview-ready`. */
 const previewReady = ref(false);
 const previewHost = ref<HTMLElement>();
+const previewSection = ref<HTMLElement>();
+/** What had the keyboard when the preview opened (the phrase clicked): it has it again once the preview closes. */
+let opener: HTMLElement | null = null;
 const previewReserved = shallowRef<Rect[]>([]);
 /** The bars of the phrase, outlined: what goes in on a drop. Out of the reserved areas. */
 const previewBars = shallowRef<Rect[]>([]);
@@ -109,13 +112,18 @@ function placePreview(): void {
   previewBars.value = structureBoxesOf(engine.renderer, previewEnds, previewReserved.value);
 }
 
-/** A click on a phrase: its preview opens, or closes when it is open already. */
-async function preview(phrase: PhraseSummary): Promise<void> {
+/**
+ * A click on a phrase: its preview opens, the keyboard going into it (Enter there drops the
+ * phrase), or closes when it is open already, the keyboard back on the phrase.
+ */
+async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise<void> {
   if (previewed.value?.id === phrase.id) {
     closePreview();
     return;
   }
+  opener = from instanceof HTMLElement ? from : null;
   previewed.value = phrase;
+  void nextTick(() => previewSection.value?.focus({ preventScroll: true }));
   previewReady.value = false;
   previewError.value = null;
   previewReserved.value = [];
@@ -142,8 +150,12 @@ async function preview(phrase: PhraseSummary): Promise<void> {
   engine.renderer.setScore(score);
 }
 
+/** The preview closes, the keyboard going back where it was when it opened (the search box when that is gone). */
 function closePreview(): void {
   previewed.value = null;
+  const back = opener?.isConnected ? opener : searchBox.value;
+  opener = null;
+  back?.focus();
 }
 
 // Closed (or the sidebar with it): nothing of the preview is left in the page's overlays.
@@ -154,11 +166,20 @@ watch(previewed, (now) => {
   previewEnds = null;
 });
 
-/** The phrase Enter drops: the one focused in the list, else the one previewed. */
+/** What in the sidebar does its own thing with Enter: its buttons, its link, its fields (and anything marked so). */
+const OWN_ENTER = "button, a, input, select, textarea, [data-no-drop]";
+
+/**
+ * The phrase Enter drops: the one focused in the list; else, with the focus in the preview, the
+ * one previewed. None on the sidebar's other buttons, its link or its fields, whose Enter is
+ * their own (closing the preview, searching…).
+ */
 function phraseOf(target: EventTarget | null): PhraseSummary | null {
-  const item = target instanceof Element ? target.closest<HTMLElement>("[data-phrase-id]") : null;
-  const id = item?.dataset.phraseId;
-  return listed.value.find((phrase) => phrase.id === id) ?? previewed.value;
+  if (!(target instanceof Element)) return null;
+  const item = target.closest<HTMLElement>("[data-phrase-id]");
+  if (item !== null) return listed.value.find((phrase) => phrase.id === item.dataset.phraseId) ?? null;
+  if (target.closest(OWN_ENTER) !== null) return null;
+  return target.closest("[data-phrase-preview]") === null ? null : previewed.value;
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -188,12 +209,6 @@ function onDragStart(event: DragEvent, phrase: PhraseSummary): void {
   event.dataTransfer.setData("application/x-studio-phrase", phrase.id);
   event.dataTransfer.effectAllowed = "copy";
   emit("drag", phrase);
-}
-
-/** What the list says of a phrase besides its name: its kind, strings or staves, and bars. */
-function detailsOf(phrase: PhraseSummary): string {
-  const shape = phrase.kind === "fretted" && phrase.stringCount !== null ? kinds.strings(phrase.stringCount) : phrase.kind === "pitched" && phrase.staffCount !== null ? kinds.staves(phrase.staffCount) : null;
-  return [kinds.kinds[phrase.kind], shape, kinds.bars(phrase.barCount)].filter((each) => each !== null).join("・");
 }
 
 onBeforeUnmount(() => {
@@ -227,17 +242,23 @@ onBeforeUnmount(() => {
           :data-phrase-id="phrase.id"
           :aria-pressed="previewed?.id === phrase.id"
           draggable="true"
-          @click="preview(phrase)"
+          @click="preview(phrase, $event.currentTarget)"
           @dragstart="onDragStart($event, phrase)"
           @dragend="emit('drag', null)"
         >
           <span class="phrase-sidebar__name">{{ phrase.name }}</span>
-          <span class="phrase-sidebar__details">{{ detailsOf(phrase) }}</span>
+          <span class="phrase-sidebar__details">{{ strings.phrases.details(phrase) }}</span>
         </button>
       </li>
     </ul>
     <!-- In the sidebar's column, never over the score. Kept in the page: its renderer lasts. -->
-    <section v-show="previewed" class="phrase-sidebar__preview" role="dialog" data-phrase-preview :data-preview-ready="previewReady" :aria-label="previewed ? text.preview(previewed.name) : undefined">
+    <section
+      v-show="previewed"
+      ref="previewSection"
+      class="phrase-sidebar__preview"
+      role="dialog"
+      tabindex="-1"
+      data-phrase-preview :data-preview-ready="previewReady" :aria-label="previewed ? text.preview(previewed.name) : undefined">
       <header class="phrase-sidebar__preview-header">
         <h3 class="phrase-sidebar__preview-title">{{ previewed?.name }}</h3>
         <AppButton variant="ghost" size="sm" data-close-preview @click="closePreview">{{ text.closePreview }}</AppButton>

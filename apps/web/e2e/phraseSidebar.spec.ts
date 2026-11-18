@@ -132,14 +132,50 @@ test("Enter on a phrase, or with its preview open, drops it on the cursor's bar;
   await page.locator("[data-scroller]").focus();
   await page.keyboard.press("Control+ArrowRight");
   await page.keyboard.press("Control+ArrowRight");
+  // The preview takes the keyboard when it opens: Enter there drops the phrase it shows.
   await item.click();
-  await expect(page.locator("[data-phrase-preview]")).toBeVisible();
-  await page.locator("[data-phrase-search]").focus();
+  await expect(page.locator("[data-phrase-preview]")).toBeFocused();
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await scoreOf(page)).bars.length).toBe(5);
   expect(fretsIn(await scoreOf(page), 0, 3)).toEqual([3, 3, 3, 3]);
   expect(fretsIn(await scoreOf(page), 0, 4)).toEqual([7, 7, 7, 7]);
   await expect(page.getByRole("status").filter({ hasText: text.hints.barsAppended })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("with the preview open, Enter on the sidebar's own buttons and search box does their own thing, never a drop", async ({ browser }) => {
+  const id = seedScore({ title: "預覽裡的按鈕", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }] });
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  const name = runName("不放");
+  await createPhrase(page, name, guitarPhrase([9, 9, 9, 9]));
+  await openScore(page, id);
+  const before = await scoreOf(page);
+  const item = await findPhrase(page, name);
+  const preview = page.locator("[data-phrase-preview]");
+
+  await item.click();
+  await expect(preview).toBeFocused();
+  // Enter on 「關閉預覽」 closes the preview, the keyboard back on the phrase it was opened from.
+  await preview.locator("[data-close-preview]").focus();
+  await page.keyboard.press("Enter");
+  await expect(preview).toBeHidden();
+  await expect(item).toBeFocused();
+
+  // Enter in the search box searches, Esc in the preview closes it: neither drops.
+  await item.click();
+  await expect(preview).toBeVisible();
+  await page.locator("[data-phrase-search]").focus();
+  await page.keyboard.press("Enter");
+  await expect(preview).toBeVisible();
+  await preview.focus();
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeHidden();
+  await expect(item).toBeFocused();
+  await expect(page.locator("[data-phrase-sidebar]")).toBeVisible();
+
+  await page.waitForTimeout(300);
+  expect(await scoreOf(page)).toEqual(before);
   expect(errors).toEqual([]);
 });
 

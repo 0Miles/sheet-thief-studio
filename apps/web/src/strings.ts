@@ -1,5 +1,5 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
+import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, type PhraseSummary, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
 import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
@@ -330,6 +330,16 @@ export const strings = {
     strings: (count: number) => `${count} 弦`,
     staves: (count: number) => `${count} 個譜表`,
     bars: (count: number) => `${count} 小節`,
+    /** What a list says of a phrase besides its name, in the library and in the sidebar: its kind, its strings or its staves (more than one), its bars. */
+    details: (phrase: Pick<PhraseSummary, "kind" | "stringCount" | "staffCount" | "barCount">) =>
+      [
+        strings.phrases.kinds[phrase.kind],
+        phrase.stringCount === null ? null : strings.phrases.strings(phrase.stringCount),
+        phrase.staffCount !== null && phrase.staffCount > 1 ? strings.phrases.staves(phrase.staffCount) : null,
+        strings.phrases.bars(phrase.barCount),
+      ]
+        .filter((part) => part !== null)
+        .join(" · "),
     rename: "改名",
     duplicate: "複製",
     delete: "刪除",
