@@ -1,6 +1,6 @@
 // What a member may still do with the score open on the page, and what the page does when that
 // changes while it is open (docs/spec/collab.md, section 7; docs/spec/views.md, section 10).
-import type { CollabNotice, Role } from "@studio/contracts";
+import type { ReadOnlyNotice, Role } from "@studio/contracts";
 import type { View } from "@studio/score-editor";
 import { isNewerSchema } from "@studio/score-model";
 import type * as Y from "yjs";
@@ -11,7 +11,7 @@ import { ApiError } from "./api";
  * Why nobody may change the score here, whatever their role: a newer schema than this page knows
  * (the page reads it from the document), or what the server says in its `readOnly` notice (#109).
  */
-export type ReadOnlyReason = CollabNotice["reason"];
+export type ReadOnlyReason = ReadOnlyNotice["reason"];
 
 /** `newerSchema` when the document was written by a newer schema than this page knows; else null (docs/spec/schema.md, section 9). */
 export function readOnlyReasonOf(doc: Y.Doc): ReadOnlyReason | null {
@@ -23,7 +23,8 @@ export function openedView(view: View, readOnly: ReadOnlyReason | null): View {
   return readOnly !== null && view === "editable" ? "readOnlyEdit" : view;
 }
 
-const canType = (role: Role) => role !== "viewer";
+/** An Owner or an Editor: the role may change the score (whatever the device lets them type). */
+export const roleCanType = (role: Role): boolean => role !== "viewer";
 
 /**
  * A reconnection gave the member another role than the page was opened with. `reopen`: they can
@@ -33,7 +34,7 @@ const canType = (role: Role) => role !== "viewer";
  * Editor and an Editor the Owner: both keep typing, their document still the server's).
  */
 export function afterRoleChange(opened: Role, now: Role): "carryOn" | "reopen" {
-  return canType(opened) === canType(now) ? "carryOn" : "reopen";
+  return roleCanType(opened) === roleCanType(now) ? "carryOn" : "reopen";
 }
 
 /**

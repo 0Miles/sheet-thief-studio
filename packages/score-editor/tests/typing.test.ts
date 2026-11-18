@@ -263,3 +263,20 @@ test("when another member changes the same note between the two digits, the fret
   press("z", 1000, { ctrlKey: true });
   expect(beats()).toEqual([]);
 });
+
+test("a fret typed on a note another member left nested too deep writes the note without what is too deep, for both (#102)", () => {
+  const { doc, press, beats, cursor } = sessionOn();
+  press("5");
+  const { other, send } = otherMember(doc);
+  const { partId, barId, beatId } = cursor();
+  const beat = contentOf(partsOf(other).get(partId)!).get(barId)!.get("0:0")!.toArray().find((each) => each.get("id") === beatId)!;
+  // 64 levels in all: a value may nest so deep. One more and the note is not one.
+  const kept = `${'{"in":'.repeat(63)}1${"}".repeat(63)}`;
+  (beat.get("notes") as Y.Map<unknown>).set("s6", JSON.parse(`{"fret":5,"kept":${kept},"dropped":{"in":${kept}}}`));
+  send();
+  expect(beats()[0]!.notes).toEqual({});
+  press("7");
+  expect(beats()[0]!.notes).toEqual({ s6: { fret: 7 } });
+  const stored = contentOf(partsOf(doc).get(partId)!).get(barId)!.get("0:0")!.get(0).get("notes") as Y.Map<unknown>;
+  expect(JSON.stringify(stored.get("s6"))).toBe(`{"fret":7,"kept":${kept}}`);
+});

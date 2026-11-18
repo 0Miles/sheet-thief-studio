@@ -19,6 +19,7 @@ from typing import Literal
 
 from .i18n import tr
 from .model import Link, RhythmMark, ScoreBeat, ScoreMeasure, ScoreNote, TabEvent, TabSystem
+from .notices import Notice
 
 # Durations Guitar Pro can express on a single beat (plain or dotted), in 32nds.
 REPRESENTABLE_UNITS = (48, 32, 24, 16, 12, 8, 6, 4, 3, 2, 1)
@@ -79,9 +80,14 @@ def _columns(system: TabSystem, warnings: list[str]) -> list[_Column]:
             columns.append(_Column(event.x, [event]))
     if dropped:
         warnings.append(
-            tr(
-                f"Página {system.page}: {dropped} nota(s) sobreposta(s) na mesma corda foram ignoradas.",
-                f"Page {system.page}: {dropped} overlapping note(s) on the same string were ignored.",
+            Notice(
+                tr(
+                    f"Página {system.page}: {dropped} nota(s) sobreposta(s) na mesma corda foram ignoradas.",
+                    f"Page {system.page}: {dropped} overlapping note(s) on the same string were ignored.",
+                ),
+                "overlapping_notes",
+                page=system.page,
+                count=dropped,
             )
         )
     return columns
@@ -445,10 +451,15 @@ def _spaced_measures(
     unit_width = system.char_width
     if len(cols) > units:
         warnings.append(
-            tr(
-                f"Página {system.page}: compasso com {len(cols)} notas excede a métrica; notas em fusas (1/32).",
-                f"Page {system.page}: bar with {len(cols)} notes exceeds the time signature; "
-                "notes written as 32nd notes.",
+            Notice(
+                tr(
+                    f"Página {system.page}: compasso com {len(cols)} notas excede a métrica; notas em fusas (1/32).",
+                    f"Page {system.page}: bar with {len(cols)} notes exceeds the time signature; "
+                    "notes written as 32nd notes.",
+                ),
+                "bar_too_dense",
+                page=system.page,
+                notes=len(cols),
             )
         )
         return _sequence([(_to_notes(c.events), 1) for c in cols], units)
@@ -541,9 +552,12 @@ def build_measures(
     use_spacing = options.mode == "spacing" or (options.mode == "auto" and all(len(s.bars) >= 2 for s in systems))
     if options.mode == "auto" and not use_spacing:
         warnings.append(
-            tr(
-                "Tablatura sem barras de compasso em todas as linhas: usadas durações fixas.",
-                "Tablature without bar lines on every line: fixed durations used.",
+            Notice(
+                tr(
+                    "Tablatura sem barras de compasso em todas as linhas: usadas durações fixas.",
+                    "Tablature without bar lines on every line: fixed durations used.",
+                ),
+                "fixed_durations",
             )
         )
     measures: list[ScoreMeasure] = []

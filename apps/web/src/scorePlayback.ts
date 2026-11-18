@@ -22,6 +22,11 @@ export interface ScorePlaybackOptions {
    * stop (docs/spec/views.md, section 5).
    */
   reading: () => boolean;
+  /**
+   * The score is hidden (under the versions page, #68): playback, stopped as it is hidden, is never
+   * followed there, whatever the view. Never hidden when left out.
+   */
+  hidden?: () => boolean;
 }
 
 /** Room left above playback when the page scrolls to it. */
@@ -29,7 +34,7 @@ const FOLLOW_MARGIN = 40;
 /** Room left around the cursor when the page scrolls to it. */
 const REVEAL_MARGIN = 80;
 
-export function useScorePlayback({ scroller, reserved, startTick, reading }: ScorePlaybackOptions) {
+export function useScorePlayback({ scroller, reserved, startTick, reading, hidden = () => false }: ScorePlaybackOptions) {
   let engine: ScoreEngine | undefined;
   const playerState = ref<PlayerState>("loading");
   /**
@@ -52,7 +57,7 @@ export function useScorePlayback({ scroller, reserved, startTick, reading }: Sco
    * Playback is followed now: it plays and is kept on screen, so the page goes with it, not with
    * the cursor. The Read view follows it whenever it plays.
    */
-  const isFollowing = () => (keepInSight || reading()) && playerState.value === "playing";
+  const isFollowing = () => !hidden() && (keepInSight || reading()) && playerState.value === "playing";
 
   /** Scroll the score, as the page: following playback, or showing the cursor. */
   function scrollTo(top: number): void {

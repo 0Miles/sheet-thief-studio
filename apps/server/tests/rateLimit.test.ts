@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
+import { holdClock } from "./clock";
 import { freshDatabase, freshRedis, login, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -24,6 +25,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await redis.flushdb();
+  holdClock();
 });
 
 afterAll(async () => {

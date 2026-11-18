@@ -28,6 +28,7 @@ from .music_settings import (
     DEFAULT_TIME_SIGNATURE,
     time_signature_in_range,
 )
+from .notices import PICTURE, Notice
 from .repeats import playback_order
 from .rhythm import RhythmMode, RhythmOptions, RhythmStats, build_measures, first_bar_end, signature_units, split_units
 from .tunings import TUNINGS, TuningChoice, resolve_tuning
@@ -152,13 +153,16 @@ _PICTURE_WEIGHT = 8
 
 
 def _image_warning() -> str:
-    return tr(
-        "Tablatura lida de uma imagem (OCR): confira as notas. O ritmo é lido das hastes, barras e pausas quando "
-        "estão desenhadas, e senão estimado pelo espaçamento das notas; confira também as técnicas (bends, slides, "
-        "ligaduras, vibrato…).",
-        "Tablature read from an image (OCR): check the notes. The rhythm is read from the stems, beams and rests "
-        "where they are drawn, and otherwise estimated from the spacing of the notes; check the techniques too (bends, "
-        "slides, ties, vibrato…).",
+    return Notice(
+        tr(
+            "Tablatura lida de uma imagem (OCR): confira as notas. O ritmo é lido das hastes, barras e pausas quando "
+            "estão desenhadas, e senão estimado pelo espaçamento das notas; confira também as técnicas (bends, "
+            "slides, ligaduras, vibrato…).",
+            "Tablature read from an image (OCR): check the notes. The rhythm is read from the stems, beams and rests "
+            "where they are drawn, and otherwise estimated from the spacing of the notes; check the techniques too "
+            "(bends, slides, ties, vibrato…).",
+        ),
+        PICTURE,
     )
 
 
@@ -314,9 +318,13 @@ def _main_staves(systems: list[TabSystem], warnings: list[str], notes_read: bool
     dropped = sum(1 for s in with_notes if s.string_count != string_count)
     if dropped:
         warnings.append(
-            tr(
-                f"{dropped} linha(s) de tab com número de cordas diferente de {string_count} foram ignoradas.",
-                f"{dropped} tab line(s) with a number of strings other than {string_count} were ignored.",
+            Notice(
+                tr(
+                    f"{dropped} linha(s) de tab com número de cordas diferente de {string_count} foram ignoradas.",
+                    f"{dropped} tab line(s) with a number of strings other than {string_count} were ignored.",
+                ),
+                "staves_ignored",
+                count=dropped,
             )
         )
     return string_count, [s for s in systems if s.string_count == string_count]
@@ -904,8 +912,32 @@ def convert(pdf: bytes, options: ConversionOptions) -> ConversionResult:
     return convert_many([pdf], options)
 
 
-def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionResult:
-    """Convert one PDF per track into scores with the same bars."""
+@dataclass
+class BuiltTracks:
+    """Each track as ``_build_track`` gives it (its score and report, the report still holding its
+    ``_tuning``, ``_capo`` and ``_lyrics``), with what was read for the whole song. Nothing is cut or
+    filled in yet: that comes after, in ``convert_many`` (``_align_by_numbers``, ``_unify_bars``…).
+    Studio's JSON exit (``contract.py``) stops here (docs/spec/recognizer.md, section 5)."""
+
+    scores: list[Score]
+    track_reports: list[dict]
+    detected: SongMetadata
+    title: str
+    artist: str
+    tempo: int
+    tempo_source: str
+    tempo_reason: str | None
+    numerator: int
+    denominator: int
+    signature_detected: tuple[int, int] | None
+    signature_raw: str | None
+    signature_alternatives: list[str]
+    signature_source: str
+    signature_reason: str | None
+
+
+def build_tracks(pdfs: list[bytes], options: ConversionOptions) -> BuiltTracks:
+    """Read one PDF per track and build each track's score, as read."""
     if not pdfs:
         raise ConversionError(tr("Nenhum PDF enviado.", "No PDF uploaded."))
     if len(pdfs) > MAX_TRACKS:
@@ -988,6 +1020,32 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
             raise ConversionError(labelled(index, str(exc))) from exc
         scores.append(score)
         track_reports.append(report)
+    return BuiltTracks(
+        scores=scores,
+        track_reports=track_reports,
+        detected=detected,
+        title=title,
+        artist=artist,
+        tempo=tempo,
+        tempo_source=tempo_source,
+        tempo_reason=tempo_reason,
+        numerator=numerator,
+        denominator=denominator,
+        signature_detected=signature_detected,
+        signature_raw=signature_raw,
+        signature_alternatives=signature_alternatives,
+        signature_source=signature_source,
+        signature_reason=signature_reason,
+    )
+
+
+def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionResult:
+    """Convert one PDF per track into scores with the same bars."""
+    built = build_tracks(pdfs, options)
+    scores, track_reports, detected = built.scores, built.track_reports, built.detected
+    title, artist, tempo = built.title, built.artist, built.tempo
+    numerator, denominator = built.numerator, built.denominator
+    multi = len(pdfs) > 1
 
     aligned: list[bool] = []
     for score, report in zip(scores, track_reports, strict=True):
@@ -1147,14 +1205,14 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
         },
         # Each music setting: what the picture says, the value written and where it came from.
         "settings": {
-            "tempo": _setting(detected.tempo, tempo, tempo_source, tempo_reason, detected.tempo_raw),
+            "tempo": _setting(detected.tempo, tempo, built.tempo_source, built.tempo_reason, detected.tempo_raw),
             "time_signature": _setting(
-                f"{signature_detected[0]}/{signature_detected[1]}" if signature_detected else None,
+                f"{built.signature_detected[0]}/{built.signature_detected[1]}" if built.signature_detected else None,
                 f"{meters[0][0]}/{meters[0][1]}",
-                signature_source,
-                signature_reason,
-                signature_raw,
-                signature_alternatives,
+                built.signature_source,
+                built.signature_reason,
+                built.signature_raw,
+                built.signature_alternatives,
             ),
             "tuning": _tuning_setting(tuning_choice),
             "capo": capo_setting,
