@@ -7,7 +7,7 @@ import { type RecognitionDetails, type RecognizerResult, recognizerFailure } fro
 import { type BarsFragment, blankFragment, MAX_FRAGMENT_BYTES, PART_PRESETS, tuningFor } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
-import type { Sequelize } from "sequelize";
+import { type Sequelize, Transaction } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { buildApp } from "../src/app";
@@ -314,6 +314,29 @@ test("saving makes a phrase of the name and the fragment sent, edited or not, an
   // Saved once: the second time there is nothing to save.
   expect((await save(id, anna, { name: "再一次", fragment: edited })).statusCode).toBe(404);
   expect(await Phrase.count()).toBe(1);
+});
+
+test("the answer to a save comes once the phrase is committed: a read right after it finds the phrase", async () => {
+  const id = await started(anna);
+  const fragment = await recognizedFragment(id, anna);
+  // Every commit waits until the test lets it go: a save answered before its commit is answered while it waits.
+  let letCommit!: () => void;
+  const committing = new Promise<void>((resolve) => {
+    letCommit = resolve;
+  });
+  const commit = Transaction.prototype.commit;
+  vi.spyOn(Transaction.prototype, "commit").mockImplementation(async function (this: Transaction) {
+    await committing;
+    return commit.call(this);
+  });
+  const saving = save(id, anna, { name: "前奏", fragment });
+  const answeredEarly = await Promise.race([saving.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 300))]);
+  letCommit();
+  const saved = await saving;
+  expect(answeredEarly).toBe(false);
+  expect(saved.statusCode).toBe(201);
+  const { phraseId } = saved.json() as { phraseId: string };
+  expect((await apiCall(app, "GET", `/api/phrases/${phraseId}`, anna)).statusCode).toBe(200);
 });
 
 test("only a recognition that succeeded is saved, by the account that started it, with a legal name and fragment of its kind; nothing changes otherwise", async () => {

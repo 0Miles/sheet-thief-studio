@@ -254,16 +254,19 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
     const accountId = request.account!.id;
     const { id } = request.params;
     if (!isUuid(id)) return notFound(reply);
-    return Recognition.sequelize!.transaction(async (transaction) => {
+    // The answer is sent once the transaction is committed, not from inside it: answered
+    // before, a read that follows it at once may not find the phrase yet.
+    const answer = await Recognition.sequelize!.transaction(async (transaction) => {
       // Locked: a second save of it at once waits, then finds it gone.
       const recognition = await Recognition.findOne({ where: { id, accountId }, attributes: ["id", "status", "fragment"], transaction, lock: transaction.LOCK.UPDATE });
-      if (recognition === null) return notFound(reply);
-      if (recognition.status !== "succeeded") return reply.code(409).send({ code: "recognition_not_succeeded" });
-      if (recognition.fragment?.kind !== fragment.kind) return otherKind(reply);
+      if (recognition === null) return () => notFound(reply);
+      if (recognition.status !== "succeeded") return () => reply.code(409).send({ code: "recognition_not_succeeded" });
+      if (recognition.fragment?.kind !== fragment.kind) return () => otherKind(reply);
       const phrase = await createPhrase(accountId, name, fragment, transaction);
       await recognition.destroy({ transaction });
-      return reply.code(201).send(savedRecognition.parse({ phraseId: phrase.id }));
+      return () => reply.code(201).send(savedRecognition.parse({ phraseId: phrase.id }));
     });
+    return answer();
   });
 
   app.delete<IdParams>("/api/recognitions/:id", async (request, reply) => {
