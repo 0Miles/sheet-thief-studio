@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The recognition service (docs/spec/recognizer.md, ADR 0006). Targets: test (the copied pytest
-# suite, run by the CI) and runtime, the last: the target Compose will build (#61).
+# suite, run by the CI) and runtime, the last: the HTTP service Compose builds (compose.dev.yaml).
 
 FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -29,6 +29,8 @@ COPY requirements-dev.txt ./
 RUN python -m pip install -r requirements-dev.txt
 COPY pyproject.toml LICENSE THIRD_PARTY_NOTICES.md ./
 COPY tests ./tests
+# The contract's JSON Schema and fixtures: the tests check the service's JSON against them.
+COPY contract ./contract
 # A test marked "ocr" fails here when the OCR packages are missing, instead of being skipped.
 ENV RECOGNIZER_REQUIRE_OCR=1
 USER recognizer
@@ -37,5 +39,8 @@ CMD ["python", "-m", "pytest", "-q"]
 FROM base AS runtime
 COPY LICENSE THIRD_PARTY_NOTICES.md ./
 USER recognizer
-# The HTTP interface (docs/spec/recognizer.md, section 3) is not there yet: the image only holds the core.
-CMD ["python", "-c", "import recognizer.converter, recognizer.sandbox"]
+# The internal HTTP interface (docs/spec/recognizer.md, section 3).
+EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+CMD ["python", "-m", "recognizer.service"]
