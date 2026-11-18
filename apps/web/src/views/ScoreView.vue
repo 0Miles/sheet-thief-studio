@@ -623,6 +623,11 @@ function stop(): void {
   engine.player.stop();
 }
 
+/** Ask again for the sound font that could not be had (docs/spec/playback.md, 4.1). */
+function retrySound(): void {
+  engine?.player.retry();
+}
+
 function togglePlay(): void {
   if (playerState.value === "playing") pause();
   else play();
@@ -1089,7 +1094,7 @@ onBeforeUnmount(() => {
         </template>
         <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
         <template v-if="view && !narrow">
-          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
           <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
             {{ text.mixer.open }}
@@ -1315,7 +1320,7 @@ onBeforeUnmount(() => {
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="null" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
       </section>
       <footer v-if="narrow" class="score__playbar" data-playbar>
-        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
         <AppButton variant="ghost" size="sm" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
           {{ drawerOpen ? text.display.closeOptions : text.display.options }}
         </AppButton>
