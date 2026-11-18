@@ -338,12 +338,13 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
    * the start of the score (docs/spec/commands.md, section 2).
    */
   const settled = (at: Cursor | null): Cursor | null => at && (settleCursor(doc, at, position) ?? startOfScore(doc, lines));
+  /** `settled`, and for no cursor at all: the start of the score once the cursor was stranded, else still none. */
+  const restored = (at: Cursor | null): Cursor | null => (at === null ? (stranded ? startOfScore(doc, lines) : null) : settled(at));
   const settle = (): void => {
     if (running) return;
     // A cursor put on a beat that had not arrived yet: its position is taken now that it is here.
     if (position === null && cursor !== null) position = beatPositionOf(doc, cursor);
-    const next = cursor === null ? (stranded ? startOfScore(doc, lines) : null) : settled(cursor);
-    putAt({ cursor: next, selection: selection && settleSelection(doc, selection) });
+    putAt({ cursor: restored(cursor), selection: selection && settleSelection(doc, selection) });
   };
   doc.on("afterTransaction", settle);
 
@@ -470,10 +471,11 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
   const setting = (run: () => boolean | string | null): KeyCommand => {
     const outcome = (at: Cursor | null): Outcome => {
       const result = run();
-      if (result === "tooManyParts" || result === "lastPart") hint(result);
-      const cursorNow = at === null ? (stranded ? startOfScore(doc, lines) : null) : settled(at);
+      const refused = result === "tooManyParts" || result === "lastPart";
+      if (refused) hint(result);
+      const cursorNow = restored(at);
       // Anything but a refusal or a value out of range is done: `addPresetPart` gives the new part's id.
-      if (result === false || result === null || result === "tooManyParts" || result === "lastPart") {
+      if (refused || result === false || result === null) {
         return { cursor: cursorNow, selection: selection && settleSelection(doc, selection), done: false };
       }
       return { cursor: cursorNow, selection: null };

@@ -335,10 +335,7 @@ export function setTimeSig(doc: Y.Doc, cursor: Cursor, selection: Selection | nu
   if (range.length === 0) return false;
   const { numerator, denominator } = valid.data;
   // A time signature that cannot be read (read as 4/4) is written too.
-  const changed = range.filter((barId) => {
-    const stored = parsePlain(timeSigSchema, bars.get(barId)?.get("timeSig"));
-    return !stored.success || !sameTimeSig(stored.data, valid.data);
-  });
+  const changed = range.filter((barId) => !storedAs(timeSigSchema, bars.get(barId)?.get("timeSig"), valid.data));
   if (changed.length > 0) doc.transact(() => changed.forEach((barId) => bars.get(barId)?.set("timeSig", { numerator, denominator })), LOCAL);
   return true;
 }
@@ -357,11 +354,7 @@ const tempoSchema = barSchema.shape.tempo.unwrap();
 export function setTempo(doc: Y.Doc, cursor: Cursor, tempo: number | null): boolean {
   const bar = barsOf(doc).get(cursor.barId);
   if (bar === undefined || (tempo !== null && !tempoSchema.safeParse(tempo).success)) return false;
-  if (tempo === null ? !bar.has("tempo") : bar.get("tempo") === tempo) return true;
-  doc.transact(() => {
-    if (tempo === null) bar.delete("tempo");
-    else bar.set("tempo", tempo);
-  }, LOCAL);
+  writeField(bar, "tempo", tempoSchema, tempo ?? undefined);
   return true;
 }
 

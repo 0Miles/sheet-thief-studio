@@ -7,7 +7,7 @@
 // panel, matched by the keymap's platform layer as every key is.
 import { AppButton } from "@karyl-chan/ui";
 import { type KeyPlatform, pageEffectOf, textEntryEffectOf } from "@studio/score-editor";
-import { barSchema, type KeySignature, keySigSchema, type RepeatChange, type TimeSignature, timeSigSchema } from "@studio/score-model";
+import { barSchema, type KeySignature, keySigSchema, MAX_SECTION_NAME, type RepeatChange, type TimeSignature, timeSigSchema } from "@studio/score-model";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import { strings } from "../strings";
@@ -64,7 +64,6 @@ const REPEAT_SCHEMA = barSchema.shape.repeatEnd.unwrap();
 const REPEAT = { min: REPEAT_SCHEMA.minValue ?? 2, max: REPEAT_SCHEMA.maxValue ?? undefined };
 const PASS_SCHEMA = barSchema.shape.voltas.unwrap().element;
 const PASSES = Array.from({ length: (PASS_SCHEMA.maxValue ?? 8) - (PASS_SCHEMA.minValue ?? 1) + 1 }, (_, index) => (PASS_SCHEMA.minValue ?? 1) + index);
-const SECTION_LENGTH = 64;
 
 const numerator = ref(props.timeSig.numerator);
 const denominator = ref<TimeSignature["denominator"]>(props.timeSig.denominator);
@@ -219,7 +218,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     <form class="bar-panel__group" data-panel-section @submit.prevent="applySection">
       <label class="bar-panel__field">
         <span>{{ text.section }}</span>
-        <input v-model="section" type="text" name="section" :maxlength="SECTION_LENGTH" />
+        <input v-model="section" type="text" name="section" :maxlength="MAX_SECTION_NAME" />
       </label>
       <p class="bar-panel__note">{{ text.sectionHere(bar) }}</p>
       <div class="bar-panel__row">

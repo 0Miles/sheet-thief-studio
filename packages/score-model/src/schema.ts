@@ -34,6 +34,9 @@ export const MAX_TITLE = 100;
 /** The longest name of a part (docs/spec/schema.md, sections 4 and 13). */
 export const MAX_PART_NAME = 64;
 
+/** The longest name of a section (docs/spec/schema.md, section 3). */
+export const MAX_SECTION_NAME = 64;
+
 /** The dynamics a beat can be marked with, softest first. */
 export const DYNAMICS = ["pp", "p", "mp", "mf", "f", "ff"] as const;
 
@@ -168,7 +171,7 @@ export const barSchema = z.object({
     .min(1)
     .refine((passes) => passes.every((pass, index) => index === 0 || pass > (passes[index - 1] as number)), "in increasing order")
     .optional(),
-  section: text(1, 64).optional(),
+  section: text(1, MAX_SECTION_NAME).optional(),
   /** A pickup bar: only the first bar can be one. */
   anacrusis: z.literal(true).optional(),
 });
