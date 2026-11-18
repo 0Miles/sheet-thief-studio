@@ -19,8 +19,12 @@ import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
 import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
 
-export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_test";
-export const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://localhost:6388/1";
+/**
+ * The Postgres and Redis databases of this run of the server's tests, its own unless told others
+ * (tests/globalSetup.ts sets both before any file starts). Empty outside a run of vitest.
+ */
+export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "";
+export const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "";
 
 /** A fragment of `bytes` or more of JSON in UTF-8, made of beats whose text is three bytes a character. */
 export function fragmentOfAtLeast(bytes: number): BarsFragment {
