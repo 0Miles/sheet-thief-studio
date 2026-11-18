@@ -16,9 +16,12 @@ export const JSON_BODY_LIMIT = 64 * 1024;
 /** A body that carries a fragment: the fragment's 1 MB and room for the rest. */
 export const FRAGMENT_BODY_LIMIT = MAX_FRAGMENT_BYTES + JSON_BODY_LIMIT;
 
-/** One image sent to be recognized, and all the images of one recognition (docs/spec/recognizer.md, section 4). */
-export const RECOGNITION_IMAGE_BYTES = 10 * MB;
-export const RECOGNITION_IMAGES_BYTES = 40 * MB;
+/**
+ * One image sent to be recognized, and all the images of one recognition (docs/spec/recognizer.md,
+ * section 4): defined in contracts, which the web app reads them from too.
+ */
+export const RECOGNITION_IMAGE_BYTES = recognitionLimits.imageBytes;
+export const RECOGNITION_IMAGES_BYTES = recognitionLimits.imagesBytes;
 
 /** The body of `POST /api/recognitions`: the images and room for what multipart/form-data wraps them in. */
 export const RECOGNITION_BODY_LIMIT = RECOGNITION_IMAGES_BYTES + JSON_BODY_LIMIT;

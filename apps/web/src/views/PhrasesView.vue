@@ -2,16 +2,31 @@
 // The phrase library (docs/spec/phrases.md, section 4): my phrases in one flat list, most recently
 // updated first, filtered by kind and searched by name. Making a blank phrase, renaming, copying
 // and deleting are for devices that can be typed on only (`canType`); a phone or a tablet lists,
-// filters and searches.
+// filters and searches. Every device recognizes images: they are uploaded, and the review page
+// opens; the recognitions not yet saved nor discarded are listed above the phrases (待審核).
 import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
-import { createdPhrase, duplicatedPhrase, type PartKind, partKindSchema, phraseLimits, phraseList, phraseRevision, type PhraseSummary } from "@studio/contracts";
+import {
+  createdPhrase,
+  createdRecognition,
+  duplicatedPhrase,
+  type PartKind,
+  partKindSchema,
+  phraseLimits,
+  phraseList,
+  phraseRevision,
+  type PhraseSummary,
+  recognitionLimits,
+  type RecognitionList,
+  recognitionList,
+} from "@studio/contracts";
 import { blankFragment, PART_PRESET_IDS, PART_PRESETS, type PartPresetId } from "@studio/score-model";
 import { onMounted, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 
 import { ApiError, del, get, patchFor, postFor } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import { canType } from "../device";
+import { uploadForm, uploadRefusal } from "../recognition";
 import { errorText, strings } from "../strings";
 
 const text = strings.phrases;
@@ -48,6 +63,49 @@ async function load(): Promise<void> {
 }
 
 onMounted(load);
+onMounted(loadRecognitions);
+
+// Recognizing images ----------------------------------------------------------------------------
+
+const router = useRouter();
+/** My recognitions not yet saved nor discarded; null until asked. */
+const recognitions = ref<RecognitionList["recognitions"] | null>(null);
+const picker = ref<HTMLInputElement>();
+const uploading = ref(false);
+/** What to say of an upload that did not go; empty while all is well. */
+const uploadError = ref("");
+
+async function loadRecognitions(): Promise<void> {
+  recognitions.value = (await get("/api/recognitions", recognitionList)).recognitions;
+}
+
+/** When a recognition was started, as the list says it. */
+function startedAt(createdAt: string): string {
+  return new Date(createdAt).toLocaleString("zh-TW", { dateStyle: "short", timeStyle: "short" });
+}
+
+/** The images chosen, in their order, sent to be recognized; the review page then follows how it goes. */
+async function recognize(): Promise<void> {
+  const input = picker.value;
+  const files = input?.files ? [...input.files] : [];
+  // The same files chosen again are a change too.
+  if (input) input.value = "";
+  if (files.length === 0) return;
+  uploadError.value = "";
+  if (files.length > recognitionLimits.images.max) {
+    uploadError.value = text.tooManyImages;
+    return;
+  }
+  uploading.value = true;
+  try {
+    const { id } = await postFor("/api/recognitions", uploadForm(files), createdRecognition);
+    await router.push({ name: "recognition", params: { id } });
+  } catch (failure) {
+    uploadError.value = uploadRefusal(failure);
+  } finally {
+    uploading.value = false;
+  }
+}
 let searching: ReturnType<typeof setTimeout> | undefined;
 // A new kind asks at once, for the search as typed so far too: the search's pending ask is not needed.
 watch(kind, () => {
@@ -62,15 +120,6 @@ watch(
     searching = setTimeout(load, SEARCH_DELAY_MS);
   },
 );
-
-/** What the list says of a phrase besides its name: its kind, its strings or staves, its bars. */
-function detailsOf(phrase: PhraseSummary): string {
-  const parts = [text.kinds[phrase.kind]];
-  if (phrase.stringCount !== null) parts.push(text.strings(phrase.stringCount));
-  if (phrase.staffCount !== null && phrase.staffCount > 1) parts.push(text.staves(phrase.staffCount));
-  parts.push(text.bars(phrase.barCount));
-  return parts.join(" · ");
-}
 
 // Every dialog of the page: which one is open, on which phrase, and what it is sending.
 type Dialog = "create" | "rename" | "delete";
@@ -136,8 +185,21 @@ function remove(): Promise<void> {
     <Cluster gap="3">
       <h1>{{ text.title }}</h1>
       <Spacer />
+      <AppButton variant="secondary" :loading="uploading" :title="text.recognizeHelp" data-recognize @click="picker?.click()">{{ text.recognize }}</AppButton>
+      <!-- No capture: a phone offers its camera and its photos alike (docs/spec/phrases.md, section 4). -->
+      <input ref="picker" class="phrases__picker" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-recognize-input @change="recognize" />
       <AppButton v-if="editable" variant="primary" @click="open('create')">{{ text.newPhrase }}</AppButton>
     </Cluster>
+    <p v-if="uploadError" class="phrases__error" role="alert" data-upload-error>{{ uploadError }}</p>
+    <section v-if="recognitions && recognitions.length > 0" class="phrases__pending" data-pending>
+      <h2>{{ text.pending }}</h2>
+      <ul class="phrases__list">
+        <li v-for="item in recognitions" :key="item.id" class="phrases__item" :data-recognition="item.id">
+          <RouterLink class="phrases__name" :to="{ name: 'recognition', params: { id: item.id } }">{{ text.pendingStatus[item.status] }}</RouterLink>
+          <span class="phrases__muted">{{ text.pendingItem(item.pages, startedAt(item.createdAt)) }}</span>
+        </li>
+      </ul>
+    </section>
     <Cluster gap="3" class="phrases__filters">
       <label class="phrases__kind">
         <span>{{ text.kind }}</span>
@@ -156,7 +218,7 @@ function remove(): Promise<void> {
     <ul v-else class="phrases__list">
       <li v-for="phrase in phrases" :key="phrase.id" class="phrases__item" :data-phrase="phrase.id">
         <RouterLink class="phrases__name" :to="{ name: 'phrase', params: { id: phrase.id } }">{{ phrase.name }}</RouterLink>
-        <span class="phrases__muted">{{ detailsOf(phrase) }}</span>
+        <span class="phrases__muted">{{ text.details(phrase) }}</span>
         <Cluster v-if="editable" gap="1" :wrap="false">
           <AppButton variant="ghost" size="sm" @click="open('rename', phrase)">{{ text.rename }}</AppButton>
           <AppButton variant="ghost" size="sm" :disabled="sending" @click="duplicate(phrase)">{{ text.duplicate }}</AppButton>
@@ -260,5 +322,21 @@ function remove(): Promise<void> {
 .phrases__error {
   color: var(--danger);
   margin: 0;
+}
+/* Opened by its button: the picker itself is never seen. */
+.phrases__picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+}
+.phrases__pending {
+  margin-top: 1.5rem;
+}
+.phrases__pending h2 {
+  margin: 0;
+  font-size: 1.125rem;
 }
 </style>

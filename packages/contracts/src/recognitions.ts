@@ -6,8 +6,11 @@ import { z } from "zod";
 
 import { recognizerCapo, recognizerLimits, recognizerPageError, recognizerTuning, recognizerWarning } from "./recognizer";
 
-/** How many images one recognition reads, as pages in order. */
-export const recognitionLimits = { images: { min: 1, max: 15 } } as const;
+/**
+ * How many images one recognition reads, as pages in order, and how large each and all of them
+ * may be, in bytes (docs/spec/recognizer.md, section 4).
+ */
+export const recognitionLimits = { images: { min: 1, max: 15 }, imageBytes: 10 * 1024 * 1024, imagesBytes: 40 * 1024 * 1024 } as const;
 
 /** How long the server keeps a recognition, its images and its result (docs/spec/recognizer.md, section 7). */
 export const RECOGNITION_RETENTION_DAYS = 7;

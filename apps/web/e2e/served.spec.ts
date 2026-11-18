@@ -3,7 +3,7 @@
 // project (playwright.config.ts); every other one gets its pages from `vite preview`.
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { createPhrase, createScore, logInFromStart, openScore, pageErrors, soundReady } from "./pages";
+import { createPhrase, createScore, logInFromStart, openScore, originalShown, pageErrors, recognizeImage, soundReady } from "./pages";
 import { expect, test } from "./test";
 
 test("served by the server, a score opens, is drawn and gets its sound, and so does its read-only link; no page has one CSP violation", async ({ page, browser, cspViolations }) => {
@@ -53,6 +53,10 @@ test("served by the server, a score opens, is drawn and gets its sound, and so d
   await page.goto(`/phrases/${phraseId}`);
   await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
   await soundReady(page);
+  // The review page of a recognition: its result drawn with its sound, and its image loaded.
+  await recognizeImage(page, "six-strings");
+  await soundReady(page);
+  await originalShown(page);
 
   // The page of a read-only link, in a browser that never logged in: drawn, and its sound ready.
   const made = await page.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(page.url()).origin } });

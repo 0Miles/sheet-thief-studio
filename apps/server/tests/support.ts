@@ -6,6 +6,7 @@ import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { HocuspocusProvider, MessageType } from "@hocuspocus/provider";
+import { type BarsFragment, jsonBytes, PART_PRESETS } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
 import * as decoding from "lib0/decoding";
@@ -20,6 +21,13 @@ import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://studio:studio@localhost:5438/studio_test";
 export const TEST_REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://localhost:6388/1";
+
+/** A fragment of `bytes` or more of JSON in UTF-8, made of beats whose text is three bytes a character. */
+export function fragmentOfAtLeast(bytes: number): BarsFragment {
+  const beat = { value: 64 as const, dots: 0 as const, notes: {}, text: "譜".repeat(64) };
+  const count = Math.ceil(bytes / jsonBytes(beat));
+  return { kind: "fretted", tuning: [...PART_PRESETS.guitar6.tuning], bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": Array(count).fill(beat) } }] };
+}
 
 /** The session cookie of the test config (not the development one). */
 export const COOKIE = "__Host-studio_session";

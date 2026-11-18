@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
-import { COOKIE, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig } from "./support";
+import { COOKIE, fragmentOfAtLeast, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -65,13 +65,6 @@ async function createPhrase(session: string, name: string, fragment: BarsFragmen
   const response = await call("POST", "/api/phrases", session, { name, fragment });
   expect([response.statusCode, response.json()]).toEqual([201, { id: expect.any(String), revision: 1 }]);
   return (response.json() as { id: string }).id;
-}
-
-/** A fragment of `bytes` or more of JSON in UTF-8, made of beats whose text is three bytes a character. */
-function fragmentOfAtLeast(bytes: number): BarsFragment {
-  const beat = { value: 64 as const, dots: 0 as const, notes: {}, text: "譜".repeat(64) };
-  const count = Math.ceil(bytes / jsonBytes(beat));
-  return { kind: "fretted", tuning: [...PART_PRESETS.guitar6.tuning], bars: [{ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": Array(count).fill(beat) } }] };
 }
 
 /**

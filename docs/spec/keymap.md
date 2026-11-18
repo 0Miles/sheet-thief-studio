@@ -205,6 +205,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#22）：`F2` 在譜面上開關面板，只有可編輯視圖有面板（唯讀編輯視圖按 `F2` 不動）。開啟時焦點進面板的第一個欄位；面板裡的鍵屬於欄位，只有 `Esc` 與 `F2` 關閉面板、焦點回到譜面，比對照第 1.1 節（`Esc` 用 `textEntryEffectOf` 的 `cancelEntry`，`F2` 用 `pageEffectOf`）。工具列的「小節屬性」按鈕同樣開關面板，開啟時焦點進面板，關閉時回到譜面。
 
+**補充**（#57）：`F4` 是 `bindings.ts` 的 page 鍵 `phraseSidebar`（由 `pageEffectOf` 判斷，唯讀編輯視圖與 Read view 按了不動）；工具列的「樂句側欄」按鈕提示是 `strings.score.phraseSidebar.openKey`，鍵名由 `keyNameOf("phraseSidebar", platform)` 產生。側欄裡的 `Enter` 與 `Esc` 用 `textEntryEffectOf` 比對（`saveEntry`、`cancelEntry`），所以組字中的 `Enter` 不會放置；焦點在樂句上按 `Enter` 是放置，不是按鈕的點擊（點擊是開預覽，焦點移進預覽）；焦點在預覽裡按 `Enter` 放置預覽中的樂句。側欄自己的按鈕、連結與輸入框（含預覽的「關閉預覽」、搜尋框）的 `Enter` 照它們自己的作用，不放置。`Esc` 先關預覽（焦點回到打開它的樂句），沒有預覽時關側欄。
+
 `F2`、`F4`、`F8` 在 Windows、Linux 的瀏覽器裡沒有預設功能。macOS 的功能鍵預設是系統功能（第 1.2 節），要按著 `Fn`，或在系統設定把 F1–F12 設成標準功能鍵；所以這三個鍵在工具列都有同功能的按鈕（第 7 節）。
 
 ## 6. 文字輸入模式

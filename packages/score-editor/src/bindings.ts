@@ -65,9 +65,10 @@ export type NativeEffect = "copy" | "cut" | "paste";
 /**
  * What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4),
  * going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
- * section 4), and opening or closing the panel of the cursor's bar (keymap.md, section 5).
+ * section 4), and opening or closing the panel of the cursor's bar and the phrase sidebar
+ * (keymap.md, section 5).
  */
-export type PageEffect = "playPause" | "nextFlag" | "barPanel";
+export type PageEffect = "playPause" | "nextFlag" | "barPanel" | "phraseSidebar";
 
 /**
  * What a key does in a text box of the score (keymap.md, section 6): the text of a beat, typed
@@ -253,6 +254,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "nextFlag", context: "score", keys: ["F8"], page: true, keymap: both("F8") },
   // Fn+F2 on a Mac, as F8: the toolbar has the same button (keymap.md, section 5).
   { effect: "barPanel", context: "score", keys: ["F2"], page: true, keymap: both("F2") },
+  // Fn+F4 on a Mac, as F2: the toolbar has the same button (keymap.md, sections 5 and 7).
+  { effect: "phraseSidebar", context: "score", keys: ["F4"], page: true, keymap: both("F4") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
