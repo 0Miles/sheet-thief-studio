@@ -11,6 +11,8 @@ import { CollabTickets } from "./collabTickets";
 import type { Config } from "./config";
 import { registerDeletion } from "./deletion";
 import { registerErrorAnswers, registerOriginCheck } from "./http";
+import { registerKarylLogin } from "./karylLogin";
+import { type Karyl, registerKarylDispatch } from "./karylPlugin";
 import { JSON_BODY_LIMIT } from "./limits";
 import { registerMe } from "./me";
 import { registerLinks, withoutLinkTokens } from "./links";
@@ -30,12 +32,14 @@ export interface Dependencies {
   logger?: boolean;
   /** The steps of the score schema, for the tests that register their own; the published ones otherwise. */
   migrations?: readonly Migration[];
+  /** The karyl-chan plugin, when the server runs as one (docs/spec/karyl-login.md); absent, `/auth/karyl` is none. */
+  karyl?: Karyl;
 }
 
 /** The HTTP API and the co-editing server. The database is the one `connectDatabase` bound the models to. */
-export function buildApp({ config, redis, logger = true, migrations }: Dependencies): FastifyInstance {
-  // Only nginx stands in front of the server: the client's IP is the address nginx adds to
-  // X-Forwarded-For (docs/spec/security.md, 4).
+export function buildApp({ config, redis, logger = true, migrations, karyl }: Dependencies): FastifyInstance {
+  // Only nginx stands in front of the server, or the karyl-chan bot's proxy for a plugin: the
+  // client's IP is the address it adds to X-Forwarded-For (docs/spec/security.md, 4).
   // JSON requests carry at most 64 KB; the routes that carry a fragment set their own limit (docs/spec/security.md, section 5).
   const headers = { hsts: config.hsts };
   const app = Fastify({
@@ -67,7 +71,11 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   registerVersions(app, { collab, migrations });
   registerPhrases(app);
   registerRecognitions(app, { recognizerUrl: config.recognizerUrl });
-  if (config.webRoot !== null) registerPages(app, config.webRoot);
+  if (karyl !== undefined) {
+    registerKarylLogin(app, { karyl, sessions, limiter, redis });
+    registerKarylDispatch(app, karyl);
+  }
+  if (config.webRoot !== null) registerPages(app, config.webRoot, karyl === undefined ? undefined : () => karyl.basePath());
   return app;
 }
 

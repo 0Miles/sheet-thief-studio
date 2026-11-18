@@ -38,9 +38,10 @@
 |---|---|---|
 | `/api/*` | JSON API（第 3 節） | M1a |
 | `/collab` | WebSocket，Hocuspocus（[`collab.md`](collab.md)） | M1a |
-| `GET /auth/karyl` | karyl-chan 登入的回呼。**是 Fastify 的伺服器路由，不在 vue-router 裡**（[`karyl-login.md`](karyl-login.md)） | M5 |
+| `GET /auth/karyl` | karyl-chan 登入的連結：驗證 `plugin-session` token，成功時 302 到 `../#session=<id>`，失敗時 302 到 `../login#karyl=<原因>`。**是 Fastify 的伺服器路由，不在 vue-router 裡**；只有 plugin 模式才有，獨立部署是 404（[`karyl-login.md`](karyl-login.md)） | M5 |
+| `POST /commands/*`、`GET /health`、`GET /health/*` | plugin 模式才有：bot 的 dispatch 與健康檢查，原封不動轉給 SDK 的 server，由 SDK 驗 HMAC；沒有 Origin 檢查（[`karyl-login.md`](karyl-login.md) 第 3 節） | M5 |
 | `GET /healthz` | 健康檢查（已經存在） | M0 |
-| 其他 `GET` | 正式環境由 server 回傳打包好的 SPA：`/assets/*` 是靜態檔，其他路徑回 `index.html`（補充；開發時由 Vite 處理） | M1a |
+| 其他 `GET` | 正式環境由 server 回傳打包好的 SPA：`/assets/*` 是靜態檔，其他路徑回 `index.html`（補充；開發時由 Vite 處理）。plugin 模式下 `index.html` 的 `<base href>` 換成 bot 送出頁面的路徑（[`karyl-login.md`](karyl-login.md) 第 6 節） | M1a |
 
 ## 3. API 大綱
 
@@ -59,7 +60,7 @@
 | 方法與路徑 | 說明 |
 |---|---|
 | `POST /api/auth/login` | `{ username, password }` → 204，設定 session cookie。錯誤：401 `invalid_credentials`：帳號名稱不存在、密碼錯誤、帳號已停用都是這一個，不透露是哪一種（#5）；429 `rate_limited`，帶 `Retry-After` |
-| `POST /api/auth/logout` | 刪除目前的 session，關閉這個 session 的 `/collab` 連線 |
+| `POST /api/auth/logout` | 刪除目前的 session（cookie 的，或 `Authorization: Bearer` 指的那一個），關閉這個 session 的 `/collab` 連線 |
 | `POST /api/auth/logout-all` | 刪除這個帳號所有的 session（包含目前這一個，並清掉 cookie），關閉它的所有連線 → 204 |
 | `GET /api/me` | `{ accountId, username, displayName, isAdmin, mustChangePassword }`；沒有 session 時 401。**補充**（#7）：`mustChangePassword` 說的是這個 session 要不要先改密碼：帳號的 `must_change_password` 為真，而且這個 session 是用密碼登入的；karyl-chan 登入的 session 一律是 false |
 | `PATCH /api/me` | `{ displayName }` → 改完之後的帳號，形狀同 `GET /api/me`（補充，#7） |
@@ -69,14 +70,14 @@
 
 | 方法與路徑 | 說明 |
 |---|---|
-| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式。**補充**（#8）：`{ accounts: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`isAdmin`、`disabled`、`identities: [{ id, provider }]`，依帳號名稱排序 |
+| `GET /api/admin/accounts` | 所有帳號：帳號名稱、顯示名稱、是否 admin、是否停用、綁定的登入方式。**補充**（#8）：`{ accounts: [...] }`，每一筆是 `accountId`、`username`、`displayName`、`isAdmin`、`disabled`、`identities: [{ id, provider }]`，依帳號名稱排序。karyl-chan 那一筆另外帶 `subject`（Discord id，#72） |
 | `POST /api/admin/accounts` | `{ username, displayName, password }` → 201，回建立的帳號（形狀同列表的一筆，補充，#8）；帳號名稱重複時 409 `username_taken`。新帳號一律不是 admin、`must_change_password` 為真 |
 | `POST /api/admin/accounts/:id/reset-password` | `{ password }` → 204；`must_change_password` 設為真，刪除該帳號的所有 session、關閉連線 |
 | `POST /api/admin/accounts/:id/disable`、`/enable` | → 204。停用時刪除 session、關閉連線；不能停用自己（409 `cannot_disable_self`）。**補充**（#8）：已經停用的再停用、啟用中的再啟用都回 204，不改變什麼 |
 | `GET /api/admin/orphaned-scores` | Owner 已停用的團譜：標題、Owner、啟用中的成員 |
 | `POST /api/admin/scores/:id/transfer` | `{ accountId }`：只允許「Owner 已停用」且接收者是啟用中的現有成員 |
-| `POST /api/admin/accounts/:id/identities` | M5：`{ provider: "karyl-chan", subject }`；同一個 `subject` 已綁到別的帳號時 409 `identity_taken` |
-| `DELETE /api/admin/accounts/:id/identities/:identityId` | M5：解除綁定（不能解除密碼那一筆） |
+| `POST /api/admin/accounts/:id/identities` | M5：`{ provider: "karyl-chan", subject }`，`subject` 是 17 到 20 位數字的 Discord id → 201，回綁定之後的帳號（形狀同列表的一筆）。同一個 `subject` 已綁到別的帳號，或這個帳號已經綁了一個時 409 `identity_taken`；沒有這個帳號 404 |
+| `DELETE /api/admin/accounts/:id/identities/:identityId` | M5：解除綁定 → 204，並結束這個帳號用 karyl-chan 登入的 session（[`karyl-login.md`](karyl-login.md) 第 4 節）。密碼那一筆不能解除（400 `invalid_request`）；不是這個帳號的、或沒有這一筆 404 |
 
 - **補充**（#16）：`GET /api/admin/orphaned-scores` 回 `{ scores: [...] }`，每一筆是 `id`、`title`、`owner: { accountId, username, displayName }`、`members: [{ accountId, username, displayName, role }]`（Owner 以外、啟用中的成員，依加入的先後），依 Owner 的帳號名稱、再依標題排序；沒有啟用中成員的團譜也列出（`members` 是空陣列），只是不能轉移。已刪除的團譜不列出。形狀在 contracts 的 `orphanedScoreList`。
 - **補充**（#16）：`POST /api/admin/scores/:id/transfer` 成功回 204。團譜不存在、已刪除、`:id` 不是 UUID、或 Owner 沒有停用時一律 404 `not_found`（對 admin 而言，Owner 啟用中的團譜和不存在一樣，不透露它存在），這個檢查在 body 驗證之前；之後與 Owner 自己的轉移相同：對方不是成員 404 `not_found`，對方是 Owner 或停用的帳號、body 不合法 400 `invalid_request`。走 `members.ts` 的 `changeMembers`（`{ by: "admin" }`）與共用的 `handOver`：鎖住團譜列之後再確認一次 Owner 已停用（Owner 的帳號列以 `FOR SHARE` 鎖住，同時被啟用的話要等轉移結束），接收者的帳號列同樣 `FOR SHARE`。交易完成後以 `ResetConnection` 關閉原 Owner 與新 Owner 對這份團譜的連線。
