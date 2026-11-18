@@ -7,6 +7,7 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  DRUM_PIECES,
   durationStep,
   DYNAMICS,
   dynamicCycle,
@@ -29,7 +30,6 @@ import {
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { DRUM_PIECES } from "../src/drums";
 import { beatIdOf, beatOf, type Projection, projectScore, replaceBars, restsFilling } from "../src/projection";
 
 const settings = new alphaTab.Settings();

@@ -1,7 +1,7 @@
 // The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
-import { ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
+import { type DrumPieceName, ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
@@ -37,6 +37,7 @@ export type SessionEffect =
   | "undo"
   | "redo"
   | "fret"
+  | "drum"
   | "tie"
   | "slideOut"
   | "slideIn"
@@ -100,8 +101,14 @@ interface SessionKeys extends BindingKeys {
   repeat?: true;
 }
 
-/** A key the session handles: the shell then calls `preventDefault`. A digit names the fret it writes. */
-export type SessionBinding = (SessionKeys & { effect: "fret"; fret: number }) | (SessionKeys & { effect: Exclude<SessionEffect, "fret">; fret?: undefined });
+/**
+ * A key the session handles: the shell then calls `preventDefault`. A digit names the fret it
+ * writes on a fretted part; a drum piece's key names the piece it turns on and off.
+ */
+export type SessionBinding =
+  | (SessionKeys & { effect: "fret"; fret: number; piece?: undefined })
+  | (SessionKeys & { effect: "drum"; piece: DrumPieceName; fret?: undefined })
+  | (SessionKeys & { effect: Exclude<SessionEffect, "fret" | "drum">; fret?: undefined; piece?: undefined });
 
 /** A key left to the browser: it is not `preventDefault`-ed, so that the browser fires its event. */
 export interface NativeBinding extends BindingKeys {
@@ -109,6 +116,7 @@ export interface NativeBinding extends BindingKeys {
   native: true;
   page?: undefined;
   fret?: undefined;
+  piece?: undefined;
 }
 
 /** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */
@@ -117,6 +125,7 @@ export interface PageBinding extends BindingKeys {
   native?: undefined;
   page: true;
   fret?: undefined;
+  piece?: undefined;
 }
 
 /** A key of a text box of the score: the box does what it is for (`textEntryEffectOf`). */
@@ -126,6 +135,7 @@ export interface TextEntryBinding extends Omit<BindingKeys, "context"> {
   native?: undefined;
   page?: undefined;
   fret?: undefined;
+  piece?: undefined;
 }
 
 export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding;
@@ -141,6 +151,31 @@ const ZOOM_KEYS = ["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract
 
 /** The same keys on both platforms. */
 const both = (...keys: string[]): Record<KeyPlatform, readonly string[]> => ({ other: keys, mac: keys });
+
+/**
+ * Section 4.2: the key of each of the 18 drum pieces, without a modifier; the toms are on the
+ * digits 1 to 4, of the row of digits and of the numeric keypad.
+ */
+const DRUM_KEYS: Record<DrumPieceName, readonly string[]> = {
+  kick: ["KeyK"],
+  snare: ["KeyS"],
+  sideStick: ["KeyD"],
+  rimShot: ["KeyF"],
+  hiHatClosed: ["KeyH"],
+  hiHatHalf: ["KeyJ"],
+  hiHatOpen: ["KeyO"],
+  hiHatPedal: ["KeyP"],
+  tomHigh: ["Digit1", "Numpad1"],
+  tomMid: ["Digit2", "Numpad2"],
+  tomLow: ["Digit3", "Numpad3"],
+  tomFloor: ["Digit4", "Numpad4"],
+  crash: ["KeyC"],
+  ride: ["KeyR"],
+  rideBell: ["KeyB"],
+  china: ["KeyN"],
+  splash: ["KeyM"],
+  cowbell: ["KeyW"],
+};
 
 /** Section 3: the letter, with Shift, of each technique a key turns on and off on a note of a fretted part. */
 const TECHNIQUE_KEYS: Record<OnOffTechnique, string> = {
@@ -231,6 +266,11 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
   }),
+  // Section 4.2: a drum piece's key turns it on and off at the cursor.
+  ...(Object.entries(DRUM_KEYS) as [DrumPieceName, readonly string[]][]).map(([piece, keys]): SessionBinding => ({ effect: "drum", piece, context: "percussion", keys, keymap: both(...keys) })),
+  // Section 3: ghost and accent on the pieces of the cursor's line (`noteKeysAt`).
+  { effect: "ghost", context: "percussion", keys: ["Shift+KeyG"], keymap: both("Shift+KeyG") },
+  { effect: "accent", context: "percussion", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
   // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
