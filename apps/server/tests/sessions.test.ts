@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import type { SessionsEnded } from "../src/sessions";
-import { COOKIE, freshDatabase, freshRedis, ORIGIN, sessionOf, testConfig, whoAmI } from "./support";
+import { COOKIE, freshDatabase, freshRedis, isActiveSession, ORIGIN, sessionOf, testConfig } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -40,9 +40,7 @@ afterAll(async () => {
 });
 
 
-async function valid(session: string): Promise<boolean> {
-  return (await whoAmI(app, session)).statusCode === 200;
-}
+const valid = (session: string) => isActiveSession(app, session);
 
 test("ending an account's sessions ends every one of them, keeps other accounts', and tells every listener", async () => {
   const [annaHere, annaThere, ben] = [await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "anna", PASSWORD), await sessionOf(app, "ben", PASSWORD)];

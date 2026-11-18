@@ -11,6 +11,7 @@ import * as decoding from "lib0/decoding";
 import type { Sequelize } from "sequelize";
 import * as Y from "yjs";
 
+import { createAccount } from "../src/accounts";
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
 import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
@@ -136,6 +137,23 @@ export function sessionCookie(response: { cookies: Array<{ name: string; value: 
 /** Who the session with this id belongs to, as `GET /api/me` answers. */
 export function whoAmI(app: FastifyInstance, sessionId: string, name = COOKIE) {
   return app.inject({ method: "GET", url: "/api/me", cookies: { [name]: sessionId } });
+}
+
+/** Whether the session is still one: `GET /api/me` answers it. */
+export async function isActiveSession(app: FastifyInstance, sessionId: string): Promise<boolean> {
+  return (await whoAmI(app, sessionId)).statusCode === 200;
+}
+
+/** A call to the API from our own origin, with this session's cookie, or with none for null. */
+export function apiCall(app: FastifyInstance, method: "GET" | "POST" | "PATCH" | "DELETE", url: string, session: string | null, payload?: object) {
+  return app.inject({ method, url, headers: { origin: ORIGIN }, ...(session === null ? {} : { cookies: { [COOKIE]: session } }), ...(payload === undefined ? {} : { payload }) });
+}
+
+/** Accounts that are no admins and need no new password, each named "<username> 的名字"; their ids by username. */
+export async function createMembers(usernames: readonly string[], password: string): Promise<Record<string, string>> {
+  const ids: Record<string, string> = {};
+  for (const username of usernames) ids[username] = (await createAccount({ username, displayName: `${username} 的名字`, password, isAdmin: false, mustChangePassword: false })).id;
+  return ids;
 }
 
 /** A new score made through the API by the account of this session; returns its id. */

@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest
 import { createAccount, setDisabled } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, ScoreMember } from "../src/db/models";
-import { askTicket, closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
+import { apiCall, askTicket, closes, createMembers, createScore, freshDatabase, freshRedis, insync, listen, type OpenScore, openScore, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -25,9 +25,7 @@ beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
   await createAccount({ username: "the-admin", displayName: "管理者", password: PASSWORD, isAdmin: true, mustChangePassword: false });
-  for (const username of ["anna", "ben", "cara", "dan"]) {
-    ids[username] = (await createAccount({ username, displayName: `${username} 的名字`, password: PASSWORD, isAdmin: false, mustChangePassword: false })).id;
-  }
+  Object.assign(ids, await createMembers(["anna", "ben", "cara", "dan"], PASSWORD));
 });
 
 beforeEach(async () => {
@@ -50,9 +48,7 @@ afterAll(async () => {
   await sequelize.close();
 });
 
-function send(method: "GET" | "POST", url: string, session: string, payload?: object) {
-  return app.inject({ method, url, headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, ...(payload === undefined ? {} : { payload }) });
-}
+const send = (method: "GET" | "POST", url: string, session: string, payload?: object) => apiCall(app, method, url, session, payload);
 
 /** A score of Anna's with these other members, in this order; Anna is then disabled unless told otherwise. */
 async function annasScore(members: Record<string, "editor" | "viewer">, { disabled = true, title = "停用者的團譜" } = {}): Promise<string> {

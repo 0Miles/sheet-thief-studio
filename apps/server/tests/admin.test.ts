@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Account } from "../src/db/models";
-import { COOKIE, freshDatabase, freshRedis, login, ORIGIN, sessionOf, testConfig, whoAmI } from "./support";
+import { apiCall, freshDatabase, freshRedis, isActiveSession, login, sessionOf, testConfig, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
 const TEMPORARY = "a temporary password";
@@ -48,15 +48,11 @@ async function member(): Promise<{ id: string; username: string }> {
   return { id, username };
 }
 
-function send(method: "GET" | "POST", url: string, session: string, payload?: object) {
-  return app.inject({ method, url, headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, payload });
-}
+const send = (method: "GET" | "POST", url: string, session: string, payload?: object) => apiCall(app, method, url, session, payload);
 
 const create = (payload: object, session = admin.session) => send("POST", "/api/admin/accounts", session, payload);
 
-async function valid(session: string): Promise<boolean> {
-  return (await whoAmI(app, session)).statusCode === 200;
-}
+const valid = (session: string) => isActiveSession(app, session);
 
 test("an admin makes an account, which logs in with the temporary password and must change it", async () => {
   const response = await create({ username: "new_one-1", displayName: "  新來的  ", password: TEMPORARY });

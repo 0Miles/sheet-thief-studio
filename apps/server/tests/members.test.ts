@@ -8,10 +8,10 @@ import type { Redis } from "ioredis";
 import type { Sequelize } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "vitest";
 
-import { createAccount, setDisabled } from "../src/accounts";
+import { setDisabled } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { ScoreMember } from "../src/db/models";
-import { askTicket, closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
+import { apiCall, askTicket, closes, COOKIE, createMembers, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -25,9 +25,7 @@ const ids: Record<string, string> = {};
 beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
-  for (const username of ["anna", "ben", "cara", "dan", "eve"]) {
-    ids[username] = (await createAccount({ username, displayName: `${username} 的名字`, password: PASSWORD, isAdmin: false, mustChangePassword: false })).id;
-  }
+  Object.assign(ids, await createMembers(["anna", "ben", "cara", "dan", "eve"], PASSWORD));
 });
 
 beforeEach(async () => {
@@ -54,13 +52,7 @@ async function startApp(): Promise<{ app: FastifyInstance; url: string }> {
 
 /** A call of the API as the settings page makes it, on a path under `/api/scores/`. */
 function call(app: FastifyInstance, method: "GET" | "POST" | "PATCH" | "DELETE", path: string, session: string | null, payload?: object) {
-  return app.inject({
-    method,
-    url: `/api/scores/${path}`,
-    headers: { origin: ORIGIN },
-    ...(session === null ? {} : { cookies: { [COOKIE]: session } }),
-    ...(payload === undefined ? {} : { payload }),
-  });
+  return apiCall(app, method, `/api/scores/${path}`, session, payload);
 }
 
 /** A score of Anna's with her session, and a session of each account given a role in it. */

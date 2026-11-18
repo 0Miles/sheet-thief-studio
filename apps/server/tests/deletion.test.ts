@@ -12,13 +12,12 @@ import { QueryTypes, type Sequelize } from "sequelize";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { FILL_DEBOUNCE_MS, STORE_MAX_DEBOUNCE_MS } from "../src/collab";
 import { Score, ScoreMember, Version } from "../src/db/models";
 import { PURGE_INTERVAL_MS, purgeDeletedScores } from "../src/deletion";
 import { createVersion, VERSION_INTERVAL_MS } from "../src/versions";
-import { askTicket, COOKIE, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
+import { apiCall, askTicket, COOKIE, createMembers, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -30,9 +29,7 @@ let opened: OpenScore[] = [];
 beforeAll(async () => {
   sequelize = await freshDatabase();
   redis = await freshRedis();
-  for (const username of ["anna", "ben", "cara"]) {
-    await createAccount({ username, displayName: `${username} 的名字`, password: PASSWORD, isAdmin: false, mustChangePassword: false });
-  }
+  await createMembers(["anna", "ben", "cara"], PASSWORD);
 });
 
 beforeEach(async () => {
@@ -63,7 +60,7 @@ async function startApp(): Promise<{ app: FastifyInstance; url: string }> {
 
 /** A call of the API as the pages make it, on a path under `/api/`. */
 function call(app: FastifyInstance, method: "GET" | "POST" | "DELETE", path: string, session: string | null) {
-  return app.inject({ method, url: `/api/${path}`, headers: { origin: ORIGIN }, ...(session === null ? {} : { cookies: { [COOKIE]: session } }) });
+  return apiCall(app, method, `/api/${path}`, session);
 }
 
 /** A score of Anna, Ben its Editor, Cara no member, with a session of each. */

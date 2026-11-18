@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Account } from "../src/db/models";
-import { COOKIE, freshDatabase, freshRedis, login, ORIGIN, sessionCookie, sessionOf, testConfig, whoAmI } from "./support";
+import { apiCall, freshDatabase, freshRedis, isActiveSession, login, sessionCookie, sessionOf, testConfig, whoAmI } from "./support";
 
 const TEMPORARY = "a temporary password";
 const PASSWORD = "a password long enough";
@@ -46,15 +46,11 @@ async function account(mustChangePassword: boolean): Promise<{ id: string; usern
   return { id, username, password };
 }
 
-function send(method: "GET" | "POST" | "PATCH", url: string, session: string, payload?: object) {
-  return app.inject({ method, url, headers: { origin: ORIGIN }, cookies: { [COOKIE]: session }, payload });
-}
+const send = (method: "GET" | "POST" | "PATCH", url: string, session: string, payload?: object) => apiCall(app, method, url, session, payload);
 
 const changePassword = (session: string, payload: object) => send("POST", "/api/me/password", session, payload);
 
-async function valid(session: string): Promise<boolean> {
-  return (await whoAmI(app, session)).statusCode === 200;
-}
+const valid = (session: string) => isActiveSession(app, session);
 
 test("an account that must change its password is refused everything else with 403 password_change_required, until it has", async () => {
   const member = await account(true);
