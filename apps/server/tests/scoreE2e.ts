@@ -8,7 +8,7 @@
 import { text } from "node:stream/consumers";
 
 import { createScoreRequest, type Role } from "@studio/contracts";
-import { addPart, metaOf, type PartKind, SCHEMA_VERSION } from "@studio/score-model";
+import { addPart, metaOf, type NewPart, SCHEMA_VERSION } from "@studio/score-model";
 import * as Y from "yjs";
 
 import { connectDatabase } from "../src/db/database";
@@ -24,8 +24,8 @@ interface ScoreFixture {
   owner: string;
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
-  /** Parts after the first one every new score has. */
-  parts?: { name: string; kind: PartKind }[];
+  /** Parts after the first one every new score has, with their kind's staves unless told. */
+  parts?: Pick<NewPart, "name" | "kind" | "staves">[];
   /** The whole content instead, as a Yjs update in base64: `bars` and `parts` are then left out. */
   state?: string;
   /** The schema version the score says it is of, in its document and its row: the current one when left out. */
