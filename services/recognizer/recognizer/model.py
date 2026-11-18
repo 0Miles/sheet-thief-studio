@@ -1,4 +1,4 @@
-"""Intermediate data model shared by extractors, rhythm engine and GP5 writer.
+"""Intermediate data model shared by extractors, rhythm engine and converter.
 
 String numbering follows Guitar Pro: string 1 is the highest-pitched string
 (top line of a tablature staff).

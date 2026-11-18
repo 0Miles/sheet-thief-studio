@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from statistics import median
 
-MAX_FRET = 29  # highest fret Guitar Pro 5 accepts on a track
+MAX_FRET = 29  # highest fret read: what Guitar Pro 5, Sheet Thief's output, accepts on a track
 
 
 def cluster_positions(xs: list[float], tolerance: float) -> list[list[float]]:

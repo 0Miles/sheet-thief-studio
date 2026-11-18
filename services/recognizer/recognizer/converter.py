@@ -379,7 +379,7 @@ def _apply_dynamics(systems: list[TabSystem]) -> None:
                 if i == index and x0 - char_width <= x <= x1:
                     t = min(max((done + x - x0) / total, 0.0), 1.0)
                     velocity = ramp.start + (ramp.end - ramp.start) * t
-                    # GP5 keeps 8 levels (ppp … fff, 16 apart): the nearest one, not the one below.
+                    # 8 levels (ppp … fff, 16 apart, as Guitar Pro has them): the nearest one, not the one below.
                     return MIN_VELOCITY + 16 * round((velocity - MIN_VELOCITY) / 16)
                 done += x1 - x0
         return None
@@ -439,10 +439,10 @@ _LYRIC_SYNTAX = re.compile(r"[\s\[\]+\-]")  # characters with a meaning in Guita
 def _lyrics_text(
     syllables: list[tuple[int, float, str, bool]], score: Score
 ) -> tuple[tuple[int, str] | None, list[int]]:
-    """One Guitar Pro lyric line (start bar, text) putting each syllable on the note played where
-    it is printed, and the bars whose syllables had to be left out (the track rests there, and a
-    syllable can only be shown on a played note; piling them onto the next note would misplace
-    all the following text).
+    """One lyric line in Guitar Pro's form (start bar, text), as Sheet Thief wrote it into the GP5,
+    putting each syllable on the note played where it is printed, and the bars whose syllables had
+    to be left out (the track rests there, and a syllable can only be shown on a played note;
+    piling them onto the next note would misplace all the following text).
 
     Guitar Pro (and alphaTab) give the next chunk of text to each non-rest beat of the lyrics
     track, from the start bar on: an extra space is an empty chunk that skips a beat, "+" keeps
@@ -519,7 +519,7 @@ def _vocal_score(syllables: list[tuple[int, float, str, bool]], meters: list[tup
 
     Guitar Pro keeps lyrics on the played notes of one track, so no guitar part can carry all of
     them (the parts rest while the singer sings). This track gives every syllable its own note in
-    its place, so the whole text reaches the GP5 (and tools that read it, e.g. for Rocksmith vocals).
+    its place, so the whole text has a note to go on (Sheet Thief wrote it into the GP5).
     ``meters``: the time signature of each bar of the song.
     """
     by_bar: dict[int, list[float]] = {}
@@ -743,8 +743,8 @@ def _fit(beats: list[ScoreBeat], units: int) -> list[ScoreBeat]:
 
 
 def _unify_bars(scores: list[Score], signature: tuple[int, int]) -> list[tuple[int, int]]:
-    """Give all tracks the same time signature and repeat signs in each bar (a GP5 file stores
-    them once per bar for every track).
+    """Give all tracks the same time signature and repeat signs in each bar (Sheet Thief's GP5
+    stored them once per bar for every track).
 
     A bar takes the time signature read by the first track that has it (bars filled in with rests
     keep the one in force); repeat signs and voltas found in any track apply to all. Returns the
@@ -773,8 +773,8 @@ def _unify_bars(scores: list[Score], signature: tuple[int, int]) -> list[tuple[i
 
 
 def _tidy_navigation(scores: list[Score], tempo: int) -> list[str]:
-    """Keep only real tempo changes, and each navigation mark once (a GP5 file stores each of
-    "Segno", "Coda", "D.S. al Coda"… for one bar only). Returns warnings for marks left out."""
+    """Keep only real tempo changes, and each navigation mark once (Sheet Thief's GP5 stored each
+    of "Segno", "Coda", "D.S. al Coda"… for one bar only). Returns warnings for marks left out."""
     current = tempo
     seen: set[str] = set()
     dropped: list[str] = []
@@ -1064,7 +1064,7 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
     meters = [measure.time_signature or (numerator, denominator) for measure in scores[0].measures]
 
     lyric_candidates = [i for i, r in enumerate(track_reports) if r["_lyrics"]]
-    lyrics_line: tuple[int, str] | None = None  # (first bar, text) on the track ``lyrics_track_name``
+    lyrics: dict | None = None  # the track the lyrics line goes on, when there is one
     timed_lyrics: list[list] = []
     lyric_warnings: list[str] = []
     lyrics_track_name = ""
@@ -1081,7 +1081,7 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
             return sum(bar in played for bar, *_ in syllables), track_reports[index]["notes"]
 
         if len(scores) < MAX_TRACKS:
-            # A silent "Letra (voz)" track with a note per syllable: the whole text fits in the GP5.
+            # A silent "Letra (voz)" track with a note per syllable: every syllable has a note.
             scores.append(_vocal_score(syllables, meters))
             _unify_bars(scores, (numerator, denominator))  # the repeat signs
             chosen = len(scores) - 1
@@ -1091,7 +1091,7 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
             lyrics_track_name = track_reports[chosen]["name"]
         line, dropped = _lyrics_text(syllables, scores[chosen])
         if line:
-            lyrics_line = line
+            lyrics = {"track": lyrics_track_name}
         if dropped:
             lyric_warnings.append(
                 tr(
@@ -1162,7 +1162,7 @@ def convert_many(pdfs: list[bytes], options: ConversionOptions) -> ConversionRes
         "measures": total_measures,
         "notes": sum(r["notes"] for r in track_reports),
         "sections": sections,
-        "lyrics": {"track": lyrics_track_name, "lines": 1} if lyrics_line else None,
+        "lyrics": lyrics,
         "timed_lyrics": timed_lyrics,
         "warnings": warnings,
         "tracks": track_reports,

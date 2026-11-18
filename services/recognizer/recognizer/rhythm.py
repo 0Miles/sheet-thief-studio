@@ -7,7 +7,7 @@ Tablature rarely encodes rhythm explicitly, so two strategies are offered:
   time signature (useful for tabs without bar lines).
 
 All durations are expressed in 32nd-note units. Every produced measure sums
-exactly to the time-signature length, so the GP5 file never has overfull bars.
+exactly to the time-signature length, so no bar comes out overfull.
 """
 
 from __future__ import annotations

@@ -20,7 +20,7 @@ TUNINGS: dict[str, tuple[int, ...]] = {
     "bass_5": (43, 38, 33, 28, 23),
 }
 
-# Guitar Pro 5 stores at most 7 strings per track.
+# At most 7 strings (converter.MAX_STRINGS: what Sheet Thief's GP5 could store).
 DEFAULT_BY_STRING_COUNT: dict[int, str] = {4: "bass_4", 5: "bass_5", 6: "standard", 7: "standard_7"}
 
 _PITCH_CLASS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}

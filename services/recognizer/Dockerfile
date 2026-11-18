@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The recognition service (docs/spec/recognizer.md, ADR 0006). Targets: test (the copied pytest
-# suite, run by the CI) and runtime, the last, which Compose builds by default.
+# suite, run by the CI) and runtime, the last: the target Compose will build (#61).
 
 FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \

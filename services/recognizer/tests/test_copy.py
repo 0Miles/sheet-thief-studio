@@ -28,9 +28,7 @@ def _imports(module: Path) -> list[tuple[int, str]]:
             if node.level:
                 base = list(package[: len(package) - node.level + 1])
                 if node.module:
-                    base += node.module.split(".")
-                if node.module:
-                    found.append((node.lineno, ".".join(base)))
+                    found.append((node.lineno, ".".join([*base, *node.module.split(".")])))
                 else:  # from . import x
                     found += [(node.lineno, ".".join([*base, alias.name])) for alias in node.names]
             elif node.module:

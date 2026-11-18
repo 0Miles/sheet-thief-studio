@@ -3,7 +3,7 @@
 PDF parsing handles untrusted input; a crafted file could trigger excessive
 CPU or memory use inside pdfminer. Isolating each job lets us enforce a hard
 wall-clock timeout (the child is killed) and an address-space limit without
-affecting the web server process.
+affecting the service's own process.
 """
 
 from __future__ import annotations

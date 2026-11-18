@@ -65,7 +65,7 @@ jobs:
 
   # The recognition service, the repository's only Python: its pytest suite in the Docker image that
   # has the OCR packages, where a test marked "ocr" fails instead of skipping when they are missing
-  # (docs/spec/recognizer.md, ADR 0006). Then the image Compose builds (its last target).
+  # (docs/spec/recognizer.md, ADR 0006). Then its runtime target, the one Compose will build.
   recognizer:
     runs-on: ubuntu-latest
     timeout-minutes: 20
