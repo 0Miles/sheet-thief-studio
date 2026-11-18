@@ -1,7 +1,7 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
 import { accountLimits, type ClosedNotice, DELETED_SCORE_DAYS, type ErrorCode, versionLimits, type VersionReason } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import { type DropHint, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PasteRefusal, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
 
 import type { ReadOnlyReason } from "./access";
 import type { WhilePlaying } from "./mixer";
@@ -15,6 +15,8 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 // Texts said the same in more than one place.
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
+const TOO_MANY_BARS = `小節最多 ${MAX_BARS} 個`;
+const NOTHING_TO_PASTE = "剪貼簿裡沒有可以貼上的內容";
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
 const VERSIONS = "版本記錄";
 const BEFORE_RESTORE = "還原前";
@@ -109,11 +111,29 @@ export const strings = {
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",
-      tooManyBars: `小節最多 ${MAX_BARS} 個`,
+      tooManyBars: TOO_MANY_BARS,
       lastBar: "至少要留下一個小節",
       tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
     } satisfies Record<SessionHint, string>,
+    // What a paste tells the member (docs/spec/phrases.md, section 2; docs/spec/commands.md, 5.6
+    // and 5.7): why nothing was pasted, or what was done besides (several are said together).
+    clipboard: {
+      refused: {
+        nothing: NOTHING_TO_PASTE,
+        // Not a fragment once the session checks it again: as good as none.
+        invalid: NOTHING_TO_PASTE,
+        otherKind: "只能貼進同一種聲部",
+        tooManyStrings: "貼上的內容用到這個聲部沒有的弦",
+        otherStaves: "貼上的內容用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+      } satisfies Record<Exclude<PasteRefusal, "gone">, string>,
+      hints: {
+        tuningDiffers: "調弦不同，格號照原樣放入",
+        barsAppended: "小節不夠，已在譜尾加上小節",
+      } satisfies Record<DropHint, string>,
+      joiner: "；",
+    },
     // A title read as empty (co-editing can empty it; docs/spec/schema.md, section 2).
     untitled: "未命名",
     // The title and the artist, changed in the title bar of the editable view (docs/spec/commands.md, 7.3).

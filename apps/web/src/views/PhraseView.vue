@@ -32,6 +32,7 @@ import * as Y from "yjs";
 
 import { ApiError, get, refusal } from "../api";
 import { barPanelOf } from "../barPanel";
+import { listenToClipboard } from "../clipboard";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
@@ -365,6 +366,12 @@ function warnUnsaved(event: BeforeUnloadEvent): void {
   event.preventDefault();
 }
 window.addEventListener("beforeunload", warnUnsaved);
+// Copy, cut and paste while the phrase has the keyboard, as on a score: bars copied from a score go in here (docs/spec/phrases.md, section 2).
+const stopClipboard = listenToClipboard({
+  scroller: () => scroller.value,
+  session: () => session,
+  tell: (said) => (notice.value = said),
+});
 
 onMounted(async () => {
   let details: PhraseDetails;
@@ -413,6 +420,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", warnUnsaved);
+  stopClipboard();
   hideFromTests();
   saver?.destroy();
   sound?.destroy();
