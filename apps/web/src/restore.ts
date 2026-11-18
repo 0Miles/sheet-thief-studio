@@ -5,22 +5,26 @@
 import { createdVersion, scoreSchema } from "@studio/contracts";
 import type { ScoreJSON } from "@studio/score-model";
 
+import type { ReadOnlyReason } from "./access";
 import { get, postFor } from "./api";
 
 /** The score this tab has open, which a version is written over. */
 export interface RestoreTarget {
   /** The score is open here, in step with the server, and this member may change it here. */
   canRestore(): boolean;
+  /** Why nobody may change the score here (`lockReadOnly`, #109); null while they may. */
+  lockedBecause(): ReadOnlyReason | null;
   /** Write the version over the score, one undo step where the member types; false when nothing was written. */
   replace(version: ScoreJSON): boolean;
 }
 
 /**
  * How a restore went, when the server answered every call: `restored`; `notOpen`, nothing asked of
- * the server, while the score is not open here yet or may not be changed here; `notWritten`, the
- * version made before kept, when the tab could not write the version over the score.
+ * the server, while the score is not open here yet or may not be changed here; `locked`, nothing
+ * asked either, the score locked here, saying why; `notWritten`, the version made before kept,
+ * when the tab could not write the version over the score.
  */
-export type RestoreResult = "restored" | "notOpen" | "notWritten";
+export type RestoreResult = "restored" | "notOpen" | "notWritten" | { locked: ReadOnlyReason };
 
 /**
  * Restore the version of the score: the version before it made first, then the version read
@@ -28,6 +32,8 @@ export type RestoreResult = "restored" | "notOpen" | "notWritten";
  * `ApiError` of the call that failed; the version is not written then.
  */
 export async function restoreVersion(scoreId: string, versionId: string, target: RestoreTarget): Promise<RestoreResult> {
+  const locked = target.lockedBecause();
+  if (locked !== null) return { locked };
   if (!target.canRestore()) return "notOpen";
   const path = `/api/scores/${scoreId}/versions`;
   // Without a name: the version before a restore, none made when the latest holds the same.

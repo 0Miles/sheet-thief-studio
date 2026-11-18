@@ -201,7 +201,8 @@ async function restore(): Promise<void> {
       await router.push({ name: "score", params: { id: props.id } });
       return;
     }
-    error.value = text.restore[result];
+    // A score locked on its page says why there, rather than "still loading".
+    error.value = typeof result === "string" ? text.restore[result] : strings.score.readOnly[result.locked];
     // The version made before, if any, is in the list now.
     if (result === "notWritten") await loadList();
   } catch (failure) {

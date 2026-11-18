@@ -20,13 +20,11 @@ import {
   canAddPart,
   type Cursor,
   cursorAt,
-  DEFAULT_KEY_SIG,
   docToJson,
   type Flag,
   flagsOf,
   type FlagStop,
   type KeySignature,
-  keySigAt,
   MAX_BEAT_TEXT,
   metaOf,
   nextFlag,
@@ -39,17 +37,16 @@ import {
   type ScoreChange,
   type ScoreJSON,
   stillAt,
-  tempoAt,
   type TimeSignature,
-  voltaRepeatTimes,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PartMix, type PlayerState, playerUsable, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
+import { createAlphaTabEngine, type PartMix, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
-import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal } from "../access";
+import { afterRoleChange, type Closing, openedView, ownChangesOf, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal, whyRefused } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
+import { barPanelOf } from "../barPanel";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
@@ -62,19 +59,24 @@ import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
-import { stopWhenClosed } from "../notices";
+import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
-import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
 import type { RestoreTarget } from "../restore";
+import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
 
-/** One of the two: a member's score id, or a guest's link token; and what to say first, when the score was opened anew. */
-const props = defineProps<{ id?: string; token?: string; notice?: string }>();
+/**
+ * One of the two: a member's score id, or a guest's link token; and what to say first, when the
+ * score was opened anew. `readOnly`: why it opens read-only from the start, locked on this page
+ * before it was opened anew.
+ */
+const props = defineProps<{ id?: string; token?: string; notice?: string; readOnly?: ReadOnlyReason }>();
 /** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
 const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
@@ -164,7 +166,7 @@ const online = ref(navigator.onLine);
 /** What the indicator shows (`data-sync`): offline throughout, while the browser is, and not only between the provider's attempts. */
 const shownSync = computed(() => (online.value ? sync.value : "offline"));
 /** Why nobody may change the score here, whatever their role; null while they may (access.ts). */
-let readOnlyBecause: ReadOnlyReason | null = null;
+let readOnlyBecause: ReadOnlyReason | null = props.readOnly ?? null;
 const view = ref<View | null>(null);
 /** One of the two edit views: the cursor and the keys of the score are there. */
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
@@ -222,27 +224,35 @@ const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 const reserved = shallowRef<Rect[]>([]);
 /** The box the text of a beat is typed in, while Enter has it open: what it asked for and where it is. */
 const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
-const playerState = ref<PlayerState>("loading");
-/**
- * Not playing and not paused: never started, stopped, or played to the end. Never in the Read
- * view, which always shows where playback is (where a click sent it, the start after a stop).
- */
-const stopped = ref(true);
-/** The bar playback is in, counted from 1, as the toolbar shows it; null while stopped. */
-const playingBar = ref<number | null>(null);
-/** Where playback is drawn, out of the reserved areas; null while stopped. */
-const playheadRect = shallowRef<Rect | null>(null);
-/** The member paused, and the cursor has not moved since: playing goes on from there. */
-let resumable = false;
-/** Playback is to be kept on screen: from pressing play until the member presses a key or scrolls. */
-let keepInSight = false;
-/**
- * Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the
- * cursor. The Read view follows it whenever it plays (docs/spec/views.md, section 5).
- */
-const isFollowing = () => (keepInSight || reading.value) && playerState.value === "playing";
-/** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
-let ownScrollTop: number | null = null;
+const {
+  playerState,
+  stopped,
+  playingBar,
+  playheadRect,
+  isFollowing,
+  showPlayback,
+  togglePlay,
+  stop,
+  retrySound,
+  cursorMoved,
+  stopFollowing,
+  onScroll,
+  reveal,
+  attach: attachPlayer,
+} = useScorePlayback({
+  scroller,
+  reserved: () => reserved.value,
+  // The edit views play from the start of the cursor's bar (docs/spec/playback.md, section 4); the
+  // Read view from where playback is.
+  startTick: (player) => {
+    if (!editing.value) return null;
+    const at = session?.cursor ?? null;
+    return (at && player.tickOf(at.barId)) ?? 0;
+  },
+  reading: () => reading.value,
+  // Under the versions page: stopped as it went there (`stepAside`), and never scrolled to follow.
+  hidden: () => aside,
+});
 /** The member's settings of every score, kept in this browser (docs/spec/playback.md, section 1). */
 const playback = ref<PlaybackOptions>({ metronome: false, countIn: false, whilePlaying: "a" });
 /** The member's mix and speed of this score, kept in this browser under its id. */
@@ -255,6 +265,8 @@ const behind = ref(false);
 let sound: SoundUpdates | undefined;
 
 const doc = new Y.Doc();
+/** What this tab wrote that the server may not have: said when the score is opened anew without it. */
+const ownChanges = ownChangesOf(doc);
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
@@ -381,38 +393,7 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
 
 
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
-const panel = computed(() => {
-  const json = score.value;
-  const { cursor: at, selection } = presence.value;
-  if (!panelOpen.value || json === null || at === null) return null;
-  const index = json.bars.findIndex((bar) => bar.id === at.barId);
-  const bar = json.bars[index];
-  if (bar === undefined) return null;
-  const numberOf = (barId: string) => json.bars.findIndex((each) => each.id === barId) + 1;
-  const ends = selection === null ? null : selection.kind === "beats" ? [selection.barId, selection.barId] : [selection.anchorBarId, selection.focusBarId];
-  const numbers = ends?.map(numberOf);
-  const range = numbers && numbers.every((number) => number > 0) ? { first: Math.min(...numbers), last: Math.max(...numbers) } : null;
-  // A repeat set here starts on the first bar of the selection and ends on its last (docs/spec/commands.md, section 6).
-  const repeatFirst = json.bars[(range?.first ?? index + 1) - 1];
-  const repeatLast = json.bars[(range?.last ?? index + 1) - 1];
-  return {
-    bar: index + 1,
-    range,
-    timeSig: bar.timeSig,
-    tempo: bar.tempo,
-    tempoInForce: tempoAt(json, bar.id) ?? 0,
-    keySig: bar.keySig,
-    keySigInForce: keySigAt(json, bar.id) ?? DEFAULT_KEY_SIG,
-    section: bar.section,
-    repeatStart: repeatFirst?.repeatStart === true,
-    repeatEnd: repeatLast?.repeatEnd,
-    voltas: bar.voltas ?? [],
-    // Voltas go on every bar of the selection, else on the cursor's.
-    voltaRepeatTimes: voltaRepeatTimes(json, range ? json.bars.slice(range.first - 1, range.last).map((each) => each.id) : [bar.id]),
-    firstBar: index === 0,
-    anacrusis: bar.anacrusis === true,
-  };
-});
+const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
 
 /** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
 function togglePanel(): void {
@@ -576,122 +557,10 @@ function updateOverlay(): void {
   showPlayback(engine.player.position.tick);
 }
 
-/** Room left above playback when the page scrolls to it. */
-const FOLLOW_MARGIN = 40;
-
-/** Show where playback is: the bar in the toolbar, the place on the page, kept on screen while following. */
-function showPlayback(tick: number): void {
-  if (engine === undefined || stopped.value) return;
-  const played = engine.player.barAt(tick);
-  if (played !== null) playingBar.value = played.index + 1;
-  const rect = engine.renderer.boundsAtTick(tick);
-  const placed = rect && clearOf(rect, reserved.value);
-  // Most positions fall on the beat drawn already: the page is not drawn again for them.
-  if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
-  const element = scroller.value;
-  if (!isFollowing() || rect === null || element === undefined) return;
-  const top = element.scrollTop;
-  if (rect.y >= top && rect.y + rect.height <= top + element.clientHeight) return;
-  scrollTo(Math.max(rect.y - FOLLOW_MARGIN, 0));
-}
-
-/**
- * Play from the start of the cursor's bar (docs/spec/playback.md, section 4); after the member
- * paused, from where it was, unless the cursor moved since. The Read view plays from where
- * playback is.
- */
-function play(): void {
-  const player = engine?.player;
-  if (player === undefined || player.state !== "paused") return;
-  if (!resumable && editing.value) {
-    const at = session?.cursor ?? null;
-    player.seek((at && player.tickOf(at.barId)) ?? 0);
-  }
-  resumable = false;
-  stopped.value = false;
-  keepInSight = true;
-  player.play();
-}
-
-function pause(): void {
-  if (engine?.player.state !== "playing") return;
-  resumable = true;
-  engine.player.pause();
-}
-
-/** Nothing plays any more: stopped, or at the end of the score, where the player is back at its start. */
-function showStopped(): void {
-  resumable = false;
-  // The Read view shows playback back at the start.
-  if (reading.value) return;
-  stopped.value = true;
-  playingBar.value = null;
-  playheadRect.value = null;
-}
-
-function stop(): void {
-  if (engine === undefined || !playerUsable(engine.player.state)) return;
-  showStopped();
-  engine.player.stop();
-}
-
-/** Ask again for the sound font that could not be had (docs/spec/playback.md, 4.1). */
-function retrySound(): void {
-  engine?.player.retry();
-}
-
-function togglePlay(): void {
-  if (playerState.value === "playing") pause();
-  else play();
-}
-
 /** A button of the toolbar did its work: the score has the keyboard again. */
 function onToolbar(action: () => void): void {
   action();
   focusScore();
-}
-
-/** The member looks over the score themselves: playback is no longer kept on screen, until they press play. */
-function stopFollowing(): void {
-  keepInSight = false;
-}
-
-/** Scroll the score, as the page: following playback, or showing the cursor. */
-function scrollTo(top: number): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  element.scrollTop = top;
-  // As far as it could go: at the end of the score, less than asked.
-  ownScrollTop = element.scrollTop;
-}
-
-/**
- * A scroll the page did not make is the member's, however they made it: the wheel, a touch, a
- * scroll bar (overlay scroll bars take no room, so a click on them cannot be told apart), keys.
- */
-function onScroll(): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  if (ownScrollTop !== null) {
-    if (Math.abs(element.scrollTop - ownScrollTop) < 1) return;
-    // The score got shorter, or the view taller, than where the page had put it: the browser
-    // brought it back as far as it goes. Not the member.
-    if (element.scrollTop < ownScrollTop && element.scrollTop >= element.scrollHeight - element.clientHeight - 1) {
-      ownScrollTop = element.scrollTop;
-      return;
-    }
-  }
-  stopFollowing();
-}
-
-/** Scroll so that the cursor is on screen, with some room around it. */
-function reveal(): void {
-  const element = scroller.value;
-  const box = cursorRect.value;
-  if (element === undefined || box === null) return;
-  const margin = 80;
-  if (box.y < element.scrollTop + margin) scrollTo(Math.max(box.y - margin, 0));
-  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) scrollTo(box.y + box.height - element.clientHeight + margin);
 }
 
 function draw(change: ScoreChange): void {
@@ -829,12 +698,13 @@ function startEditing(json: ScoreJSON): void {
     keepCursorShown();
     forgetStaleStop();
     placeCursor();
-    resumable = false;
+    cursorMoved();
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
-    if (!isFollowing()) reveal();
+    if (!isFollowing()) reveal(cursorRect.value);
   });
   session.onRefused(() => {
-    notice.value = readOnlyBecause === null ? text.viewerCannotEdit : text.readOnly[readOnlyBecause];
+    const why = whyRefused(readOnlyBecause, mayChange());
+    notice.value = why === "viewer" ? text.viewerCannotEdit : text.readOnly[why];
   });
   session.onHint((hint) => {
     notice.value = text.hints[hint];
@@ -857,7 +727,7 @@ function start(): void {
   }
   // The Read view of an Owner or an Editor (a device that cannot be typed on): a session with no
   // cursor, for a version restored here to be undone and done again by key (docs/spec/collab.md, 8.5).
-  if (mayChange()) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
+  if (mayChange() && readOnlyBecause === null) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
   // Space plays and pauses in the Read view too.
   focusScore();
 }
@@ -911,21 +781,33 @@ function isSynced(): boolean {
 
 function updateSync(): void {
   if (provider === undefined) return;
-  if (isSynced()) sync.value = "synced";
-  else if (sync.value !== "offline") sync.value = "syncing";
+  if (isSynced()) {
+    sync.value = "synced";
+    ownChanges.synced();
+  } else if (sync.value !== "offline") sync.value = "syncing";
 }
 
 /**
  * Nobody may change the score here: a newer schema (docs/spec/schema.md, section 9), or the
- * server's `readOnly` notice (#109 hands its reason here). The edit view opens read-only, saying
- * why; one open for typing already is closed and opened anew, read-only, from the server's document.
+ * server's `readOnly` notice (docs/spec/collab.md, 2.1). The edit view opens read-only, saying
+ * why; one open for typing already is closed and opened anew, read-only from the start (`close`
+ * hands the reason on), from the server's document, saying so when what this tab wrote and the
+ * server may not have is dropped with it. The Read view's session goes: no undo writes in the
+ * document any more. Locked until the page is loaded again.
  */
 function lockReadOnly(reason: ReadOnlyReason): void {
   if (readOnlyBecause !== null) return;
   readOnlyBecause = reason;
   notice.value = text.readOnly[reason];
-  if (view.value === "editable" && session !== undefined) close({ kind: "reopen", notice: text.readOnly[reason] });
-  else if (view.value !== null) view.value = openedView(view.value, reason);
+  if (view.value === "editable" && session !== undefined) {
+    close({ kind: "reopen", notice: ownChanges.pending() ? text.readOnlyDropped(text.readOnly[reason]) : text.readOnly[reason] });
+    return;
+  }
+  if (view.value === "read" && session !== undefined) {
+    session.destroy();
+    session = undefined;
+  }
+  if (view.value !== null) view.value = openedView(view.value, reason);
 }
 
 /** Closed once: the provider goes at once, so that nothing more of this document reaches the server; ScorePage does the rest. */
@@ -947,7 +829,8 @@ function close(closing: Closing): void {
   peers.value = [];
   peerMarks.value = [];
   dropProvider();
-  emit("closed", closing);
+  // A score locked here is opened anew locked: the server's notice may come again only once it has synced.
+  emit("closed", closing.kind === "reopen" && readOnlyBecause !== null ? { ...closing, readOnly: readOnlyBecause } : closing);
 }
 
 /**
@@ -1042,15 +925,7 @@ onMounted(async () => {
     ready.value = true;
     updateOverlay();
   });
-  // A browser that cannot play says so from the start, and never tells a change.
-  playerState.value = engine.player.state;
-  engine.player.onState((state) => {
-    playerState.value = state;
-    // Once the first sound is in, the Read view can show where playback is.
-    if (engine) showPlayback(engine.player.position.tick);
-  });
-  engine.player.onFinished(showStopped);
-  engine.player.onPosition((position) => showPlayback(position.tick));
+  attachPlayer(engine);
   // After the page's own listeners: a drawing is measured once the cursor is drawn on it.
   measurement.watch(engine);
   provider = new HocuspocusProvider({
@@ -1084,6 +959,11 @@ onMounted(async () => {
     },
   });
   stopWhenClosed(provider, closedByServer);
+  // The server takes nothing of this tab's (docs/spec/collab.md, 2.1): an Owner's or an Editor's
+  // score turns read-only, saying why. A Viewer or a guest reads only anyway.
+  lockWhenReadOnly(provider, (reason) => {
+    if (mayChange()) lockReadOnly(reason);
+  });
   // A member's tab is in the presence from now on, in "read" mode with no cursor until the
   // score is open; a guest's provider has no awareness.
   if (provider.awareness !== null) {
@@ -1110,6 +990,7 @@ const restoreTarget: RestoreTarget = {
     if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null || session === undefined) return false;
     return view.value === "editable" || (view.value === "read" && mayChange());
   },
+  lockedBecause: () => (mayChange() ? readOnlyBecause : null),
   replace(version) {
     return restoreTarget.canRestore() && session!.replaceScore(version);
   },

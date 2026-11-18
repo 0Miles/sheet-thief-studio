@@ -4,7 +4,7 @@ import { metaOf } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { afterRoleChange, openedView, readOnlyReasonOf, ticketRefusal } from "../src/access";
+import { afterRoleChange, openedView, ownChangesOf, readOnlyReasonOf, ticketRefusal, whyRefused } from "../src/access";
 import { ApiError } from "../src/api";
 
 /** A document that says it is of this schema version (nothing else of a score in it). */
@@ -52,4 +52,29 @@ test("a ticket refused for the session (401) logs out; for the score (404) leave
   expect(ticketRefusal(new ApiError(429, "rate_limited"))).toBeNull();
   expect(ticketRefusal(new ApiError(500, "internal_error"))).toBeNull();
   expect(ticketRefusal(new TypeError("Failed to fetch"))).toBeNull();
+});
+
+test("a key refused says why: the lock to whoever may change the score, being a Viewer to a Viewer, locked or not", () => {
+  expect(whyRefused("missingMigration", true)).toBe("missingMigration");
+  expect(whyRefused(null, false)).toBe("viewer");
+  // An Editor locked here, then made a Viewer: the score opened anew is still locked.
+  expect(whyRefused("missingMigration", false)).toBe("viewer");
+});
+
+test("what this tab wrote is pending until all is synced; what others wrote is not this tab's", () => {
+  const doc = new Y.Doc();
+  const own = ownChangesOf(doc);
+  expect(own.pending()).toBe(false);
+  // What the server sends: another client's.
+  const theirs = new Y.Doc();
+  metaOf(theirs).set("title", "伺服器上的");
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(theirs));
+  expect(own.pending()).toBe(false);
+  metaOf(doc).set("title", "這裡打的");
+  expect(own.pending()).toBe(true);
+  own.synced();
+  expect(own.pending()).toBe(false);
+  // Typed offline, or before the server's notice came.
+  metaOf(doc).set("title", "離線時打的");
+  expect(own.pending()).toBe(true);
 });
