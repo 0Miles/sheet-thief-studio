@@ -228,6 +228,11 @@ interface Cursor {
 - **貼上小節段**：語意和放置（5.7）相同，是取代；目標是游標所在的聲部與小節，套用 5.7 的所有規則。
 - **貼上拍點段**：插入到游標所在的聲線，插在游標拍點之前，或在附加位置上附加。種類必須相同；fretted 片段用到的弦超過目標聲部的弦數時拒絕。貼上的拍點產生新的 id。游標移到最後一個貼上的拍點。
 - 剪貼簿的格式與實作見 [`phrases.md`](phrases.md)。
+- **補充**（#58）：寫法在 `packages/score-model` 的 `clipboard.ts`（`clipboardText`、`fragmentOfClipboard`、`fragmentOfSelection`）與 `drop.ts` 的 `pasteBeats`（插入的位置同 `insertBeat`，`commands.ts` 的 `placeFor`），測試在 `packages/score-model/tests/clipboard.test.ts`；`EditorSession` 的 `copy()`、`cut()`、`paste(text)`（`packages/score-editor/tests/clipboard.test.ts`）。
+  - 剪下的「清空」就是 `Delete` 對選取做的事（`deleteSelection`）：拍點範圍裡有音的拍點變成休止，範圍內全部已經是休止時刪除這些拍點；小節範圍清空那些小節的所有聲線。複製不改動文件，所以剪下是一筆交易、一個復原步驟；選取和 `Delete` 一樣保留。
+  - 貼上小節段：目標是 `{ partId: 游標的聲部, barId: 游標的小節 }`，走 `EditorSession.drop`（#57），和側欄的放置是同一條路：游標停在原處（拍點被取代時移到那裡最近的位置）。貼上拍點段：只插進讀取讀得到的聲線（`readableVoicesOf`）；fretted 調弦不同時同樣提示「調弦不同」（同 5.7 第 6 點），調弦讀不懂時不檢查弦數（同 5.7 的 host 裁定）。兩者之後選取結束；被拒絕時文件不動、游標與選取不變。
+  - 唯讀（Viewer）：`copy` 照常；`cut`、`paste` 被拒絕，和其他會改動文件的鍵一樣只提示一次「檢視者無法修改」（`onRefused`），不寫入剪貼簿（`Ctrl+X` 不會蓋掉先前複製的內容），文件不動。
+  - 提示：拒絕的原因與 5.7 的 `hints` 依 `strings.ts` 的 `score.clipboard` 顯示（`hints` 和側欄的放置共用同一組文字）；同時有兩個 `hints`（調弦不同、附加小節）時用「；」接起來一次顯示。游標所在的小節已經不在（`gone`）時提示「游標所在的小節已經不在了」。
 
 ### 5.7 放置（Drop）
 
@@ -254,7 +259,7 @@ interface Cursor {
   - 附加小節用 `insertBars`，與覆寫在同一筆交易裡（Yjs 的巢狀 `transact` 併入外層），所以整個放置、包含附加的小節，是一個復原步驟。
   - 片段裡不認得的欄位在驗證時已經去掉（[`phrases.md`](phrases.md) 1.1），寫進文件的是驗證後的值，再經 `writableCopy`（#102：沒有 `__proto__`、不超過 `MAX_VALUE_DEPTH`）。放置不改寫既有的值（先刪再插新的拍點），所以不經 `ownFields`（#103）。
   - 兩位成員同時放置在同一個小節：兩邊都刪掉自己看到的拍點、插入自己的片段，合併後兩段片段都在、各自連在一起，小節標成 overfull（第 3 點）。
-  - 附加的小節目前用 `keysAfter` 的排序鍵；#68 的 `keysOfARun` 併入後改用它，讓兩人同時在譜尾附加的兩串小節不交錯。
+  - 附加的小節已改用 `keysOfARun` 的排序鍵（#58，`insertBars` 插入或附加的小節都是一串自己的鍵，放在前後兩個小節的鍵之間），讓兩人同時在譜尾附加的兩串小節不交錯（`packages/score-model/tests/drop.test.ts`）。
 
 ### 5.8 Pitched 的升降與八度
 
