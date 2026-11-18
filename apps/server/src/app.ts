@@ -17,6 +17,7 @@ import { registerLinks, withoutLinkTokens } from "./links";
 import { registerMembers } from "./members";
 import { registerPhrases } from "./phrases";
 import { RateLimiter } from "./rateLimit";
+import { registerRecognitions } from "./recognitions";
 import { registerScores } from "./scores";
 import { answerClientError, answerFrameworkError, registerPages, registerSecurityHeaders } from "./security";
 import { Sessions } from "./sessions";
@@ -63,6 +64,7 @@ export function buildApp({ config, redis, logger = true, migrations }: Dependenc
   registerDeletion(app, { collab });
   registerLinks(app, { collab, tickets, limiter });
   registerPhrases(app);
+  registerRecognitions(app, { recognizerUrl: config.recognizerUrl });
   if (config.webRoot !== null) registerPages(app, config.webRoot);
   return app;
 }

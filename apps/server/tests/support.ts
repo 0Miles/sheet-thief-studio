@@ -87,8 +87,11 @@ export async function freshRedis(url = TEST_REDIS_URL): Promise<Redis> {
   return redis;
 }
 
+/** Where no recognizer answers (the discard port): the tests that recognize start a stand-in of their own (fakeRecognizer.ts). */
+export const NO_RECOGNIZER = "http://127.0.0.1:9";
+
 export function testConfig(env: NodeJS.ProcessEnv = {}): Config {
-  return readConfig({ NODE_ENV: "test", DATABASE_URL: TEST_DATABASE_URL, REDIS_URL: TEST_REDIS_URL, PUBLIC_ORIGIN: ORIGIN, ...env });
+  return readConfig({ NODE_ENV: "test", DATABASE_URL: TEST_DATABASE_URL, REDIS_URL: TEST_REDIS_URL, PUBLIC_ORIGIN: ORIGIN, RECOGNIZER_URL: NO_RECOGNIZER, ...env });
 }
 
 /** Run the CLI as the `cli` script does, with `input` piped to its stdin; returns its exit code and output. */

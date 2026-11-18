@@ -8,6 +8,7 @@ import * as scores from "./migrations/0002-scores";
 import * as linkTokens from "./migrations/0003-link-tokens";
 import * as phrases from "./migrations/0004-phrases";
 import * as versions from "./migrations/0005-versions";
+import * as recognitions from "./migrations/0006-recognitions";
 
 /** The table that records the migrations run. */
 export const MIGRATIONS_TABLE = "migrations";
@@ -21,6 +22,7 @@ export async function migrate(sequelize: Sequelize): Promise<string[]> {
       { name: "0003-link-tokens", ...linkTokens },
       { name: "0004-phrases", ...phrases },
       { name: "0005-versions", ...versions },
+      { name: "0006-recognitions", ...recognitions },
     ],
     context: sequelize.getQueryInterface(),
     storage: new SequelizeStorage({ sequelize, tableName: MIGRATIONS_TABLE }),

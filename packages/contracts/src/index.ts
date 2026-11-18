@@ -43,6 +43,9 @@ export {
 // The recognizer's answers (docs/spec/recognizer.md, section 5).
 export * from "./recognizer";
 
+// What the server keeps of a recognition and answers about it (docs/spec/routes.md, 3.8).
+export * from "./recognitions";
+
 // The presence of the members on a score (docs/spec/views.md, section 8).
 export * from "./presence";
 

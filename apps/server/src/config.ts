@@ -19,6 +19,8 @@ export interface Config {
   hsts: boolean;
   /** The directory of the web app's build, which the server then serves; null when something else does (Vite, in development). */
   webRoot: string | null;
+  /** The recognizer service on the internal network (docs/spec/recognizer.md, section 3). */
+  recognizerUrl: string;
 }
 
 /**
@@ -50,5 +52,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionCookie: sessionCookie(env),
     hsts: env.HSTS === "1",
     webRoot: env.WEB_ROOT || null,
+    recognizerUrl: setting("RECOGNIZER_URL", "http://127.0.0.1:8000"),
   };
 }

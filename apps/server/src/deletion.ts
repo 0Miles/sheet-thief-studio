@@ -10,6 +10,7 @@ import type { Collab } from "./collab";
 import { Score, ScoreMember } from "./db/models";
 import { isUuid, notFound } from "./http";
 import { changeMembers, unlessRefused } from "./members";
+import { purgeExpiredRecognitions } from "./recognitions";
 
 /** How often the job that deletes for good runs; it also runs once as the server starts. */
 export const PURGE_INTERVAL_MS = 60 * 60 * 1000;
@@ -107,6 +108,13 @@ export function registerDeletion(app: FastifyInstance, { collab }: { collab: Col
     } catch (error) {
       // Tried again in an hour; the scores stay deleted meanwhile.
       app.log.error({ error }, "deleting for good the scores deleted more than 30 days ago failed");
+    }
+    // The same job deletes the recognitions kept 7 days (docs/spec/recognizer.md, section 7).
+    try {
+      const count = await purgeExpiredRecognitions();
+      if (count > 0) app.log.info({ count }, "deleted the recognitions started more than 7 days ago");
+    } catch (error) {
+      app.log.error({ error }, "deleting the recognitions started more than 7 days ago failed");
     }
   }
   app.addHook("onReady", async () => {
