@@ -168,7 +168,7 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 | WebKit | **按鍵（keys）沒有可用的數字**（同上）。同時修改：一個聲部最差 107 ms（**沒達標**，M1b 90）、五個聲部 168 ms（**沒達標**，M1b 169）。仍然沒有 Web Audio（#129） |
 | 鼓的第二聲線的成本 | 只在顯示鼓的時候（五個聲部）出現在排版：五個聲部第 3 小節 `render → rendered` 中位數 Chromium 27.0 → 28.0 ms（+4%）、Firefox 57 → 65 ms（+14%）、WebKit 23 → 26 ms（+13%）；技巧譜 36.8 → 38.0、80 → 93、32 → 39 ms。一個聲部（只顯示 Guitar 1）不變 |
 | `readScore`（zod 驗證 + `WeakMap` 快取） | Chromium 中位數 1.9–2.1 ms（M1b 1.7–2.1）、p95 3.3–6.0 ms（M1b 6.3–7.7）。拍點從 4,000 變成 4,500，看不出差別 |
-| Flag 全部重算 | **仍然不是瓶頸**。Chromium 中位數 0.9 / 1.2–1.3 ms（plain / techniques，M1b 0.8 / 1.2）、p95 ≤ 3.7 ms；第二聲線沒有產生新的 Flag（plain 0 個、techniques 324 個，和 M1b 相同）。不開增量的票 |
+| Flag 全部重算 | **仍然不是瓶頸**。Chromium 中位數 0.9 / 1.2–1.3 ms（plain / techniques，M1b 0.8 / 1.1–1.2）、p95 ≤ 3.7 ms；第二聲線沒有產生新的 Flag（plain 0 個、techniques 324 個，和 M1b 相同）。不開增量的票 |
 
 ### 環境
 
@@ -186,13 +186,13 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍）：
 
 ```
 pnpm --filter @studio/web measure --project=chromium --project=firefox --project=webkit latency
-pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency   # 只量按鍵
+MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency   # 只量按鍵
 pnpm --filter @studio/web measure --project=webkit -g 'another member' latency    # 只量同時修改
 ```
 
 ### 做法
 
-和 M1b 相同（兩份譜 `plain`、`techniques`，三項量測，每格 50 次，第二個 frame 和門檻比較），只有一個不同：**種子譜的鼓改成兩條聲線**（`e2e/measure/scores.ts`）。手在第一聲線：八分音符的 closed hi-hat，第 2、4 拍加小鼓；腳在第二聲線：大鼓在第 1、3 拍與第 3 拍的反拍，hi-hat 踏板在第 2、4 拍（四分、四分、八分、八分、四分）。每小節兩條聲線都有內容，所以拍點從 4,000 變成 4,500。M1b 的鼓是一條聲線、大鼓和 hi-hat 寫在同一個拍點；其他聲部的音與 M1b 相同（鼓不再用隨機數）。techniques 譜的鼓和 M1b 一樣有 accent 與 ghost。
+和 M1b 相同（兩份譜 `plain`、`techniques`，三項量測，每格 50 次，第二個 frame 和門檻比較），只有一個不同：**種子譜的鼓改成兩條聲線**（`e2e/measure/scores.ts`）。手在第一聲線：八分音符的 closed hi-hat，第 2、4 拍加小鼓；腳在第二聲線：大鼓在第 1、3 拍與第 3 拍的反拍，hi-hat 踏板在第 2、4 拍（四分、四分、八分、八分、四分）。每小節兩條聲線都有內容，所以拍點從 4,000 變成 4,500。M1b 的鼓是一條聲線、大鼓和 hi-hat 寫在同一個拍點；其他聲部的音與 M1b 相同（鼓不用隨機數）。techniques 譜的鼓和 M1b 一樣有 accent 與 ghost。
 
 修改仍然是 Guitar 1 的格號；「一個聲部」只顯示 Guitar 1，所以鼓只在「五個聲部」的格子裡被排版與畫出來。
 
@@ -255,7 +255,7 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍；括號內是 
 
 ### 怎麼讀這些數字
 
-- **鼓的第二聲線花在排版**：五個聲部時 alphaTab 要多排每小節 5 個拍點與第二條聲線的符桿、休止位置。Chromium 只多 1 ms 左右（中位數 +4%，p95 在雜訊內），Firefox 與 WebKit 多 13–16%（Firefox 技巧譜第 3 小節 80 → 93 ms）。`readScore`、`flagsOf` 與投影看不出差別：多 500 個拍點對它們來說太少。
+- **鼓的第二聲線花在排版**：五個聲部時 alphaTab 要多排每小節 5 個拍點與第二條聲線的符桿、休止位置。Chromium 只多 1 ms 左右（中位數 +4%，p95 在雜訊內），Firefox 與 WebKit 多 13–22%（Firefox 技巧譜第 3 小節 80 → 93 ms、WebKit 32 → 39 ms）。`readScore`、`flagsOf` 與投影看不出差別：多 500 個拍點對它們來說太少。
 - **Chromium 仍然達標，但五個聲部的餘裕變小**：技巧譜第 3 小節的 p95 86 → 98 ms，同時修改 89 → 113 ms；離門檻 150 ms 還有 37–52 ms。各階段的排版只多 1 ms，這兩格按鍵的 p95 卻多了 12–24 ms，其中多少是第二聲線、多少是兩次量測之間的雜訊（同一格在兩次執行間可以差很多，`spec/testing.md` 第 3 節），這次沒有辦法分開；五個聲部的中位數只差 −2 到 +8 ms。
 - **Firefox 的 frame 間隔這次是 17 ms**（M1b 是 31 ms，同一個 Firefox 159.0 build）。所以 Firefox 一個聲部的按鍵到畫面從 61–63 ms 降到 37–43 ms（中位數），同時修改一個聲部從沒達標變成達標；這是 headless Firefox 的 frame 排程不同，不是程式變快（`bar painted` 的中位數和 M1b 幾乎一樣：20 / 20.5 / 16 vs 21 / 20 / 18 ms）。原因可能是 Windows 的計時器解析度受同時開著的其他程式影響，這次沒有追。M1b「headless Firefox 32 Hz」的結論因此不穩定，開視窗量仍然是人工項目。
 - **Firefox 同時修改五個聲部變差**（第 3 小節 p95 169 → 204 ms）：`command done` 的 p95 從 82 變成 131 ms，表示按鍵等了更久的對方修改的排版：打字的頁面顯示五個聲部，對方每次修改它都要連鼓的第二聲線一起重排（對方的客戶端只顯示 Guitar 1，負擔不變）。加上 Firefox 本來的排版就是 Chromium 的 2 倍多，五個聲部又碰上對方的修改時最容易超過門檻。
@@ -267,8 +267,8 @@ Firefox 與 WebKit 摘要（1 ms 精度，全部 12 格的範圍；括號內是 
 
 - **在安靜的機器上補量 Firefox 與 WebKit 的按鍵**（各約 6 分鐘；量的時候不要跑建置、測試或其他瀏覽器自動化，結果寫成 `m2-s2-keys-<瀏覽器>-headless.*`，再把上面兩張表的「沒有可用的數字」與「未量」換掉）：
   ```
-  pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency
-  pnpm --filter @studio/web measure --project=webkit -g 'painted frame$' latency
+  MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=firefox -g 'painted frame$' latency
+  MEASURE_MILESTONE=m2 pnpm --filter @studio/web measure --project=webkit -g 'painted frame$' latency
   ```
 - M1b 的兩項仍然有效：在 60 Hz 螢幕上開視窗量 Firefox（這次 headless 的 frame 間隔又不一樣，更需要），以及在 macOS 的 Safari 上量 WebKit。
 

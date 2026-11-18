@@ -22,6 +22,7 @@ import {
   type NoteValue,
   readScore,
   setNote,
+  voiceKey,
 } from "@studio/score-model";
 import * as Y from "yjs";
 
@@ -50,7 +51,7 @@ type NewBeat = [NoteValue, Notes] | [NoteValue, Notes, Markings | undefined];
 const marked = (set: Markings): BeatChange<void> => ({ decide: () => undefined, turn: () => ({ set }) });
 
 /** The second voice of the first staff: the feet of the drums (#45). */
-const SECOND_VOICE = "0:1";
+const SECOND_VOICE = voiceKey(0, 1);
 
 /** Append beats to a bar of a part, each with its notes and markings: to the first voice unless told otherwise. */
 function write(doc: Y.Doc, partId: string, barId: string, beats: NewBeat[], voice?: string): void {
