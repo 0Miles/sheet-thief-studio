@@ -18,6 +18,7 @@ import {
   type NoteValue,
   setFret,
   setKeySig,
+  setLyric,
   setNote,
   setRepeat,
   setSection,
@@ -348,6 +349,24 @@ test("the markings of a beat become its alphaTab fields: stroke the brush, slap,
   expect(beats[5]!.notes.map((note) => note.dynamics)).toEqual([DynamicValue.MF, DynamicValue.MF, DynamicValue.MF]);
   const staff = score.tracks[1]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!;
   expect([staff.dynamics, staff.text]).toEqual([DynamicValue.PP, "C"]);
+});
+
+test("a syllable becomes the beat's one line of lyrics, its - kept; an empty one (a melisma) and none are no lyrics, not [\"\"] (#50)", () => {
+  const { doc, barIds, keys } = band();
+  write(doc, keys, barIds[1]!, [
+    [4, { n60: {} }],
+    [4, { n62: {} }],
+    [4, { n64: {} }],
+    [4, { n65: {} }],
+  ]);
+  const beatIds = docToJson(doc).parts[2]!.content[barIds[1]!]!["0:0"]!.map((beat) => beat.id);
+  const on = (index: number): Cursor => ({ ...cursorAt(doc, keys, barIds[1]!), beatId: beatIds[index]!, at: "on" });
+  setLyric(doc, on(0), "Hel-");
+  setLyric(doc, on(1), "lo");
+  setLyric(doc, on(2), "");
+  const { score } = projectScore(docToJson(doc), settings);
+  const beats = score.tracks[2]!.staves[0]!.bars[1]!.voices[0]!.beats;
+  expect(beats.map((beat) => beat.lyrics)).toEqual([["Hel-"], ["lo"], null, null]);
 });
 
 test("replacing a bar whose dynamic changed rebuilds the bars after it up to the next written dynamic in that voice", () => {
