@@ -12,6 +12,13 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
   minor: ["A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯", "G♯", "D♯", "A♯"],
 };
 
+// Texts said the same in more than one place.
+const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
+const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
+const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const barLabel = (bar: number) => `第 ${bar} 小節`;
+const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+
 export const strings = {
   app: {
     name: "Sheet Thief Studio",
@@ -43,7 +50,7 @@ export const strings = {
     string: (string: number) => `第 ${string} 弦`,
     addPart: "再加一種聲部",
     removePart: "移除",
-    tooManyParts: `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`,
+    tooManyParts: TOO_MANY_PARTS,
     beats: "每小節拍數",
     beatUnit: "拍的單位",
     beatUnits: { 1: "全音符", 2: "二分音符", 4: "四分音符", 8: "八分音符", 16: "十六分音符", 32: "三十二分音符" } satisfies Record<TimeSignature["denominator"], string>,
@@ -86,7 +93,7 @@ export const strings = {
       oneVoice: "弦樂聲部只有一條聲線",
       tooManyBars: `小節最多 ${MAX_BARS} 個`,
       lastBar: "至少要留下一個小節",
-      tooManyParts: `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`,
+      tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
     } satisfies Record<SessionHint, string>,
     // A title read as empty (co-editing can empty it; docs/spec/schema.md, section 2).
@@ -151,8 +158,8 @@ export const strings = {
       appendTitle: "在譜尾加一個小節",
       panel: "小節屬性",
       panelKey: (key: string) => `開關小節屬性面板（${key}）`,
-      bar: (bar: number) => `第 ${bar} 小節`,
-      range: (first: number, last: number) => `第 ${first}–${last} 小節`,
+      bar: barLabel,
+      range: barRangeLabel,
       allParts: "會改動所有聲部",
       timeSig: "拍號",
       timeSigOnward: "套用到這個小節，直到下一個不同的拍號",
@@ -206,7 +213,7 @@ export const strings = {
       play: "播放",
       pause: "暫停",
       stop: "停止",
-      bar: (bar: number) => `第 ${bar} 小節`,
+      bar: barLabel,
     },
     // Each member's own playback settings (docs/spec/playback.md, sections 1 and 3).
     mixer: {
@@ -225,7 +232,7 @@ export const strings = {
       speed: "播放速度",
       loop: "循環",
       loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
-      loopBars: (first: number, last: number) => (first === last ? `第 ${first} 小節` : `第 ${first}–${last} 小節`),
+      loopBars: (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last)),
       loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
       metronome: "節拍器",
       countIn: "預備拍（一小節）",
@@ -378,7 +385,7 @@ export const strings = {
     displayName: {
       title: "顯示名稱",
       label: "顯示名稱",
-      rule: `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`,
+      rule: DISPLAY_NAME_RULE,
       save: "儲存",
       saved: "已儲存",
     },
@@ -387,7 +394,7 @@ export const strings = {
       current: "目前的密碼",
       new: "新密碼",
       again: "再輸入一次新密碼",
-      rule: `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`,
+      rule: PASSWORD_RULE,
       mismatch: "兩次輸入的新密碼不一樣。",
       submit: "變更密碼",
       changed: "密碼已變更，其他裝置已登出。",
@@ -417,8 +424,8 @@ export const strings = {
     close: "關閉",
     rules: {
       username: `帳號名稱只能用小寫英數、- 與 _，長度 ${accountLimits.username.min}–${accountLimits.username.max} 個字元；建立後不能改。`,
-      displayName: `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`,
-      password: `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`,
+      displayName: DISPLAY_NAME_RULE,
+      password: PASSWORD_RULE,
     },
     create: {
       title: "建立帳號",
