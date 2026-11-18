@@ -282,7 +282,18 @@ export type OrphanedScoreList = z.infer<typeof orphanedScoreList>;
  * every change to this score, whatever the role, because the score is of a newer schema than the
  * server, misses a migration step, or has one that failed on it; sent once, as the connection is made.
  */
-export const collabNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration", "migrationFailed"]) });
+export const readOnlyNotice = z.object({ type: z.literal("readOnly"), reason: z.enum(["newerSchema", "missingMigration", "migrationFailed"]) });
+export type ReadOnlyNotice = z.infer<typeof readOnlyNotice>;
+
+/**
+ * `closed`: the server closes this connection for good, just after it sends this: its tab is not
+ * to connect again with what it holds (docs/spec/collab.md, section 9). `tooDeep`: it sent a
+ * value nested deeper than a value of the document may be (#102), which it would send again.
+ */
+export const closedNotice = z.object({ type: z.literal("closed"), reason: z.enum(["tooDeep"]) });
+export type ClosedNotice = z.infer<typeof closedNotice>;
+
+export const collabNotice = z.discriminatedUnion("type", [readOnlyNotice, closedNotice]);
 export type CollabNotice = z.infer<typeof collabNotice>;
 
 // Read-only links (docs/spec/routes.md, 3.5; docs/spec/accounts.md, section 7).

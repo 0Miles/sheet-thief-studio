@@ -1,8 +1,9 @@
-// How deep the JSON values of the document may nest (#102, docs/spec/schema.md section 9). lib0's
-// readAny, which decodes them, follows a value down one call per level: a value nested some
-// thousands deep is one its writer holds and the others cannot decode (`Y.applyUpdate` throws a
-// RangeError), each at a depth of its own browser. So no value deeper than `MAX_VALUE_DEPTH` is
-// read, written by a command, let in by the server or sent to a member. No DOM here.
+// How deep the JSON values of the document may nest (#102, docs/spec/schema.md sections 11 and
+// 13). lib0's readAny, which decodes them, follows a value down one call per level: a value nested
+// some thousands deep is one its writer holds and the others cannot decode (`Y.applyUpdate`
+// throws a RangeError), each at a depth of its own browser. So no value deeper than
+// `MAX_VALUE_DEPTH` is read, written by a command, let in by the server or sent to a member. No
+// DOM here.
 import * as Y from "yjs";
 
 /**
@@ -18,7 +19,10 @@ export const TOO_DEEP = Symbol("nested too deep");
 /** What a shared type stands as among the fields of a value: it is not one, and no schema reads it. */
 export const SHARED_TYPE = Symbol("a shared type");
 
-/** Whether a value of the document is an object of fields: not a list, nor bytes, nor a shared type. */
+/**
+ * Whether a value of the document is an object of fields: not a list, nor bytes (lib0 writes a
+ * Uint8Array as bytes, not as fields), nor a shared type.
+ */
 export function isFieldObject(value: unknown): value is object {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !ArrayBuffer.isView(value) && !(value instanceof Y.AbstractType);
 }
@@ -93,12 +97,16 @@ export function ownFields(value: unknown): Record<string, unknown> {
   return Object.fromEntries(fields);
 }
 
-/** Whether a value nests `levels` deep at most, every field counted, one named __proto__ too: as lib0 writes it. */
+/**
+ * Whether a value nests `levels` deep at most, as `ownCopy` counts: a field named __proto__ is
+ * not counted. A value decoded from an update never has one of its own (lib0's readAny makes it
+ * the prototype), nor is it written again when the value is encoded anew.
+ */
 function nestsWithin(value: unknown, levels: number): boolean {
   if (typeof value !== "object" || value === null || ArrayBuffer.isView(value) || value instanceof Y.AbstractType) return true;
   if (levels === 0) return false;
-  for (const item of Array.isArray(value) ? value : Object.values(value)) if (!nestsWithin(item, levels - 1)) return false;
-  return true;
+  const inside = Array.isArray(value) ? value : ownEntries(value).map(([, field]) => field);
+  return inside.every((item) => nestsWithin(item, levels - 1));
 }
 
 /** The JSON values the content of an item holds; none for a shared type, text, bytes or a deletion. */
@@ -158,10 +166,27 @@ function itemsOf(type: SharedType): Y.Item[] {
 const LIST_CONTENTS = [Y.ContentAny, Y.ContentJSON, Y.ContentBinary, Y.ContentType, Y.ContentDoc, Y.ContentDeleted];
 
 /** The index of a value of a list: the values before it in the items that are not deleted, and its place in its own. */
-function indexIn(list: Y.Array<unknown>, item: Y.Item, offset: number): number {
+function indexIn(list: SharedType, item: Y.Item, offset: number): number {
   let index = 0;
   for (let at = list._start; at !== null && at !== item; at = at.right) if (!at.deleted && at.countable) index += at.length;
   return index + offset;
+}
+
+/** Where a value of the document is, from its top-level type down: `parts/gtr/content/b1/0:0/3/notes/s6`. */
+function pathOf(item: Y.Item, offset: number): string {
+  const segments: string[] = [];
+  let at = item;
+  let place = offset;
+  for (;;) {
+    const parent = at.parent as Y.AbstractType<unknown>;
+    segments.unshift(at.parentSub ?? String(indexIn(parent, at, place)));
+    if (parent._item === null) {
+      segments.unshift(Y.findRootTypeKey(parent));
+      return segments.join("/");
+    }
+    at = parent._item;
+    place = 0;
+  }
 }
 
 /**
@@ -169,9 +194,10 @@ function indexIn(list: Y.Array<unknown>, item: Y.Item, offset: number): number {
  * transaction: what the server does to a score it loads that holds some, written before there was
  * a limit, before any member is sent it (docs/spec/collab.md, section 2). A field of a map holding
  * an object of fields keeps its fields within the limit (`ownFields`, as a command rewriting it
- * would); any other value nested too deep is removed. True when anything changed.
+ * would); any other value nested too deep is removed. Returns where each was (`pathOf`), in the
+ * order found; none when nothing was.
  */
-export function dropTooDeep(doc: Y.Doc): boolean {
+export function dropTooDeep(doc: Y.Doc): string[] {
   // A top-level type nobody asked for yet is a placeholder: one with fields only is a map, one
   // with a list of values (not text) a list, so that a value is taken out of it alone.
   for (const [name, type] of [...doc.share]) {
@@ -181,7 +207,8 @@ export function dropTooDeep(doc: Y.Doc): boolean {
   }
   const found: TooDeep[] = [];
   for (const type of doc.share.values()) tooDeepIn(type, found);
-  if (found.length === 0) return false;
+  if (found.length === 0) return [];
+  const paths = found.map(({ item, offset }) => pathOf(item, offset));
   doc.transact((transaction) => {
     const inLists: { list: Y.Array<unknown>; index: number }[] = [];
     for (const { item, offset, value } of found) {
@@ -193,5 +220,5 @@ export function dropTooDeep(doc: Y.Doc): boolean {
     // The last first: the indexes before it stay where they are.
     for (const { list, index } of inLists.sort((a, b) => b.index - a.index)) list.delete(index, 1);
   });
-  return true;
+  return paths;
 }

@@ -1,6 +1,6 @@
 // What a member may still do with the score open on the page, and what the page does when that
 // changes while it is open (docs/spec/collab.md, section 7; docs/spec/views.md, section 10).
-import type { CollabNotice, Role } from "@studio/contracts";
+import type { ReadOnlyNotice, Role } from "@studio/contracts";
 import type { View } from "@studio/score-editor";
 import { isNewerSchema } from "@studio/score-model";
 import type * as Y from "yjs";
@@ -11,7 +11,7 @@ import { ApiError } from "./api";
  * Why nobody may change the score here, whatever their role: a newer schema than this page knows
  * (the page reads it from the document), or what the server says in its `readOnly` notice (#109).
  */
-export type ReadOnlyReason = CollabNotice["reason"];
+export type ReadOnlyReason = ReadOnlyNotice["reason"];
 
 /** `newerSchema` when the document was written by a newer schema than this page knows; else null (docs/spec/schema.md, section 9). */
 export function readOnlyReasonOf(doc: Y.Doc): ReadOnlyReason | null {

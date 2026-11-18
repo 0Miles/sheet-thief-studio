@@ -194,6 +194,20 @@ test("an update is within the limit when every value it holds is; one that canno
   expect(updateWithinDepth(deepUpdate(100_000))).toBe(false);
 });
 
+test("a field named __proto__ is no level of a value, nor is it sent on: the others decode it as a prototype", () => {
+  const writer = new Y.Doc();
+  writer.getMap("parts").set("deep", JSON.parse(`{"fret":3,"__proto__":${nested(100)}}`));
+  const update = Y.encodeStateAsUpdate(writer);
+  expect(updateWithinDepth(update)).toBe(true);
+  // As the server holds it and encodes it again for the others: without the __proto__.
+  const server = new Y.Doc();
+  Y.applyUpdate(server, update);
+  const sent = new Y.Doc();
+  Y.applyUpdate(sent, Y.encodeStateAsUpdate(server));
+  expect(Object.getOwnPropertyNames(sent.getMap("parts").get("deep"))).toEqual(["fret"]);
+  expect(Object.getPrototypeOf(sent.getMap("parts").get("deep"))).toBe(Object.prototype);
+});
+
 test("what is nested too deep in a document is taken out of it: the fields of an object within the limit kept, anything else removed", () => {
   const doc = jsonToDoc(band());
   notesOf(doc, 1).set("s6", JSON.parse(`{"fret":3,"kept":${nested(63)},"dropped":${nested(64)}}`));
@@ -205,7 +219,8 @@ test("what is nested too deep in a document is taken out of it: the fields of an
   const loaded = new Y.Doc();
   Y.applyUpdate(loaded, Y.encodeStateAsUpdate(doc));
   expect(updateWithinDepth(Y.encodeStateAsUpdate(loaded))).toBe(false);
-  expect(dropTooDeep(loaded)).toBe(true);
+  // Where each was, for the server's log.
+  expect(dropTooDeep(loaded).sort()).toEqual(["elsewhere/1", "meta/later", "parts/gtr/content/b1/0:0/1/later", "parts/gtr/content/b1/0:0/1/notes/s6"]);
   expect(updateWithinDepth(Y.encodeStateAsUpdate(loaded))).toBe(true);
   expect(JSON.stringify(notesOf(loaded, 1).get("s6"))).toBe(`{"fret":3,"kept":${nested(63)}}`);
   expect(beatOf(loaded, 1).has("later")).toBe(false);
@@ -213,6 +228,6 @@ test("what is nested too deep in a document is taken out of it: the fields of an
   expect(metaOf(loaded).toJSON()).toEqual({ schemaVersion: SCHEMA_VERSION, title: "Demo", later: {} });
   expect(JSON.stringify(loaded.getArray("elsewhere").toJSON())).toBe(`[1,2,${nested(64)},3]`);
   // Nothing more to take out.
-  expect(dropTooDeep(loaded)).toBe(false);
+  expect(dropTooDeep(loaded)).toEqual([]);
   expect(readScore(loaded).invalid).toEqual([]);
 });

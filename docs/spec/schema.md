@@ -359,5 +359,6 @@ interface BeatJSON {
 | WebSocket 單則訊息 | 8 MB |
 | 文件裡 JSON 值的巢狀深度（補充，#102） | 64 層（`MAX_VALUE_DEPTH`）：每一個陣列或物件算一層，數字、字串、bytes 不算一層，`{"a":[1]}` 是兩層。合法的值最多兩層（帶 `bend` 的音符），其餘留給日後的加法欄位 |
 
-- **補充**（#102，使用者裁定：寫入端限制深度）：深度上限由 score-model `depth.ts` 定義，所有入口一起守：讀取（`parsePlain`，第 11 節）讀不懂超過上限的值；指令不寫出超過上限的值（[`commands.md`](commands.md) 第 1 節）；伺服器不放行含有這種值的更新，載入時把儲存的狀態裡這種值拿掉（[`collab.md`](collab.md) 第 2、9 節）。zod 驗證過的入口（`jsonToDoc` 的匯入與還原、phrase fragment、awareness）只留下 schema 認得的欄位，深度本來就在上限內，不另外檢查。名為 `__proto__` 的欄位不算深度，也不會被寫出（第 11 節 #78）。
+- **補充**（#102，使用者裁定：寫入端限制深度）：深度上限由 score-model `depth.ts` 定義，所有入口一起守：讀取（`parsePlain`，第 11 節）讀不懂超過上限的值；指令不寫出超過上限的值（[`commands.md`](commands.md) 第 1 節）；伺服器不放行含有這種值的更新，載入時把儲存的狀態裡這種值拿掉（[`collab.md`](collab.md) 第 2、9 節）。zod 驗證過的入口（`jsonToDoc` 的匯入與還原、phrase fragment、awareness）只留下 schema 認得的欄位，深度本來就在上限內，不另外檢查。名為 `__proto__` 的欄位不算深度，在每一個檢查都一樣（`parsePlain`、`ownFields`、`writableCopy` 複製時去掉它；伺服器檢查更新的 `updateWithinDepth` 也不算它），也不會被寫出（第 11 節 #78）：其他成員與伺服器解碼後它是 prototype，不是欄位，重新編碼時也不會帶出去。
+- **補充**（#102）：值裡面的 shared type（`Y.Map` 等）不是值。`writableCopy`（指令寫入呼叫端給的值）遇到它就不寫入；`ownFields`（改寫儲存的音符）丟掉含有它的欄位；`parsePlain` 把它讀成沒有 schema 讀得懂的東西（在認得的欄位上就是讀不懂）。bytes（`Uint8Array` 等 ArrayBuffer view）是純值、不算一層，也不是「欄位物件」：`ownFields` 對它回傳沒有欄位，和數字、字串、陣列一樣。
 - **補充**（host 在 2026-11-13 的裁定）：**聲部與小節的數量上限只約束指令與匯入**。兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

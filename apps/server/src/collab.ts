@@ -8,7 +8,7 @@ import type { Duplex } from "node:stream";
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
-import type { CollabNotice } from "@studio/contracts";
+import type { CollabNotice, ReadOnlyNotice } from "@studio/contracts";
 import { docToJson, dropTooDeep, fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore, updateWithinDepth } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import { literal } from "sequelize";
@@ -45,6 +45,9 @@ class NotInMemory extends Error {}
 /** The `socketId` Hocuspocus gives the `onDisconnect` of a direct connection: the server's own, not a member's. */
 const SERVER_SOCKET = "server";
 
+/** How many of the places a load took values nested too deep out of are logged. */
+const TAKEN_PATHS_LOGGED = 5;
+
 /** The first message of a sync, a state vector (y-protocols): it changes nothing. */
 const SYNC_STEP_1 = 0;
 
@@ -54,22 +57,22 @@ const SYNC_STEP_1 = 0;
  * are taken out first (`dropTooDeep`), on a copy, so that no member is sent a value its browser
  * may not decode. Throws when the server cannot decode the state either.
  */
-function withinDepth(docState: Uint8Array): { state: Uint8Array; trimmed: boolean } {
-  if (updateWithinDepth(docState)) return { state: docState, trimmed: false };
+function withinDepth(docState: Uint8Array): { state: Uint8Array; taken: string[] } {
+  if (updateWithinDepth(docState)) return { state: docState, taken: [] };
   const copy = new Y.Doc();
   try {
     Y.applyUpdate(copy, docState);
-    dropTooDeep(copy);
+    const taken = dropTooDeep(copy);
     const state = Y.encodeStateAsUpdate(copy);
     if (!updateWithinDepth(state)) throw new Error("values nested too deep are left once taken out");
-    return { state, trimmed: true };
+    return { state, taken };
   } finally {
     copy.destroy();
   }
 }
 
 /** Why a document is frozen: read-only for every connection, neither migrated, filled in nor stored. */
-type FrozenReason = CollabNotice["reason"];
+type FrozenReason = ReadOnlyNotice["reason"];
 
 /**
  * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
@@ -372,13 +375,15 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       if (connection.readOnly || type === SYNC_STEP_1) return;
       // No value nested deeper than a value may be is let in, nor one the server cannot decode
       // (lib0's readAny overflows the stack): the other members' browsers may not decode it
-      // (#102, docs/spec/collab.md, section 9). The connection is closed, its socket too (as
-      // `close` does: the provider reconnects with a new ticket); thrown here, the message is not
-      // applied, nor anything the connection had queued after it.
+      // (#102, docs/spec/collab.md, section 9). The tab is told first (`closed` notice): it holds
+      // the value and would send it again at every reconnection, so it stops reconnecting. Then
+      // the connection is closed, its socket too, as `close` does, with Forbidden. Thrown here, the
+      // message is not applied, nor anything the connection had queued after it.
       if (updateWithinDepth(payload)) return;
       app.log.warn({ scoreId: documentName, socketId: connection.socketId }, "an update holding a value nested too deep: refused, its connection closed");
-      close(connection, ResetConnection);
-      throw ResetConnection;
+      connection.sendStateless(JSON.stringify({ type: "closed", reason: "tooDeep" } satisfies CollabNotice));
+      close(connection, Forbidden);
+      throw Forbidden;
     },
     async beforeHandleAwareness({ context, connection, document, states, removedClients }) {
       // Not from a connection: the server's own, which says nothing.
@@ -411,8 +416,10 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
         app.log.error({ scoreId: documentName, error }, "a score this server cannot decode: not opened");
         throw new Error(`score ${documentName} cannot be decoded`, { cause: error });
       }
-      const { state, trimmed } = loaded;
-      if (trimmed) app.log.warn({ scoreId: documentName }, "a score held values nested too deep: taken out as it loaded");
+      const { state, taken } = loaded;
+      const trimmed = taken.length > 0;
+      // How many, and where the first few were: enough to find them in the versions.
+      if (trimmed) app.log.warn({ scoreId: documentName, taken: taken.length, paths: taken.slice(0, TAKEN_PATHS_LOGGED) }, "a score held values nested too deep: taken out as it loaded");
       // Migrating and filling in happen here and never while storing (a change made there would
       // be stored again). The migration runs on a copy: a step that fails half-way leaves the
       // members the document as it was stored.

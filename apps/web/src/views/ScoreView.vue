@@ -13,7 +13,7 @@
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
-import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
+import { type ClosedNotice, type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   barsWithContent,
@@ -61,6 +61,7 @@ import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { measureEditView } from "../measureHook";
+import { stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
@@ -123,6 +124,8 @@ async function asMember(id: string): Promise<Opening> {
 const opening = ref<Opening | null>(null);
 /** A guest's link stopped opening the score (revoked, or made anew) while the page was open. */
 const gone = ref(false);
+/** Why the server closed this tab's connection for good (its `closed` notice); null while it has not. */
+const closedBecause = ref<ClosedNotice["reason"] | null>(null);
 
 /**
  * A guest's: the link gives the score's id with a first ticket; every later connection asks the
@@ -928,6 +931,22 @@ function close(closing: Closing): void {
 }
 
 /**
+ * The server closed the connection for good (`stopWhenClosed`): the provider goes and no other
+ * connects; the page says why and offers the score anew from the server, dropping what this tab
+ * holds and the server never took.
+ */
+function closedByServer(reason: ClosedNotice["reason"]): void {
+  closedBecause.value = reason;
+  sync.value = "offline";
+  dropProvider();
+}
+
+/** The score opened anew from the server's document, this tab's own dropped. */
+function reloadFromServer(): void {
+  close({ kind: "reopen", notice: text.closed.reloaded });
+}
+
+/**
  * The browser went offline: so is the page, at once, rather than once the provider hears nothing
  * for 30 seconds. Its socket is closed, and no other is tried until the browser is back online:
  * each attempt would only fail (and the browser log it as an error). What is typed from now on
@@ -1040,6 +1059,7 @@ onMounted(async () => {
       else if (status === "connecting") sync.value = "syncing";
     },
   });
+  stopWhenClosed(provider, closedByServer);
   // A member's tab is in the presence from now on, in "read" mode with no cursor until the
   // score is open; a guest's provider has no awareness.
   if (provider.awareness !== null) {
@@ -1136,6 +1156,10 @@ onBeforeUnmount(() => {
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
+      <p v-else-if="closedBecause" class="score__error" role="alert" data-closed>
+        <span>{{ text.closed.reasons[closedBecause] }}</span>
+        <button type="button" class="score__dismiss" @click="reloadFromServer">{{ text.closed.reload }}</button>
+      </p>
       <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
         {{ view === "editable" ? text.offline.editing : text.offline.reading }}

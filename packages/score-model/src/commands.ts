@@ -125,14 +125,29 @@ export interface NewPart {
 }
 
 /**
+ * The values a command writes, each as a copy (`writableCopy`), null and undefined as they are
+ * (nothing there, or a field taken away); none at all when one of them nests deeper than
+ * `MAX_VALUE_DEPTH` or holds a shared type: the command then writes nothing (#102).
+ */
+function writable<T extends readonly unknown[]>(...values: T): T | undefined {
+  const copies: unknown[] = [];
+  for (const value of values) {
+    const copy = value === null || value === undefined ? value : writableCopy(value);
+    if (copy === undefined && value !== undefined) return undefined;
+    copies.push(copy);
+  }
+  return copies as unknown as T;
+}
+
+/**
  * Add a part after the last one, with a place for the content of every bar. Its tuning and staves
  * are written as copies (`writableCopy`); throws, adding nothing, for either nested deeper than
  * `MAX_VALUE_DEPTH` (#102): no part of that shape is one the caller meant.
  */
 export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KIND_DEFAULTS[kind].program, staves = KIND_DEFAULTS[kind].staves }: NewPart): string {
-  const writtenTuning = writableCopy(tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
-  const writtenStaves = writableCopy(staves);
-  if (writtenTuning === undefined || writtenStaves === undefined) throw new RangeError("addPart: a tuning or staves nested deeper than a value of the document may be");
+  const written = writable(tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []), staves);
+  if (written === undefined) throw new RangeError("addPart: a tuning or staves nested deeper than a value of the document may be");
+  const [writtenTuning, writtenStaves] = written;
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
@@ -217,15 +232,16 @@ export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): stri
   const bars = barsOf(doc);
   const order = ordered(bars);
   const index = after === null ? -1 : order.indexOf(after);
-  const given = timeSig === undefined ? undefined : writableCopy(timeSig);
-  if ((after !== null && index < 0) || count < 1 || order.length + count > MAX_BARS || given === undefined !== (timeSig === undefined)) return [];
+  const given = writable(timeSig);
+  if (given === undefined) return [];
+  if ((after !== null && index < 0) || count < 1 || order.length + count > MAX_BARS) return [];
   const ids = Array.from({ length: count }, newId);
   doc.transact(() => {
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
     const keys = keysAfter(bars, order, index, count);
-    const signature = given ?? timeSigOf(before ?? next);
+    const signature = given[0] ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);
@@ -582,8 +598,9 @@ function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
  * (`writableCopy`): none nested deeper than `MAX_VALUE_DEPTH`, which makes no beat (#102).
  */
 function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, tuplet }: BeatDuration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
-  const written = tuplet === undefined ? undefined : writableCopy(tuplet);
-  if (tuplet !== undefined && written === undefined) return cursor;
+  const written = writable(tuplet);
+  if (written === undefined) return cursor;
+  const [writtenTuplet] = written;
   const id = newId();
   doc.transact(() => {
     const beat: YBeat = new Y.Map();
@@ -591,7 +608,7 @@ function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, t
     beat.set("id", id);
     beat.set("value", value);
     beat.set("dots", dots);
-    if (written !== undefined) beat.set("tuplet", written);
+    if (writtenTuplet !== undefined) beat.set("tuplet", writtenTuplet);
     beat.set("notes", notes);
     place.voice.insert(place.index, [beat]);
     fill?.(notes);
@@ -627,11 +644,10 @@ function ownNote(value: unknown): NoteJSON | undefined {
  */
 function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
   if (cursor.at === "after") {
-    const note = write(undefined);
-    const written = note === null ? undefined : writableCopy(note);
+    const [note] = writable(write(undefined)) ?? [null];
     const place = placeFor(doc, cursor);
-    if (written === undefined || place === undefined) return cursor;
-    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, written));
+    if (note === null || place === undefined) return cursor;
+    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, note));
   }
   const notes = notesOf(beatAt(doc, cursor));
   if (notes === undefined) return cursor;
@@ -639,11 +655,12 @@ function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: Note
   const note = write(stored);
   // Given back as stored, or nothing to remove: nothing is written.
   if (note === stored || (note === null && stored === undefined)) return cursor;
-  const written = note === null ? null : writableCopy(note);
+  const written = writable(note);
   if (written === undefined) return cursor;
+  const [next] = written;
   doc.transact(() => {
-    if (written === null) notes.delete(key);
-    else notes.set(key, written);
+    if (next === null) notes.delete(key);
+    else notes.set(key, next);
   }, LOCAL);
   return cursor;
 }
@@ -967,15 +984,15 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
       if (next !== stored) changes.push({ map, key, next });
     }
   }
-  // Each written as a copy (`writableCopy`): one nested deeper than a value may be, and none is written (#102).
-  const written = changes.map(({ next }) => (next === null ? null : writableCopy(next)));
-  if (written.includes(undefined)) return cursor;
+  // Each written as a copy: one nested deeper than a value may be, and none is written (#102).
+  const written = writable(...changes.map(({ next }) => next));
+  if (written === undefined) return cursor;
   // Only the notes that change are written: the change and its undo step hold just those.
   if (changes.length > 0) {
     doc.transact(() => {
       changes.forEach(({ map, key }, index) => {
-        const next = written[index];
-        if (next === null || next === undefined) map.delete(key);
+        const next = written[index] ?? null;
+        if (next === null) map.delete(key);
         else map.set(key, next);
       });
     }, LOCAL);
@@ -1167,11 +1184,22 @@ function fits(write: BeatWrite, kind: PartKind): boolean {
  * of them nests deeper than `MAX_VALUE_DEPTH` (#102).
  */
 function writableWrite(write: BeatWrite): BeatWrite | undefined {
-  const tuplet = write.tuplet === undefined || write.tuplet === null ? write.tuplet : writableCopy(write.tuplet);
-  if (write.tuplet !== undefined && tuplet === undefined) return undefined;
-  const set = Object.entries(write.set ?? {}).map(([field, value]): [string, unknown] => [field, value === undefined || value === null ? value : writableCopy(value)]);
-  if (set.some(([field, value]) => value === undefined && (write.set as Record<string, unknown>)[field] !== undefined)) return undefined;
-  return { ...write, tuplet, set: write.set && (Object.fromEntries(set) as BeatWrite["set"]) };
+  const fields = Object.entries(write.set ?? {});
+  const written = writable(write.tuplet, ...fields.map(([, value]) => value));
+  if (written === undefined) return undefined;
+  const [tuplet, ...values] = written;
+  const set = write.set && (Object.fromEntries(fields.map(([field], index) => [field, values[index]])) as BeatWrite["set"]);
+  return { ...write, tuplet: tuplet as BeatWrite["tuplet"], set };
+}
+
+/** A beat and what a change writes on it; `write` undefined when it is not to be written (`writableWrite`). */
+interface BeatToWrite<W extends BeatWrite | undefined = BeatWrite> {
+  beat: YBeat;
+  write: W;
+}
+
+function isWritten(each: BeatToWrite<BeatWrite | undefined>): each is BeatToWrite {
+  return each.write !== undefined;
 }
 
 /**
@@ -1185,13 +1213,13 @@ function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: B
   });
   if (seen.length === 0) return;
   const decided = change.decide(seen.map(({ read }) => read));
-  const turned = seen.flatMap(({ beat, read }) => {
+  const turned = seen.flatMap(({ beat, read }): BeatToWrite<BeatWrite | undefined>[] => {
     const write = change.turn(read, decided);
     return write === null ? [] : [{ beat, write: writableWrite(write) }];
   });
-  if (turned.some(({ write }) => write === undefined)) return;
-  const writes = turned as { beat: YBeat; write: BeatWrite }[];
-  if (writes.length === 0 || !writes.every(({ write }) => fits(write, reader.kind))) return;
+  // Every write or none.
+  const writes = turned.filter(isWritten);
+  if (writes.length < turned.length || writes.length === 0 || !writes.every(({ write }) => fits(write, reader.kind))) return;
   doc.transact(() => {
     for (const { beat, write } of writes) {
       if (write.value !== undefined) beat.set("value", write.value);
