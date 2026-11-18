@@ -234,6 +234,7 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 - 拼寫必須和音符鍵的音高相符（音名加升降後的 pitch class 等於 `音高 mod 12`）。不相符時，投影忽略 `spell`、改用預設拼寫，不標 Flag（補充）。
 - **預設拼寫**（沒有 `spell` 時，投影依該小節生效的 `keySig` 決定黑鍵怎麼寫）：`fifths > 0` 寫成升，`fifths < 0` 寫成降。**補充**：`fifths = 0`（C 大調、A 小調）寫成升。
 - **補充**：從介面輸入的 pitched 音一律寫入 `spell`，所以之後改調號不會改變已經寫好的音；只有匯入或其他來源的音可能沒有 `spell`。
+- **補充**（#48）：預設拼寫是 `pitch.ts` 的 `defaultSpelling(pitch, keySig)`：白鍵寫成本位，黑鍵依上一條寫成升或降。一個音畫在哪個譜表位置（`lineOfPitch(clef, pitch, spell, keySig)`）由它拼出的音名決定：`spell` 和音高相符時用它，否則用預設拼寫，和投影一樣。八度跟著音名：B♯3（`n60`、`"B#"`）畫在 B3 的位置，C♭5（`n71`、`"Cb"`）畫在 C5 的位置。編輯器用它找「游標那條線上的音」（[`commands.md`](commands.md) 5.8 的補充）。
 
 ## 9. `schemaVersion` 與加法規則
 

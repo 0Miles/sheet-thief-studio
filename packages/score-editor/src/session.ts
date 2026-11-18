@@ -24,6 +24,7 @@ import {
   dotCycle,
   durationStep,
   dynamicCycle,
+  enterNote,
   extendSelection,
   harmonicCycle,
   insertBarAt,
@@ -36,6 +37,8 @@ import {
   moveByLine,
   moveByStaff,
   moveFromAppendedBeat,
+  moveNotesByOctave,
+  moveNotesBySemitone,
   movePart,
   moveToBarEnd,
   moveToBarStart,
@@ -559,7 +562,7 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     },
   };
 
-  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1, 4.2 and 5). */
+  /** What a key runs, at the cursor (docs/spec/keymap.md, sections 2, 3, 4.1, 4.2, 4.3 and 5). */
   function commandOf(binding: SessionBinding, previous: TypedDigit | null): KeyCommand {
     const { effect } = binding;
     switch (effect) {
@@ -627,6 +630,14 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         return change((at) => typeDigit(binding.fret, at, previous));
       case "drum":
         return change((at) => markAppended(at, (here) => toggleDrum(doc, here, DRUM_PIECES[binding.piece].id)));
+      case "pitch":
+        return change((at) => markAppended(at, (here) => enterNote(doc, here, binding.letter)));
+      case "sharpen":
+      case "flatten":
+        return change((at) => moveNotesBySemitone(doc, at, effect === "sharpen" ? 1 : -1));
+      case "octaveUp":
+      case "octaveDown":
+        return change((at) => moveNotesByOctave(doc, at, effect === "octaveUp" ? 1 : -1));
       case "tie":
         return toggleNotes(tieToggle);
       case "slideOut":

@@ -1,7 +1,7 @@
 // The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
-import { type DrumPieceName, ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
+import { type DrumPieceName, NOTE_LETTERS, type NoteLetter, ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
@@ -38,6 +38,11 @@ export type SessionEffect =
   | "redo"
   | "fret"
   | "drum"
+  | "pitch"
+  | "sharpen"
+  | "flatten"
+  | "octaveUp"
+  | "octaveDown"
   | "tie"
   | "slideOut"
   | "slideIn"
@@ -103,12 +108,14 @@ interface SessionKeys extends BindingKeys {
 
 /**
  * A key the session handles: the shell then calls `preventDefault`. A digit names the fret it
- * writes on a fretted part; a drum piece's key names the piece it turns on and off.
+ * writes on a fretted part; a drum piece's key names the piece it turns on and off; a letter on a
+ * staff names the note it enters.
  */
 export type SessionBinding =
-  | (SessionKeys & { effect: "fret"; fret: number; piece?: undefined })
-  | (SessionKeys & { effect: "drum"; piece: DrumPieceName; fret?: undefined })
-  | (SessionKeys & { effect: Exclude<SessionEffect, "fret" | "drum">; fret?: undefined; piece?: undefined });
+  | (SessionKeys & { effect: "fret"; fret: number; piece?: undefined; letter?: undefined })
+  | (SessionKeys & { effect: "drum"; piece: DrumPieceName; fret?: undefined; letter?: undefined })
+  | (SessionKeys & { effect: "pitch"; letter: NoteLetter; fret?: undefined; piece?: undefined })
+  | (SessionKeys & { effect: Exclude<SessionEffect, "fret" | "drum" | "pitch">; fret?: undefined; piece?: undefined; letter?: undefined });
 
 /** A key left to the browser: it is not `preventDefault`-ed, so that the browser fires its event. */
 export interface NativeBinding extends BindingKeys {
@@ -117,6 +124,7 @@ export interface NativeBinding extends BindingKeys {
   page?: undefined;
   fret?: undefined;
   piece?: undefined;
+  letter?: undefined;
 }
 
 /** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */
@@ -126,6 +134,7 @@ export interface PageBinding extends BindingKeys {
   page: true;
   fret?: undefined;
   piece?: undefined;
+  letter?: undefined;
 }
 
 /** A key of a text box of the score: the box does what it is for (`textEntryEffectOf`). */
@@ -136,6 +145,7 @@ export interface TextEntryBinding extends Omit<BindingKeys, "context"> {
   page?: undefined;
   fret?: undefined;
   piece?: undefined;
+  letter?: undefined;
 }
 
 export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding;
@@ -256,7 +266,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
   { effect: "slideIn", context: "fretted", keys: ["Shift+KeyE"], keymap: both("Shift+KeyE") },
   // A bend steps through its preset shapes back to none; Shift with ↑ and ↓ takes it a semitone
-  // up and down. On a staff, Shift+↑ and Shift+↓ will be the octave (keymap.md, section 3).
+  // up and down. On a staff, Shift+↑ and Shift+↓ are the octave (keymap.md, section 4.3).
   { effect: "bend", context: "fretted", keys: ["Shift+KeyB"], keymap: both("Shift+KeyB") },
   { effect: "bendUp", context: "fretted", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "bendDown", context: "fretted", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
@@ -271,6 +281,14 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   // Section 3: ghost and accent on the pieces of the cursor's line (`noteKeysAt`).
   { effect: "ghost", context: "percussion", keys: ["Shift+KeyG"], keymap: both("Shift+KeyG") },
   { effect: "accent", context: "percussion", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
+  // Section 4.3: on a staff a letter enters its note; ] and [ move the notes of the cursor's line
+  // a semitone, Shift+↑ and Shift+↓ an octave (with the bend's keys of a fretted part: no clash, a
+  // binding works on parts of its kind only).
+  ...NOTE_LETTERS.map((letter): SessionBinding => ({ effect: "pitch", letter, context: "pitched", keys: [`Key${letter}`], keymap: both(`Key${letter}`) })),
+  { effect: "sharpen", context: "pitched", keys: ["BracketRight"], keymap: both("BracketRight") },
+  { effect: "flatten", context: "pitched", keys: ["BracketLeft"], keymap: both("BracketLeft") },
+  { effect: "octaveUp", context: "pitched", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
+  { effect: "octaveDown", context: "pitched", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
   // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
