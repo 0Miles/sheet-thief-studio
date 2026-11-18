@@ -304,6 +304,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 
 - 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。**補充**（#63）：`null` 的音不算票，有一個音有值就取那個值；力度先把每個音的 velocity 換成力度再聚合。
 - velocity → dynamic（補充，依前身 `app/extract/annotations.py:35` 的對照取最接近的）：≤ 39 → `pp`（含 ppp），40–55 → `p`，56–71 → `mp`，72–87 → `mf`，88–103 → `f`，≥ 104 → `ff`（含 fff）。
+- **補充**（#147）：辨識服務給每個音的 `velocity` 是當時生效的力度，而團譜的 `dynamic` 是「從這個拍點起」、寫著才畫記號（[`schema.md`](schema.md) 第 8 節的 #30 補充）。所以聚合出的力度只在和同一條聲線（片段只有 `"0:0"`）當時生效的不同時才寫：片段裡第一個聚合出力度的拍點一定寫；之後一樣的不寫，不同的才寫（回到更早的力度也寫）。生效的力度跨小節延續；休止、或音都沒有 `velocity` 的拍點不改變它。聲音不變，只是不在每個音上重複畫記號。
 - 小節層級的 `marker`、`tempo`、`repeatOpen`、`repeatTimes`、`endings`、`sign`、`jump` 不放進片段（樂句不帶這些），各自列在略過項目裡（補充）。
 - 略過項目（`report.skipped`，補充）：`{ code: "grace_notes", count }`、`{ code: "capo", fret }`（capo 不是 0 時）、`{ code: "tuning_unrecognized", raw }`、`{ code: "bend_clamped", count }`、`{ code: "sections" }`、`{ code: "tempo" }`、`{ code: "repeats" }`、`{ code: "jumps" }`。審核頁依 code 顯示。
 - 超出拍號的小節照樣放進片段，由 Flag 標出（不截斷）。

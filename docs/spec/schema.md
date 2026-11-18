@@ -26,7 +26,7 @@ Y.Doc
   - **補充**（#22）：fractional-indexing 在兩個鍵之間產生的鍵是確定的，兩個人同時插在同一個地方（例如都在同一個小節按 `Ctrl+Insert`、同時新增聲部）會拿到相同的鍵，而兩個相同的鍵之間產生不出鍵。所以指令產生的鍵一律經過 `commands.ts` 的 `keysAfter`，在產生的鍵後面加 5 個隨機的 base-62 字元（`withSuffix`；最後一個字元不是 `0`，因為鍵的小數部分不能以 `0` 結尾）。加了之後仍嚴格介於前後兩個鍵之間。產生的鍵是後一個鍵的前綴時（例如 `a1` 在 `a1Y…` 之下；後一個鍵帶後綴時常見），加了後綴可能超過後一個鍵：這時先在兩者之間再產生一個鍵，直到加上後綴放得下，所以每個鍵都帶後綴。指令不改寫其他項目的 `order`。
     - 舊的資料裡同鍵的項目照樣依 id 排：插在其中一個之後時，新項目排在這一群同鍵的項目之後，不丟例外。
     - `jsonToDoc` 從零依序產生鍵，不加後綴。
-    - **補充**（#68）：還原版本（`replaceScore`）的小節與聲部各用一串連續的鍵（`keysOfARun`）：先像 `keysAfter` 一樣產生第一個鍵再加上隨機後綴當作「字根」（`a0` 加 5 個隨機字元），每個鍵是字根接上 `a0` 與 `a1` 之間依序產生的鍵的小數部分。整串都排在字根之後、任何別的字根之前，所以兩人同時還原的兩串不會交錯。直接用 `keysAfter` 不行：它的每個鍵各有自己的後綴，兩串從零產生的鍵會輪流排列（`a0x`、`a0y`、`a1x`、`a1y`…）。
+    - **補充**（#68）：還原版本（`replaceScore`）的小節與聲部各用一串連續的鍵（`keysOfARun`）：先像 `keysAfter` 一樣產生第一個鍵再加上隨機後綴當作「字根」（`a0` 加 5 個隨機字元），每個鍵是字根接上 `a0` 與 `a1` 之間依序產生的鍵的小數部分。整串都排在字根之後、任何別的字根之前，所以兩人同時還原的兩串不會交錯。直接用 `keysAfter` 不行：它的每個鍵各有自己的後綴，兩串從零產生的鍵會輪流排列（`a0x`、`a0y`、`a1x`、`a1y`…）。**補充**（#58）：`insertBars` 也改用 `keysOfARun`，字根取在插入位置前後兩個小節的鍵之間，所以兩人同時在同一處插入或在譜尾附加的兩串小節同樣不交錯。
     - 測試在 `packages/score-model/tests/bars.test.ts`：兩人同時插在同一處；一人插在 X 之後、另一人同時插在 Y 之後，跑 200 次；三人同時插在同一處，抵達順序不同；產生的鍵是後一個鍵的前綴，跑 50 次；舊的同鍵資料；同時新增聲部。每個測試都斷言插入落在指定的位置、各份文件順序一致，之後在任何位置插入都不丟例外。
 - id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
@@ -101,7 +101,8 @@ Y.Doc
 | 聲線 | 每個譜表 2 條（schema 允許）；介面不提供第二聲線 | 預設一條，允許第二條（手、腳分開） | 每個譜表最多 2 條 |
 
 - `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
-- 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
+- 譜表數與譜號由 `staves` 決定，不從 content 推出。
+  - **補充**（#47）：投影的譜表數是 `staves.length`，每個譜表的譜號取 `staves[i].clef`：`treble` → alphaTab 的 G2、`bass` → F4、`treble-8vb` → G2 加 `clefOttava = _8vb`（音符畫高一個八度）；每個譜表的聲線數仍由 content 推出。寫法是 `projection.ts` 的 `staffVoiceCounts` 與 `clefOf`。這次實際的改變只有譜號（F4 與 `_8vb`，以前每個非鼓譜表都是 G2）：讀取（`read.ts` 的 `readVoices`）與 `emptyBarContent` 本來就替每個譜表放了 `"<譜表>:0"` 鍵，所以以前從 content 推出的譜表數也和 `staves` 一樣，就地換小節的行為不變。改譜號是聲部欄位的修改（`observeScore` 的 `structure`），照舊整份重投影；`replaceBars` 沒有新增整份重投影的情況。測試：`projection.test.ts` 的「each staff of a part has the clef its `staves` give it …」與「a bar replaced on a bass staff, or on a staff an octave down, keeps its clef …」。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
 
@@ -235,6 +236,7 @@ id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置�
 - 拼寫必須和音符鍵的音高相符（音名加升降後的 pitch class 等於 `音高 mod 12`）。不相符時，投影忽略 `spell`、改用預設拼寫，不標 Flag（補充）。
 - **預設拼寫**（沒有 `spell` 時，投影依該小節生效的 `keySig` 決定黑鍵怎麼寫）：`fifths > 0` 寫成升，`fifths < 0` 寫成降。**補充**：`fifths = 0`（C 大調、A 小調）寫成升。
 - **補充**：從介面輸入的 pitched 音一律寫入 `spell`，所以之後改調號不會改變已經寫好的音；只有匯入或其他來源的音可能沒有 `spell`。
+- **補充**（#48）：預設拼寫是 `pitch.ts` 的 `defaultSpelling(pitch, keySig)`：白鍵寫成本位，黑鍵依上一條寫成升或降。一個音畫在哪個譜表位置（`lineOfPitch(clef, pitch, spell, keySig)`）由它拼出的音名決定：`spell` 和音高相符時用它，否則用預設拼寫。投影照同一個規則畫（`pitch.ts` 的 `drawnAccidentalOf`，`projection.ts` 的 `accidentalModeOf`）：`spell` 相符時強制它的升降，本位也強制（`ForceNatural`）；沒有相符的 `spell` 時，白鍵強制本位，黑鍵交給 alphaTab 依調號決定（`Default`，和 `defaultSpelling` 相同）。理由：alphaTab 自己決定時會優先選調號裡有的拼法，六、七個升號時把 F（`n65`）畫成 E♯、六、七個降號時把 B（`n71`）畫成 C♭，畫的位置就和編輯器找的線不一樣（#48 審查）。測試：`packages/score-render/tests/spelling.test.ts`。八度跟著音名：B♯3（`n60`、`"B#"`）畫在 B3 的位置，C♭5（`n71`、`"Cb"`）畫在 C5 的位置。編輯器用它找「游標那條線上的音」（[`commands.md`](commands.md) 5.8 的補充）。
 
 ## 9. `schemaVersion` 與加法規則
 
