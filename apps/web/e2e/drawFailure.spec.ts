@@ -193,7 +193,9 @@ test("the score and a phrase's preview both failed: the score's retry draws the 
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
   const name = runName("兩處載入失敗");
-  await page.goto("/");
+  // On `/` since it logged in, its lists in (`logInFromStart`): not loaded again, which would have
+  // the next address reached while they are asked for. Firefox aborts those requests then, and the
+  // page reports the list it could not get as an error of its own (HomeView.vue).
   await createPhrase(page, name);
   const font = "**/font/Bravura.*";
   await cutShort(page, font);
