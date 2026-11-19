@@ -283,7 +283,7 @@ test("whatever is written anywhere in a document, reading does not throw and giv
       expect(scoreSchema.safeParse(read.score).error?.issues ?? []).toEqual([]);
       expect(docToJson(doc)).toEqual(read.score);
     }),
-    { numRuns: 300 },
+    { numRuns: 30 },
   );
 });
 

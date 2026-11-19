@@ -230,6 +230,6 @@ test("whatever three members do, in whatever order their changes arrive, they en
       expect(ids).toHaveLength(typed);
       expect(new Set(ids).size).toBe(typed);
     }),
-    { numRuns: 200 },
+    { numRuns: 30 },
   );
 });

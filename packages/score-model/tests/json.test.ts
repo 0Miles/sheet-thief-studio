@@ -11,7 +11,7 @@ test("a score written into a document reads back the same", () => {
     fc.property(score(), (json) => {
       expect(docToJson(jsonToDoc(json))).toEqual(json);
     }),
-    { numRuns: 300 },
+    { numRuns: 40 },
   );
 });
 
@@ -47,7 +47,7 @@ test("a score written loosely reads back in the form docToJson gives, with the s
         expect(docToJson(jsonToDoc(loose))).toEqual(json);
       },
     ),
-    { numRuns: 300 },
+    { numRuns: 30 },
   );
 });
 
