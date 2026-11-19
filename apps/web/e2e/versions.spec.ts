@@ -9,13 +9,13 @@ import type { ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, OUTSIDER, VIEWER } from "./environment";
-import { beatsIn, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced, typeBeats } from "./pages";
+import { cursorOf, drawn, firstStringFrets, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced, TABLET, typeBeats } from "./pages";
 import { expect, test } from "./test";
 
 const text = strings.versions;
 
 /** The frets of the first voice of the first bar of the first part. */
-const fretsOf = (score: ScoreJSON | null) => (score === null ? null : beatsIn(score, 0, 0).map((beat) => beat.notes.s1?.fret));
+const fretsOf = (score: ScoreJSON) => firstStringFrets(score, 0, 0);
 
 /** How many versions the score has, as the API lists them to this page's account. */
 async function versionCount(page: Page, id: string): Promise<number> {
@@ -51,14 +51,14 @@ async function toVersions(page: Page, id: string): Promise<void> {
 }
 
 /** Preview this version (by its place in the list, the latest first) and wait until it is drawn. */
-async function previewVersion(page: Page, index: number): Promise<ScoreJSON | null> {
+async function previewVersion(page: Page, index: number): Promise<ScoreJSON> {
   const item = page.locator("[data-version]").nth(index);
   const versionId = await item.getAttribute("data-version-id");
   await item.locator("[data-preview]").click();
   const pane = page.locator("[data-preview-pane]");
   await expect(pane).toHaveAttribute("data-shown", versionId!, { timeout: 30_000 });
   await expect(pane).toHaveAttribute("data-ready", "true");
-  return page.evaluate(() => window.__studioTest!.scoreJson());
+  return scoreOf(page);
 }
 
 test("an Editor's notes, made a version as they leave, are what its preview draws; they name it and save a named one; a Viewer previews only; anyone else gets 404", async ({ browser }) => {
@@ -184,7 +184,7 @@ test("an Editor on a device that cannot be typed on restores in the Read view, a
   await editor.goto("/");
 
   // A window narrower than 1024 px: the Read view (docs/spec/views.md, section 1).
-  const tablet = await loggedIn(browser, EDITOR, { viewport: { width: 900, height: 900 } });
+  const tablet = await loggedIn(browser, EDITOR, TABLET);
   const errors = pageErrors(tablet);
   await openScore(tablet, id);
   await expect(tablet.locator("main[data-view]")).toHaveAttribute("data-view", "read");
@@ -201,7 +201,7 @@ test("an Editor on a device that cannot be typed on restores in the Read view, a
   await expect.poll(async () => fretsOf(await scoreOf(tablet))).toEqual([4, 6]);
   // No cursor there: a note key changes nothing.
   await tablet.keyboard.press("7");
-  expect(await tablet.evaluate(() => window.__studioTest!.cursor())).toBeNull();
+  expect(await cursorOf(tablet)).toBeNull();
   await tablet.keyboard.press("Control+y");
   await expect.poll(async () => fretsOf(await scoreOf(tablet))).toEqual([4]);
   await synced(tablet);

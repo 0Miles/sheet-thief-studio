@@ -24,7 +24,7 @@ export class ApiError extends Error {
 }
 
 /** A `Retry-After` header in milliseconds from now: seconds, or a date; null when there is none or it cannot be read. */
-export function retryAfterOf(header: string | null, now = Date.now()): number | null {
+function retryAfterOf(header: string | null, now = Date.now()): number | null {
   if (header === null || header.trim() === "") return null;
   const seconds = Number(header);
   if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);

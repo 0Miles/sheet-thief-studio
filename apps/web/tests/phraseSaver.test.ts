@@ -53,6 +53,12 @@ function fragmentOf(beats: number): BarsFragment {
 }
 
 const ID = "11111111-1111-4111-8111-111111111111";
+
+/** The phrase as the server holds it, as `GET /api/phrases/:id` answers. */
+function details(beats: number, revision: number, name = "主歌") {
+  return { id: ID, name, fragment: fragmentOf(beats), revision, updatedAt: "2026-11-18T00:00:00.000Z" };
+}
+
 let saver: PhraseSaver;
 let states: SaveState[];
 
@@ -171,7 +177,7 @@ test("409 for an earlier content whose answer was lost, sent again as a newer on
   expect(last().body).toEqual({ fragment: fragmentOf(5), baseRevision: 1 });
   last().answer(409, { code: "revision_conflict" });
   await settle();
-  last().answer(200, { id: ID, name: "主歌", fragment: fragmentOf(3), revision: 2, updatedAt: "2026-11-18T00:00:00.000Z" });
+  last().answer(200, details(3, 2));
   await settle();
   expect(states).not.toContain("conflict");
   expect(saver.revision).toBe(2);
@@ -186,7 +192,7 @@ test("409 for other content: the phrase was changed elsewhere, and nothing more 
   await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
   last().answer(409, { code: "revision_conflict" });
   await settle();
-  last().answer(200, { id: ID, name: "主歌", fragment: fragmentOf(6), revision: 2, updatedAt: "2026-11-18T00:00:00.000Z" });
+  last().answer(200, details(6, 2));
   await settle();
   expect(saver.state).toBe("conflict");
   expect(saver.unsaved()).toBe(true);
@@ -203,7 +209,7 @@ test("409 where only the name differs is a change made elsewhere too", async () 
   await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
   last().answer(409, { code: "revision_conflict" });
   await settle();
-  last().answer(200, { id: ID, name: "副歌", fragment: fragmentOf(3), revision: 2, updatedAt: "2026-11-18T00:00:00.000Z" });
+  last().answer(200, details(3, 2, "副歌"));
   await settle();
   expect(saver.state).toBe("conflict");
 });
@@ -263,11 +269,6 @@ test("saving as a new phrase posts the content as it is here, under the name giv
   post.answer(201, { id: "22222222-2222-4222-8222-222222222222", revision: 1 });
   await expect(made).resolves.toBe("22222222-2222-4222-8222-222222222222");
 });
-
-/** The phrase as the server holds it, as `GET /api/phrases/:id` answers. */
-function details(beats: number, revision: number, name = "主歌") {
-  return { id: ID, name, fragment: fragmentOf(beats), revision, updatedAt: "2026-11-18T00:00:00.000Z" };
-}
 
 test("409 and the phrase cannot be read: not known to be changed elsewhere, nothing more sent until the member asks to check again", async () => {
   saver.edit(fragmentOf(3));

@@ -5,12 +5,11 @@
 import { expect, test } from "./test";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
+import { beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, scoreOf, seedScore, synced } from "./pages";
 
 /** The notes of each beat of a voice of a part, in the first bar. */
 async function notesIn(page: Parameters<typeof scoreOf>[0], part: number, voice: string) {
-  const score = await scoreOf(page);
-  return (score.parts[part]!.content[score.bars[0]!.id]?.[voice] ?? []).map((beat) => beat.notes);
+  return beatsIn(await scoreOf(page), part, 0, voice).map((beat) => beat.notes);
 }
 
 test("on a keyboard, C, D, E on the treble staff, Ctrl+↓, F on the bass staff: 0:0 and 1:0 hold them; Shift+L ties the F on; after reloading the score holds them", async ({ browser }) => {

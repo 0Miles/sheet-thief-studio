@@ -47,6 +47,7 @@ import type { ImportFailure, ImportLoss } from "@studio/score-render";
 import type { ReadOnlyReason } from "./access";
 import type { ExportFormat } from "./exportFile";
 import type { WhilePlaying } from "./mixer";
+import type { SaveState } from "./phraseSaver";
 
 /** The tonic of each key, by the number of sharps (positive) or flats (negative) plus 7. */
 const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
@@ -79,6 +80,11 @@ const NO_MATCHING_PHRASES = "沒有符合的樂句。";
 const IMAGE_TYPES = "PNG、JPEG 或 WebP";
 const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
 const RECOGNITION_FAILED = "辨識失敗";
+const NOT_SAVED = "沒有儲存";
+const SAVE_AS_NEW_PHRASE = "另存成新樂句";
+const VERSION_NAME_LENGTH = `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元`;
+const VERSION_NAME_REQUIRED = "手動存下的版本一定要有名稱。";
+const RATE_LIMITED = "嘗試太多次，請稍後再試。";
 const megabytes = (bytes: number) => bytes / (1024 * 1024);
 /** The bars an import report names, the first 8 of many and how many in all. */
 const importedBars = (bars: readonly number[]) => (bars.length <= 8 ? `第 ${bars.join("、")} 小節` : `第 ${bars.slice(0, 8).join("、")} 小節等 ${bars.length} 個小節`);
@@ -242,7 +248,7 @@ export const strings = {
     beatText: "拍點文字",
     // The box of lyrics mode (Shift+Enter on a staff), and why a syllable with its - was not saved.
     lyrics: "歌詞",
-    lyricTooLong: (max: number) => `一個音節最多 ${max} 個字元`,
+    lyricTooLong: `一個音節最多 ${MAX_LYRIC} 個字元`,
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",
@@ -646,15 +652,15 @@ export const strings = {
     library: PHRASE_LIBRARY,
     rename: "改名",
     parts: "調弦與譜號",
-    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: "沒有儲存", unchecked: "沒有儲存", tooLarge: "沒有儲存", failed: "沒有儲存" },
+    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: NOT_SAVED, unchecked: NOT_SAVED, tooLarge: NOT_SAVED, failed: NOT_SAVED } satisfies Record<SaveState, string>,
     reload: "重新載入",
-    saveAsNew: "另存成新樂句",
+    saveAsNew: SAVE_AS_NEW_PHRASE,
     /** The server could not be reached, or failed itself: saving is tried again by itself. */
     retrying: "無法儲存，稍後會自動再試。",
     /** Refused for its revision, and the phrase could not be read to tell why: nothing is sent until the member checks again. */
     unchecked: "無法確認這個樂句是否在別處被修改過，修改先留在這一頁。",
     /** Not saved, and not tried again by itself: what the server said, then this. */
-    notSaved: (said: string) => `沒有儲存：${said}`,
+    notSaved: (said: string) => `${NOT_SAVED}：${said}`,
     retry: "再試一次",
     /** Leaving the editor for another page of the app with changes the server does not have. */
     leave: {
@@ -684,7 +690,7 @@ export const strings = {
     savedSkipping: (name: string) => `已${SAVE_PHRASE}「${name}」；讀不懂的內容已經略過，沒有存進去。`,
   },
   saveAsNewPhrase: {
-    title: "另存成新樂句",
+    title: SAVE_AS_NEW_PHRASE,
     name: "名稱",
     save: "儲存",
     cancel: "取消",
@@ -715,14 +721,14 @@ export const strings = {
       manual: "手動存下",
     } satisfies Record<VersionReason, string>,
     named: "已命名",
-    size: (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    size: (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${megabytes(bytes).toFixed(1)} MB`),
     preview: "預覽",
     previewOf: (when: string) => `${when} 的版本`,
     previewHelp: "預覽只供檢視與播放，不會改動團譜。",
     choose: "選一個版本來預覽。",
     name: "版本名稱",
-    nameRule: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
-    nameRuleManual: `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元。手動存下的版本一定要有名稱。`,
+    nameRule: `${VERSION_NAME_LENGTH}；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
+    nameRuleManual: `${VERSION_NAME_LENGTH}。${VERSION_NAME_REQUIRED}`,
     rename: "命名",
     renameOf: (when: string) => `替 ${when} 的版本命名`,
     saveName: "儲存",
@@ -921,7 +927,7 @@ export const strings = {
       unbound: (discordId: string) => `這個 Discord 帳號（ID：${discordId}）還沒有綁定帳號。請把這個 ID 交給管理者綁定。`,
       disabled: "綁定的帳號已停用，請找管理者。",
       invalid: "登入連結無效、已過期或已經用過。請在 Discord 重新輸入 /studio。",
-      rateLimited: "嘗試太多次，請稍後再試。",
+      rateLimited: RATE_LIMITED,
     },
   },
   notFound: {
@@ -933,7 +939,7 @@ export const strings = {
   // one of its own shows `unknownError`.
   errors: {
     invalid_credentials: "帳號名稱或密碼錯誤。",
-    rate_limited: "嘗試太多次，請稍後再試。",
+    rate_limited: RATE_LIMITED,
     wrong_current_password: "目前的密碼不正確。",
     password_change_required: "請先設定新密碼。",
     forbidden: "你的角色不能做這件事。",
@@ -947,7 +953,7 @@ export const strings = {
     phrase_too_large: "樂句太大。",
     score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
     version_unreadable: "伺服器讀不了這個版本，無法預覽。",
-    version_name_required: "手動存下的版本一定要有名稱。",
+    version_name_required: VERSION_NAME_REQUIRED,
     recognition_in_progress: "你已經有一件辨識在進行，請等它完成再上傳。",
     recognizer_busy: "辨識服務正在處理別人的圖片，請稍後再試。",
     recognition_not_succeeded: `這次辨識沒有結果可以${SAVE_PHRASE}。`,

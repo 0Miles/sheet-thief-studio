@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ApiError, collabUrl, get } from "../src/api";
-import { appPath, appUrl, basePath, bearerToken, behindBot, fontDirectory, forgetBearer, soundFontUrl, takeKarylFailure, takeLinkResult } from "../src/served";
+import { appPath, appUrl, basePath, bearerToken, behindBot, fontDirectory, soundFontUrl, takeKarylFailure, takeLinkResult } from "../src/served";
 
 const SESSION = "s".repeat(43);
 
@@ -16,6 +16,9 @@ function servedUnder(path: string): void {
   base.href = path;
   document.head.prepend(base);
 }
+
+/** A call of the API whose answer is taken as it is. */
+const me = () => get("/api/me", { parse: (value) => value });
 
 beforeEach(() => {
   localStorage.clear();
@@ -99,10 +102,10 @@ test("API calls go under the base path with the Bearer token; one the server no 
     }),
   );
 
-  await get("/api/me", { parse: (value) => value });
+  await me();
   status = 401;
-  await expect(get("/api/me", { parse: (value) => value })).rejects.toEqual(new ApiError(401, "unauthenticated"));
-  await get("/api/me", { parse: (value) => value }).catch(() => undefined);
+  await expect(me()).rejects.toEqual(new ApiError(401, "unauthenticated"));
+  await me().catch(() => undefined);
 
   expect(calls).toEqual([
     ["/plugin/sheet-thief-studio/api/me", { authorization: `Bearer ${SESSION}` }],
@@ -114,7 +117,6 @@ test("API calls go under the base path with the Bearer token; one the server no 
 });
 
 test("on its own the page sends no Bearer token: its session is the cookie", async () => {
-  forgetBearer();
   const calls: Array<Record<string, string>> = [];
   vi.stubGlobal(
     "fetch",
@@ -124,7 +126,7 @@ test("on its own the page sends no Bearer token: its session is the cookie", asy
     }),
   );
 
-  await get("/api/me", { parse: (value) => value });
+  await me();
 
   expect(calls).toEqual([{}]);
 });

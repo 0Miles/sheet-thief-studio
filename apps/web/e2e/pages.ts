@@ -1,6 +1,7 @@
 // Helpers for the end-to-end tests that go through the real pages: logging in, creating a score,
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
@@ -101,6 +102,18 @@ export function runName(name: string): string {
   return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
 }
 
+/** A read-only link to the score, made through the API as its Owner logged in on the page; returns its token. */
+export async function readOnlyLink(page: Page, id: string): Promise<string> {
+  const made = await page.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(page.url()).origin } });
+  expect(made.status()).toBe(200);
+  return ((await made.json()) as { token: string }).token;
+}
+
+/** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
+export const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
+/** A tablet's width, or a narrow desktop window: the wide Read view, which cannot be typed on. */
+export const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
+
 /** Create a phrase through the API as the account logged in on the page (a blank 6-string guitar one unless given); returns its id. */
 export async function createPhrase(page: Page, name: string, fragment: BarsFragment = blankFragment(PART_PRESETS.guitar6)): Promise<string> {
   const origin = new URL(page.url()).origin;
@@ -157,6 +170,11 @@ export function bindDiscord(username: string, discordId: string): void {
   if (run.status !== 0) throw new Error(`Could not bind the Discord id: ${run.stderr}`);
 }
 
+/** A Discord id of this run's own: 18 digits, the first of them `lead` (each spec its own, so that two never share one). */
+export function newDiscordId(lead: string): string {
+  return `${lead}${BigInt(`0x${randomBytes(7).toString("hex")}`).toString().padStart(17, "0").slice(-17)}`;
+}
+
 /** An account as the server's script makes it (apps/server/tests/accountE2e.ts). */
 export interface AccountFixture {
   username: string;
@@ -210,15 +228,26 @@ export async function storedAs(page: Page, id: string, row: { title: string; art
     .toEqual(row);
 }
 
+/** Wait until the score, the phrase or the recognition on the page is drawn (`data-ready`). */
+export async function ready(page: Page): Promise<void> {
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+}
+
 /** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
 export async function drawn(page: Page): Promise<void> {
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(page);
   await synced(page);
 }
 
 export async function openScore(page: Page, id: string): Promise<void> {
   await page.goto(`/scores/${id}`);
   await drawn(page);
+}
+
+/** Open the phrase in the phrase editor and wait until it is drawn. */
+export async function openPhrase(page: Page, id: string): Promise<void> {
+  await page.goto(`/phrases/${id}`);
+  await ready(page);
 }
 
 /** Wait until the score's sound is ready: the player is there, paused. */
@@ -247,10 +276,15 @@ export function scoreOf(page: Page): Promise<ScoreJSON> {
   return page.evaluate(() => window.__studioTest!.scoreJson()!);
 }
 
-/** The beats of the first voice of a bar of a part, both by index. */
-export function beatsIn(score: ScoreJSON, part: number, bar: number): BeatJSON[] {
+/** The beats of a voice (the first unless told) of a bar of a part, both by index. */
+export function beatsIn(score: ScoreJSON, part: number, bar: number, voice = "0:0"): BeatJSON[] {
   const barId = score.bars[bar]!.id;
-  return score.parts[part]!.content[barId]?.["0:0"] ?? [];
+  return score.parts[part]!.content[barId]?.[voice] ?? [];
+}
+
+/** The frets on the first string, beat by beat, in the first voice of a bar of a part, both by index. */
+export function firstStringFrets(score: ScoreJSON, part: number, bar: number): (number | undefined)[] {
+  return beatsIn(score, part, bar).map((beat) => beat.notes.s1?.fret);
 }
 
 export function cursorOf(page: Page): Promise<Cursor | null> {
@@ -319,7 +353,7 @@ export async function recognizeImage(page: Page, fixture: string): Promise<strin
   await page.goto("/phrases");
   await page.locator("[data-recognize-input]").setInputFiles(TAB_IMAGE);
   await expect(page).toHaveURL(/\/recognitions\/[0-9a-f-]{36}$/);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(page);
   return new URL(page.url()).pathname.split("/").at(-1)!;
 }
 

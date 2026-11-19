@@ -5,14 +5,14 @@ import { fragmentOfBars, scoreToFragment } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN, VIEWER } from "./environment";
-import { beatsIn, loggedIn, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
+import { firstStringFrets, loggedIn, openScore, pageErrors, readOnlyLink, ready, runName, scoreOf, seedScore, synced } from "./pages";
 import { expect, type Locator, type Page, test } from "./test";
 
 const text = strings.savePhrase;
 
 /** The frets of the first string, beat by beat, in the first voice of a bar of the first part. */
 async function fretsIn(page: Page, bar: number): Promise<(number | undefined)[]> {
-  return beatsIn(await scoreOf(page), 0, bar).map((beat) => beat.notes.s1?.fret);
+  return firstStringFrets(await scoreOf(page), 0, bar);
 }
 
 /** Back from the score with Shift+Tab, one element at a time, until the keyboard is on this one. */
@@ -76,7 +76,7 @@ test("a Viewer saves bars 2–3 as a phrase: the library lists it, and it opens 
   await page.goto("/phrases");
   await page.getByRole("link", { name, exact: true }).click();
   await expect(page).toHaveURL(/\/phrases\/[0-9a-f-]{36}$/);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(page);
   const phrase = await scoreOf(page);
   expect(phrase.bars).toHaveLength(2);
   expect(await fretsIn(page, 0)).toEqual([3]);
@@ -112,14 +112,12 @@ test("a range of beats cannot be saved as a phrase, and a guest's Read view has 
   expect(errors).toEqual([]);
 
   const owner = await loggedIn(browser, ADMIN);
-  const made = await owner.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(owner.url()).origin } });
-  expect(made.status()).toBe(200);
-  const { token } = (await made.json()) as { token: string };
+  const token = await readOnlyLink(owner, id);
   // A browser of its own, never logged in, on a desktop that could be typed on.
   const guest = await (await browser.newContext()).newPage();
   const guestErrors = pageErrors(guest);
   await guest.goto(`/s/${token}`);
-  await expect(guest.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(guest);
   await expect(guest.locator("main")).toHaveAttribute("data-view", "read");
   await expect(guest.locator("[data-save-phrase]")).toHaveCount(0);
   await expect(guest.getByRole("button", { name: text.open })).toHaveCount(0);
