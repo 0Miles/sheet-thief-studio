@@ -141,7 +141,7 @@ export function restsFilling(from: number, to: number): NoteValue[] {
 }
 
 /** The mode that draws each accidental `drawnAccidentalOf` asks for; none asked, alphaTab's own. */
-const ACCIDENTAL_MODES: Record<number, alphaTab.model.NoteAccidentalMode> = {
+export const ACCIDENTAL_MODES: Record<number, alphaTab.model.NoteAccidentalMode> = {
   [-2]: model.NoteAccidentalMode.ForceDoubleFlat,
   [-1]: model.NoteAccidentalMode.ForceFlat,
   0: model.NoteAccidentalMode.ForceNatural,
@@ -362,7 +362,7 @@ interface BarPlace {
   pickup: number | null;
 }
 
-const KEY_SIGNATURE_TYPES = { major: model.KeySignatureType.Major, minor: model.KeySignatureType.Minor } as const;
+export const KEY_SIGNATURE_TYPES = { major: model.KeySignatureType.Major, minor: model.KeySignatureType.Minor } as const;
 
 /**
  * One bar of one staff of a part, with every voice the staff has. A dynamic holds from its beat

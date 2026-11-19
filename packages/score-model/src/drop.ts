@@ -3,6 +3,7 @@
 // of the part as the fragment has, every voice of them. A fragment of beats pasted (5.6) is
 // inserted instead, at the cursor.
 import * as Y from "yjs";
+import type { z } from "zod";
 
 import { beatToY } from "./build";
 import { type Cursor, insertBars, newId, placeFor } from "./commands";
@@ -16,6 +17,7 @@ import {
   ordered,
   parsePlain,
   partKindOf,
+  type PartKind,
   partSchemas,
   partsOf,
   readableVoicesOf,
@@ -83,6 +85,25 @@ function stringsFit(part: YPart, tuning: readonly number[], used: number, hints:
 }
 
 /**
+ * A fragment that passes its schema, as the copy that is written (`writableCopy`, #102: zod's
+ * output nests two levels at most, so it always passes); none for one that does not.
+ */
+function validCopy<Schema extends z.ZodType>(schema: Schema, given: unknown): z.output<Schema> | undefined {
+  const valid = schema.safeParse(given);
+  return valid.success ? writableCopy(valid.data) : undefined;
+}
+
+/**
+ * Why a fragment does not go on a part of `kind`, a drop and a paste alike: another kind, or a
+ * string the part has not (`stringsFit`, which tells `hints` of a tuning that differs).
+ */
+function kindRefusal(part: YPart, kind: PartKind, fragment: BarsFragment | BeatsFragment, beats: Iterable<BeatWithoutId>, hints: DropHint[]): "otherKind" | "tooManyStrings" | undefined {
+  if (kind !== fragment.kind) return "otherKind";
+  if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(beats), hints)) return "tooManyStrings";
+  return undefined;
+}
+
+/**
  * Drop a fragment of bars on a part, from a bar on, one command (docs/spec/commands.md, 5.7). Every
  * voice the part reads in those bars is emptied and filled with the fragment's beats where it is,
  * not replaced, so that beats someone types there meanwhile are kept (and flagged overfull);
@@ -95,18 +116,16 @@ function stringsFit(part: YPart, tuning: readonly number[], used: number, hints:
  * refused too, so that nothing the schema forbids gets into the document.
  */
 export function dropFragment(doc: Y.Doc, target: DropTarget, given: BarsFragment): Dropped | DropRefusal {
-  const valid = barsFragmentSchema.safeParse(given);
-  // What is written is a copy as every member holds it, within MAX_VALUE_DEPTH (#102): zod's output nests two levels at most, so it always passes.
-  const fragment = valid.success ? writableCopy(valid.data) : undefined;
+  const fragment = validCopy(barsFragmentSchema, given);
   if (fragment === undefined) return "invalid";
   const part = partsOf(doc).get(target.partId);
   const kind = partKindOf(part);
   const order = ordered(barsOf(doc));
   const start = order.indexOf(target.barId);
   if (part === undefined || kind === undefined || contentMapOf(part) === undefined || start < 0) return "gone";
-  if (kind !== fragment.kind) return "otherKind";
   const hints: DropHint[] = [];
-  if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(beatsOfBars(fragment)), hints)) return "tooManyStrings";
+  const refused = kindRefusal(part, kind, fragment, beatsOfBars(fragment), hints);
+  if (refused !== undefined) return refused;
   if (stavesUsed(fragment) > staffCountOf(part)) return "otherStaves";
   const missing = Math.max(0, start + fragment.bars.length - order.length);
   if (order.length + missing > MAX_BARS) return "tooManyBars";
@@ -145,8 +164,7 @@ export interface PastedBeats {
  * tuning differing is told, as for a drop), or one that does not pass `beatsFragmentSchema`.
  */
 export function pasteBeats(doc: Y.Doc, cursor: Cursor, given: BeatsFragment): PastedBeats | BeatsPasteRefusal {
-  const valid = beatsFragmentSchema.safeParse(given);
-  const fragment = valid.success ? writableCopy(valid.data) : undefined;
+  const fragment = validCopy(beatsFragmentSchema, given);
   if (fragment === undefined) return "invalid";
   const part = partsOf(doc).get(cursor.partId);
   const kind = partKindOf(part);
@@ -155,9 +173,9 @@ export function pasteBeats(doc: Y.Doc, cursor: Cursor, given: BeatsFragment): Pa
   const place = readable ? placeFor(doc, cursor) : undefined;
   if (part === undefined || kind === undefined || place === undefined) return "gone";
   const { voice, index } = place;
-  if (kind !== fragment.kind) return "otherKind";
   const hints: DropHint[] = [];
-  if (fragment.kind === "fretted" && !stringsFit(part, fragment.tuning, highestString(fragment.beats), hints)) return "tooManyStrings";
+  const refused = kindRefusal(part, kind, fragment, fragment.beats, hints);
+  if (refused !== undefined) return refused;
   const beatIds = fragment.beats.map(() => newId());
   doc.transact(() => voice.insert(index, fragment.beats.map((beat, at) => beatToY({ ...beat, id: beatIds[at]! }))), LOCAL);
   return { beatIds, hints };

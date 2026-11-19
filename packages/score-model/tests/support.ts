@@ -9,6 +9,12 @@ export function appendBeat(doc: Y.Doc, after: Cursor, duration?: Duration): Curs
   return insertBeat(doc, { ...after, at: "after" }, duration);
 }
 
+/** What a command that may refuse gave (a drop, a paste), failing on a refusal. */
+export function accepted<T>(result: T | string): T {
+  if (typeof result === "string") throw new Error(`refused: ${result}`);
+  return result;
+}
+
 /** Count the transactions of a document from now on. */
 export function transactionsOf(doc: Y.Doc): { count: number } {
   const counter = { count: 0 };

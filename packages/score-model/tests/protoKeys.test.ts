@@ -37,6 +37,7 @@ import {
   toggleOnSelection,
   type YBeat,
 } from "../src/index";
+import { nested } from "./fixtures/deep";
 import { transactionsOf } from "./support";
 
 /** One bar of 4/4, a guitar with two quarter notes in it, and a piano with one. */
@@ -71,11 +72,6 @@ function band(): ScoreJSON {
 /** A value as a member writes it: parsed from JSON, so that a __proto__ in it is a key of its own. */
 function written(json: string): unknown {
   return JSON.parse(json);
-}
-
-/** A value nested `levels` deep, as JSON. */
-function nested(levels: number): string {
-  return `${'{"in":'.repeat(levels)}1${"}".repeat(levels)}`;
 }
 
 /** Deep enough to tell a bounded check from one that follows the value down, and still a value the others can decode. */
