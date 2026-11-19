@@ -255,13 +255,18 @@ function closeSide(): void {
   focusScore();
 }
 
-/** Open or close a panel only the editable view has. */
+/**
+ * A toolbar's button, or F2 for the bar's panel and F4 for the phrase sidebar: a panel only the
+ * editable view has opens, the keyboard going to it (the sidebar's search box), or closes, the
+ * keyboard back on the score.
+ */
 function toggleEditSide(panel: Exclude<SidePanel, "mixer">): void {
   if (view.value !== "editable") return;
   if (side.value !== panel) openSide(panel);
   else if (panel === "bar") closePanel();
   else closeSide();
 }
+
 /** The other tabs on the score (docs/spec/views.md, section 8); never any for a guest, who takes no part in the presence. */
 const peers = shallowRef<Peer[]>([]);
 /** Where the other tabs' cursors, name tags and selections are drawn, out of the reserved areas. */
@@ -442,7 +447,6 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
 const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
 
-/** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
 /** The part the member asked to delete, while the page asks them first; null otherwise. */
 const deleting = ref<string | null>(null);
 /** The title bar is being changed. */
@@ -475,7 +479,6 @@ watch(deletion, (asked) => {
   if (asked === null) deleting.value = null;
 });
 
-/** The toolbar's button: the panel of the parts opens or closes, the keyboard back on the score when it does. */
 /** The contents of the phrases previewed and dropped, each asked for once per revision. */
 const contents = phraseContents();
 /** The phrase dragged from the sidebar, while it is. */
@@ -486,7 +489,6 @@ const dropRects = shallowRef<Rect[]>([]);
 /** The cursor's part, which the phrases the sidebar lists fit. */
 const cursorPart = computed(() => score.value?.parts.find((part) => part.id === presence.value.cursor?.partId));
 
-/** F4, or the toolbar's button: the sidebar opens, the keyboard going to its search box, or closes, the keyboard back on the score. */
 /**
  * What a drop tells the member, no dialog (docs/spec/commands.md, 5.7): why nothing went in, or its
  * hints; a drop with nothing to tell takes away what an earlier one said.
