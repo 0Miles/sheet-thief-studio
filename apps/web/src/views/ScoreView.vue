@@ -55,6 +55,7 @@ import { listenToClipboard } from "../clipboard";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
+import ExportMenu from "../components/ExportMenu.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
 import LyricEntry from "../components/LyricEntry.vue";
@@ -66,6 +67,7 @@ import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
+import { type ExportFormat, exportedFile, saveFile } from "../exportFile";
 import { useLyricEntry } from "../lyricEntry";
 import { measureEditView } from "../measureHook";
 import { lockWhenReadOnly, stopWhenClosed } from "../notices";
@@ -737,6 +739,17 @@ function onToolbar(action: () => void): void {
   focusScore();
 }
 
+/** The score as drawn last, downloaded as a file (docs/spec/import-export.md, section 3). */
+function exportAs(format: ExportFormat): void {
+  if (score.value === null) return;
+  try {
+    saveFile(exportedFile(score.value, format));
+  } catch {
+    // A projection alphaTab cannot write: nothing to save, and the member is told.
+    notice.value = text.export.failed;
+  }
+}
+
 function draw(change: ScoreChange): void {
   if (engine === undefined) return;
   // A score of a newer schema, as synced at first or as a newer server migrated it since.
@@ -1240,6 +1253,7 @@ onBeforeUnmount(() => {
           <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
             {{ text.mixer.open }}
           </AppButton>
+          <ExportMenu v-if="!isGuest && score" @export="onToolbar(() => exportAs($event))" />
         </template>
         <div v-if="view === 'editable'" class="score__bars">
           <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
@@ -1537,6 +1551,7 @@ onBeforeUnmount(() => {
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="null" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
+        <ExportMenu v-if="!isGuest && score" inline @export="exportAs" />
       </section>
       <footer v-if="narrow" class="score__playbar" data-playbar>
         <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
