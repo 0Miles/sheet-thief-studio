@@ -251,3 +251,14 @@ test("Alt+2 then Alt+1 is back in the first voice of the staff: a letter goes in
   expect(Object.values(beats(0, "0:0")[0]!.notes)).toEqual([{ spell: "C" }]);
   expect(notesOf(beats(0, "0:1"))).toEqual(second);
 });
+
+// #199: Alt+1 keeps the staff, the bass one as well.
+test("on a keyboard's bass staff, Alt+2 then Alt+1 is back in the first voice of that staff, 1:0, not of the treble one", () => {
+  const { press, cursor } = sessionOn("pitched", 2, "other", [...KEYBOARD].map((staff) => ({ ...staff })));
+  press("ArrowDown", 1000, { ctrlKey: true });
+  expect(cursor()).toMatchObject({ voice: "1:0" });
+  press("Digit2", 1000, { altKey: true });
+  expect(cursor()).toMatchObject({ voice: "1:1" });
+  expect(press("Digit1", 1000, { altKey: true })).toBe(true);
+  expect(cursor()).toMatchObject({ voice: "1:0" });
+});
