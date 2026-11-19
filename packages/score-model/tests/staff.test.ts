@@ -323,6 +323,15 @@ test("a tie writes a spelling only where the note would be drawn off the cursor'
   expect(lineOfPitch("treble", 70, "Bb", { fifths: 2, mode: "major" })).toBe(4);
 });
 
+test("a spelling that does not name its pitch is not carried into a bar of another key: the note is made with the spelling it is drawn with in its own bar", () => {
+  // n70 spelled "C" is drawn as F major's default, B♭, on B's line (4); in C major "C" would leave it as A♯, on A's line.
+  const { doc, cursor, notes } = acrossBars(F_MAJOR, C_MAJOR, { n70: { spell: "C" } }, 4);
+  expect(tieKeysAt(doc, cursor)).toEqual(["n70"]);
+  tieAt(doc, cursor);
+  expect(notes("0:0", 1)).toEqual([{ n70: { spell: "Bb", tie: true } }]);
+  expect(lineOfPitch("treble", 70, "Bb", C_MAJOR)).toBe(cursor.line);
+});
+
 // #182: a pitch is one note of a beat. E♭5 at the cursor is D♯5's pitch, drawn on E's line (1), not on D's (2).
 test("a pitch the cursor's beat holds on another line is not the tie's: on the empty line of the D♯ before, with the same pitch here as E♭, nothing", () => {
   const { doc, beatWith, notes } = keyboard();
