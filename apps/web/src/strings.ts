@@ -45,6 +45,7 @@ import {
 import type { ImportFailure, ImportLoss } from "@studio/score-render";
 
 import type { ReadOnlyReason } from "./access";
+import type { ExportFormat } from "./exportFile";
 import type { WhilePlaying } from "./mixer";
 
 /** The tonic of each key, by the number of sharps (positive) or flats (negative) plus 7. */
@@ -470,6 +471,12 @@ export const strings = {
       part: "聲部",
       options: "選項",
       closeOptions: "收起選項",
+    },
+    // Export to a file (docs/spec/import-export.md, section 3): any member, in any view; never a guest.
+    export: {
+      open: "匯出",
+      formats: { gp7: "Guitar Pro 7（.gp）", midi: "MIDI（.mid）" } satisfies Record<ExportFormat, string>,
+      failed: "匯出失敗，請再試一次",
     },
   },
   // The phrase library (/phrases; docs/spec/phrases.md, section 4).

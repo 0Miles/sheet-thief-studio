@@ -97,6 +97,16 @@
 - **GP7 的調號**：GP7 一個小節只有一個調號，alphaTab 從整份的第一個譜表寫出。投影的鼓譜表不帶調號（C 大調，免得畫出升降記號），所以第一個聲部是鼓時，檔案裡就沒有調號了。匯出時把鼓譜表的調號也設成當時生效的調號（只在匯出用的投影上）。
 - **GP7 的鼓**（alphaTab 1.9 的問題）：投影讓鼓的音符直接帶 articulation id、track 沒有自己的 articulation 清單。這時 alphaTab 的 GP7 writer 寫出整套鼓組，卻把 id 當成清單的索引寫進音符，讀回來變成別的鼓（hi-hat 42 變成清單第 43 個的 agogo）。所以匯出前把每個鼓的音符用到的 articulation 登記到 track（`getOrRegisterPercussionArticulation`），音符改帶索引。alphaTab 的鼓組表不公開，每次匯出有鼓的團譜時，用同一份 settings 把「一個沒有清單、只有一個空小節的鼓聲部」匯出再讀回來取得（`drumKit`），不跨呼叫快取。
 
+### 3.2 介面（#71）
+
+- 匯出選單是 `apps/web/src/components/ExportMenu.vue`，檔案的產生、命名與下載在 `apps/web/src/exportFile.ts`（`exportName`、`exportedFile`、`saveFile`）。
+- 位置：寬版（兩種編輯視圖與寬版的 Read view）在工具列，Mixer 按鈕旁，一個「匯出」的下拉選單；窄螢幕的 Read view 在「選項」抽屜裡，直接列出兩種格式（抽屜會捲動，不放下拉）。訪客的頁面不畫這個元件。
+- 匯出的是最近一次畫出的團譜（`readScore` 的結果，和投影用的同一份），在瀏覽器裡產生，用 Blob URL 加 `<a download>` 交給瀏覽器存檔，不送到伺服器。
+- **補充**：檔名不允許的字元是 Windows 保留的 `< > : " / \ | ? *` 與控制字元（U+0000–U+001F、U+007F）。MIME：GP7 是 `application/octet-stream`（沒有註冊的類型），MIDI 是 `audio/midi`。
+- **補充**：alphaTab 寫檔時丟例外時不下載，在團譜上方的通知顯示「匯出失敗，請再試一次」。
+- 選了格式之後鍵盤回到譜面，和工具列其他按鈕一樣。
+- e2e 在 `apps/web/e2e/export.spec.ts`：攔截 Playwright 的 `download` 事件；GP7 用 `importScore` 讀回比對聲部、小節數與音符，MIDI 檢查檔頭 `MThd`。
+
 ## 4. Round-trip 測試
 
 M5 第一張匯入匯出的票必須做：
