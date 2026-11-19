@@ -55,6 +55,7 @@
 | `e2e-firefox` | 一個打譜的 smoke test：登入、輸入一個格號、重新整理後內容還在 |
 | `e2e-webkit` | 兩個 smoke test。**Read view**：開唯讀連結，看到譜面，播放器進入 paused 狀態；訪客走 ticket，不需要 cookie。**打譜**：同 Firefox 的打譜 smoke（登入、輸入一個格號、重新整理後內容還在），server 用不帶前綴的 cookie 啟動（[`security.md`](security.md) 第 1 節）；另外用 `addInitScript` 把 `navigator.platform` 設成 `MacIntel`，按 `Meta+Z` 復原一次，讓平台層的 macOS 組合在真的瀏覽器裡走過一次（[`keymap.md`](keymap.md) 第 1.3 節） |
 | `recognizer` | 建置辨識服務的 Docker image，在裡面跑 pytest 與契約 fixture 的測試 |
+| `deploy` | 部署檔（[`DEPLOYMENT.md`](../DEPLOYMENT.md)）：兩種模式的 `docker compose config`（用 `deploy/.env.example`）、建置 server 的 image 並確認它載入得了 server 的程式、兩份 nginx 範例在 nginx 官方 image 裡通過 `nginx -t` |
 
 - 完整的 e2e 只在 Chromium 跑。
 - 瀏覽器支援：打譜是最新版的 Chromium 系（Chrome、Edge）、Firefox 與桌面 Safari（owner 在 2026-11-13 裁定）；Read view 另外支援 iOS Safari 與 Android Chrome。

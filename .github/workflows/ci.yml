@@ -78,6 +78,46 @@ jobs:
       - name: Build the service image
         run: docker build --tag studio-recognizer services/recognizer
 
+  # The deployment's files (docs/DEPLOYMENT.md): both modes' Compose files with the example
+  # settings, the server's image, and the nginx examples in nginx's official image, against
+  # certificates made for the run.
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose, standalone mode
+        working-directory: deploy
+        run: docker compose --env-file .env.example -f compose.yaml -f compose.standalone.yaml config --quiet
+      - name: Compose, plugin mode
+        working-directory: deploy
+        # The one setting the example leaves to the host: the bot's address on karyl-chan-net.
+        env:
+          TRUSTED_PROXIES: 172.18.0.0/16
+        run: docker compose --env-file .env.example -f compose.yaml -f compose.plugin.yaml config --quiet
+      - name: Build the server's image
+        run: docker build -f apps/server/Dockerfile -t sheet-thief-studio-server .
+      # The command line answers its usage (exit 2): the image's Node, tsx and the server's
+      # modules load without a database.
+      - name: The image runs the server's code
+        run: |
+          status=0
+          docker run --rm sheet-thief-studio-server studio-cli || status=$?
+          test "$status" = 2
+      - name: nginx examples
+        run: |
+          for site in studio.example.com bot.example.com; do
+            mkdir -p "certs/$site"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$site" \
+              -keyout "certs/$site/privkey.pem" -out "certs/$site/fullchain.pem" 2>/dev/null
+          done
+          for conf in studio karyl-chan-plugin; do
+            docker run --rm \
+              -v "$PWD/deploy/nginx/$conf.conf:/etc/nginx/conf.d/default.conf:ro" \
+              -v "$PWD/certs:/etc/nginx/certs:ro" \
+              nginx:stable-alpine nginx -t
+          done
+
   # The Playwright version pnpm-lock.yaml holds, which names the image the e2e jobs run in.
   playwright-version:
     runs-on: ubuntu-latest
