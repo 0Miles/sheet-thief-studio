@@ -1734,19 +1734,28 @@ test("only the player's worker failed: retried, the page is told once that the s
   engine.renderer.setScore(score);
   api.boundsLookup = drawnLookup();
   api.postRenderFinished.emit();
+  // The ticks of its sound, which alphaTab makes with the model: where playback is can be placed.
+  api.loadMidiForScore();
   const cursor: Cursor = { partId: score.parts[0]!.id, barId: score.bars[0]!.id, voice: "0:0", beatId: null, at: "on", line: 1 };
   expect(engine.renderer.boundsOf(cursor)).not.toBeNull();
+  expect(engine.renderer.boundsAtTick(0)).toEqual({ x: 0, y: 0, width: 800, height: 100 });
   expect(engine.renderer.reservedRects()).toHaveLength(1);
 
   const old = api;
   const told: string[] = [];
-  engine.renderer.onStartOver(() => told.push(`over, old API gone: ${old.destroyed}, cursor: ${JSON.stringify(engine.renderer.boundsOf(cursor))}, reserved: ${engine.renderer.reservedRects().length}`));
+  let playbackAt: unknown = "not asked";
+  engine.renderer.onStartOver(() => {
+    told.push(`over, old API gone: ${old.destroyed}, cursor: ${JSON.stringify(engine.renderer.boundsOf(cursor))}, reserved: ${engine.renderer.reservedRects().length}`);
+    playbackAt = engine.renderer.boundsAtTick(0);
+  });
   engine.renderer.onRendered(() => told.push("drawn"));
   workerFailed(api.synthWorker);
   expect(engine.renderer.failed).toBe(false);
   expect(told).toEqual([]);
   engine.player.retry();
   expect(told).toEqual(["over, old API gone: false, cursor: null, reserved: 0"]);
+  // Nor is playback placed on the old drawing, whose ticks and places the old API still held then.
+  expect(playbackAt).toBeNull();
   expect(old.destroyed).toBe(true);
   newApi();
   api.postRenderFinished.emit();
@@ -1843,4 +1852,18 @@ test("two engines whose fonts both failed: the failed font of the one is off the
   expect(fonts.faces).toContain(api.webFont.face);
   expect(fonts.faces).toContain(previewNew.webFont.face);
   expect([engine.renderer.failed, preview.renderer.failed]).toEqual([false, false]);
+});
+
+test("two engines sharing a font, both back online while it came: when it fails each is told and asks again, the second though the first's retry took the font off the page", () => {
+  const { made: other, stand } = besideEngine();
+  expect(stand.webFont).toBe(api.webFont);
+  const told: boolean[] = [];
+  other.renderer.onFailed((failed) => told.push(failed));
+  backOnline();
+  fonts.failed(api.fontFamily);
+  // Each made a new API of its own, the first engine's first.
+  expect(standIns).toHaveLength(4);
+  expect(told).toEqual([true, false]);
+  expect([engine.renderer.failed, other.renderer.failed]).toEqual([false, false]);
+  expect(standIns.map((each) => each.destroyed)).toEqual([true, true, false, false]);
 });

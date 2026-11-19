@@ -29,8 +29,16 @@ function renderer() {
 
 /** The page the score is on: how far it is scrolled, where it was sent, and how often it placed its overlay, with `ready` as it was then. */
 function page() {
-  const state = { top: 0, sent: [] as number[], placed: [] as boolean[] };
+  // The score's scroller, and under the score what the page shows only of a score drawn (the +bar button).
+  const scroller = document.createElement("div");
+  scroller.tabIndex = 0;
+  const end = document.createElement("div");
+  const button = end.appendChild(document.createElement("button"));
+  document.body.replaceChildren(scroller, end);
+  const state = { top: 0, sent: [] as number[], placed: [] as boolean[], scroller, end: end as HTMLElement | undefined, button };
   const drawing = drawnScore({
+    end: () => state.end,
+    focus: () => state.scroller.focus(),
     scrollTop: () => state.top,
     scrollTo: (top) => {
       state.sent.push(top);
@@ -116,4 +124,38 @@ test("a renderer watched after another: what the first says is not shown any mor
   first.startsOver();
   expect(drawing.ready.value).toBe(true);
   expect(state.placed).toEqual([true]);
+});
+
+test("started over by itself while a button shown only of a score drawn has the keyboard: once that leaves the page, the score has it", async () => {
+  const { state, drawing } = page();
+  const { made, drew, startsOver } = renderer();
+  drawing.watch(made);
+  drew();
+  state.button.focus();
+  expect(document.activeElement).toBe(state.button);
+  startsOver();
+  // The page shows it no more, as `ready` is false.
+  state.end?.remove();
+  state.end = undefined;
+  await nextTick();
+  expect(document.activeElement).toBe(state.scroller);
+});
+
+test("started over while the keyboard is elsewhere, or on a button that stays on the page: it stays there", async () => {
+  const { state, drawing } = page();
+  const { made, drew, startsOver } = renderer();
+  drawing.watch(made);
+  drew();
+  // A score with no bars keeps its +bar button.
+  state.button.focus();
+  startsOver();
+  await nextTick();
+  expect(document.activeElement).toBe(state.button);
+
+  const elsewhere = document.body.appendChild(document.createElement("input"));
+  elsewhere.focus();
+  startsOver();
+  state.end?.remove();
+  await nextTick();
+  expect(document.activeElement).toBe(elsewhere);
 });

@@ -7,6 +7,10 @@ import { nextTick, type Ref, ref } from "vue";
 
 /** What the page does for the score drawn on it. */
 export interface DrawnPage {
+  /** What the page shows under the score only while it is drawn (the +bar button); none when it shows nothing there. */
+  end(): HTMLElement | null | undefined;
+  /** Give the score the keyboard. */
+  focus(): void;
   /** How far down the score is scrolled; null when nothing scrolls it. */
   scrollTop(): number | null;
   /** Scroll the score there, as the page does (not the member). */
@@ -46,7 +50,16 @@ export function drawnScore(page: DrawnPage): DrawnScore {
       });
       renderer.onStartOver(() => {
         if (watched !== renderer) return;
+        // The engine may start over by itself (back online), a button the page shows only of a
+        // score drawn having the keyboard: once that has left the page, the score has it, not the body.
+        const end = page.end();
+        const held = end?.contains(document.activeElement) ? end : null;
         ready.value = false;
+        if (held) {
+          void nextTick(() => {
+            if (!held.isConnected) page.focus();
+          });
+        }
         // The first time, when it starts over again before it has drawn: by now nothing is left to scroll.
         scrolledTo ??= page.scrollTop();
         // Nothing of the score is placed any more: the cursor and the selection of the old drawing go.

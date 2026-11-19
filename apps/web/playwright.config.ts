@@ -127,7 +127,7 @@ export default defineConfig({
     // The whole suite runs in Chromium; the other browsers run smoke tests, and the clipboard check
     // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5). Firefox also
     // runs what drawFailure.spec.ts does not tag for Chromium alone: two engines whose fonts both
-    // failed, where only Firefox keeps the failed font face on the page (#198).
+    // failed, the failed font face of the one left on the page under the name of the other's (#198).
     {
       name: "firefox",
       testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts", "**/drawFailure.spec.ts"],

@@ -183,6 +183,8 @@ const loadError = ref<string | null>(null);
  * its renderer starts over (a retry); drawn again, the score is back where it was scrolled to.
  */
 const { ready, watch: watchDrawn } = drawnScore({
+  end: () => end.value,
+  focus: () => focusScore(),
   scrollTop: () => scroller.value?.scrollTop ?? null,
   scrollTo: (top) => scrollTo(top),
   place: () => updateOverlay(),
@@ -215,6 +217,8 @@ const drawerOpen = ref(false);
 const { notice, say } = useNotice(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
+/** Under the score, the +bar button: shown of a score drawn, or of one with no bars. */
+const end = ref<HTMLElement>();
 /** The keyboard back on the score, where it is. */
 function focusScore(): void {
   scroller.value?.focus({ preventScroll: true });
@@ -1343,7 +1347,7 @@ onBeforeUnmount(() => {
           <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
           <!-- Also in a score two members left with no bars, which the engine may not report drawn: +bar brings it back. -->
-          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" class="score__end">
+          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" ref="end" class="score__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="text.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ text.bars.append }}</AppButton>
           </div>
           <svg v-if="view" class="score__overlay" aria-hidden="true">

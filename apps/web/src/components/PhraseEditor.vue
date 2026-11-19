@@ -75,6 +75,8 @@ const started = ref(false);
  * while its renderer starts over (a retry); drawn again, the phrase is back where it was scrolled to.
  */
 const { ready, watch: watchDrawn } = drawnScore({
+  end: () => end.value,
+  focus: () => focus(),
   scrollTop: () => scroller.value?.scrollTop ?? null,
   scrollTo: (top) => scrollTo(top),
   place: () => updateOverlay(),
@@ -85,6 +87,8 @@ const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFai
 const { notice, say } = useNotice();
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
+/** Under the phrase, the +bar button: shown of a phrase drawn. */
+const end = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
 const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 const cursorRect = shallowRef<Rect | null>(null);
@@ -388,7 +392,7 @@ defineExpose({ focus, openParts });
         <div class="phrase__page">
           <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready"></div>
-          <div v-if="editable && ready" class="phrase__end">
+          <div v-if="editable && ready" ref="end" class="phrase__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="strings.score.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ strings.score.bars.append }}</AppButton>
           </div>
           <svg class="phrase__overlay" aria-hidden="true">

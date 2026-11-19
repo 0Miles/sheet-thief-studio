@@ -127,6 +127,14 @@ function facesOn(fonts: FontFaceSet): Set<FontFace> {
  */
 const failedFontStyles = new Set<Element>();
 
+/**
+ * Called before the failed fonts are taken off the page, by every engine watching its font: each
+ * notes which font faces on the page are its own. Two engines share the font of one attempt, and
+ * the browser tells both of its failure one after the other: the first, asking again at once (back
+ * online meanwhile), takes it off the page before the second has heard of it.
+ */
+const fontWatchers = new Set<() => void>();
+
 /** The style elements on the page that declare a music font of this family from these sources, as alphaTab writes them (`_createStyleElements`). */
 function fontStylesOf(family: string, sources: readonly string[]): Element[] {
   const page = (globalThis as { document?: Partial<Document> }).document;
@@ -351,8 +359,11 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const fonts = (globalThis as { document?: Document }).document?.fonts;
     const others = fonts && facesOfOthers(attempt, fonts);
     // Nor a failed font left on the page, whose name alphaTab may give this API's (`failedFontStyles`).
-    for (const style of failedFontStyles) style.remove();
-    failedFontStyles.clear();
+    if (failedFontStyles.size > 0) {
+      for (const remember of fontWatchers) remember();
+      for (const style of failedFontStyles) style.remove();
+      failedFontStyles.clear();
+    }
     const { made: api, workers } = workersMadeBy(() => new alphaTab.AlphaTabApi(this.element, settings));
     this.api = api;
     // Every listener is added once, here: alphaTab calls a new listener of some events at once
@@ -473,13 +484,23 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       for (const style of fontStylesOf(family, asked.sources)) failedFontStyles.add(style);
       failed();
     };
+    // Its own faces that were on the page when the failed fonts were taken off it (`fontWatchers`).
+    const takenOff = new Set<FontFace>();
+    const remember = () => {
+      for (const face of facesOn(fonts)) if (own(face)) takenOff.add(face);
+    };
     const onError = (event: Event) => {
-      // Not a face taken off the page (an API replaced), whatever its family.
+      // Not a face taken off the page (an API replaced), whatever its family; but for its own,
+      // taken off as a failed font while this failure was being told.
       const onPage = facesOn(fonts);
-      if ((event as FontFaceSetLoadEvent).fontfaces.some((face) => onPage.has(face) && own(face))) fail();
+      if ((event as FontFaceSetLoadEvent).fontfaces.some((face) => takenOff.has(face) || (onPage.has(face) && own(face)))) fail();
     };
     fonts.addEventListener("loadingerror", onError);
-    this.unwatch.push(() => fonts.removeEventListener("loadingerror", onError));
+    fontWatchers.add(remember);
+    this.unwatch.push(() => {
+      fonts.removeEventListener("loadingerror", onError);
+      fontWatchers.delete(remember);
+    });
     if ([...facesOn(fonts)].some((face) => own(face) && face.status === "error")) fail();
   }
 
