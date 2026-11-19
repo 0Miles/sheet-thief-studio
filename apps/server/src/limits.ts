@@ -33,6 +33,9 @@ export const RECOGNITION_IMAGES_BYTES = recognitionLimits.imagesBytes;
 /** The body of `POST /api/recognitions`: the images and room for what multipart/form-data wraps them in. */
 export const RECOGNITION_BODY_LIMIT = RECOGNITION_IMAGES_BYTES + BODY_MARGIN;
 
+/** A dispatch of the karyl-chan bot carries an interaction, larger than an API request may be, never close to this. */
+export const DISPATCH_BODY_LIMIT = 1 * MB;
+
 /** The most the server reads of the recognizer's answer: far more than a fragment of 1 MB is made of. */
 export const RECOGNIZER_ANSWER_LIMIT = 32 * MB;
 

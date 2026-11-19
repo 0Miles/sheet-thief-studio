@@ -6,7 +6,7 @@ import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { HocuspocusProvider, MessageType } from "@hocuspocus/provider";
-import { type BarsFragment, jsonBytes, PART_PRESETS } from "@studio/score-model";
+import { type BarsFragment, docToJson, jsonBytes, PART_PRESETS } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import { Redis } from "ioredis";
 import * as decoding from "lib0/decoding";
@@ -18,6 +18,7 @@ import { runCli } from "../src/cli";
 import { type Config, readConfig } from "../src/config";
 import { connectDatabase } from "../src/db/database";
 import { migrate, MIGRATIONS_TABLE } from "../src/db/migrate";
+import { Score } from "../src/db/models";
 
 /**
  * The Postgres and Redis databases of this run of the server's tests, its own unless told others
@@ -228,6 +229,18 @@ export async function createScore(app: FastifyInstance, sessionId: string, title
   const response = await app.inject({ method: "POST", url: "/api/scores", headers: { origin: ORIGIN }, cookies: { [COOKIE]: sessionId }, payload: { title } });
   if (response.statusCode !== 201) throw new Error(`creating a score answered ${response.statusCode} ${response.body}`);
   return (response.json() as { id: string }).id;
+}
+
+/** The document of the score as its row holds it. */
+export async function storedDoc(scoreId: string): Promise<Y.Doc> {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
+  return doc;
+}
+
+/** The score as its row holds it. */
+export async function storedScore(scoreId: string) {
+  return docToJson(await storedDoc(scoreId));
 }
 
 /** Ask for a collab ticket as the web app does. */

@@ -3,6 +3,13 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { z } from "zod";
 
+declare module "fastify" {
+  interface FastifyContextConfig {
+    /** A route the bot calls, signed with the plugin's HMAC key instead of sent from our pages: no Origin check. */
+    botDispatch?: boolean;
+  }
+}
+
 /**
  * Refuse a request that may change something unless the browser says it comes from our own page.
  * Every path, not only /api/: the router decodes a path before matching it, so a test on the raw

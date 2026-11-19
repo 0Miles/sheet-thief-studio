@@ -117,8 +117,8 @@ export function registerAdmin(app: FastifyInstance, { collab }: { collab: Collab
       if (error instanceof IdentityTaken) return reply.code(409).send({ code: "identity_taken" });
       throw error;
     }
-    const account = (await Account.findByPk(id))!;
-    return reply.code(201).send(adminAccount.parse(shown(account, await Identity.findAll({ where: { accountId: id } }))));
+    const [account, identities] = await Promise.all([Account.findByPk(id), Identity.findAll({ where: { accountId: id } })]);
+    return reply.code(201).send(adminAccount.parse(shown(account!, identities)));
   });
 
   // Unbinding: the Discord id logs into nothing any more, and the sessions it logged in end. The
