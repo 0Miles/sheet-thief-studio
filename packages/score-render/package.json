@@ -5,7 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tests",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

@@ -1,14 +1,16 @@
 // Scores and their members (docs/spec/routes.md, 3.3; docs/spec/collab.md, sections 2 and 3):
-// creating one, listing mine, opening one, and the collab ticket to edit it.
-import { collabTicket, createdScore, createScoreRequest, eachPart, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
-import { addPart, barsOf, createScore, insertBars, PART_PRESETS, partNames, SCHEMA_VERSION } from "@studio/score-model";
+// creating one, from the dialog or from an imported file, listing mine, opening one, and the
+// collab ticket to edit it.
+import { collabTicket, createdScore, createScoreRequest, eachPart, importScoreRequest, type NewScore, type Role, scoreDetails, scoreList } from "@studio/contracts";
+import { addPart, barsOf, createScore, insertBars, jsonToDoc, PART_PRESETS, parsePlain, partNames, SCHEMA_VERSION, writableCopy } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as Y from "yjs";
 
 import type { Collab } from "./collab";
 import type { CollabTickets } from "./collabTickets";
 import { Account, Score, ScoreMember } from "./db/models";
-import { invalidRequest, isUuid, notFound, rateLimited } from "./http";
+import { invalidFields, invalidRequest, isUuid, notFound, rateLimited } from "./http";
+import { IMPORT_BODY_LIMIT } from "./limits";
 import { MEMBER_TICKET_BY_ACCOUNT, type RateLimiter } from "./rateLimit";
 
 /** The score with this id, unless it does not exist or is deleted. */
@@ -69,17 +71,20 @@ export function startContent(doc: Y.Doc, { title, parts, timeSig, tempo, bars }:
   doc.transact(() => barsOf(doc).get(first as string)!.set("tempo", tempo));
 }
 
-/** Make a score owned by the account, its content written as a participant; returns its id. */
-async function makeScore(collab: Collab, ownerId: string, request: NewScore): Promise<string> {
+/**
+ * Make a score owned by the account, with this title and artist on its row, its content written by
+ * `write` as a participant; returns its id.
+ */
+async function makeScore(collab: Collab, ownerId: string, { title, artist = null }: { title: string; artist?: string | null }, write: (doc: Y.Doc) => void): Promise<string> {
   const score = await Score.sequelize!.transaction(async (transaction) => {
-    const created = await Score.create({ title: request.title, docState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())), schemaVersion: SCHEMA_VERSION }, { transaction });
+    const created = await Score.create({ title, artist, docState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())), schemaVersion: SCHEMA_VERSION }, { transaction });
     await ScoreMember.create({ scoreId: created.id, accountId: ownerId, role: "owner" }, { transaction });
     return created;
   });
   // Between the commit and the end of `change`, the row holds an empty document. Nobody can open
   // it meanwhile: its id is only answered below, and only its Owner is a member.
   try {
-    await collab.change(score.id, (doc) => startContent(doc, request));
+    await collab.change(score.id, write);
   } catch (error) {
     // No empty score left behind for its Owner to find.
     await score.destroy();
@@ -92,7 +97,19 @@ export function registerScores(app: FastifyInstance, { collab, tickets, limiter 
   app.post("/api/scores", async (request, reply) => {
     const body = createScoreRequest.safeParse(request.body);
     if (!body.success) return invalidRequest(reply, body.error);
-    const id = await makeScore(collab, request.account!.id, body.data);
+    const id = await makeScore(collab, request.account!.id, body.data, (doc) => startContent(doc, body.data));
+    return reply.code(201).send(createdScore.parse({ id }));
+  });
+
+  // A body past its limit is refused by Fastify before it is read (413). Within it, a score past
+  // 5 MB of JSON or the limits on bars and parts, or one zod refuses, is a 400: nothing is made.
+  app.post("/api/scores/import", { bodyLimit: IMPORT_BODY_LIMIT }, async (request, reply) => {
+    // Read as a value of the document is (#78, #102): its own fields only, no deeper than the limit.
+    const body = parsePlain(importScoreRequest, request.body);
+    if (!body.success) return invalidRequest(reply, body.error);
+    const score = writableCopy(body.data.score);
+    if (score === undefined) return invalidFields(reply, [{ path: ["score"], code: "custom" }]);
+    const id = await makeScore(collab, request.account!.id, { title: score.title, artist: score.artist }, (doc) => jsonToDoc(score, doc));
     return reply.code(201).send(createdScore.parse({ id }));
   });
 

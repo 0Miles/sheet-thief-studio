@@ -2,6 +2,7 @@
 import {
   barSchema,
   barsFragmentSchema,
+  importedScoreSchema,
   MAX_BARS,
   MAX_NON_PERCUSSION_PARTS,
   MAX_PARTS,
@@ -12,6 +13,7 @@ import {
   partKindSchema,
   type PartPresetId,
   partSchemas,
+  SCHEMA_VERSION,
   timeSigSchema,
   withinPartLimits,
 } from "@studio/score-model";
@@ -189,6 +191,16 @@ export const createScoreRequest = z.object({
 });
 export type CreateScoreRequest = z.input<typeof createScoreRequest>;
 export type NewScore = z.output<typeof createScoreRequest>;
+
+/**
+ * A score imported from a file (`POST /api/scores/import`, docs/spec/import-export.md, section 2):
+ * the `ScoreJSON` the web app made of it, within the limits on bars, parts and its 5 MB
+ * (`importedScoreSchema`), and of this schema version, the one `jsonToDoc` writes.
+ */
+export const importScoreRequest = z.object({
+  score: importedScoreSchema.refine((score) => score.schemaVersion === SCHEMA_VERSION, `schema version ${SCHEMA_VERSION}`),
+});
+export type ImportScoreRequest = z.input<typeof importScoreRequest>;
 
 export const createdScore = z.object({ id: z.string() });
 export type CreatedScore = z.infer<typeof createdScore>;

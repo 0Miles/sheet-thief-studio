@@ -61,6 +61,22 @@ export type Harmonic = (typeof HARMONICS)[number];
 /** How far a bend goes, in semitones: 1 to 4, a new one 2 (docs/spec/schema.md, section 8). */
 export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
 
+/** Quarter notes per minute a bar may have (docs/spec/schema.md, section 3). */
+export const TEMPO_RANGE = { min: 20, max: 400 } as const;
+
+/** The most times a repeat is played in all. */
+export const MAX_REPEAT = 32;
+
+/** How many strings a fretted part has. */
+export const STRING_COUNTS = { min: 4, max: 7 } as const;
+
+/** The highest fret of a note, and of a capo. */
+export const MAX_FRET = 36;
+export const MAX_CAPO = 24;
+
+/** The most staves a pitched part has. */
+export const MAX_STAVES = 2;
+
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
@@ -69,6 +85,9 @@ export const MAX_LYRIC = 32;
 
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+/** The largest file an import reads at all (docs/spec/import-export.md, section 2), checked before it is read. */
+export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
  * A string of `min` to `max` characters, counted as JavaScript counts them (UTF-16 code units,
@@ -153,11 +172,11 @@ export const barSchema = z.object({
   id: z.string().refine((id) => id !== "__proto__", "a bar id records cannot keep"),
   timeSig: timeSigSchema,
   /** Quarter notes per minute. */
-  tempo: z.number().min(20).max(400).optional(),
+  tempo: z.number().min(TEMPO_RANGE.min).max(TEMPO_RANGE.max).optional(),
   keySig: keySigSchema.optional(),
   repeatStart: z.literal(true).optional(),
   /** How many times the repeat is played in all. */
-  repeatEnd: z.int().min(2).max(32).optional(),
+  repeatEnd: z.int().min(2).max(MAX_REPEAT).optional(),
   /** The passes this bar is played on, in order. */
   voltas: z
     .array(z.int().min(1).max(8))
@@ -181,7 +200,7 @@ export const DEFAULT_KEY_SIG: Readonly<KeySignature> = Object.freeze({ fifths: 0
 /** Every field a note can have, whatever its part; `kindSchemas` says which ones each kind has. */
 export const noteSchema = z.object({
   /** Fretted parts: the fret on the string named by the key of the note; a dead note may have none. */
-  fret: z.int().min(0).max(36).optional(),
+  fret: z.int().min(0).max(MAX_FRET).optional(),
   dead: z.literal(true).optional(),
   /** The note continues the one before it on the same string or pitch. */
   tie: z.literal(true).optional(),
@@ -357,8 +376,8 @@ export const partSchemas = {
     id: z.string(),
     name: partName,
     kind: z.literal("fretted"),
-    tuning: z.array(midi).min(4).max(7),
-    capo: z.int().min(0).max(24),
+    tuning: z.array(midi).min(STRING_COUNTS.min).max(STRING_COUNTS.max),
+    capo: z.int().min(0).max(MAX_CAPO),
     program: midi,
     staves: z.tuple([z.object({ clef: z.literal("tab") })]),
     content: contentSchema,
@@ -385,7 +404,7 @@ export const partSchemas = {
     staves: z
       .array(z.object({ clef: z.enum(["treble", "bass", "treble-8vb"]) }))
       .min(1)
-      .max(2),
+      .max(MAX_STAVES),
     content: contentSchema,
   }),
 };
@@ -529,10 +548,12 @@ export function jsonBytes(value: unknown): number {
 
 /**
  * A score to import as a new one (section 13): a legal score within the limits on bars and
- * parts, of at most 5 MB once serialized.
+ * parts, of at most 5 MB once serialized, with a title of 1 to 100 characters that is not only
+ * white space, as a new score has (section 2).
  */
 export const importedScoreSchema = scoreSchema.superRefine((score, context) => {
   const issue = (message: string, path: string[]) => context.addIssue({ code: "custom", message, path });
+  if (score.title.trim() === "") issue("a title that is empty or only white space", ["title"]);
   if (score.bars.length > MAX_BARS) issue(`more than ${MAX_BARS} bars`, ["bars"]);
   if (score.parts.length > MAX_PARTS) issue(`more than ${MAX_PARTS} parts`, ["parts"]);
   if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);

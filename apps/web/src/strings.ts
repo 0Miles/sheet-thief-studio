@@ -15,7 +15,34 @@ import {
   type VersionReason,
 } from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type DropHint, type DropRefusal, type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PasteRefusal, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import {
+  type DropHint,
+  type DropRefusal,
+  type Flag,
+  type KeySignature,
+  MAX_BARS,
+  MAX_BEAT_TEXT,
+  MAX_FRET,
+  MAX_IMPORT_BYTES,
+  MAX_IMPORT_FILE_BYTES,
+  MAX_LYRIC,
+  MAX_NON_PERCUSSION_PARTS,
+  MAX_PART_NAME,
+  MAX_PARTS,
+  MAX_REPEAT,
+  MAX_SECTION_NAME,
+  MAX_STAVES,
+  MAX_TITLE,
+  type PartKind,
+  type PartPresetId,
+  type PasteRefusal,
+  type PitchedClef,
+  STRING_COUNTS,
+  TEMPO_RANGE,
+  type TimeSignature,
+  type TuningOption,
+} from "@studio/score-model";
+import type { ImportFailure, ImportLoss } from "@studio/score-render";
 
 import type { ReadOnlyReason } from "./access";
 import type { ExportFormat } from "./exportFile";
@@ -53,6 +80,8 @@ const IMAGE_TYPES = "PNG、JPEG 或 WebP";
 const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
 const RECOGNITION_FAILED = "辨識失敗";
 const megabytes = (bytes: number) => bytes / (1024 * 1024);
+/** The bars an import report names, the first 8 of many and how many in all. */
+const importedBars = (bars: readonly number[]) => (bars.length <= 8 ? `第 ${bars.join("、")} 小節` : `第 ${bars.slice(0, 8).join("、")} 小節等 ${bars.length} 個小節`);
 
 export const strings = {
   app: {
@@ -61,7 +90,9 @@ export const strings = {
   home: {
     title: "我的團譜",
     newScore: "新增團譜",
-    empty: "還沒有團譜。按「新增團譜」建立第一份。",
+    importScore: "匯入",
+    importFile: "選擇要匯入的檔案",
+    empty: "還沒有團譜。按「新增團譜」建立第一份，或「匯入」一個檔案。",
     phrases: PHRASE_LIBRARY,
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
     // The scores I own and deleted, which I can still restore (docs/spec/accounts.md, section 8).
@@ -93,6 +124,79 @@ export const strings = {
     create: "建立",
     cancel: "取消",
     close: "關閉",
+  },
+  // Importing a file as a new score (docs/spec/import-export.md, section 2): what was read, the
+  // import report, and why a file makes no score.
+  importScore: {
+    title: "匯入檔案",
+    reading: (file: string) => `正在讀取「${file}」…`,
+    summary: (parts: number, bars: number) => `${parts} 個聲部，${bars} 個小節`,
+    reportTitle: "匯入報告",
+    reportHelp: "下列內容無法完整轉換，建立後會省略或改成最接近的寫法：",
+    nothingLost: "所有內容都能轉換。",
+    /** How many times a loss happens, and in which bars when it happens in some. */
+    times: (count: number, bars: readonly number[]) => (bars.length === 0 ? `${count} 處` : `${count} 處（${importedBars(bars)}）`),
+    create: "建立團譜",
+    cancel: "取消",
+    close: "關閉",
+    failures: {
+      fileTooLarge: `檔案超過 ${megabytes(MAX_IMPORT_FILE_BYTES)} MB，無法匯入。`,
+      unreadable: "讀不了這個檔案。只能匯入 Guitar Pro 或 MusicXML 檔案。",
+      tooManyParts: `聲部超過 ${MAX_PARTS} 個，無法匯入。`,
+      tooManyNonDrumParts: `鼓以外的聲部超過 ${MAX_NON_PERCUSSION_PARTS} 個，無法匯入。`,
+      tooManyBars: `小節超過 ${MAX_BARS} 個，無法匯入。`,
+      tooLarge: `轉換後的團譜超過 ${megabytes(MAX_IMPORT_BYTES)} MB，無法匯入。`,
+      invalid: "這個檔案轉換時出了問題，無法匯入。",
+    } satisfies Record<ImportFailure, string>,
+    losses: {
+      titleTruncated: `標題超過 ${MAX_TITLE} 字，已截斷`,
+      artistTruncated: `演出者超過 ${MAX_TITLE} 字，已截斷`,
+      partNameTruncated: `聲部名稱超過 ${MAX_PART_NAME} 字，已截斷`,
+      sectionTruncated: `段落名稱超過 ${MAX_SECTION_NAME} 字，已截斷`,
+      textTruncated: `拍點文字超過 ${MAX_BEAT_TEXT} 字，已截斷`,
+      lyricTruncated: `歌詞超過 ${MAX_LYRIC} 字，已截斷`,
+      jump: "D.S.、D.C.、Coda、Fine 等跳躍記號，已省略",
+      tempoInBar: "小節中途的速度變化，已省略",
+      tempoText: "速度文字，已省略",
+      tempoOutOfRange: `速度超出 ${TEMPO_RANGE.min}–${TEMPO_RANGE.max}，已改成範圍內最接近的值`,
+      timeSignature: "不支援的拍號，已改成 4/4",
+      swing: "Swing 等搖擺節奏，已省略",
+      fermata: "延長記號，已省略",
+      repeatCount: `反覆超過 ${MAX_REPEAT} 次，已改成 ${MAX_REPEAT} 次`,
+      strings: `弦數不在 ${STRING_COUNTS.min}–${STRING_COUNTS.max} 的弦樂器，已改成五線譜聲部`,
+      tablatureHidden: "只顯示五線譜的吉他或貝斯，已改成五線譜聲部，不保留調弦與格號",
+      capo: "移調夾超出範圍，已改成範圍內最接近的值",
+      clef: "不支援的譜號或中途換譜號，已改用第一個譜號或高音譜號",
+      staves: `超過 ${MAX_STAVES} 個譜表的聲部，只保留前 ${MAX_STAVES} 個`,
+      voices: "第 3 條以後的聲線，已省略",
+      transposition: "移調樂器的移調，已省略",
+      duration: "短於六十四分音符或長於全音符的拍點，已省略",
+      dots: "超過 2 個附點，已改成 2 個",
+      tuplet: "不支援的連音，已改成一般拍點",
+      grace: "裝飾音，已省略",
+      dynamic: "pppp、ffff、sf、fz 等力度，已改成最接近的力度或省略",
+      crescendo: "漸強、漸弱，已省略",
+      lyricLines: "第二行以後的歌詞，已省略",
+      lyricOnUnpitched: "TAB 或鼓聲部上的歌詞，已省略",
+      chord: "和弦名稱與和弦指法圖，已省略",
+      slashed: "斜線節奏譜，已省略",
+      ottava: "八度記號，已省略",
+      pedal: "踏板記號，已省略",
+      whammy: "搖桿，已省略",
+      tremolo: "Tremolo picking，已省略",
+      arpeggio: "琶音，已省略",
+      fret: `超過第 ${MAX_FRET} 格的音，已省略`,
+      pitch: "音高超出範圍或重複的音，已省略",
+      drum: "不認得的鼓件，已省略",
+      bend: "推弦曲線，已改成最接近的推弦",
+      harmonic: "不支援的泛音，已省略",
+      slide: "不支援的滑音，已省略",
+      trill: "Trill，已省略",
+      fingering: "指法，已省略",
+      ornament: "裝飾記號，已省略",
+      slur: "圓滑線，已省略",
+      technique: "這種聲部沒有、或不支援的技巧，已省略",
+    } satisfies Record<ImportLoss, string>,
   },
   score: {
     unavailable: "無法開啟這份團譜",
