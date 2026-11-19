@@ -807,18 +807,27 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
     return execute(command);
   }
 
-  /** `EditorSession.drop`: a phrase from the sidebar, and bars pasted. */
-  function drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null {
-    let result: Dropped | DropRefusal | null = null;
-    const done = runWithoutKey({
+  /**
+   * Run a command that puts a fragment in (a drop, beats pasted) without a key. Refused (a string):
+   * the cursor and the selection stay; done: the cursor goes where `after` puts it, no selection.
+   * What the command gave, heard from inside it; null when it did not run.
+   */
+  function runFragment<T extends object | string>(command: (at: Cursor) => T, after: (at: Cursor, result: Exclude<T, string>) => Cursor | null): T | null {
+    let result: T | null = null;
+    runWithoutKey({
       changes: true,
       run: (at) => {
-        result = dropFragment(doc, target, fragment);
-        if (typeof result === "string") return { cursor: at, selection, done: false };
-        return { cursor: settled(at), selection: null };
+        const given = command(at);
+        result = given;
+        return typeof given === "string" ? { cursor: at, selection, done: false } : { cursor: after(at, given as Exclude<T, string>), selection: null };
       },
     });
-    return done || typeof result === "string" ? result : null;
+    return result;
+  }
+
+  /** `EditorSession.drop`: a phrase from the sidebar, and bars pasted. */
+  function drop(target: DropTarget, fragment: BarsFragment): Dropped | DropRefusal | null {
+    return runFragment(() => dropFragment(doc, target, fragment), settled);
   }
 
   return {
@@ -927,18 +936,8 @@ export function createEditorSession(doc: Y.Doc, { platform, cursor: start = null
         const dropped = drop({ partId: cursor.partId, barId: cursor.barId }, fragment);
         return dropped === null || typeof dropped === "string" ? dropped : { hints: dropped.hints };
       }
-      // What the command did, heard from inside it.
-      const outcome: { result: ReturnType<typeof pasteBeats> } = { result: "gone" };
-      runWithoutKey({
-        changes: true,
-        run: (at) => {
-          const result = pasteBeats(doc, at, fragment);
-          outcome.result = result;
-          // The cursor goes on the last beat pasted.
-          return typeof result === "string" ? { cursor: at, selection, done: false } : { cursor: { ...at, beatId: result.beatIds.at(-1)!, at: "on" }, selection: null };
-        },
-      });
-      const { result } = outcome;
+      // The cursor goes on the last beat pasted.
+      const result = runFragment((at) => pasteBeats(doc, at, fragment), (at, pasted) => ({ ...at, beatId: pasted.beatIds.at(-1)!, at: "on" })) ?? "gone";
       return typeof result === "string" ? result : { hints: result.hints };
     },
     insertBar(side) {
