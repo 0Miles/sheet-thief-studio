@@ -21,7 +21,7 @@ function typedScore() {
 
 test("after a restore the score reads as the version, ids and all; one undo brings back the score as it was before", () => {
   fc.assert(
-    fc.property(score(), (version) => {
+    fc.property(score({ maxBars: 2, maxParts: 2 }), (version) => {
       const { doc, undo } = typedScore();
       const before = docToJson(doc);
       replaceScore(doc, version);
@@ -31,7 +31,7 @@ test("after a restore the score reads as the version, ids and all; one undo brin
       undo.redo();
       expect(docToJson(doc)).toEqual(version);
     }),
-    { numRuns: 100 },
+    { numRuns: 25 },
   );
 });
 

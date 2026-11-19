@@ -175,3 +175,62 @@ test("a tempo and a repeat set while it plays: playback goes on in the bar it wa
   await expect(page.locator('[data-player="playing"]')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/** What the page told the synthesizer's worker, in order: each new sound, and each channel's volume. */
+type SynthMessage = { cmd: "loadMidi" } | { cmd: "volume"; channel: number; volume: number };
+
+/** Keep, from the next page load on, what the page sends to alphaTab's synthesizer worker. */
+async function recordSynthMessages(page: Page): Promise<void> {
+  await page.context().addInitScript(() => {
+    const sent: unknown[] = [];
+    (window as unknown as { __synthMessages: unknown[] }).__synthMessages = sent;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      const message = args[0] as { cmd?: string; channel?: number; volume?: number } | null;
+      if (message?.cmd === "alphaSynth.loadMidi") sent.push({ cmd: "loadMidi" });
+      if (message?.cmd === "alphaSynth.setChannelVolume") sent.push({ cmd: "volume", channel: message.channel, volume: message.volume });
+      return (post as (...all: unknown[]) => void).apply(this, args);
+    } as typeof post;
+  });
+}
+
+function synthMessages(page: Page): Promise<SynthMessage[]> {
+  return page.evaluate(() => (window as unknown as { __synthMessages: SynthMessage[] }).__synthMessages);
+}
+
+/** The volume each channel was given last. */
+function lastVolumes(messages: SynthMessage[]): Record<number, number> {
+  const volumes: Record<number, number> = {};
+  for (const message of messages) if (message.cmd === "volume") volumes[message.channel] = message.volume;
+  return volumes;
+}
+
+test("opened again, the volume a member gave a part is the last one the synthesizer is told: alphaTab's own does not win (#152)", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  await openToPlay(page, id);
+  const [guitar] = (await scoreOf(page)).parts;
+  const mixer = await openMixer(page);
+  await mixer.getByLabel(text.mixer.volumeOf(guitar!.name)).fill("0.5");
+
+  await recordSynthMessages(page);
+  await openToPlay(page, id);
+  // After the last new sound, alphaTab says the player is ready once more and sets every channel
+  // to the volume written in the score, 15/16 (docs/spec/playback.md, section 5, #152): wait for
+  // that. The engine answers in the same event, so what follows is already in the record.
+  const ALPHATAB_DEFAULT = 15 / 16;
+  await expect
+    .poll(
+      async () => {
+        const messages = await synthMessages(page);
+        const sinceLastSound = messages.slice(messages.map((message) => message.cmd).lastIndexOf("loadMidi") + 1);
+        return sinceLastSound.some((message) => message.cmd === "volume" && message.volume === ALPHATAB_DEFAULT);
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  // The guitar on channels 0 and 2, the bass, never set, on 1 and 3.
+  expect(lastVolumes(await synthMessages(page))).toEqual({ 0: 0.5, 1: 1, 2: 0.5, 3: 1 });
+  expect(errors).toEqual([]);
+});

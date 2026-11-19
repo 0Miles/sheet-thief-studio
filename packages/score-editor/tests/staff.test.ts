@@ -223,3 +223,31 @@ test("on a keyboard, C, D, E on the treble staff, Ctrl+↓, then F on the bass s
   press("ArrowDown", 1000, { ctrlKey: true });
   expect(cursor()).toMatchObject({ voice: "1:1" });
 });
+
+// #182: the way back, to the staff above and to the first voice.
+test("on a keyboard, Ctrl+↓ then Ctrl+↑ is back on the treble staff: a letter goes into 0:0, 1:0 as it was", () => {
+  const { press, beats, cursor } = sessionOn("pitched", 2, "other", [...KEYBOARD].map((staff) => ({ ...staff })));
+  press("ArrowDown", 1000, { ctrlKey: true });
+  press("f");
+  expect(cursor()).toMatchObject({ voice: "1:0" });
+  expect(press("ArrowUp", 1000, { ctrlKey: true })).toBe(true);
+  expect(cursor()).toMatchObject({ voice: "0:0" });
+  press("c");
+  expect(notesOf(beats(0, "0:0"))).toEqual([{ n72: { spell: "C" } }]);
+  expect(notesOf(beats(0, "1:0"))).toEqual([{ n53: { spell: "F" } }]);
+});
+
+test("Alt+2 then Alt+1 is back in the first voice of the staff: a letter goes into it, the second voice as it was", () => {
+  const { press, beats, cursor } = sessionOn("pitched");
+  press("Digit2", 1000, { altKey: true });
+  expect(cursor()).toMatchObject({ voice: "0:1" });
+  press("g");
+  const second = notesOf(beats(0, "0:1"));
+  expect(second).toHaveLength(1);
+  expect(press("Digit1", 1000, { altKey: true })).toBe(true);
+  expect(cursor()).toMatchObject({ voice: "0:0" });
+  press("c");
+  expect(notesOf(beats(0, "0:0"))).toHaveLength(1);
+  expect(Object.values(beats(0, "0:0")[0]!.notes)).toEqual([{ spell: "C" }]);
+  expect(notesOf(beats(0, "0:1"))).toEqual(second);
+});

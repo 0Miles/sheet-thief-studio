@@ -16,6 +16,7 @@ import {
   insertBars,
   insertBeat,
   type KeySignature,
+  lineOfPitch,
   moveNotesByOctave,
   moveNotesBySemitone,
   type NoteJSON,
@@ -267,14 +268,103 @@ test("in the append slot of the next bar's bass staff, a tie makes a beat with t
   expect(flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie")).toEqual([]);
 });
 
-test("the beat before draws its notes in the key of its own bar: an unspelled B♭ in F major is on B's line for a tie in the next bar", () => {
-  const { doc, start, barIds, notes } = keyboard({ fifths: -1, mode: "major" });
-  const first = setNote(doc, insertBeat(doc, start), "n70", {});
-  // The next bar in C major, where n70 unspelled would be A♯, on A's line.
-  setKeySig(doc, { ...first, barId: barIds[1]! }, { fifths: 0, mode: "major" });
-  const next: Cursor = { ...first, barId: barIds[1]!, beatId: null, at: "after", line: 4 };
-  expect(tieKeysAt(doc, next)).toEqual(["n70"]);
-  expect(tieKeysAt(doc, { ...next, line: 5 })).toEqual([]);
-  tieAt(doc, next);
-  expect(notes("0:0", 1)).toEqual([{ n70: { tie: true } }]);
+const C_MAJOR: KeySignature = { fifths: 0, mode: "major" };
+const F_MAJOR: KeySignature = { fifths: -1, mode: "major" };
+
+/** A beat holding `before` in the first bar, in `own` key, and the cursor in the append slot of the second bar, in `next` key, on `line` of the treble staff. */
+function acrossBars(own: KeySignature, next: KeySignature, before: Record<string, NoteJSON>, line: number) {
+  const made = keyboard(own);
+  const first = made.beatWith(before);
+  setKeySig(made.doc, { ...first, barId: made.barIds[1]! }, next);
+  const cursor: Cursor = { ...first, barId: made.barIds[1]!, beatId: null, at: "after", line };
+  return { ...made, cursor };
+}
+
+test("the beat before draws its notes in the key of its own bar: an unspelled B♭ in F major is tied on B's line in a bar of C major, spelled B♭ to be drawn there; again, only the tie goes", () => {
+  // In C major n70 unspelled would be A♯, on A's line (5), not on the cursor's (4).
+  const { doc, cursor, notes } = acrossBars(F_MAJOR, C_MAJOR, { n70: {} }, 4);
+  expect(tieKeysAt(doc, cursor)).toEqual(["n70"]);
+  expect(tieKeysAt(doc, { ...cursor, line: 5 })).toEqual([]);
+  const transactions = transactionsOf(doc);
+  const tied = tieAt(doc, cursor);
+  expect(transactions.count).toBe(1);
+  expect(tied).toMatchObject({ at: "on", line: 4 });
+  expect(notes("0:0", 1)).toEqual([{ n70: { spell: "Bb", tie: true } }]);
+  expect(lineOfPitch("treble", 70, "Bb", C_MAJOR)).toBe(cursor.line);
+  // The note is on the cursor's line now: the tie key is on it there, and not on A's line.
+  expect(tieKeysAt(doc, tied)).toEqual(["n70"]);
+  expect(tieKeysAt(doc, { ...tied, line: 5 })).toEqual([]);
+  tieAt(doc, tied);
+  expect(notes("0:0", 1)).toEqual([{ n70: { spell: "Bb" } }]);
+});
+
+test("a tie writes a spelling only where the note would be drawn off the cursor's line without it", () => {
+  // The same bar: the unspelled B♭ of F major is on B's line in the beat after too.
+  const same = keyboard(F_MAJOR);
+  const second = appendBeat(same.doc, same.beatWith({ n70: {} }));
+  expect(tieAt(same.doc, second)).toEqual(second);
+  expect(same.notes()[1]).toEqual({ n70: { tie: true } });
+  expect(lineOfPitch("treble", 70, undefined, F_MAJOR)).toBe(4);
+  // Another key that spells it the same way: B♭ major.
+  const flats: KeySignature = { fifths: -2, mode: "major" };
+  const alike = acrossBars(F_MAJOR, flats, { n70: {} }, 4);
+  tieAt(alike.doc, alike.cursor);
+  expect(alike.notes("0:0", 1)).toEqual([{ n70: { tie: true } }]);
+  expect(lineOfPitch("treble", 70, undefined, flats)).toBe(4);
+  // A note spelled as its pitch is, is made with that spelling, in whatever key: A♯ on A's line.
+  const spelled = acrossBars(F_MAJOR, C_MAJOR, { n70: { spell: "A#" } }, 5);
+  expect(tieKeysAt(spelled.doc, { ...spelled.cursor, line: 4 })).toEqual([]);
+  tieAt(spelled.doc, spelled.cursor);
+  expect(spelled.notes("0:0", 1)).toEqual([{ n70: { spell: "A#", tie: true } }]);
+  expect(lineOfPitch("treble", 70, "A#", C_MAJOR)).toBe(5);
+  const flat = acrossBars(C_MAJOR, { fifths: 2, mode: "major" }, { n70: { spell: "Bb" } }, 4);
+  tieAt(flat.doc, flat.cursor);
+  expect(flat.notes("0:0", 1)).toEqual([{ n70: { spell: "Bb", tie: true } }]);
+  expect(lineOfPitch("treble", 70, "Bb", { fifths: 2, mode: "major" })).toBe(4);
+});
+
+test("a spelling that does not name its pitch is not carried into a bar of another key: the note is made with the spelling it is drawn with in its own bar", () => {
+  // n70 spelled "C" is drawn as F major's default, B♭, on B's line (4); in C major "C" would leave it as A♯, on A's line.
+  const { doc, cursor, notes } = acrossBars(F_MAJOR, C_MAJOR, { n70: { spell: "C" } }, 4);
+  expect(tieKeysAt(doc, cursor)).toEqual(["n70"]);
+  tieAt(doc, cursor);
+  expect(notes("0:0", 1)).toEqual([{ n70: { spell: "Bb", tie: true } }]);
+  expect(lineOfPitch("treble", 70, "Bb", C_MAJOR)).toBe(cursor.line);
+});
+
+// #182: a pitch is one note of a beat. E♭5 at the cursor is D♯5's pitch, drawn on E's line (1), not on D's (2).
+test("a pitch the cursor's beat holds on another line is not the tie's: on the empty line of the D♯ before, with the same pitch here as E♭, nothing", () => {
+  const { doc, beatWith, notes } = keyboard();
+  const first = beatWith({ n75: { spell: "D#" } }, 2);
+  const second = setNote(doc, appendBeat(doc, first), "n75", { spell: "Eb" });
+  const onD = { ...second, line: 2 };
+  const transactions = transactionsOf(doc);
+  expect(tieKeysAt(doc, onD)).toEqual([]);
+  expect(tieAt(doc, onD)).toEqual(onD);
+  expect(transactions.count).toBe(0);
+  expect(notes()).toEqual([{ n75: { spell: "D#" } }, { n75: { spell: "Eb" } }]);
+});
+
+test("on the line the E♭ is drawn on, the tie is on it as before: on, not dangling, then off", () => {
+  const { doc, beatWith, notes } = keyboard();
+  const first = beatWith({ n75: { spell: "D#" } }, 2);
+  const onE = { ...setNote(doc, appendBeat(doc, first), "n75", { spell: "Eb" }), line: 1 };
+  expect(tieKeysAt(doc, onE)).toEqual(["n75"]);
+  tieAt(doc, onE);
+  expect(notes()).toEqual([{ n75: { spell: "D#" } }, { n75: { spell: "Eb", tie: true } }]);
+  expect(flagsOf(docToJson(doc)).filter((flag) => flag.kind === "danglingTie")).toEqual([]);
+  tieAt(doc, onE);
+  expect(notes()).toEqual([{ n75: { spell: "D#" } }, { n75: { spell: "Eb" } }]);
+});
+
+test("of D and D♯ before, with the D♯'s pitch here as E♭, the tie on D's line makes the D only and leaves the E♭; one transaction", () => {
+  const { doc, beatWith, notes } = keyboard();
+  const first = beatWith({ n74: { spell: "D" }, n75: { spell: "D#" } }, 2);
+  const onD = { ...setNote(doc, appendBeat(doc, first), "n75", { spell: "Eb" }), line: 2 };
+  expect(tieKeysAt(doc, onD)).toEqual(["n74"]);
+  const transactions = transactionsOf(doc);
+  expect(tieAt(doc, onD)).toEqual(onD);
+  expect(transactions.count).toBe(1);
+  expect(notes()[1]).toEqual({ n74: { spell: "D", tie: true }, n75: { spell: "Eb" } });
+  expect(lineOfPitch("treble", 74, "D", C_MAJOR)).toBe(onD.line);
 });

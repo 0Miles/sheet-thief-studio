@@ -140,7 +140,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 **補充**（#29）：`Shift+N` 是 `bindings.ts` 的 `harmonic` 綁定，只綁在 fretted 聲部（這個欄位只有 fretted 有），兩個平台相同；有選取時作用在整個範圍，走到同一個泛音（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#36）：tie（`Shift+L`）是 `bindings.ts` 的 `tie` 綁定（`commands.ts` 的 `tieToggle`）。**補充**（#49）：五線譜另有情境 `pitched` 的 `tie` 綁定，依「同一條線」找前一個音：鍵由 `tieKeysAt` 給出，那條線上沒有音時建立前一個拍點畫在那條線上的音（[`commands.md`](commands.md) 5.4 的 #49 補充）。和五線譜的 `L` 以外的字母鍵不衝突：修飾鍵要完全相符，`Shift+A`、`Shift+C` 也不會輸入 A、C。
+**補充**（#36）：tie（`Shift+L`）是 `bindings.ts` 的 `tie` 綁定（`commands.ts` 的 `tieToggle`）。**補充**（#49）：五線譜另有情境 `pitched` 的 `tie` 綁定，依「同一條線」找前一個音：鍵由 `tieKeysAt` 給出，那條線上沒有音時建立前一個拍點畫在那條線上的音，建立的音也畫在那條線上（[`commands.md`](commands.md) 5.4 的 #49、#182 補充）。和五線譜的 `L` 以外的字母鍵不衝突：修飾鍵要完全相符，`Shift+A`、`Shift+C` 也不會輸入 A、C。
 
 ## 4. 各聲部種類的輸入鍵
 

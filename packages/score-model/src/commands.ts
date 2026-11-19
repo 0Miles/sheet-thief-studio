@@ -71,7 +71,7 @@ import {
 } from "./schema";
 import { writeScore } from "./build";
 import { drumLineOf, drumLineOfKey } from "./drums";
-import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling } from "./pitch";
+import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling, spellCarriedTo } from "./pitch";
 import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -759,12 +759,15 @@ export type OnOffTechnique = (typeof ON_OFF_TECHNIQUES)[number];
 /**
  * Where a note a toggle turns stands: the kind of its part, its key, and the note with the same
  * key on the beat before in its voice (the last beat of the bar before, for the first beat of a
- * bar), when one can be read.
+ * bar), when one can be read. At the cursor of a staff, also the spelling a note made there of the
+ * pitch of the note before is drawn on that note's position with (`spellCarried`); none over a
+ * selection, which makes no note.
  */
 export interface NotePlace {
   kind: PartKind;
   key: string;
   before: NoteJSON | undefined;
+  spell?: string | undefined;
 }
 
 /**
@@ -829,8 +832,9 @@ const plainTie = plainToggle("tie");
  * it is on too, to make the note there. Adding it takes the fret of the note before on the same
  * string, the command's own doing, not a repair; with no fret before, the note keeps its own and
  * is a dangling tie (docs/spec/flags.md). On an empty line it makes the note before's fret there,
- * or on a staff (a pitched part's key is its pitch) the note before's pitch as it is spelled; with
- * no such note before, nothing. Off takes the tie away and keeps the fret.
+ * or on a staff (a pitched part's key is its pitch) the note before's pitch, spelled so that it is
+ * drawn where that note is (`NotePlace.spell`); with no such note before, nothing. Off takes the
+ * tie away and keeps the fret.
  */
 export const tieToggle: NoteToggle<boolean> = {
   decide: (seen) => seen.length === 0 || plainTie.decide(seen),
@@ -840,7 +844,7 @@ export const tieToggle: NoteToggle<boolean> = {
     if (on && before?.fret !== undefined) return stored?.tie === true && stored.fret === before.fret ? stored : { ...stored, fret: before.fret, tie: true };
     if (!on || stored !== undefined) return plainTie.turn(stored, on, place);
     if (before === undefined || kind !== "pitched") return null;
-    return before.spell === undefined ? { tie: true } : { spell: before.spell, tie: true };
+    return place.spell === undefined ? { tie: true } : { spell: place.spell, tie: true };
   },
 };
 
@@ -985,16 +989,29 @@ export function toggleKeysAt<D>(doc: Y.Doc, cursor: Cursor, keys: readonly strin
   if (beat !== undefined && !readsAsBeat(reader.kind, beat)) return cursor;
   const notes = notesOf(beat);
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
-  const previous = notesBefore(doc, reader, cursor, place.voice, place.index);
+  const previous = beatBefore(doc, reader, cursor, place.voice, place.index);
+  const held = notesOf(previous?.beat);
+  const carried = reader.kind === "pitched" && previous !== undefined ? spellCarried(doc, previous.barId, cursor.barId) : undefined;
   const readable = keys.flatMap((key) => {
     const stored = notes?.get(key);
     const seen = reader.note(key, stored);
-    return stored !== undefined && seen === undefined ? [] : [{ key, seen, before: reader.note(key, previous?.get(key)) }];
+    return stored !== undefined && seen === undefined ? [] : [{ key, seen, before: reader.note(key, held?.get(key)) }];
   });
   if (readable.length === 0) return cursor;
   const decided = toggle.decide(readable.flatMap(({ seen }) => (seen === undefined ? [] : [seen])));
   const befores = new Map(readable.map(({ key, before }) => [key, before]));
-  return writeNotes(doc, cursor, [...befores.keys()], (key, note) => toggle.turn(note, decided, { kind: reader.kind, key, before: befores.get(key) }));
+  return writeNotes(doc, cursor, [...befores.keys()], (key, note) => {
+    const before = befores.get(key);
+    // Read by the toggles that make a note only (`place.spell`): the others pay nothing for it.
+    return toggle.turn(note, decided, {
+      kind: reader.kind,
+      key,
+      before,
+      get spell() {
+        return before && carried?.(key, before);
+      },
+    });
+  });
 }
 
 /**
@@ -1091,6 +1108,22 @@ function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
   });
 }
 
+/**
+ * The spelling a note made in bar `to` takes to be drawn on the position the note of its pitch
+ * before it, in bar `from`, is drawn on (#182): that note's own, none when it has none, as long as
+ * the keys in force in the two bars draw it alike; else the one it is drawn with in its own bar (an
+ * unspelled B♭ of F major is "Bb" in a bar of C major, which would draw it as A♯).
+ */
+function spellCarried(doc: Y.Doc, from: string, to: string): (key: string, before: NoteJSON) => string | undefined {
+  if (from === to) return (_key, before) => before.spell;
+  // The keys in force in the two bars, read the first time a spelling is asked for.
+  let keys: { own: KeySignature; here: KeySignature } | undefined;
+  return (key, before) => {
+    keys ??= { own: keySigIn(doc, from), here: keySigIn(doc, to) };
+    return spellCarriedTo(pitchOfKey(key), before.spell, keys.own, keys.here);
+  };
+}
+
 /** The keys of the notes drawn on the cursor's line of a staff (`notesOnLine`). */
 function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const place = staffPlaceOf(doc, cursor);
@@ -1101,8 +1134,11 @@ function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
  * The keys of the notes a tie changes at the cursor (docs/spec/commands.md, 5.4; #49): those of
  * the cursor's line (`noteKeysAt`). On a staff whose line holds no note at the cursor (or in the
  * append slot), those of the notes the beat before draws on that line, by the clef of the staff and
- * the key in force in the bar of that beat: the tie makes them there, of the same pitch and
- * spelling (`tieToggle`). None when that beat draws none there.
+ * the key in force in the bar of that beat: the tie makes them there, of the same pitch and drawn
+ * on that line (`tieToggle`). A pitch the cursor's beat holds already, drawn on another line as it
+ * is spelled, is not one of them (#182): a beat has one note of a pitch, so none can be made on the
+ * cursor's line, and the one on the other line is not the tie's to change. None when that beat
+ * draws none there.
  */
 export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const keys = noteKeysAt(doc, cursor);
@@ -1112,7 +1148,8 @@ export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
   const before = beatBefore(doc, place.reader, cursor, at.voice, at.index);
   if (before === undefined) return [];
   const keySig = before.barId === cursor.barId ? place.keySig : keySigIn(doc, before.barId);
-  return notesOnLine({ ...place, keySig, beat: before.beat }, cursor.line).map(({ key }) => key);
+  const here = notesOf(place.beat);
+  return notesOnLine({ ...place, keySig, beat: before.beat }, cursor.line).flatMap(({ key }) => (here?.has(key) ? [] : [key]));
 }
 
 /** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */

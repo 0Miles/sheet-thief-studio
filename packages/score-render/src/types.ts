@@ -88,13 +88,29 @@ export interface ScoreRenderer {
    * only the pieces on screen are painted, each a moment after `onRendered`.
    */
   onPainted(listener: (barIds: string[]) => void): Unsubscribe;
+  /**
+   * What the engine needs to draw could not be had: the music font, or the worker that lays out
+   * the score (#151). Nothing is drawn until `retry()` has them; the engine retries by itself once
+   * the browser is back online.
+   */
+  readonly failed: boolean;
+  /** Called when `failed` changes: true when it fails, false when it is asked for again. */
+  onFailed(listener: (failed: boolean) => void): Unsubscribe;
+  /**
+   * The same as `ScorePlayer.retry()`. With nothing failed, nothing. When the music font or a
+   * worker could not be had (`failed`, or the player's worker, #151): download all of it again
+   * with a new alphaTab API, and draw the score asked for last from scratch; the player starts
+   * over too ("loading"). Otherwise, when only the soundfont could not be had: download it again.
+   */
+  retry(): void;
   destroy(): void;
 }
 
 /**
  * "loading" until the soundfont and the sound of the score are in place. "failed" when the
- * soundfont could not be had (the network went, the server refused it): `retry()` asks for it
- * again, as the player does itself once the browser is back online, "loading" meanwhile.
+ * soundfont, or the worker that makes the sound (#151), could not be had (the network went, the
+ * server refused it): `retry()` asks for it again, as the player does itself once the browser is
+ * back online, "loading" meanwhile.
  * "unavailable" from the start, and for good, in a browser that cannot play (no Web Audio):
  * nothing plays, the score is still drawn (docs/spec/playback.md, 4.1).
  */
@@ -140,7 +156,13 @@ export interface ScorePlayer {
    * was; resolves once the new sound is in place.
    */
   load(): Promise<void>;
-  /** The soundfont could not be had ("failed"): ask for it again, "loading" meanwhile. Otherwise nothing. */
+  /**
+   * The same as `ScoreRenderer.retry()`. With nothing failed, nothing. When the music font or a
+   * worker could not be had (the score's `failed`, or this player "failed" for its worker, #151):
+   * download all of it again with a new alphaTab API, the score drawn anew, whatever the state
+   * of the player, "loading" meanwhile. Otherwise, when only the soundfont could not be had
+   * ("failed"): download it again, "loading" meanwhile.
+   */
   retry(): void;
   play(): void;
   pause(): void;

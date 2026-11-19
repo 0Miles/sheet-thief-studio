@@ -114,6 +114,17 @@ function drawnSpelling(pitch: number, spell: string | undefined, keySig: KeySign
 }
 
 /**
+ * The spelling a note keeps the position it is drawn on in the key `from` with, in the key `to`
+ * (#182): its own `spell` (none when it has none) when both keys draw it spelled alike (its own
+ * spelling when that names its pitch, else the key's default), so on one position; else the
+ * spelling it is drawn with in `from`, as `spell` writes it.
+ */
+export function spellCarriedTo(pitch: number, spell: string | undefined, from: KeySignature, to: KeySignature): string | undefined {
+  const drawn = spellOf(drawnSpelling(pitch, spell, from));
+  return drawn === spellOf(drawnSpelling(pitch, spell, to)) ? spell : drawn;
+}
+
+/**
  * The staff position a note is drawn on in a clef: that of its spelled letter (C♯4 and C4 on one
  * position, D♭4 on D4's; B♯3, which sounds as C4, on B3's). A spelling that does not name its
  * pitch is drawn as the key's default, as the projection draws it.
