@@ -392,11 +392,20 @@ function backOnline(): void {
   window.dispatchEvent(new globalThis.Event("online"));
 }
 
-/** A new engine on an element with nothing drawn in it (what the engine clears when it draws nothing), and the stand-in for its alphaTab API. */
+/** An element with nothing drawn in it (what the engine clears when it draws nothing). */
+const HOST = { querySelector: () => null } as unknown as HTMLElement;
+
+/** A new engine on an element with nothing drawn in it (`HOST`), and the stand-in for its alphaTab API. */
 function makeEngine(options: Partial<EngineOptions> = {}): { made: ScoreEngine; stand: StandIn } {
   standIns.length = 0;
-  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", ...options });
+  const made = createAlphaTabEngine(HOST, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", ...options });
   return { made, stand: standIns[0]! };
+}
+
+/** One more engine on the page, beside those there already (#151): without a player nor a worker, and the stand-in for its alphaTab API. */
+function besideEngine(): { made: ScoreEngine; stand: StandIn } {
+  const made = createAlphaTabEngine(HOST, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  return { made, stand: standIns.at(-1)! };
 }
 
 /** An engine drawing an 8-bar score, its worker up: alphaTab makes the first sound itself. */
@@ -1156,7 +1165,7 @@ test("the music font could not be had: the score is told failed; retried, a new 
   engine.renderer.retry();
   newApi();
   expect(old.destroyed).toBe(true);
-  const sources = [...(api.settings.core.smuflFontSources?.values() ?? [])];
+  const sources = fontSourcesOf(api);
   expect(sources).toHaveLength(3);
   for (const source of sources) expect(source).toMatch(/^\/font\/Bravura\.\w+\?attempt=\d+$/);
   expect(engine.renderer.failed).toBe(false);
@@ -1174,9 +1183,7 @@ test("the music font could not be had: the score is told failed; retried, a new 
   api.postRenderFinished.emit();
   expect(rendered).toEqual([false]);
   // The new player has the sound font, and the sound of the score: paused at the start, with the member's mix.
-  api.ready = true;
-  api.loadMidiForScore();
-  newSound();
+  firstSound();
   expect(engine.player.state).toBe("paused");
   expect(api.player.volumes.get(0)).toBe(0.5);
   engine.player.play();
@@ -1224,9 +1231,7 @@ test("the worker that makes the sound could not be had: the player failed, the s
   newApi();
   expect(states).toEqual(["failed", "loading"]);
   expect(asked()).toEqual(["renderScore"]);
-  api.ready = true;
-  api.loadMidiForScore();
-  newSound();
+  firstSound();
   expect(engine.player.state).toBe("paused");
 });
 
@@ -1513,7 +1518,7 @@ test("the music font is asked for from alphaTab's own sources until one failed o
   const fresh = await import("../src/index");
   browserWith();
   standIns.length = 0;
-  const make = () => fresh.createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false });
+  const make = () => fresh.createAlphaTabEngine(HOST, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false });
   /** The attempt every source of an API carries; null when none carries a query. */
   const attemptOf = (stand: StandIn): string | null => {
     const sources = fontSourcesOf(stand);
@@ -1596,8 +1601,7 @@ test("two engines on the page whose fonts both failed: one retried is not taken 
   engine.renderer.onFailed((failed) => told.push(failed));
   engine.renderer.onRendered(({ partial }) => drawn.push(partial));
   fonts.failed(api.fontFamily);
-  const preview = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  const previewApi = standIns.at(-1)!;
+  const { made: preview, stand: previewApi } = besideEngine();
   fonts.failed(previewApi.fontFamily);
   expect([engine.renderer.failed, preview.renderer.failed]).toEqual([true, true]);
 
@@ -1620,8 +1624,8 @@ test("two engines on the page whose fonts both failed: one retried is not taken 
 
 test("an engine made with the sources of one still on the page, its font still coming: both are told when it fails", () => {
   const told: boolean[] = [];
-  const other = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  expect(standIns.at(-1)!.webFont).toBe(api.webFont);
+  const { made: other, stand } = besideEngine();
+  expect(stand.webFont).toBe(api.webFont);
   other.renderer.onFailed((failed) => told.push(failed));
   fonts.failed(api.fontFamily);
   expect([engine.renderer.failed, other.renderer.failed]).toEqual([true, true]);
@@ -1635,8 +1639,7 @@ test("an engine made with the sources of one still on the page, its font still c
  */
 function retriedBesideAFailedPreview(): { preview: ScoreEngine; previewApi: StandIn } {
   fonts.failed(api.fontFamily);
-  const preview = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  const previewApi = standIns.at(-1)!;
+  const { made: preview, stand: previewApi } = besideEngine();
   fonts.failed(previewApi.fontFamily);
   engine.renderer.retry();
   newApi();
@@ -1649,14 +1652,12 @@ function retriedBesideAFailedPreview(): { preview: ScoreEngine; previewApi: Stan
 test("a third engine made beside one retried and one still failed shares the font of the one retried: the failed face of the same name is not its own", () => {
   const { previewApi } = retriedBesideAFailedPreview();
   const sources = fontSourcesOf(api);
-  const third = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  const thirdApi = standIns.at(-1)!;
+  const { made: third, stand: thirdApi } = besideEngine();
   expect(thirdApi.webFont).toBe(api.webFont);
   expect(thirdApi.fontFamily).toBe(previewApi.fontFamily);
   expect(third.renderer.failed).toBe(false);
   // Nor did it count as one more failure of the font: the next engine asks from the same sources.
-  createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  expect(fontSourcesOf(standIns.at(-1)!)).toEqual(sources);
+  expect(fontSourcesOf(besideEngine().stand)).toEqual(sources);
   // The font they share failing is both's.
   fonts.failedFace(api.webFont.face);
   expect([engine.renderer.failed, third.renderer.failed]).toEqual([true, true]);
@@ -1665,8 +1666,7 @@ test("a third engine made beside one retried and one still failed shares the fon
 test("the engine retried gone, one made after it registers the font anew under the name of the one still failed, and is not failed", () => {
   const { previewApi } = retriedBesideAFailedPreview();
   engine.destroy();
-  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
-  const stand = standIns.at(-1)!;
+  const { made, stand } = besideEngine();
   expect(stand.fontFamily).toBe(previewApi.fontFamily);
   expect(stand.webFont).not.toBe(previewApi.webFont);
   expect(stand.webFont).not.toBe(api.webFont);

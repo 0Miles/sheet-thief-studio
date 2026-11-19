@@ -62,7 +62,7 @@ const previewed = shallowRef<ScoreJSON | null>(null);
 const previewError = ref<string | null>(null);
 /** The version chosen is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const drawnVersion = ref<string | null>(null);
-/** The version could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+/** Whether the version could not be drawn (`drawFailure`). */
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 const host = ref<HTMLElement>();
 let engine: ScoreEngine | undefined;

@@ -3,18 +3,15 @@
 // tells no one; the page says so where the score would be, asks again by itself once the browser
 // is back online, and on the member's retry. The downloads are cut short with `page.route`, as
 // when the network goes while they come.
-import { type BrowserContextOptions, expect, type Page, test } from "./test";
+import { expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { createPhrase, drawn, loggedIn, pageErrors, ready, runName, seedScore, soundReady } from "./pages";
+import { createPhrase, drawn, loggedIn, pageErrors, ready, runName, seedScore, soundReady, TABLET } from "./pages";
 
 const text = strings.score;
 /** What the browser and alphaTab log of each download of the font cut short. */
 const OF_FONT = /Bravura|ERR_INTERNET_DISCONNECTED|Loading Failed, rendering cannot start/;
-
-/** A tablet's width: the Read view for a member, which lays out in a worker (docs/spec/views.md). */
-const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
 
 function seed(): string {
   return seedScore({ title: "載入失敗測試", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }] });
@@ -115,7 +112,7 @@ test("the phrase editor, a phrase's preview beside the score and a version's pre
   await expect(failed).toHaveCount(0);
 
   // The preview of a phrase in the score's sidebar: the score has its own, and its own retry.
-  await page.route(font, (route) => route.abort("internetdisconnected"));
+  await cutShort(page, font);
   await page.goto(`/scores/${id}`);
   await expect(failed).toHaveCount(1);
   await page.locator("[data-toggle-phrases]").click();
@@ -134,7 +131,7 @@ test("the phrase editor, a phrase's preview beside the score and a version's pre
   await expect(failed).toHaveCount(0);
 
   // The preview of a version.
-  await page.route(font, (route) => route.abort("internetdisconnected"));
+  await cutShort(page, font);
   await page.goto(`/scores/${id}/versions`);
   const pane = page.locator("[data-preview-pane]");
   await expect(pane.locator("[data-draw-failed]")).toContainText(text.drawing.failed);

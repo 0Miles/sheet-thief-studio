@@ -71,7 +71,7 @@ import {
 } from "./schema";
 import { writeScore } from "./build";
 import { drumLineOf, drumLineOfKey } from "./drums";
-import { drawnSpell, enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling } from "./pitch";
+import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling, spellCarriedTo } from "./pitch";
 import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
@@ -1002,7 +1002,15 @@ export function toggleKeysAt<D>(doc: Y.Doc, cursor: Cursor, keys: readonly strin
   const befores = new Map(readable.map(({ key, before }) => [key, before]));
   return writeNotes(doc, cursor, [...befores.keys()], (key, note) => {
     const before = befores.get(key);
-    return toggle.turn(note, decided, { kind: reader.kind, key, before, spell: before && carried?.(key, before) });
+    // Read by the toggles that make a note only (`place.spell`): the others pay nothing for it.
+    return toggle.turn(note, decided, {
+      kind: reader.kind,
+      key,
+      before,
+      get spell() {
+        return before && carried?.(key, before);
+      },
+    });
   });
 }
 
@@ -1108,12 +1116,11 @@ function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
  */
 function spellCarried(doc: Y.Doc, from: string, to: string): (key: string, before: NoteJSON) => string | undefined {
   if (from === to) return (_key, before) => before.spell;
-  const own = keySigIn(doc, from);
-  const here = keySigIn(doc, to);
+  // The keys in force in the two bars, read the first time a spelling is asked for.
+  let keys: { own: KeySignature; here: KeySignature } | undefined;
   return (key, before) => {
-    const pitch = pitchOfKey(key);
-    const drawn = drawnSpell(pitch, before.spell, own);
-    return drawn === drawnSpell(pitch, before.spell, here) ? before.spell : drawn;
+    keys ??= { own: keySigIn(doc, from), here: keySigIn(doc, to) };
+    return spellCarriedTo(pitchOfKey(key), before.spell, keys.own, keys.here);
   };
 }
 

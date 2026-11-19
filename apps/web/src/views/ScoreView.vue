@@ -97,7 +97,7 @@ const props = defineProps<{ id?: string; token?: string; notice?: string; readOn
 /** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
 const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
-/** The score could not be drawn: the music font, or the worker of the Read view, could not be had (#151). */
+/** Whether the score could not be drawn (`drawFailure`). */
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 const isGuest = props.token !== undefined;
 /** Who is logged in here: their own other tabs are not listed among the members present. */

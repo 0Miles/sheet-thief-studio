@@ -57,6 +57,9 @@ class Listeners<T> {
 
 const NO_TIMINGS: RenderTimings = { project: 0, finish: 0, render: 0 };
 
+/** Where playback is before it has been anywhere; never changed in place. */
+const NO_POSITION: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
+
 /**
  * Whether alphaTab 1.9 can make a player that gets ready in this browser (#129: Playwright's
  * WebKit for Windows has no Web Audio). The output check is alphaTab's own, from
@@ -211,7 +214,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   private finished = new Listeners<void>();
   private playerState: PlayerState = "loading";
   private playerIsReady = false;
-  private lastPosition: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
+  private lastPosition: PlayerPosition = NO_POSITION;
   /**
    * What the member asked for last: to play, or not. alphaTab's own state (`api.playerState`)
    * comes from its worker, after the fact: a pause just asked for is not in it yet.
@@ -321,7 +324,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     }
     // Before alphaTab registers the font: the faces on the page that are not this API's.
     const fonts = (globalThis as { document?: Document }).document?.fonts;
-    const others = fonts === undefined ? new Set<FontFace>() : facesOfOthers(attempt, fonts);
+    const others = fonts && facesOfOthers(attempt, fonts);
     const { made: api, workers } = workersMadeBy(() => new alphaTab.AlphaTabApi(this.element, settings));
     this.api = api;
     // Every listener is added once, here: alphaTab calls a new listener of some events at once
@@ -416,22 +419,21 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const [layout, synth] = settings.core.useWorkers ? workers : [undefined, ...workers];
     if (layout) this.unwatch.push(onStartFailure(layout, live(() => this.fail("layout"))));
     if (synth && this.hasPlayer) this.unwatch.push(onStartFailure(synth, live(() => this.fail("synth"))));
-    this.watchFont(attempt, others, live(() => this.fail("font")));
+    if (fonts && others) this.watchFont(fonts, attempt, others, live(() => this.fail("font")));
   }
 
   /**
    * Call `failed` when the music font of the API in use could not be had. alphaTab 1.9 tells no one
    * (its `FontLoadingChecker` logs "Loading Failed, rendering cannot start" and stops checking);
-   * the page's fonts do, by font face. The API's own faces are those of its family on the page
+   * the page's fonts (`fonts`) do, by font face. The API's own faces are those of its family on the page
    * that are not another attempt's (`others`). One it shares with an API still on the page may
    * have failed already: no event comes for it again.
    */
-  private watchFont(attempt: number, others: Set<FontFace>, failed: () => void): void {
-    const fonts = (globalThis as { document?: Document }).document?.fonts;
+  private watchFont(fonts: FontFaceSet, attempt: number, others: Set<FontFace>, failed: () => void): void {
     // The family alphaTab gave its font on this page: set by `BrowserUiFacade.initialize`, left
     // out of alphaTab's types.
     const family = (this.api.settings.display.resources as unknown as { smuflFontFamilyName?: string }).smuflFontFamilyName;
-    if (fonts === undefined || family === undefined) return;
+    if (family === undefined) return;
     const own = (face: FontFace) => familyOf(face) === family && !others.has(face);
     const fail = () => {
       // Any engine made from now on asks for it anew, as a retry of this one does.
@@ -445,11 +447,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     };
     fonts.addEventListener("loadingerror", onError);
     this.unwatch.push(() => fonts.removeEventListener("loadingerror", onError));
-    let failedAlready = false;
-    fonts.forEach((face) => {
-      if (own(face) && face.status === "error") failedAlready = true;
-    });
-    if (failedAlready) fail();
+    if ([...facesOn(fonts)].some((face) => own(face) && face.status === "error")) fail();
   }
 
   // --- ScoreRenderer ---
@@ -653,7 +651,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     this.intendsToPlay = false;
     this.sentTo = null;
     this.resumeAt = null;
-    this.lastPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
+    this.lastPosition = NO_POSITION;
     this.stopWatching();
     old.destroy();
     this.createApi();

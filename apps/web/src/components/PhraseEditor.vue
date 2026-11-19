@@ -70,7 +70,7 @@ const NO_PART_ADDED: Record<PartKind, boolean> = { fretted: false, percussion: f
 const started = ref(false);
 /** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
-/** The fragment could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+/** Whether the fragment could not be drawn (`drawFailure`). */
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
 const { notice, say } = useNotice();

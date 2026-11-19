@@ -114,11 +114,14 @@ function drawnSpelling(pitch: number, spell: string | undefined, keySig: KeySign
 }
 
 /**
- * How a note is drawn spelled in a key, as `spell` writes it: its own spelling when that names its
- * pitch, else the key's default. Two keys that give one answer draw the note on one position.
+ * The spelling a note keeps the position it is drawn on in the key `from` with, in the key `to`
+ * (#182): its own `spell` (none when it has none) when both keys draw it spelled alike (its own
+ * spelling when that names its pitch, else the key's default), so on one position; else the
+ * spelling it is drawn with in `from`, as `spell` writes it.
  */
-export function drawnSpell(pitch: number, spell: string | undefined, keySig: KeySignature): string {
-  return spellOf(drawnSpelling(pitch, spell, keySig));
+export function spellCarriedTo(pitch: number, spell: string | undefined, from: KeySignature, to: KeySignature): string | undefined {
+  const drawn = spellOf(drawnSpelling(pitch, spell, from));
+  return drawn === spellOf(drawnSpelling(pitch, spell, to)) ? spell : drawn;
 }
 
 /**

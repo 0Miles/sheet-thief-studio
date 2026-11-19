@@ -53,7 +53,7 @@ const previewed = shallowRef<PhraseSummary | null>(null);
 const previewError = ref<string | null>(null);
 /** The preview is drawn: e2e tests wait for `data-preview-ready`. */
 const previewReady = ref(false);
-/** The preview could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+/** Whether the preview could not be drawn (`drawFailure`). */
 const { failed: previewFailed, watch: watchPreview, retry: retryPreview } = drawFailure();
 const previewHost = ref<HTMLElement>();
 const previewSection = ref<HTMLElement>();
