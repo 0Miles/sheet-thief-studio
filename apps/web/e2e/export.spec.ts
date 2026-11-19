@@ -6,19 +6,14 @@ import { readFile } from "node:fs/promises";
 import type { ScoreJSON } from "@studio/score-model";
 import { importScore } from "@studio/score-render";
 
-import { type BrowserContextOptions, type Download, expect, type Page, test } from "./test";
+import { type Download, expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
 import type { ExportFormat } from "../src/exportFile";
-import { beatsIn, drawn, loggedIn, pageErrors, runName, scoreOf, seedScore, typeBeats } from "./pages";
+import { beatsIn, drawn, loggedIn, openScore, pageErrors, PHONE, readOnlyLink, runName, scoreOf, seedScore, TABLET, typeBeats } from "./pages";
 
 const text = strings.score.export;
-
-/** A tablet's width, or a narrow desktop window: the wide Read view, which cannot be typed on. */
-const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
-/** A phone held upright: the narrow Read view, its options in a drawer. */
-const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
 
 /** A score of a guitar, a bass and drums, the Editor and the Viewer members of it. */
 function seed(title: string): string {
@@ -63,8 +58,7 @@ test("a member exports Guitar Pro 7 from the edit view: read back, it has the sa
   const id = seed(title);
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
-  await page.goto(`/scores/${id}`);
-  await drawn(page);
+  await openScore(page, id);
   await expect(page.locator("main")).toHaveAttribute("data-view", "editable");
   await typeBeats(page, [3, 5, 7]);
   await expect.poll(async () => frets(await scoreOf(page))).toEqual([[3], [5], [7]]);
@@ -89,8 +83,7 @@ test("exported as MIDI, the score is a standard MIDI file", async ({ browser }) 
   const id = seed(title);
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
-  await page.goto(`/scores/${id}`);
-  await drawn(page);
+  await openScore(page, id);
 
   const download = await exportAs(page, "midi");
   expect(download.suggestedFilename()).toBe(`${title}.mid`);
@@ -105,8 +98,7 @@ test("a member's Read view has the export menu, wide and on a phone; a guest's h
   // A Viewer on a tablet: the wide Read view.
   const viewer = await loggedIn(browser, VIEWER, TABLET);
   const viewerErrors = pageErrors(viewer);
-  await viewer.goto(`/scores/${id}`);
-  await drawn(viewer);
+  await openScore(viewer, id);
   await expect(viewer.locator("main")).toHaveAttribute("data-view", "read");
   await expect(viewer.locator("main")).toHaveAttribute("data-layout", "wide");
   const midi = await exportAs(viewer, "midi");
@@ -116,8 +108,7 @@ test("a member's Read view has the export menu, wide and on a phone; a guest's h
   // The Editor on a phone: the menu is in the drawer of options.
   const phone = await loggedIn(browser, EDITOR, PHONE);
   const phoneErrors = pageErrors(phone);
-  await phone.goto(`/scores/${id}`);
-  await drawn(phone);
+  await openScore(phone, id);
   await expect(phone.locator("main")).toHaveAttribute("data-layout", "narrow");
   await phone.getByRole("button", { name: strings.score.display.options }).click();
   await expect(phone.locator("[data-drawer] [data-export-menu]")).toBeVisible();
@@ -127,9 +118,7 @@ test("a member's Read view has the export menu, wide and on a phone; a guest's h
 
   // A guest, by the read-only link: the same Read view, and no menu.
   const owner = await loggedIn(browser, ADMIN);
-  const made = await owner.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(owner.url()).origin } });
-  expect(made.status()).toBe(200);
-  const { token } = (await made.json()) as { token: string };
+  const token = await readOnlyLink(owner, id);
   const guest = await (await browser.newContext()).newPage();
   const guestErrors = pageErrors(guest);
   await guest.goto(`/s/${token}`);

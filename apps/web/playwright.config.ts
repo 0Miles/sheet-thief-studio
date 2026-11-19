@@ -67,6 +67,8 @@ export const insecurePages = {
 
 /** Where the stand-in karyl-chan bot serves the plugin's pages (the `plugin` project). */
 export const BOT_ORIGIN = "http://localhost:8036";
+/** Where the server serves as the bot's plugin. */
+const PLUGIN_PORT = 8035;
 const PLUGIN_SETUP_SECRET = "e2e-setup-secret";
 
 /**
@@ -86,13 +88,13 @@ const pluginPages = [
     command: "pnpm --filter @studio/server start",
     env: {
       ...servedPages.env,
-      PORT: "8035",
+      PORT: String(PLUGIN_PORT),
       PUBLIC_ORIGIN: BOT_ORIGIN,
       KARYL_PLUGIN_SETUP_SECRET: PLUGIN_SETUP_SECRET,
-      BOT_URL: "http://127.0.0.1:8036",
-      PLUGIN_URL: "http://127.0.0.1:8035",
+      BOT_URL: `http://127.0.0.1:${new URL(BOT_ORIGIN).port}`,
+      PLUGIN_URL: `http://127.0.0.1:${PLUGIN_PORT}`,
     },
-    url: "http://localhost:8035/healthz",
+    url: `http://localhost:${PLUGIN_PORT}/healthz`,
     reuseExistingServer: false,
     timeout: 60_000,
   },

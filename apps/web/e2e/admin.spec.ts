@@ -8,7 +8,7 @@ import { expect, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, OUTSIDER } from "./environment";
-import { logIn, loggedIn, logInFromStart, pageErrors, seedAccount, seedScore } from "./pages";
+import { accountsFor, logIn, loggedIn, logInFromStart, newDiscordId, pageErrors, seedAccount, seedScore } from "./pages";
 
 const text = strings.admin;
 
@@ -136,14 +136,10 @@ test("an admin hands a disabled Owner's score to a member on /admin, who then fi
 });
 
 test("an admin binds a Discord id to an account on /admin and unbinds it; one bound already is refused", async ({ page }, testInfo) => {
-  const run = `${testInfo.project.name.slice(0, 4)}-${randomBytes(4).toString("hex")}`;
-  const account = (name: string) => ({ username: `e2e-${name}-${run}`, displayName: "綁定 Discord 的成員", password: "e2e discord password", isAdmin: false, mustChangePassword: false });
-  const first = account("discord");
-  const second = account("discord2");
-  seedAccount(first);
-  seedAccount(second);
-  // A Discord id of this run's own: 18 digits.
-  const discordId = `9${BigInt(`0x${randomBytes(7).toString("hex")}`).toString().padStart(17, "0").slice(-17)}`;
+  const { account } = accountsFor(testInfo);
+  const first = account("discord", "綁定 Discord 的成員");
+  const second = account("discord2", "綁定 Discord 的成員");
+  const discordId = newDiscordId("9");
   const errors = pageErrors(page, [
     { status: 401, path: "/api/me" },
     { status: 409, path: "/identities" },

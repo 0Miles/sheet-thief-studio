@@ -77,10 +77,7 @@ test("on drums, Alt+2 then K writes the kick in the second voice, drawn as its o
   expect(await cursorOf(page)).toMatchObject({ voice: "0:1", beatId: null, at: "after" });
   await page.keyboard.press("k");
   /** The pieces of each beat of a voice of the drums' first bar. */
-  const voice = async (key: string) => {
-    const score = await scoreOf(page);
-    return (score.parts[1]!.content[score.bars[0]!.id]?.[key] ?? []).map((beat) => beat.notes);
-  };
+  const voice = async (key: string) => beatsIn(await scoreOf(page), 1, 0, key).map((beat) => beat.notes);
   expect(await voice("0:1")).toEqual([{ p36: {} }]);
   expect(await voice("0:0")).toEqual([{ p42: {} }, { p42: {} }]);
   expect(await cursorOf(page)).toMatchObject({ voice: "0:1", at: "on", line: DRUM_PIECES.kick.line });
