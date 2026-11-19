@@ -135,7 +135,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   /**
    * The member's mix, by part id: alphaTab's own is by MIDI channel, and the channels of the parts
    * move when parts are added, deleted or moved (`channelsOf`). It is given to alphaTab anew with
-   * every new sound (`applyMix`).
+   * every new sound, and every time the player is ready (`applyMix`).
    */
   private mix = new Map<string, PartMix>();
   /** The range played again and again; alphaTab forgets it with every new sound. */
@@ -217,6 +217,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // alphaTab makes a new sound in this order, its worker reporting each step: position 0,
     // paused, ready, midiLoaded, ready again, position 0 (alphaTab.core.mjs, `loadMidiFile`).
     api.playerReady.on(() => {
+      // Every time it is ready, alphaTab's own listener, added before this one, has just set each
+      // channel to the volume written in the score (`_setupPlayerWrapper`, after a new sound and
+      // once the sound font is in): the member's mix is given again over it (#152).
+      this.applyMix();
       // Said again after every new sound: only the first time is news.
       if (this.playerIsReady) return;
       this.playerIsReady = true;
