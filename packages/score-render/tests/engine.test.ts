@@ -1513,3 +1513,17 @@ test("destroyed, the worker that lays out failing after is told to no one either
   expect(made.renderer.failed).toBe(false);
   expect(standIns).toEqual([stand]);
 });
+
+test("while the score cannot be drawn, what alphaTab reports as a drawing (a resize lays out nothing and says it is done) is not told as one", () => {
+  const drawn: boolean[] = [];
+  engine.renderer.onRendered(({ partial }) => drawn.push(partial));
+  engine.renderer.setScore(scoreOf(4));
+  fonts.failed(api.fontFamily);
+  api.postRenderFinished.emit();
+  expect(drawn).toEqual([]);
+  // Once it is had, the new API's drawing is.
+  engine.renderer.retry();
+  newApi();
+  api.postRenderFinished.emit();
+  expect(drawn).toEqual([false]);
+});

@@ -305,7 +305,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       (...args: T): void => {
         if (this.api === api) listener(...args);
       };
-    api.postRenderFinished.on(live(() => this.handleRendered()));
+    // Nor is anything drawn while the score cannot be (`failed`): a resize has alphaTab lay out
+    // nothing and report it done all the same.
+    api.postRenderFinished.on(
+      live(() => {
+        if (!this.failed) this.handleRendered();
+      }),
+    );
     api.renderer.partialRenderFinished.on(
       live((piece) => {
         const barIds = this.projection?.barIds.slice(Math.max(piece.firstMasterBarIndex, 0), piece.lastMasterBarIndex + 1) ?? [];

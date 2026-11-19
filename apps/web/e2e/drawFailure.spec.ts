@@ -7,9 +7,11 @@ import { type BrowserContextOptions, expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
-import { drawn, loggedIn, pageErrors, seedScore, soundReady } from "./pages";
+import { createPhrase, drawn, loggedIn, pageErrors, ready, runName, seedScore, soundReady } from "./pages";
 
 const text = strings.score;
+/** What the browser and alphaTab log of each download of the font cut short. */
+const OF_FONT = /Bravura|ERR_INTERNET_DISCONNECTED|Loading Failed, rendering cannot start/;
 
 /** A tablet's width: the Read view for a member, which lays out in a worker (docs/spec/views.md). */
 const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
@@ -44,6 +46,13 @@ test("a music font that could not be had: the score says so, asks again once bac
   const failed = page.locator("[data-draw-failed]");
   await expect(failed).toContainText(text.drawing.failed);
   await expect(page.locator('[data-ready="true"]')).toHaveCount(0);
+  // A window of another size: alphaTab lays out nothing and reports it done; the score is not drawn for that.
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await page.locator("[data-toggle-phrases]").click();
+  await expect(page.locator("[data-phrase-sidebar]")).toBeVisible();
+  await page.locator("[data-toggle-phrases]").click();
+  await expect(page.locator('[data-ready="true"]')).toHaveCount(0);
+  await expect(page.locator("[data-append-bar]")).toHaveCount(0);
 
   // Back online, the page asks for it again by itself; still cut short, it says so again.
   const before = cut();
@@ -58,8 +67,7 @@ test("a music font that could not be had: the score says so, asks again once bac
   await expect(failed).toHaveCount(0);
   await soundReady(page);
   // What the browser and alphaTab log of each download cut short, and nothing else.
-  const ofDownloads = /Bravura|ERR_INTERNET_DISCONNECTED|Loading Failed, rendering cannot start/;
-  expect(errors.filter((error) => !ofDownloads.test(error))).toEqual([]);
+  expect(errors.filter((error) => !OF_FONT.test(error))).toEqual([]);
 });
 
 test("in the Read view, alphaTab's worker that could not be had: the score and the player say so, and both are back on retry", async ({ browser }) => {
@@ -83,4 +91,64 @@ test("in the Read view, alphaTab's worker that could not be had: the score and t
   await soundReady(page);
   const ofDownloads = /alphaTab\.worker|ERR_INTERNET_DISCONNECTED/;
   expect(errors.filter((error) => !ofDownloads.test(error))).toEqual([]);
+});
+
+test("the phrase editor, a phrase's preview beside the score and a version's preview say so too, each drawn on its own retry", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  const name = runName("載入失敗");
+  await page.goto("/");
+  const phraseId = await createPhrase(page, name);
+  const font = "**/font/Bravura.*";
+  await cutShort(page, font);
+  const failed = page.locator("[data-draw-failed]");
+  const retry = (within: ReturnType<Page["locator"]>) => within.getByRole("button", { name: text.drawing.retry }).click();
+
+  // The phrase editor.
+  await page.goto(`/phrases/${phraseId}`);
+  await expect(failed).toContainText(text.drawing.failed);
+  await expect(page.locator('[data-ready="true"]')).toHaveCount(0);
+  await page.unroute(font);
+  await retry(failed);
+  await ready(page);
+  await expect(failed).toHaveCount(0);
+
+  // The preview of a phrase in the score's sidebar: the score has its own, and its own retry.
+  await page.route(font, (route) => route.abort("internetdisconnected"));
+  await page.goto(`/scores/${id}`);
+  await expect(failed).toHaveCount(1);
+  await page.locator("[data-toggle-phrases]").click();
+  await page.locator("[data-phrase-search]").fill(name);
+  await page.locator("[data-phrase]", { hasText: name }).click();
+  const preview = page.locator("[data-phrase-preview]");
+  await expect(preview.locator("[data-draw-failed]")).toContainText(text.drawing.failed);
+  await expect(failed).toHaveCount(2);
+  await page.unroute(font);
+  await retry(preview.locator("[data-draw-failed]"));
+  await expect(preview).toHaveAttribute("data-preview-ready", "true", { timeout: 30_000 });
+  await expect(preview.locator("[data-draw-failed]")).toHaveCount(0);
+  await expect(failed).toHaveCount(1);
+  await retry(failed);
+  await drawn(page);
+  await expect(failed).toHaveCount(0);
+
+  // The preview of a version.
+  await page.route(font, (route) => route.abort("internetdisconnected"));
+  await page.goto(`/scores/${id}/versions`);
+  const pane = page.locator("[data-preview-pane]");
+  await expect(pane.locator("[data-draw-failed]")).toContainText(text.drawing.failed);
+  await page.locator("[data-save-version]").getByLabel(strings.versions.name).fill("載入失敗");
+  await page.locator("[data-save-version]").getByRole("button", { name: strings.versions.save.submit }).click();
+  await page.locator("[data-version]").first().locator("[data-preview]").click();
+  await expect(pane.locator("[data-draw-failed]")).toBeVisible();
+  await expect(pane).not.toHaveAttribute("data-ready", "true");
+  await page.unroute(font);
+  await retry(pane.locator("[data-draw-failed]"));
+  await expect(pane).toHaveAttribute("data-ready", "true", { timeout: 30_000 });
+  await expect(pane.locator("[data-draw-failed]")).toHaveCount(0);
+  // The score held open under the versions page has its own, hidden with it, and its own retry.
+  await expect(failed).toHaveCount(1);
+  await expect(failed).toBeHidden();
+  expect(errors.filter((error) => !OF_FONT.test(error))).toEqual([]);
 });

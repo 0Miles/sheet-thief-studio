@@ -410,6 +410,7 @@ function saveNow(): Promise<void> {
   min-width: 0;
 }
 .versions__score-host {
+  --draw-failed-inset: 1rem;
   min-height: 12rem;
   overflow: auto;
   border: 1px solid var(--border);

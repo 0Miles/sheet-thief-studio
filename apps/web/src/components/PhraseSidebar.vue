@@ -409,6 +409,8 @@ onBeforeUnmount(() => {
 }
 .phrase-sidebar__preview-page {
   position: relative;
+  /* The preview's card has its own padding. */
+  --draw-failed-inset: 0;
 }
 .phrase-sidebar__preview-overlay {
   position: absolute;

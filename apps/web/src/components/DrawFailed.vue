@@ -22,7 +22,9 @@ const text = strings.score.drawing;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 1rem 0;
+  margin: 0;
+  /* Clear of the edge of what holds it: the page's own gutter, unless the holder says another. */
+  padding: 1rem var(--draw-failed-inset, 1.5rem);
   color: var(--danger);
 }
 </style>
