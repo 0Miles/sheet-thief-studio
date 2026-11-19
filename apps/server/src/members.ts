@@ -118,7 +118,7 @@ function shown(member: Pick<ScoreMember, "role">, account: Account) {
 }
 
 /** Send the refusal of a change that was not made; anything else that went wrong is the server's fault. */
-export async function unlessRefused(reply: FastifyReply, change: () => Promise<unknown>) {
+export async function unlessRefused<T>(reply: FastifyReply, change: () => Promise<T>): Promise<T | FastifyReply> {
   try {
     return await change();
   } catch (error) {
