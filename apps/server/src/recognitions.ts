@@ -14,18 +14,21 @@ import {
 } from "@studio/contracts";
 import { barsFragmentSchema } from "@studio/score-model";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { literal, Op, UniqueConstraintError } from "sequelize";
+import { Op, UniqueConstraintError } from "sequelize";
 
+import { daysAgo, NOW } from "./db/clock";
 import { Recognition, RecognitionImage } from "./db/models";
-import { NOW } from "./deletion";
 import { invalidFields, invalidRequest, isUuid, notFound } from "./http";
 import { FRAGMENT_BODY_LIMIT, MAX_RECOGNITION_IMAGES, RECOGNITION_BODY_LIMIT, RECOGNITION_IMAGE_BYTES, RECOGNITION_IMAGES_BYTES } from "./limits";
 import { createPhrase, otherKind, refusedAsTooLarge } from "./phrases";
 import { fragmentOfRecognition } from "./recognitionFragment";
-import { failure, type ImageMime, type PageImage, recognize } from "./recognizer";
+import { failure, type ImageMime, LOGGED_ISSUES, type PageImage, recognize } from "./recognizer";
 
 /** What a recognition still running when the server stopped is left with. */
 const INTERRUPTED: RecognitionError = failure("interrupted").error;
+
+/** What a recognition is left with when its TAB does not make a fragment, or recording it failed. */
+const FAILED: RecognitionError = failure("recognition_failed").error;
 
 /**
  * Delete the recognitions started more than 7 days ago, their images with them; returns how many.
@@ -33,11 +36,11 @@ const INTERRUPTED: RecognitionError = failure("interrupted").error;
  * (deletion.ts).
  */
 export async function purgeExpiredRecognitions(): Promise<number> {
-  return Recognition.destroy({ where: { createdAt: { [Op.lt]: literal(`now() - make_interval(days => ${RECOGNITION_RETENTION_DAYS})`) } } });
+  return Recognition.destroy({ where: { createdAt: { [Op.lt]: daysAgo(RECOGNITION_RETENTION_DAYS) } } });
 }
 
 /** The type of an image as the bytes it starts with tell it: PNG, JPEG or WebP, null for anything else. */
-export function imageType(data: Uint8Array): ImageMime | null {
+function imageType(data: Uint8Array): ImageMime | null {
   const startsWith = (bytes: readonly number[], at = 0) => bytes.every((byte, index) => data[at + index] === byte);
   if (startsWith([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
   if (startsWith([0xff, 0xd8, 0xff])) return "image/jpeg";
@@ -122,6 +125,9 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
     return null;
   }
 
+  /** Answer the refusal: 503 while the recognizer is someone else's, 409 otherwise. */
+  const refuse = (reply: FastifyReply, code: NonNullable<ReturnType<typeof refusalOf>>) => reply.code(code === "recognizer_busy" ? 503 : 409).send({ code });
+
   const isRunning = async (accountId: string) => (await Recognition.count({ where: { accountId, status: "running" } })) > 0;
   // The recognitions not yet recorded as finished, which the server waits for as it closes.
   const unfinished = new Set<Promise<void>>();
@@ -145,14 +151,14 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
         if (checked.success) {
           fields = { status: "succeeded", fragment: checked.data, report };
         } else {
-          log.error({ issues: checked.error.issues.slice(0, 20) }, "the recognized TAB does not make a fragment of bars");
-          fields = { status: "failed", error: failure("recognition_failed").error };
+          log.error({ issues: checked.error.issues.slice(0, LOGGED_ISSUES) }, "the recognized TAB does not make a fragment of bars");
+          fields = { status: "failed", error: FAILED };
         }
       }
       await Recognition.update({ ...fields, finishedAt: NOW }, { where: { id, status: "running" } });
     } catch (error) {
       log.error({ error }, "recording what came of a recognition failed");
-      await Recognition.update({ status: "failed", error: failure("recognition_failed").error, finishedAt: NOW }, { where: { id, status: "running" } }).catch(() => undefined);
+      await Recognition.update({ status: "failed", error: FAILED, finishedAt: NOW }, { where: { id, status: "running" } }).catch(() => undefined);
     }
   }
 
@@ -163,7 +169,7 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
     const refuseEarly = async (request: FastifyRequest, reply: FastifyReply) => {
       const accountId = request.account!.id;
       const refused = refusalOf(accountId, await isRunning(accountId));
-      if (refused !== null) return reply.code(refused === "recognizer_busy" ? 503 : 409).send({ code: refused });
+      if (refused !== null) return refuse(reply, refused);
     };
     scope.post("/api/recognitions", { bodyLimit: RECOGNITION_BODY_LIMIT, preParsing: refuseEarly }, async (request, reply) => {
       const images = await imagesOf(request.body, request.headers["content-type"], reply);
@@ -171,10 +177,9 @@ export function registerRecognitions(app: FastifyInstance, { recognizerUrl }: { 
       const accountId = request.account!.id;
       // Asked again: another request may have come meanwhile. From the answer of the database to
       // taking the recognition on, nothing is awaited, so no other request comes in between.
-      const recordedRunning = await isRunning(accountId);
-      const refused = refusalOf(accountId, recordedRunning);
+      const refused = refusalOf(accountId, await isRunning(accountId));
       // No record either way.
-      if (refused !== null) return reply.code(refused === "recognizer_busy" ? 503 : 409).send({ code: refused });
+      if (refused !== null) return refuse(reply, refused);
       const stop = new AbortController();
       calling = stop;
       accountsCalling.add(accountId);
