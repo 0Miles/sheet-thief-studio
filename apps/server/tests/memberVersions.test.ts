@@ -17,7 +17,7 @@ import { buildApp } from "../src/app";
 import { Score, ScoreMember, Version } from "../src/db/models";
 import { WEBSOCKET_MESSAGE_LIMIT } from "../src/limits";
 import { AUTO_VERSIONS_KEPT, createVersion } from "../src/versions";
-import { apiCall, closes, createMembers, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor } from "./support";
+import { apiCall, closes, createMembers, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, storedScore, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
 const NO_SUCH_ID = "00000000-0000-4000-8000-000000000000";
@@ -74,13 +74,6 @@ async function scoreOfTheBand({ app, sessions }: Started, title = "版本測試"
     { scoreId: id, accountId: ids.vera!, role: "viewer" },
   ]);
   return id;
-}
-
-/** The score as its row holds it. */
-async function storedScore(scoreId: string) {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
-  return docToJson(doc);
 }
 
 /** A version written straight into the table, `minutesAgo` old, holding `content` as it is. */

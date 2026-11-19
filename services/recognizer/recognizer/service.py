@@ -25,7 +25,7 @@ from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import i18n
-from .config import Settings, get_settings
+from .config import MB, Settings, get_settings
 from .contract import failure
 from .converter import ConversionError, ConversionOptions
 from .extract.raster_tab import image_kind
@@ -201,6 +201,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 body = self._body(settings.max_total_upload_bytes + FORM_OVERHEAD)
                 images = images_of(self.headers.get("content-type", ""), body, settings)
+                del body  # only its images are held through the recognition
             except BadRequest as exc:
                 refused = exc
             else:
@@ -215,24 +216,21 @@ class _Handler(BaseHTTPRequestHandler):
     def _body(self, limit: int) -> bytes:
         """The request's body; one with no length, or longer than ``limit``, is not read at all."""
         if self.headers.get("transfer-encoding"):
-            self.close_connection = True
-            raise BadRequest("bad_request")
+            raise self._unread("bad_request")
         try:
             length = int(self.headers.get("content-length", ""))
         except ValueError:
             length = -1
         if length < 0:
-            self.close_connection = True
-            raise BadRequest("bad_request")
+            raise self._unread("bad_request")
         if length > limit:
-            self.close_connection = True
-            raise BadRequest("upload_too_large")
+            raise self._unread("upload_too_large")
         chunks: list[bytes] = []
         received = 0
         deadline = time.monotonic() + BODY_TIMEOUT_S
         try:
             while received < length and time.monotonic() < deadline:
-                chunk = self.rfile.read1(min(length - received, 1024 * 1024))
+                chunk = self.rfile.read1(min(length - received, MB))
                 if not chunk:
                     break
                 chunks.append(chunk)
@@ -240,9 +238,13 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:  # the socket timed out, or the client went away
             pass
         if received != length:
-            self.close_connection = True
-            raise BadRequest("bad_request")
+            raise self._unread("bad_request")
         return b"".join(chunks)
+
+    def _unread(self, code: str) -> BadRequest:
+        """The refusal of a body not read, or not all of it: the connection closes after the answer."""
+        self.close_connection = True
+        return BadRequest(code)
 
     def _refuse(self, status: int, body: dict) -> None:
         """Answer without reading the rest of the request, and close the connection."""

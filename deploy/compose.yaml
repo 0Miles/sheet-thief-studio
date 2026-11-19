@@ -1,0 +1,88 @@
+# Production: the server, Postgres, Redis and the recognition service (docs/DEPLOYMENT.md).
+# Never used alone: one of the two modes goes on top of it,
+#   compose.standalone.yaml   on its own domain, behind the nginx of nginx/studio.conf
+#   compose.plugin.yaml       a plugin of the karyl-chan bot, on the bot's karyl-chan-net
+# chosen by COMPOSE_FILE in .env (.env.example). Every setting comes from .env; none has a secret here.
+name: sheet-thief-studio
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    image: sheet-thief-studio-server:${STUDIO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # An init as PID 1: it hands SIGTERM to Node, which as PID 1 would ignore it when nothing
+    # listens for it (the standalone mode), and reaps what the process leaves.
+    init: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8031"
+      DATABASE_URL: ${DATABASE_URL:-postgres://studio:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/studio}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      RECOGNIZER_URL: ${RECOGNIZER_URL:-http://recognizer:8000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      recognizer:
+        condition: service_healthy
+    networks:
+      backend: {}
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: studio
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      backend: {}
+
+  # Sessions, rate limits, collab tickets and used login links (docs/spec/security.md). Written
+  # to its volume, so that a restart does not log everyone out.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      backend: {}
+
+  # The recognition service (docs/spec/recognizer.md): on the internal network only, no port of
+  # its own outside it. Its limits can be set with the variables of services/recognizer/recognizer/config.py.
+  recognizer:
+    build:
+      context: ../services/recognizer
+      target: runtime
+    image: sheet-thief-studio-recognizer:${STUDIO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      backend: {}
+
+volumes:
+  postgres:
+  redis:
+
+networks:
+  # No way out: Postgres, Redis and the recognizer reach nothing but each other and the server.
+  # The server reaches the outside through the network its mode adds.
+  backend:
+    internal: true

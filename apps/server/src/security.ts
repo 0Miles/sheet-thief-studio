@@ -232,14 +232,17 @@ export function registerPages(app: FastifyInstance, webRoot: string, basePath: (
     // As the router decoded it: `/%61pi/…` is the API too.
     const path = `/${request.params["*"]}`;
     if (under(path, "/api") || under(path, "/collab")) return notFound(reply);
-    const found = path === "/index.html" ? null : await fileAt(root, path);
-    if (found !== null) {
-      // Only the files of /assets/ have the hash of their content in their name.
-      if (path.startsWith("/assets/")) reply.header("cache-control", ASSET_CACHE);
-      return sendFile(request, reply, found);
+    // The page itself is always served as the page, below.
+    if (path !== "/index.html") {
+      const found = await fileAt(root, path);
+      if (found !== null) {
+        // Only the files of /assets/ have the hash of their content in their name.
+        if (path.startsWith("/assets/")) reply.header("cache-control", ASSET_CACHE);
+        return sendFile(request, reply, found);
+      }
+      // A file that is not there is missing, not a page: no route of the page ends like a file name.
+      if (path.startsWith("/assets/") || /\.[A-Za-z0-9]+$/.test(path)) return notFound(reply);
     }
-    // A file that is not there is missing, not a page: no route of the page ends like a file name.
-    if (path.startsWith("/assets/") || (path !== "/index.html" && /\.[A-Za-z0-9]+$/.test(path))) return notFound(reply);
     const page = await fileAt(root, "/index.html");
     if (page === null) throw new Error(`no index.html in the web build at ${root}`);
     // Served from the root, the page is the build's as it is.

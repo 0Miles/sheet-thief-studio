@@ -32,7 +32,7 @@ owner 在 2026-11-18 裁定（#72 的留言「方向變更」）：studio 做成
 - SDK 的 `start()` 會自己開一個 Fastify 並 listen。**補充**：讓它只聽 loopback 的隨機 port；bot 送到 `PLUGIN_URL` 的 `POST /commands/*`、`GET /health`、`GET /health/*` 由 studio 的 Fastify 原封不動（body 照原本的位元組，HMAC 簽的是它）用 `inject` 轉給 SDK 的 server。這樣 `PLUGIN_URL` 只有一個，studio 的 logger、Origin 檢查與安全標頭都不變。這幾條路由沒有 Origin 檢查（不是瀏覽器送的），改由 SDK 驗 HMAC。
 - 伺服器先 listen，再向 bot 註冊；註冊失敗時 SDK 在背景重試，不擋住伺服器啟動。
 - SDK 自己處理 `SIGTERM`、`SIGINT`：停掉 plugin（向 bot deregister）後結束 process。
-- 在 bot 建立 plugin（取得 setup secret）與啟用 plugin 是**人工步驟**；部署設定（`karyl-chan-net`、setup secret、`BOT_URL`、`PLUGIN_URL`）在 #73。
+- 在 bot 建立 plugin（取得 setup secret）與啟用 plugin 是**人工步驟**；部署設定（`karyl-chan-net`、setup secret、`BOT_URL`、`PLUGIN_URL`）見 [`DEPLOYMENT.md`](../DEPLOYMENT.md) 第 9 節。
 
 ## 4. 綁定
 
