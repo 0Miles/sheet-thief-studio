@@ -20,12 +20,11 @@ import {
   MAX_FRAGMENT_BYTES,
   MAX_VALUE_DEPTH,
   pasteBeats,
-  type PastedBeats,
   setFret,
+  STANDARD_GUITAR,
 } from "../src/index";
-import { appendBeat, transactionsOf } from "./support";
+import { accepted, appendBeat, transactionsOf } from "./support";
 
-const GUITAR = [64, 59, 55, 50, 45, 40];
 const BASS = [43, 38, 33, 28];
 
 /** A guitar, a bass and drums over three bars of 4/4; the guitar's first bar holds quarters on string 1 of frets 1, 2, 3, 4. */
@@ -33,7 +32,7 @@ function band() {
   const doc = new Y.Doc();
   createScore(doc, "Band");
   const barIds = insertBars(doc, { after: null, count: 3 });
-  const guitar = addPart(doc, { name: "Guitar", kind: "fretted", tuning: GUITAR });
+  const guitar = addPart(doc, { name: "Guitar", kind: "fretted", tuning: STANDARD_GUITAR });
   const bass = addPart(doc, { name: "Bass", kind: "fretted", tuning: BASS });
   const drums = addPart(doc, { name: "Drums", kind: "percussion" });
   let at = cursorAt(doc, guitar, barIds[0]!, 1);
@@ -46,12 +45,7 @@ function band() {
 
 /** Quarters on string 1, one per fret, as a fragment of beats of the guitar. */
 function guitarBeats(...frets: number[]): BeatsFragment {
-  return { kind: "fretted", tuning: [...GUITAR], beats: frets.map((fret) => ({ value: 4, dots: 0, notes: { s1: { fret } } })) };
-}
-
-function pasted(result: PastedBeats | string): PastedBeats {
-  if (typeof result === "string") throw new Error(`refused: ${result}`);
-  return result;
+  return { kind: "fretted", tuning: [...STANDARD_GUITAR], beats: frets.map((fret) => ({ value: 4, dots: 0, notes: { s1: { fret } } })) };
 }
 
 test("the clipboard's text is the prefix, a line feed and the fragment's JSON, and reads back as the fragment", () => {
@@ -79,7 +73,7 @@ test("text without the prefix, of another version, not JSON or not a fragment ho
     `${CLIPBOARD_PREFIX}\n{not json`,
     `${CLIPBOARD_PREFIX}\n${JSON.stringify({ ...guitarBeats(5), id: "x" })}`,
     `${CLIPBOARD_PREFIX}\n${JSON.stringify({ kind: "fretted", beats: [] })}`,
-    `${CLIPBOARD_PREFIX}\n${JSON.stringify({ kind: "fretted", tuning: GUITAR, beats: [{ value: 4, dots: 0, notes: { s7: { fret: 1 } } }] })}`,
+    `${CLIPBOARD_PREFIX}\n${JSON.stringify({ kind: "fretted", tuning: STANDARD_GUITAR, beats: [{ value: 4, dots: 0, notes: { s7: { fret: 1 } } }] })}`,
   ]) {
     expect(fragmentOfClipboard(text), text).toBeUndefined();
   }
@@ -139,15 +133,15 @@ test("a range of beats copies as a fragment of those beats, without ids; a range
   const [, second, third] = ids(guitar, 0);
   // Focus before anchor: the beats are taken in their order.
   const beats = fragmentOfSelection(doc, { kind: "beats", partId: guitar, barId: barIds[0]!, voice: "0:0", anchorBeatId: third!, focusBeatId: second! });
-  expect(beats).toEqual({ kind: "fretted", tuning: GUITAR, beats: [2, 3].map((fret) => ({ value: 4, dots: 0, notes: { s1: { fret } } })) });
+  expect(beats).toEqual({ kind: "fretted", tuning: STANDARD_GUITAR, beats: [2, 3].map((fret) => ({ value: 4, dots: 0, notes: { s1: { fret } } })) });
 
   const bars = fragmentOfSelection(doc, { kind: "bars", partId: guitar, anchorBarId: barIds[0]!, focusBarId: barIds[1]! });
-  expect(bars).toMatchObject({ kind: "fretted", tuning: GUITAR, bars: [{ timeSig: { numerator: 4, denominator: 4 } }, { timeSig: { numerator: 4, denominator: 4 } }] });
+  expect(bars).toMatchObject({ kind: "fretted", tuning: STANDARD_GUITAR, bars: [{ timeSig: { numerator: 4, denominator: 4 } }, { timeSig: { numerator: 4, denominator: 4 } }] });
   expect((bars as { bars: { voices: Record<string, unknown[]> }[] }).bars[0]!.voices["0:0"]).toHaveLength(4);
 
   // Drums: the kind alone, no tuning.
   const hit = cursorAt(doc, drums, barIds[1]!);
-  const pastedHit = pasted(pasteBeats(doc, hit, { kind: "percussion", beats: [{ value: 4, dots: 0, notes: { p38: {} } }] }));
+  const pastedHit = accepted(pasteBeats(doc, hit, { kind: "percussion", beats: [{ value: 4, dots: 0, notes: { p38: {} } }] }));
   const drumBeat = pastedHit.beatIds[0]!;
   expect(fragmentOfSelection(doc, { kind: "beats", partId: drums, barId: barIds[1]!, voice: "0:0", anchorBeatId: drumBeat, focusBeatId: drumBeat })).toEqual({
     kind: "percussion",
@@ -163,7 +157,7 @@ test("beats pasted on a beat go in before it, in order, with new ids; one transa
   const before = ids(guitar, 0);
   const transactions = transactionsOf(doc);
   const cursor: Cursor = { ...cursorAt(doc, guitar, barIds[0]!, 1), beatId: before[1]!, at: "on" };
-  const result = pasted(pasteBeats(doc, cursor, guitarBeats(7, 8)));
+  const result = accepted(pasteBeats(doc, cursor, guitarBeats(7, 8)));
   expect(transactions.count).toBe(1);
   expect(frets(guitar, 0)).toEqual([[1], [7], [8], [2], [3], [4]]);
   const after = ids(guitar, 0);
@@ -174,12 +168,12 @@ test("beats pasted on a beat go in before it, in order, with new ids; one transa
 test("beats pasted in the append slot go after its anchor; in an empty voice, first", () => {
   const { doc, barIds, guitar, ids, frets } = band();
   const anchor = ids(guitar, 0)[1]!;
-  pasted(pasteBeats(doc, { ...cursorAt(doc, guitar, barIds[0]!, 1), beatId: anchor, at: "after" }, guitarBeats(9)));
+  accepted(pasteBeats(doc, { ...cursorAt(doc, guitar, barIds[0]!, 1), beatId: anchor, at: "after" }, guitarBeats(9)));
   expect(frets(guitar, 0)).toEqual([[1], [2], [9], [3], [4]]);
 
   const empty = cursorAt(doc, guitar, barIds[1]!, 1);
   expect(empty).toMatchObject({ beatId: null, at: "after" });
-  const result = pasted(pasteBeats(doc, empty, guitarBeats(5, 6)));
+  const result = accepted(pasteBeats(doc, empty, guitarBeats(5, 6)));
   expect(frets(guitar, 1)).toEqual([[5], [6]]);
   expect(result.beatIds).toEqual(ids(guitar, 1));
 });
@@ -188,10 +182,10 @@ test("beats are pasted only into a part of their kind with the strings they use;
   const { doc, barIds, bass, drums, frets } = band();
   const transactions = transactionsOf(doc);
   expect(pasteBeats(doc, cursorAt(doc, drums, barIds[0]!), guitarBeats(1))).toBe("otherKind");
-  const onFifth: BeatsFragment = { kind: "fretted", tuning: [...GUITAR], beats: [{ value: 4, dots: 0, notes: { s5: { fret: 3 } } }] };
+  const onFifth: BeatsFragment = { kind: "fretted", tuning: [...STANDARD_GUITAR], beats: [{ value: 4, dots: 0, notes: { s5: { fret: 3 } } }] };
   expect(pasteBeats(doc, cursorAt(doc, bass, barIds[0]!, 1), onFifth)).toBe("tooManyStrings");
   expect(transactions.count).toBe(0);
-  expect(pasted(pasteBeats(doc, cursorAt(doc, bass, barIds[0]!, 1), guitarBeats(2))).hints).toEqual(["tuningDiffers"]);
+  expect(accepted(pasteBeats(doc, cursorAt(doc, bass, barIds[0]!, 1), guitarBeats(2))).hints).toEqual(["tuningDiffers"]);
   expect(frets(bass, 0)).toEqual([[2]]);
   // The cursor's beat gone; a fragment that does not pass the schema.
   expect(pasteBeats(doc, { ...cursorAt(doc, bass, barIds[0]!, 1), beatId: "gone", at: "on" }, guitarBeats(2))).toBe("gone");
