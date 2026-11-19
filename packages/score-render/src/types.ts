@@ -81,7 +81,10 @@ export interface ScoreRenderer {
    * an overlay that would reach into one moves away from it. Empty before a drawing is laid out.
    */
   reservedRects(): Rect[];
-  /** Called every time a drawing is laid out and `boundsOf` answers for it. */
+  /**
+   * Called every time a drawing is laid out and `boundsOf` answers for it. Not while the score
+   * cannot be drawn (`failed`), a score with no bars or no parts included.
+   */
   onRendered(listener: (event: RenderedEvent) => void): Unsubscribe;
   /**
    * Called when a piece of the page has been painted, with the bars it holds. Painting is lazy:
@@ -94,8 +97,21 @@ export interface ScoreRenderer {
    * the browser is back online.
    */
   readonly failed: boolean;
-  /** Called when `failed` changes: true when it fails, false when it is asked for again. */
+  /**
+   * Called when `failed` changes, and only then, with its new value: true when it fails, false
+   * once a retry has made a new API that has not failed. A retry whose new API fails as it is
+   * made tells nothing: the score was failed, and still is.
+   */
   onFailed(listener: (failed: boolean) => void): Unsubscribe;
+  /**
+   * Called when a retry starts over with a new alphaTab API (the music font or a worker could
+   * not be had, the player's worker alone included; never for the soundfont alone), before
+   * anything else is told of it. What was drawn is still on the page, about to be taken off it,
+   * and nothing of the score is placed any more: `boundsOf` and `boundsAtTick` answer null, the
+   * others nothing, `reservedRects` included, until the next `onRendered`, which does not come
+   * while the new API cannot draw either (`failed`).
+   */
+  onStartOver(listener: () => void): Unsubscribe;
   /**
    * The same as `ScorePlayer.retry()`. With nothing failed, nothing. When the music font or a
    * worker could not be had (`failed`, or the player's worker, #151): download all of it again
