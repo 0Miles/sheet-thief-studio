@@ -125,8 +125,15 @@ export default defineConfig({
     // Behind the stand-in karyl-chan bot, under its /plugin/<key>/ (plugin.spec.ts).
     { name: "plugin", testMatch: "**/plugin.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: BOT_ORIGIN } },
     // The whole suite runs in Chromium; the other browsers run smoke tests, and the clipboard check
-    // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5).
-    { name: "firefox", testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Firefox"] } },
+    // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5). Firefox also
+    // runs what drawFailure.spec.ts does not tag for Chromium alone: two engines whose fonts both
+    // failed, the failed font face of the one left on the page under the name of the other's (#198).
+    {
+      name: "firefox",
+      testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts", "**/drawFailure.spec.ts"],
+      grepInvert: /@chromium-only/,
+      use: { ...devices["Desktop Firefox"] },
+    },
     { name: "webkit", testMatch: ["**/smoke/*.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
   ],
   webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages, ...pluginPages],

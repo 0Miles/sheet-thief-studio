@@ -17,6 +17,7 @@
 - `event.isComposing` 為真的事件一律忽略。**補充**：`keyCode` 是 229 的事件也忽略。理由：Safari 在結束組字的那一次 keydown（例如用 `Enter` 或 `Space` 選字）送出的 `isComposing` 是 false、`keyCode` 是 229；不忽略的話，用注音打歌詞時，選字的 `Space` 會同時存入音節並跳到下一拍。這條也適用於第 6 節的文字輸入模式。
 - **補充**：按住不放的自動重複（`event.repeat`），只對移動、`+`、`-` 有效；輸入音符與切換技巧忽略重複，避免一次灌進一串音。
 - 焦點在文字輸入框（歌詞、`text`、面板的欄位）時，按鍵屬於輸入框，不是快捷鍵（`Esc`、`Enter` 等模式鍵除外，見第 6 節）。
+- **補充**（#197）：焦點在譜面捲動區裡的按鈕或其他互動元素（`button`、`a[href]`、`input`、`select`、`textarea`，或它們裡面的元素）上時，按鍵屬於那個元素，譜面的 session 鍵與 page 鍵都不處理：`Space`、`Enter` 觸發那個按鈕（「加小節」、譜面載入失敗時的「重試」），不播放、不開文字輸入框；`F2`、`F4`、`F8` 與打譜的鍵在那裡也不生效。按鈕做完事後焦點回到譜面，接著的鍵照常。編輯視圖與樂句編輯器共用同一個判斷（`apps/web/src/ownKeys.ts` 的 `hasOwnKeys`）。
 - 處理了的按鍵呼叫 `preventDefault()`。**例外**：`Mod+C`、`Mod+X`、`Mod+V` 不攔，讓瀏覽器觸發 `copy`、`cut`、`paste` 事件，剪貼簿的工作在那些事件裡做（[`phrases.md`](phrases.md)）。Windows 的舊組合 `Shift+Insert`（貼上）、`Shift+Delete`（剪下）也會觸發同樣的事件，照同樣的規則處理（補充）。
 
 ### 1.2 禁用的組合

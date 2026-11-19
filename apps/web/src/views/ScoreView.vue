@@ -68,6 +68,7 @@ import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { drawFailure } from "../drawFailure";
+import { drawnScore } from "../drawnScore";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { type ExportFormat, exportedFile, saveFile } from "../exportFile";
 import { useLyricEntry } from "../lyricEntry";
@@ -76,6 +77,7 @@ import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { hasOwnKeys } from "../ownKeys";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { barsToSave, type BarsToSave } from "../savePhrase";
 import { useNotice } from "../sayAnew";
@@ -176,8 +178,17 @@ const syncText = isGuest ? strings.guest.sync : text.sync;
 const notFound = ref(false);
 /** What to say when the score could not be asked for, for a reason other than not being found; null while all is well. */
 const loadError = ref<string | null>(null);
-/** The score is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
-const ready = ref(false);
+/**
+ * The score is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). Not while
+ * its renderer starts over (a retry); drawn again, the score is back where it was scrolled to.
+ */
+const { ready, watch: watchDrawn } = drawnScore({
+  end: () => end.value,
+  focus: () => focusScore(),
+  scrollTop: () => scroller.value?.scrollTop ?? null,
+  scrollTo: (top) => scrollTo(top),
+  place: () => updateOverlay(),
+});
 /** `syncing` while a change made here has not reached the server yet. */
 const sync = ref<"syncing" | "synced" | "offline">("syncing");
 /** The browser says it is online. While it is not, the page is offline, whatever the provider is trying. */
@@ -206,6 +217,8 @@ const drawerOpen = ref(false);
 const { notice, say } = useNotice(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
+/** Under the score, the +bar button: shown of a score drawn, or of one with no bars. */
+const end = ref<HTMLElement>();
 /** The keyboard back on the score, where it is. */
 function focusScore(): void {
   scroller.value?.focus({ preventScroll: true });
@@ -304,6 +317,7 @@ const {
   retrySound,
   cursorMoved,
   stopFollowing,
+  scrollTo,
   onScroll,
   reveal,
   attach: attachPlayer,
@@ -899,6 +913,8 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
+  // A button on the page (+bar, the retry) has its own keys.
+  if (hasOwnKeys(event)) return;
   const pageEffect = pageEffectOf(event, keyPlatform());
   if (pageEffect === "playPause") {
     event.preventDefault();
@@ -1094,10 +1110,7 @@ onMounted(async () => {
   sound.onBehind((now) => {
     behind.value = now;
   });
-  engine.renderer.onRendered(() => {
-    ready.value = true;
-    updateOverlay();
-  });
+  watchDrawn(engine.renderer);
   watchDrawing(engine.renderer);
   attachPlayer(engine);
   // After the page's own listeners: a drawing is measured once the cursor is drawn on it.
@@ -1334,7 +1347,7 @@ onBeforeUnmount(() => {
           <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
           <!-- Also in a score two members left with no bars, which the engine may not report drawn: +bar brings it back. -->
-          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" class="score__end">
+          <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" ref="end" class="score__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="text.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ text.bars.append }}</AppButton>
           </div>
           <svg v-if="view" class="score__overlay" aria-hidden="true">

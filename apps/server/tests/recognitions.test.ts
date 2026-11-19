@@ -13,7 +13,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { buildApp } from "../src/app";
 import { Phrase, Recognition, RecognitionImage } from "../src/db/models";
 import { PURGE_INTERVAL_MS } from "../src/deletion";
-import { MB } from "../src/limits";
+import { JSON_BODY_LIMIT, RECOGNITION_BODY_LIMIT, RECOGNITION_IMAGE_BYTES, RECOGNITION_IMAGES_BYTES } from "../src/limits";
 import { fragmentOfRecognition } from "../src/recognitionFragment";
 import { recognize } from "../src/recognizer";
 import { answers, type FakeAnswer, type FakeRecognizer, fixture, fixtureNames, startFakeRecognizer } from "./fakeRecognizer";
@@ -68,8 +68,9 @@ afterAll(async () => {
   await sequelize.close();
 });
 
+const PNG_START = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Bytes a file of each type starts with, and some more. */
-const png = (fill = 1, size = 64) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(size, fill)]);
+const png = (fill = 1, size = 64) => Buffer.concat([PNG_START, Buffer.alloc(size, fill)]);
 const jpeg = (fill = 2) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, fill)]);
 const webp = (fill = 3) => Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x40, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(64, fill)]);
 /** A HEIC photo, as some phone cameras take them: an ISO media file of brand heic. */
@@ -82,13 +83,43 @@ interface Upload {
   field?: string;
 }
 
-/** Send files as the review page does: `multipart/form-data`, each in a field `images`. */
-async function upload(session: string, files: Upload[], on: FastifyInstance = app) {
+/** A body made once, which may be sent more than once. */
+interface Encoded {
+  contentType: string;
+  payload: Buffer;
+}
+
+/** Files as the review page sends them: `multipart/form-data`, each in a field `images`. */
+async function encoded(files: Upload[]): Promise<Encoded> {
   const form = new FormData();
   files.forEach(({ data, type = "image/png", field = "images" }, index) => form.append(field, new Blob([new Uint8Array(data)], { type }), `page-${index + 1}`));
-  const encoded = new Response(form);
-  const payload = Buffer.from(await encoded.arrayBuffer());
-  return on.inject({ method: "POST", url: "/api/recognitions", headers: { origin: ORIGIN, "content-type": encoded.headers.get("content-type")! }, cookies: { [COOKIE]: session }, payload });
+  const response = new Response(form);
+  return { contentType: response.headers.get("content-type")!, payload: Buffer.from(await response.arrayBuffer()) };
+}
+
+function send(session: string, { contentType, payload }: Encoded, on: FastifyInstance = app) {
+  return on.inject({ method: "POST", url: "/api/recognitions", headers: { origin: ORIGIN, "content-type": contentType }, cookies: { [COOKIE]: session }, payload });
+}
+
+/** Send files as the review page does. */
+async function upload(session: string, files: Upload[], on: FastifyInstance = app) {
+  return send(session, await encoded(files), on);
+}
+
+/**
+ * Images each within the limit of one, together over the limit of all: as many of the largest as
+ * the limit of all holds, and one more that takes the body past what the route reads.
+ */
+function imagesOverTheTotal(): Upload[] {
+  const largest = Math.floor(RECOGNITION_IMAGES_BYTES / RECOGNITION_IMAGE_BYTES);
+  // The largest image is made once: every upload of that size shares its bytes.
+  const data = png(0, RECOGNITION_IMAGE_BYTES - PNG_START.length);
+  return [...Array.from({ length: largest }, () => ({ data })), { data: png(largest, RECOGNITION_BODY_LIMIT - RECOGNITION_IMAGES_BYTES) }];
+}
+
+/** How many bytes the images are in all. */
+function bytesOf(images: Upload[]): number {
+  return images.reduce((total, { data }) => total + data.length, 0);
 }
 
 /** Start a recognition of these images; its id. */
@@ -173,27 +204,46 @@ test("anything but PNG, JPEG and WebP is refused with 415 unsupported_image, a H
   // A field `images` that is text, not a file.
   const form = new FormData();
   form.append("images", "a text");
-  const encoded = new Response(form);
-  const text = await app.inject({ method: "POST", url: "/api/recognitions", headers: { origin: ORIGIN, "content-type": encoded.headers.get("content-type")! }, cookies: { [COOKIE]: anna }, payload: Buffer.from(await encoded.arrayBuffer()) });
+  const body = new Response(form);
+  const text = await send(anna, { contentType: body.headers.get("content-type")!, payload: Buffer.from(await body.arrayBuffer()) });
   expect(text.json()).toEqual({ code: "unsupported_image", params: { page: 1 } });
   expect(await Recognition.count()).toBe(0);
   expect(recognizer.received).toHaveLength(0);
 });
 
-test("1 to 15 images, at most 10 MB each and 40 MB in all", async () => {
+// The limits of the images, one test for each that takes a large body: a test makes one such body at most (#196).
+test("no image, a field of another name, 16 images and a JSON body are refused, and nothing is kept", async () => {
   expect((await upload(anna, [])).json()).toEqual({ code: "invalid_request", params: { issues: [{ path: ["images"], code: "too_small" }] } });
   expect((await upload(anna, [{ data: png(), field: "image" }])).statusCode).toBe(400);
   const sixteen = await upload(anna, Array.from({ length: 16 }, (_, index) => ({ data: png(index) })));
   expect(sixteen.json()).toEqual({ code: "invalid_request", params: { issues: [{ path: ["images"], code: "too_big" }] } });
-  const tooLarge = await upload(anna, [{ data: png(1, 10 * MB) }]);
-  expect([tooLarge.statusCode, tooLarge.json()]).toEqual([413, { code: "payload_too_large" }]);
-  const tooMuch = await upload(anna, Array.from({ length: 5 }, (_, index) => ({ data: png(index, 9 * MB) })));
-  expect([tooMuch.statusCode, tooMuch.json()]).toEqual([413, { code: "payload_too_large" }]);
   // A JSON body is not images.
   expect((await apiCall(app, "POST", "/api/recognitions", anna, { images: [] })).statusCode).toBe(400);
   expect(await Recognition.count()).toBe(0);
+});
 
-  const fifteen = await started(anna, Array.from({ length: 15 }, (_, index) => ({ data: png(index, 2 * MB) })));
+test("an image over 10 MB is refused with 413 payload_too_large, and nothing is kept", async () => {
+  const image = png(1, RECOGNITION_IMAGE_BYTES);
+  expect(image.length).toBeGreaterThan(RECOGNITION_IMAGE_BYTES);
+  const tooLarge = await upload(anna, [{ data: image }]);
+  expect([tooLarge.statusCode, tooLarge.json()]).toEqual([413, { code: "payload_too_large" }]);
+  expect(await Recognition.count()).toBe(0);
+});
+
+test("images over 40 MB in all, each within 10 MB, are refused with 413 payload_too_large, and nothing is kept", async () => {
+  const images = imagesOverTheTotal();
+  expect(Math.max(...images.map(({ data }) => data.length))).toBeLessThanOrEqual(RECOGNITION_IMAGE_BYTES);
+  expect(bytesOf(images)).toBeGreaterThan(RECOGNITION_IMAGES_BYTES);
+  const tooMuch = await upload(anna, images);
+  expect([tooMuch.statusCode, tooMuch.json()]).toEqual([413, { code: "payload_too_large" }]);
+  expect(await Recognition.count()).toBe(0);
+});
+
+test("15 images are accepted, in a body larger than a JSON request may be", async () => {
+  // Together just over the body any other route reads: this one has a limit of its own.
+  const images = Array.from({ length: 15 }, (_, index) => ({ data: png(index, Math.ceil(JSON_BODY_LIMIT / 15)) }));
+  expect(bytesOf(images)).toBeGreaterThan(JSON_BODY_LIMIT);
+  const fifteen = await started(anna, images);
   expect((await finished(fifteen, anna)).pages).toBe(15);
   expect(recognizer.received[0]).toHaveLength(15);
 });
@@ -238,9 +288,10 @@ test("a request that would be refused is refused before its body is read: over t
   recognizer.answer(held.answering);
   const id = await started(anna);
   await receivedCount(1);
-  const tooMuch = Array.from({ length: 5 }, (_, index) => ({ data: png(index, 9 * MB) }));
-  expect((await upload(anna, tooMuch)).json()).toEqual({ code: "recognition_in_progress" });
-  expect((await upload(ben, tooMuch)).json()).toEqual({ code: "recognizer_busy" });
+  // The same body for both: made once.
+  const tooMuch = await encoded(imagesOverTheTotal());
+  expect((await send(anna, tooMuch)).json()).toEqual({ code: "recognition_in_progress" });
+  expect((await send(ben, tooMuch)).json()).toEqual({ code: "recognizer_busy" });
   held.release(answers.recognized());
   expect((await finished(id, anna)).status).toBe("succeeded");
 });

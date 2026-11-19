@@ -38,7 +38,9 @@ import { listenToClipboard } from "../clipboard";
 import { keyPlatform } from "../device";
 import { useLyricEntry } from "../lyricEntry";
 import { drawFailure } from "../drawFailure";
+import { drawnScore } from "../drawnScore";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { hasOwnKeys } from "../ownKeys";
 import { selectionBoxes } from "../presence";
 import { useNotice } from "../sayAnew";
 import { useScorePlayback } from "../scorePlayback";
@@ -68,14 +70,25 @@ const NO_PART_ADDED: Record<PartKind, boolean> = { fretted: false, percussion: f
 
 /** The fragment is in the editor: the toolbar shows what plays and changes it. */
 const started = ref(false);
-/** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
-const ready = ref(false);
+/**
+ * The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). Not
+ * while its renderer starts over (a retry); drawn again, the phrase is back where it was scrolled to.
+ */
+const { ready, watch: watchDrawn } = drawnScore({
+  end: () => end.value,
+  focus: () => focus(),
+  scrollTop: () => scroller.value?.scrollTop ?? null,
+  scrollTo: (top) => scrollTo(top),
+  place: () => updateOverlay(),
+});
 /** Whether the fragment could not be drawn (`drawFailure`). */
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
 const { notice, say } = useNotice();
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
+/** Under the phrase, the +bar button: shown of a phrase drawn. */
+const end = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
 const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 const cursorRect = shallowRef<Rect | null>(null);
@@ -109,7 +122,7 @@ const hideFromTests = exposeForTests({
 });
 
 // Typing plays from the start of the cursor's bar; a device that only plays, from where playback is.
-const { playerState, stopped, playingBar, playheadRect, isFollowing, showPlayback, togglePlay, stop, retrySound, cursorMoved, stopFollowing, onScroll, reveal, attach } =
+const { playerState, stopped, playingBar, playheadRect, isFollowing, showPlayback, togglePlay, stop, retrySound, cursorMoved, stopFollowing, scrollTo, onScroll, reveal, attach } =
   useScorePlayback({
     scroller,
     reserved: () => reserved.value,
@@ -186,6 +199,8 @@ function onToolbar(action: () => void): void {
 // Typing -----------------------------------------------------------------------------------------
 
 function onKey(event: KeyboardEvent): void {
+  // A button on the page (+bar, the retry) has its own keys.
+  if (hasOwnKeys(event)) return;
   const pageEffect = pageEffectOf(event, keyPlatform());
   if (pageEffect === "playPause") {
     event.preventDefault();
@@ -307,10 +322,7 @@ function start(fragment: BarsFragment): void {
     scale: 1,
   });
   sound = soundUpdates(engine.player, "a", updateLoop);
-  engine.renderer.onRendered(() => {
-    ready.value = true;
-    updateOverlay();
-  });
+  watchDrawn(engine.renderer);
   watchDrawing(engine.renderer);
   attach(engine);
   draw({ kind: "structure" });
@@ -380,7 +392,7 @@ defineExpose({ focus, openParts });
         <div class="phrase__page">
           <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready"></div>
-          <div v-if="editable && ready" class="phrase__end">
+          <div v-if="editable && ready" ref="end" class="phrase__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="strings.score.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ strings.score.bars.append }}</AppButton>
           </div>
           <svg class="phrase__overlay" aria-hidden="true">

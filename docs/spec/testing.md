@@ -52,7 +52,7 @@
 |---|---|
 | `check` | `pnpm lint`、`pnpm typecheck`、`pnpm test`（Postgres、Redis 用 service containers）、`pnpm --filter @studio/web build`、正式 build 不含 `__studio` 的檢查 |
 | `e2e`（Chromium） | 完整的 e2e |
-| `e2e-firefox` | 一個打譜的 smoke test：登入、輸入一個格號、重新整理後內容還在 |
+| `e2e-firefox` | 一個打譜的 smoke test：登入、輸入一個格號、重新整理後內容還在。另外跑剪貼簿的 e2e（#52、#58）與 `drawFailure.spec.ts` 裡沒有標 `@chromium-only` 的測試（#198），見下面的補充 |
 | `e2e-webkit` | 兩個 smoke test。**Read view**：開唯讀連結，看到譜面，播放器進入 paused 狀態；訪客走 ticket，不需要 cookie。**打譜**：同 Firefox 的打譜 smoke（登入、輸入一個格號、重新整理後內容還在），server 用不帶前綴的 cookie 啟動（[`security.md`](security.md) 第 1 節）；另外用 `addInitScript` 把 `navigator.platform` 設成 `MacIntel`，按 `Meta+Z` 復原一次，讓平台層的 macOS 組合在真的瀏覽器裡走過一次（[`keymap.md`](keymap.md) 第 1.3 節） |
 | `recognizer` | 建置辨識服務的 Docker image，在裡面跑 pytest 與契約 fixture 的測試 |
 | `deploy` | 部署檔（[`DEPLOYMENT.md`](../DEPLOYMENT.md)）：兩種模式的 `docker compose config`（用 `deploy/.env.example`）、建置 server 的 image 並確認它載入得了 server 的程式、兩份 nginx 範例在 nginx 官方 image 裡通過 `nginx -t` |
@@ -63,6 +63,7 @@
 - **補充**（#38）：smoke test 在 `apps/web/e2e/smoke/`，由 Playwright project `firefox`（`typing.spec.ts`）與 `webkit`（`typing.spec.ts`、`read.spec.ts`、`mac.spec.ts`）執行，`chromium` project 不跑。WebKit 的 project 改向第三個 server（port 8033，`WEB_ROOT` 指向剛建好的 `dist`，`INSECURE_COOKIES=1`）取網頁與登入，所以同一次 `pnpm --filter @studio/web test:e2e` 裡 Chromium 與 Firefox 仍用 `__Host-` cookie。CI 的 `e2e`、`e2e-firefox`、`e2e-webkit` 是同一個 job 的 matrix，各自用 `--project` 只跑自己的 project。
   - **補充**（#52）：第 5 節確認檢查 3 的 `apps/web/e2e/clipboard.spec.ts` 不是 smoke，三個 project 都跑：`chromium` 照常收進完整的 e2e，`firefox`、`webkit` 的 `testMatch` 另外列出它。
     - **補充**（#58）：剪貼簿本身的 e2e（跨團譜複製小節、剪下並貼上拍點、Viewer 複製進樂句編輯器）也放在這個檔案，三個 project 都跑。Windows 上的 Playwright WebKit 讀不回 `copy`、`cut` 寫入的內容，那裡改斷言事件有被頁面處理：剪下照樣清空、貼上提示「剪貼簿裡沒有可以貼上的內容」、文件不變；round trip 以其他瀏覽器與 CI 的 Linux WebKit 為準。
+  - **補充**（#198）：`firefox` project 的 `testMatch` 也列出 `apps/web/e2e/drawFailure.spec.ts`，並用 `grepInvert: /@chromium-only/` 排除標了 `@chromium-only` 的測試（比對瀏覽器錯誤訊息的字樣，例如 `ERR_INTERNET_DISCONNECTED`，是 Chromium 的）。目前在 Firefox 多跑的是一個：「主譜與樂句預覽的字型都失敗，先重試主譜，再重試預覽」——主譜畫出、預覽的失敗訊息還在，預覽重試後畫出、鍵盤焦點在預覽上、Esc 關掉預覽。它在 `chromium` project 也跑。這個檔案之後新增的測試，沒標 `@chromium-only` 的也會在 Firefox 跑。原因見 [`playback.md`](playback.md) 4.1 的「同名的失敗字型」：兩個引擎的字型都失敗時，alphaTab 會把名字重用給新的字型，要在真的瀏覽器裡確認。
   - Windows 上的 Playwright WebKit 沒有 Web Audio（`AudioContext` 不存在）。**補充**（#129）：頁面自己處理沒有 Web Audio 的瀏覽器（[`playback.md`](playback.md) 4.1），所以 WebKit 的三個 smoke 在 Windows 本機也照跑、不跳過：Read view smoke 等頁面自己說出播放器停在哪裡（`e2e/pages.ts` 的 `playerSettled` 讀 `data-player`，e2e 不自己重算能不能播），Windows 上的 WebKit 斷言 `unavailable`，其他環境（含 CI）斷言 paused，兩者都斷言頁面沒有錯誤。播放器真的進入 paused 仍以 CI（Linux，有 Web Audio）的結果為準；不另外在 WSL 或容器裡跑。
 - S2 的延遲門檻**不當** CI 的關卡：同一格的數字在兩次執行間差很多（headless 134／160 ms，headed 77／95 ms）。
 - **補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0（[`security.md`](security.md) 第 7 節）。

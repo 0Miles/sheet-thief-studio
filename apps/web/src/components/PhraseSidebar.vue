@@ -156,6 +156,15 @@ async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise
   engine.renderer.setScore(score);
 }
 
+/**
+ * The preview is asked for again. Its retry, which had the keyboard, leaves the page at once: the
+ * preview takes it, so that Esc still closes it and Enter still drops the phrase (#198).
+ */
+function onRetryPreview(): void {
+  retryPreview();
+  previewSection.value?.focus({ preventScroll: true });
+}
+
 /** The preview closes, the keyboard going back where it was when it opened (the search box when that is gone). */
 function closePreview(): void {
   previewed.value = null;
@@ -273,7 +282,7 @@ onBeforeUnmount(() => {
       <!-- Scrolls down: never cut to a fixed height. -->
       <div class="phrase-sidebar__preview-scroller" data-preview-scroller>
         <div class="phrase-sidebar__preview-page">
-          <DrawFailed v-if="previewFailed" @retry="retryPreview" />
+          <DrawFailed v-if="previewFailed" @retry="onRetryPreview" />
           <div ref="previewHost" data-preview-host></div>
           <svg class="phrase-sidebar__preview-overlay" aria-hidden="true" data-preview-overlay>
             <rect v-for="(area, index) in previewReserved" :key="index" data-reserved :x="area.x" :y="area.y" :width="area.width" :height="area.height" fill="none" />
