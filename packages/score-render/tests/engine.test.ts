@@ -75,14 +75,26 @@ class StandIn {
   readonly layoutWorker: EventTarget | null = null;
   readonly synthWorker: EventTarget | null = null;
   destroyed = false;
+  /** The entry of the page's table of music fonts this API uses. */
+  readonly webFont: WebFont;
 
   constructor(_element: unknown, settings: alphaTab.Settings) {
     this.settings = settings;
     standIns.push(this);
-    // The family alphaTab gives the music font on the page: one for each set of sources (the
-    // engine adds `?attempt=<n>` to ask for it again).
-    const attempt = /\?attempt=(\d+)$/.exec([...(settings.core.smuflFontSources?.values() ?? [])][0] ?? "")?.[1] ?? "";
-    (settings.display.resources as unknown as { smuflFontFamilyName: string }).smuflFontFamilyName = `alphaTab${attempt}`;
+    // The music font on the page, as alphaTab 1.9 registers it (`_createStyleElements`): one
+    // entry of a table of the page for each set of sources, shared by the APIs made with them; a
+    // new entry is named after how many the table holds, so a name comes back once entries go.
+    const sources = [...(settings.core.smuflFontSources?.values() ?? [])].join(",");
+    let font = webFonts.get(sources);
+    if (font === undefined) {
+      const family = `alphaTab${webFonts.size === 0 ? "" : webFonts.size}`;
+      font = { sources, family, face: { family: `"${family}"`, status: "unloaded" }, usages: 0 };
+      webFonts.set(sources, font);
+      fonts.faces.push(font.face);
+    }
+    font.usages += 1;
+    this.webFont = font;
+    (settings.display.resources as unknown as { smuflFontFamilyName: string }).smuflFontFamilyName = font.family;
     const MadeWorker = globalThis.Worker as unknown as (new () => EventTarget) | undefined;
     if (MadeWorker !== undefined) {
       if (settings.core.useWorkers) this.layoutWorker = new MadeWorker();
@@ -172,8 +184,16 @@ class StandIn {
     return true;
   }
 
+  /** The last API of an entry takes it off the table, and its font face off the page (alphaTab's `destroy`). */
   destroy(): void {
+    if (this.destroyed) return;
     this.destroyed = true;
+    const font = this.webFont;
+    font.usages -= 1;
+    if (font.usages > 0) return;
+    if (webFonts.get(font.sources) === font) webFonts.delete(font.sources);
+    const at = fonts.faces.indexOf(font.face);
+    if (at >= 0) fonts.faces.splice(at, 1);
   }
 
   /** The family of the music font on the page, as alphaTab set it. */
@@ -182,19 +202,48 @@ class StandIn {
   }
 }
 
+/** A font face of the page: its family as CSS has it, quoted. */
+interface Face {
+  family: string;
+  status: FontFaceLoadStatus;
+}
+
+/** An entry of alphaTab's table of the music fonts registered on the page (`BrowserUiFacade._registeredWebFonts`). */
+interface WebFont {
+  sources: string;
+  family: string;
+  face: Face;
+  usages: number;
+}
+
+/** alphaTab's table of the page, by the sources of each font. */
+const webFonts = new Map<string, WebFont>();
+
 /** The fonts of the page (`document.fonts`), as far as the engine looks at them. */
 class StandInFonts extends EventTarget {
-  readonly faces: { family: string; status: FontFaceLoadStatus }[] = [];
+  readonly faces: Face[] = [];
 
-  forEach(each: (face: { family: string; status: FontFaceLoadStatus }) => void): void {
-    this.faces.forEach(each);
+  forEach(each: (face: Face) => void): void {
+    [...this.faces].forEach(each);
   }
 
-  /** A font face of the family could not be downloaded: the browser says so once, quoting the family. */
-  failed(family: string): void {
-    const face = { family: `"${family}"`, status: "error" as const };
-    this.faces.push(face);
+  /** This font face could not be downloaded: the browser says so once. */
+  failedFace(face: Face): void {
+    face.status = "error";
     this.dispatchEvent(Object.assign(new globalThis.Event("loadingerror"), { fontfaces: [face] }));
+  }
+
+  /**
+   * The font of the family could not be downloaded: its face on the page that has not failed yet
+   * (a face that failed says so once), or one of a family alphaTab has none of.
+   */
+  failed(family: string): void {
+    let face = this.faces.find((each) => each.family === `"${family}"` && each.status !== "error");
+    if (face === undefined) {
+      face = { family: `"${family}"`, status: "unloaded" };
+      this.faces.push(face);
+    }
+    this.failedFace(face);
   }
 }
 
@@ -332,6 +381,8 @@ function browserWith(present: readonly string[] = ["AudioContext", "Worker", "Sc
   vi.stubGlobal("isSecureContext", secure);
   // Where the browser says it is back online.
   vi.stubGlobal("window", new EventTarget());
+  // Another page: none of alphaTab's fonts registered on it.
+  webFonts.clear();
   fonts = new StandInFonts();
   vi.stubGlobal("document", { fonts });
 }
@@ -1108,7 +1159,6 @@ test("the music font could not be had: the score is told failed; retried, a new 
   const sources = [...(api.settings.core.smuflFontSources?.values() ?? [])];
   expect(sources).toHaveLength(3);
   for (const source of sources) expect(source).toMatch(/^\/font\/Bravura\.\w+\?attempt=\d+$/);
-  expect(api.fontFamily).not.toBe(old.fontFamily);
   expect(engine.renderer.failed).toBe(false);
   expect(told).toEqual([true, false]);
   expect(states).toEqual(["loading"]);
@@ -1135,8 +1185,10 @@ test("the music font could not be had: the score is told failed; retried, a new 
 
 test("a font that failed for an engine still on the page fails at once for one made with its sources; one made after the failure is told asks for it from other sources", () => {
   // The browser said so before the second engine listened.
-  fonts.faces.push({ family: `"${api.fontFamily}"`, status: "error" });
-  expect(makeEngine().made.renderer.failed).toBe(true);
+  api.webFont.face.status = "error";
+  const shared = makeEngine();
+  expect(shared.stand.webFont).toBe(api.webFont);
+  expect(shared.made.renderer.failed).toBe(true);
   fonts.failed(api.fontFamily);
   const { made, stand } = makeEngine();
   expect(stand.fontFamily).not.toBe(api.fontFamily);
@@ -1408,8 +1460,8 @@ test("what the API replaced reports after is told to no one: ready, a position, 
   workerFailed(old.synthWorker);
   old.postRenderFinished.emit();
   old.renderer.partialRenderFinished.emit({ firstMasterBarIndex: 0, lastMasterBarIndex: 0 });
-  // Its font, told failed once more.
-  fonts.failed(old.fontFamily);
+  // Its font face, off the page by now, told failed once more.
+  fonts.failedFace(old.webFont.face);
 
   expect(engine.player.state).toBe("loading");
   expect(states).toEqual([]);
@@ -1526,4 +1578,52 @@ test("while the score cannot be drawn, what alphaTab reports as a drawing (a res
   newApi();
   api.postRenderFinished.emit();
   expect(drawn).toEqual([false]);
+});
+
+test("the player's worker failing once it has started is alphaTab's to report: the player stays as it is, and nothing is asked for again", () => {
+  api.synthWorker!.dispatchEvent(new globalThis.Event("message"));
+  workerFailed(api.synthWorker);
+  expect(engine.player.state).toBe("paused");
+  expect(engine.renderer.failed).toBe(false);
+  backOnline();
+  expect(standIns).toEqual([api]);
+});
+
+test("two engines on the page whose fonts both failed: one retried is not taken for failed by the other's font, whose family alphaTab gives it again", () => {
+  // The score's (S), then a phrase's preview (P), made once S's font had failed.
+  const told: boolean[] = [];
+  const drawn: boolean[] = [];
+  engine.renderer.onFailed((failed) => told.push(failed));
+  engine.renderer.onRendered(({ partial }) => drawn.push(partial));
+  fonts.failed(api.fontFamily);
+  const preview = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  const previewApi = standIns.at(-1)!;
+  fonts.failed(previewApi.fontFamily);
+  expect([engine.renderer.failed, preview.renderer.failed]).toEqual([true, true]);
+
+  engine.renderer.retry();
+  newApi();
+  // alphaTab's table held P's font alone: S's new one has the name of P's, still failed on the page.
+  expect(api.fontFamily).toBe(previewApi.fontFamily);
+  expect(api.webFont).not.toBe(previewApi.webFont);
+  expect(engine.renderer.failed).toBe(false);
+  expect(told).toEqual([true, false]);
+  api.postRenderFinished.emit();
+  expect(drawn).toEqual([false]);
+  // P's is still to be retried, by itself.
+  expect(preview.renderer.failed).toBe(true);
+  // S's own new font failing is S's.
+  fonts.failedFace(api.webFont.face);
+  expect(engine.renderer.failed).toBe(true);
+  expect(preview.renderer.failed).toBe(true);
+});
+
+test("an engine made with the sources of one still on the page, its font still coming: both are told when it fails", () => {
+  const told: boolean[] = [];
+  const other = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  expect(standIns.at(-1)!.webFont).toBe(api.webFont);
+  other.renderer.onFailed((failed) => told.push(failed));
+  fonts.failed(api.fontFamily);
+  expect([engine.renderer.failed, other.renderer.failed]).toEqual([true, true]);
+  expect(told).toEqual([true]);
 });

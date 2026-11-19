@@ -88,6 +88,19 @@ function canPlaySound(): boolean {
  */
 let fontAttempt = 0;
 
+/**
+ * How many alphaTab APIs still on the page were made with the font sources of each attempt: one
+ * made with the sources of another shares its entry of alphaTab's table, and so its font face.
+ */
+const fontUsers = new Map<number, number>();
+
+/** The font faces on the page now. */
+function facesOn(fonts: FontFaceSet): Set<FontFace> {
+  const faces = new Set<FontFace>();
+  fonts.forEach((face) => faces.add(face));
+  return faces;
+}
+
 /** Where the music font is downloaded from on an attempt: alphaTab's own sources (null) the first time. */
 function fontSources(fontDirectory: string, attempt: number): alphaTab.Settings["core"]["smuflFontSources"] {
   if (attempt === 0) return null;
@@ -295,6 +308,16 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       settings.player.enablePlaybackRangeSelection = false;
       if (options.scrollElement) settings.player.scrollElement = options.scrollElement;
     }
+    // The font faces of other APIs, when this one registers a font of its own: alphaTab names a
+    // new font after how many its table holds ("alphaTab", "alphaTab1"...) and takes one off the
+    // table with its last API, so a name comes back, and a face of that name still on the page,
+    // failed or not, may be another API's. One made with the sources of an API still on the page
+    // shares that one's face (null: every face of the family is its own).
+    const fonts = (globalThis as { document?: Document }).document?.fonts;
+    const shared = (fontUsers.get(attempt) ?? 0) > 0;
+    const others = shared || fonts === undefined ? null : facesOn(fonts);
+    fontUsers.set(attempt, (fontUsers.get(attempt) ?? 0) + 1);
+    this.unwatch.push(() => fontUsers.set(attempt, (fontUsers.get(attempt) ?? 1) - 1));
     const { made: api, workers } = workersMadeBy(() => new alphaTab.AlphaTabApi(this.element, settings));
     this.api = api;
     // Every listener is added once, here: alphaTab calls a new listener of some events at once
@@ -389,34 +412,39 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const [layout, synth] = settings.core.useWorkers ? workers : [undefined, ...workers];
     if (layout) this.unwatch.push(onStartFailure(layout, live(() => this.fail("layout"))));
     if (synth && this.hasPlayer) this.unwatch.push(onStartFailure(synth, live(() => this.fail("synth"))));
-    this.watchFont(attempt, live(() => this.fail("font")));
+    this.watchFont(attempt, others, live(() => this.fail("font")));
   }
 
   /**
    * Call `failed` when the music font of the API in use could not be had. alphaTab 1.9 tells no one
    * (its `FontLoadingChecker` logs "Loading Failed, rendering cannot start" and stops checking);
-   * the page's fonts do. A font registered by an API still on the page may have failed already: no
-   * event comes for it again.
+   * the page's fonts do, by font face. The API's own faces are those of its family on the page
+   * that are not another API's (`others`; null when it shares the font of an API still on the
+   * page, which may have failed already: no event comes for it again).
    */
-  private watchFont(attempt: number, failed: () => void): void {
+  private watchFont(attempt: number, others: Set<FontFace> | null, failed: () => void): void {
     const fonts = (globalThis as { document?: Document }).document?.fonts;
-    // The family alphaTab gave its font on this page ("alphaTab", "alphaTab1"...): set by
-    // `BrowserUiFacade.initialize`, left out of alphaTab's types.
+    // The family alphaTab gave its font on this page: set by `BrowserUiFacade.initialize`, left
+    // out of alphaTab's types.
     const family = (this.api.settings.display.resources as unknown as { smuflFontFamilyName?: string }).smuflFontFamilyName;
     if (fonts === undefined || family === undefined) return;
+    const own = (face: FontFace) => familyOf(face) === family && !others?.has(face);
     const fail = () => {
       // Any engine made from now on asks for it anew, as a retry of this one does.
       fontAttempt = Math.max(fontAttempt, attempt + 1);
       failed();
     };
     const onError = (event: Event) => {
-      if ((event as FontFaceSetLoadEvent).fontfaces.some((face) => familyOf(face) === family)) fail();
+      // Not a face taken off the page (an API replaced), whatever its family.
+      const onPage = facesOn(fonts);
+      if ((event as FontFaceSetLoadEvent).fontfaces.some((face) => onPage.has(face) && own(face))) fail();
     };
     fonts.addEventListener("loadingerror", onError);
     this.unwatch.push(() => fonts.removeEventListener("loadingerror", onError));
+    if (others !== null) return;
     let failedAlready = false;
     fonts.forEach((face) => {
-      if (familyOf(face) === family && face.status === "error") failedAlready = true;
+      if (own(face) && face.status === "error") failedAlready = true;
     });
     if (failedAlready) fail();
   }
