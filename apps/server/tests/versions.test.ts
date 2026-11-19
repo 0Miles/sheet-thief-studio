@@ -15,7 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, Version } from "../src/db/models";
 import { AUTO_VERSIONS_KEPT, createVersion, MAX_VERSION_BYTES, VERSION_INTERVAL_MS, VersionTooLarge } from "../src/versions";
-import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor, warmPool } from "./support";
+import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, storedScore, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -389,13 +389,6 @@ test("a version that cannot be made is logged, and the score is stored and unloa
   await leave(started, await open(started, id));
   expect(await titlesOf(id)).toEqual(["沒有版本的修改"]);
 });
-
-/** The score as its row holds it. */
-async function storedScore(scoreId: string) {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
-  return docToJson(doc);
-}
 
 test("two versions of the same content asked for at once make one", async () => {
   const started = await startApp();

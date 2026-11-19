@@ -26,7 +26,7 @@ import { type BarsFragment, fragmentOfBars, type ScoreJSON, scoreToFragment } fr
 
 import { strings } from "../src/strings";
 import { ADMIN, VIEWER } from "./environment";
-import { createPhrase, loggedIn, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
+import { beatsIn, createPhrase, loggedIn, openPhrase, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
 import { expect, type Page, test } from "./test";
 
 /** What the page heard of one clipboard event. */
@@ -43,6 +43,11 @@ interface Heard {
 const COPIED = 'sheet-thief-studio/fragment@1\n{"check":"#52 copy"}';
 const CUT = 'sheet-thief-studio/fragment@1\n{"check":"#52 cut"}';
 
+/** Whether `paste` reads what `copy` and `cut` wrote here: not in Playwright's WebKit for Windows (see above). */
+function roundTrips(browserName: string): boolean {
+  return !(browserName === "webkit" && process.platform === "win32");
+}
+
 test("with the score focused, Ctrl+C, Ctrl+X and Ctrl+V fire copy, cut and paste, and paste reads what was written", async ({ browser, browserName }) => {
   const id = seedScore({ title: "剪貼簿焦點測試", owner: ADMIN.username });
   const page = await loggedIn(browser, ADMIN);
@@ -50,7 +55,7 @@ test("with the score focused, Ctrl+C, Ctrl+X and Ctrl+V fire copy, cut and paste
   await openScore(page, id);
   const scroller = page.locator("[data-scroller]");
   await expect(scroller).toBeFocused();
-  const before = await page.evaluate(() => window.__studioTest!.scoreJson());
+  const before = await scoreOf(page);
 
   await page.evaluate(
     ({ copied, cut }) => {
@@ -92,7 +97,7 @@ test("with the score focused, Ctrl+C, Ctrl+X and Ctrl+V fire copy, cut and paste
   await expect.poll(heard).toHaveLength(4);
 
   const sentTo = browserName === "firefox" ? "body" : "scroller";
-  const keepsWritten = !(browserName === "webkit" && process.platform === "win32");
+  const keepsWritten = roundTrips(browserName);
   expect(await heard()).toEqual([
     { type: "copy", target: sentTo, scoreFocused: true, text: null },
     { type: "paste", target: sentTo, scoreFocused: true, text: keepsWritten ? COPIED : "" },
@@ -101,20 +106,13 @@ test("with the score focused, Ctrl+C, Ctrl+X and Ctrl+V fire copy, cut and paste
   ]);
   // The keys went to the browser, not to the score: the score is as it was, the focus where it was.
   await expect(scroller).toBeFocused();
-  expect(await page.evaluate(() => window.__studioTest!.scoreJson())).toEqual(before);
+  expect(await scoreOf(page)).toEqual(before);
   expect(errors).toEqual([]);
 });
 
-/** Whether `paste` reads what `copy` and `cut` wrote here: not in Playwright's WebKit for Windows (see above). */
-function roundTrips(browserName: string): boolean {
-  return !(browserName === "webkit" && process.platform === "win32");
-}
-
 /** The frets of each beat of the first voice of a bar of the first part, on whatever string. */
 async function fretsIn(page: Page, bar: number): Promise<(number | undefined)[]> {
-  const score = await scoreOf(page);
-  const beats = score.parts[0]!.content[score.bars[bar]!.id]?.["0:0"] ?? [];
-  return beats.map((beat) => Object.values(beat.notes)[0]?.fret);
+  return beatsIn(await scoreOf(page), 0, bar).map((beat) => Object.values(beat.notes)[0]?.fret);
 }
 
 /** Type notes from the cursor's bar on, a list of frets a bar: each a beat of its own, a bar after another. */
@@ -215,8 +213,7 @@ test("a Viewer copies bars of the score into their own phrase; their Ctrl+X chan
   await expect(page.getByText(strings.score.viewerCannotEdit)).toBeVisible();
   expect(await scoreOf(page)).toEqual(score);
 
-  await page.goto(`/phrases/${phraseId}`);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await openPhrase(page, phraseId);
   await expect(page.locator("[data-scroller]")).toBeFocused();
   const blank = scoreToFragment(await scoreOf(page));
   await page.keyboard.press("Control+KeyV");

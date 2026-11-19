@@ -3,7 +3,7 @@
 // the beat sung from beat to beat, out of the reserved areas (docs/spec/views.md, section 9). Its
 // keys go to `EditorSession.pressLyric`, which saves and says where the box goes.
 import type { EditorSession, LyricRequest } from "@studio/score-editor";
-import { type Cursor, MAX_LYRIC } from "@studio/score-model";
+import type { Cursor } from "@studio/score-model";
 import type { Rect } from "@studio/score-render";
 import { shallowRef } from "vue";
 
@@ -43,8 +43,7 @@ export function useLyricEntry({ session, boundsOf, reserved, tell, done }: Lyric
 
   function close(): void {
     if (request.value === null) return;
-    request.value = null;
-    rect.value = null;
+    drop();
     done();
   }
 
@@ -54,7 +53,7 @@ export function useLyricEntry({ session, boundsOf, reserved, tell, done }: Lyric
     const step = current && session()?.pressLyric(current, typed, event);
     if (step == null) return;
     event.preventDefault();
-    if (step === "stay") tell(strings.score.lyricTooLong(MAX_LYRIC));
+    if (step === "stay") tell(strings.score.lyricTooLong);
     else if (step === "leave") close();
     else {
       request.value = step;

@@ -125,7 +125,7 @@ object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
 ## 9. Log 與部署
 
 - token 不得進 log：Fastify 的 request log 遮掉 query 的 `token` 參數，以及 `/s/` 與 `/api/s/` 後面的路徑段（補充）。
-- nginx 範例設定：WebSocket upgrade（`/collab`）。**補充**：`/s/` 與 `/api/s/` 關掉 `access_log`。
+- nginx 範例設定（`deploy/nginx/`，[`DEPLOYMENT.md`](../DEPLOYMENT.md)）：WebSocket upgrade（`/collab`）；`client_max_body_size` 等於 server 最大的 body 上限（第 5 節的辨識）。**補充**：`/s/`、`/api/s/` 與 `/auth/karyl` 關掉 `access_log`。
 - plugin 模式的 `/auth/karyl` 連結經過 bot 的代理，studio 管不到那一側的 log；所以連結只能用一次、2 分鐘到期（[`karyl-login.md`](karyl-login.md) 第 2 節）。bot 前面若還有 nginx，`/plugin/` 也要轉發 Upgrade。
-- 部署：agent 只產出 Docker Compose（server、postgres、redis、recognizer）、nginx 範例與 `docs/DEPLOYMENT.md`。實際部署是人工步驟；agent 不部署，也不改任何正式環境的設定。
+- 部署：agent 只產出 Docker Compose（server、postgres、redis、recognizer）、nginx 範例與 [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md)。實際部署是人工步驟；agent 不部署，也不改任何正式環境的設定。
 - 辨識服務只在 Compose 的內部網路上，不對外開 port（補充，[`recognizer.md`](recognizer.md)）。

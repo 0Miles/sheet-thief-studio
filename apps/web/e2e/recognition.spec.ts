@@ -3,17 +3,14 @@
 // left out; edited, it is saved as a phrase and the recognition goes with its image, or discarded.
 // A tuning not understood is warned of and chosen by hand. On a phone the review page only shows.
 // The server calls the stand-in recognizer (e2e/environment.ts), told which fixture to answer.
-import { tuningFor } from "@studio/score-model";
+import { type ScoreJSON, tuningFor } from "@studio/score-model";
 
 import { strings } from "../src/strings";
 import { ADMIN } from "./environment";
-import { beatsIn, cursorOf, loggedIn, logInFromStart, originalShown, pageErrors, recognizeImage, runName, scoreOf } from "./pages";
-import { type BrowserContextOptions, expect, type Page, test } from "./test";
+import { beatsIn, cursorOf, loggedIn, logInFromStart, openPhrase, originalShown, pageErrors, PHONE, ready, recognizeImage, runName, scoreOf } from "./pages";
+import { expect, type Page, test } from "./test";
 
 const text = strings.recognition;
-
-/** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
-const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
 
 /** The name the save dialog starts with: the day of the recognition. */
 const DEFAULT_NAME = new RegExp(`^${text.defaultName(String.raw`\d{4}-\d{2}-\d{2}`)}$`);
@@ -76,12 +73,9 @@ test("an image uploaded is reviewed beside the result and what was left out, a f
   await expect(page.locator(`[data-recognition="${id}"]`)).toHaveCount(0);
 
   // The phrase holds the result as it was edited.
-  await page.goto(`/phrases/${phraseId}`);
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
-  const saved = await scoreOf(page);
-  expect(saved.bars.map((bar) => beatsIn(saved, 0, saved.bars.indexOf(bar)).map((beat) => beat.notes))).toEqual(
-    edited.bars.map((bar) => beatsIn(edited, 0, edited.bars.indexOf(bar)).map((beat) => beat.notes)),
-  );
+  await openPhrase(page, phraseId);
+  const notesByBar = (score: ScoreJSON) => score.bars.map((_, bar) => beatsIn(score, 0, bar).map((beat) => beat.notes));
+  expect(notesByBar(await scoreOf(page))).toEqual(notesByBar(edited));
   expect(errors).toEqual([]);
 });
 
@@ -157,7 +151,7 @@ test("on a phone an image is uploaded and its result looked at, not changed nor 
   const computer = await loggedIn(browser, ADMIN);
   const errors = pageErrors(computer);
   await computer.goto(`/recognitions/${id}`);
-  await expect(computer.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(computer);
   await saveAs(computer, runName("手機上傳的樂句"));
   await gone(computer, id);
   expect(phoneErrors).toEqual([]);

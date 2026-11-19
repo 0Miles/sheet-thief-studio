@@ -14,7 +14,7 @@ import { RECOGNIZER_ANSWER_LIMIT } from "./limits";
  * How long the server waits for an answer: the recognizer gives up after 900 seconds in all, and
  * 30 more leave it time to say so (docs/spec/recognizer.md, section 3).
  */
-export const RECOGNIZER_TIMEOUT_MS = 930_000;
+const RECOGNIZER_TIMEOUT_MS = 930_000;
 
 /** The types of image the server takes (docs/spec/recognizer.md, section 1). */
 export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
@@ -26,7 +26,7 @@ export interface PageImage {
 }
 
 /** How many issues of an answer not of the contract go to the log, and how much of an answer of an unexpected status. */
-const LOGGED_ISSUES = 20;
+export const LOGGED_ISSUES = 20;
 const LOGGED_BODY_BYTES = 1024;
 
 export type Recognized = { status: "succeeded"; result: RecognizerResult } | { status: "failed"; error: RecognitionError };

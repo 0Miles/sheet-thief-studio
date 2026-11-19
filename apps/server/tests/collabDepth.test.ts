@@ -20,7 +20,7 @@ import { stopWhenClosed } from "../../web/src/notices";
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score } from "../src/db/models";
-import { closes, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
+import { closes, createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, socketClosed, storedDoc, testConfig, ticketFor } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -80,13 +80,6 @@ function updateMessage(scoreId: string, update: Uint8Array): Uint8Array {
   encoding.writeVarUint(encoder, 2);
   encoding.writeVarUint8Array(encoder, update);
   return encoding.toUint8Array(encoder);
-}
-
-/** The document the score's row holds now. */
-async function storedDoc(scoreId: string): Promise<Y.Doc> {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
-  return doc;
 }
 
 /** A member's tab, as the web app opens it: the provider stops for good on the server's `closed` notice (`stopWhenClosed`). */

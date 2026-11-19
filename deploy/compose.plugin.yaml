@@ -1,0 +1,26 @@
+# The plugin mode (docs/DEPLOYMENT.md, docs/spec/karyl-login.md): a plugin of the karyl-chan bot.
+# The server joins the bot's karyl-chan-net; the bot dispatches /studio to it and proxies its pages
+# under /plugin/sheet-thief-studio/. Members log in from the link of /studio. No port on the host.
+services:
+  server:
+    environment:
+      # The setup secret the bot's admin issued at /admin/plugins; setting it turns the plugin mode on.
+      KARYL_PLUGIN_SETUP_SECRET: ${KARYL_PLUGIN_SETUP_SECRET:?set KARYL_PLUGIN_SETUP_SECRET in .env}
+      # The bot on karyl-chan-net; the SDK's default container name.
+      BOT_URL: ${BOT_URL:-http://karyl-chan:3000}
+      # This server as the bot reaches it: the alias below, on the server's port.
+      PLUGIN_URL: ${PLUGIN_URL:-http://karyl-plugin-sheet-thief-studio:8031}
+      # The bot's proxy stands in front: its address on karyl-chan-net, or that network's subnet.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?set TRUSTED_PROXIES in .env to the bot's address or the subnet of karyl-chan-net}
+      # The pages are served from the bot's domain, which decides about HSTS itself.
+      HSTS: ${HSTS:-0}
+    networks:
+      karyl-chan-net:
+        # The bot's naming of plugin containers (its operator guide), which PLUGIN_URL uses.
+        aliases:
+          - karyl-plugin-sheet-thief-studio
+
+networks:
+  # Created and owned by the bot's own Compose project.
+  karyl-chan-net:
+    external: true

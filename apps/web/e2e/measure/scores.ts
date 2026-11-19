@@ -32,7 +32,7 @@ import { MILESTONE } from "./output";
 
 const BASS_TUNING = [43, 38, 33, 28];
 const DEMO_TITLE = "Demo";
-const perfTitle = (bars: number, techniques: boolean) => `Perf ${bars} × ${bandOf(MILESTONE).length}${techniques ? " techniques" : ""}`;
+const perfTitle = (bars: number, techniques: boolean) => `Perf ${bars} × ${PERF_PARTS.length}${techniques ? " techniques" : ""}`;
 
 /** The parts of the demo band, in the order they are added. */
 const BAND: NewPart[] = [
@@ -62,8 +62,10 @@ const PERF_BAND: NewPart[] = [
  */
 const BEFORE_M3 = ["m1b", "m2"];
 
+/** The milestone measured is M3's or later: its score has the keys' two staves and the singer. */
+const STAFFED = !BEFORE_M3.includes(MILESTONE);
 /** The band of the score the latency is measured on, for the milestone measured. */
-const bandOf = (milestone: string): NewPart[] => (BEFORE_M3.includes(milestone) ? BAND : PERF_BAND);
+const PERF_PARTS: NewPart[] = STAFFED ? PERF_BAND : BAND;
 
 type Notes = Record<string, NoteJSON>;
 type Markings = NonNullable<BeatWrite["set"]>;
@@ -219,15 +221,14 @@ function seedPerf(doc: Y.Doc, bars: number, techniques: boolean): void {
   doc.transact(() => {
     createScore(doc, perfTitle(bars, techniques));
     const barIds = insertBars(doc, { after: null, count: bars });
-    const [lead, drums, keys, bass, fifth] = bandOf(MILESTONE).map((part) => addPart(doc, part)) as [string, string, string, string, string];
-    const staffed = !BEFORE_M3.includes(MILESTONE);
+    const [lead, drums, keys, bass, fifth] = PERF_PARTS.map((part) => addPart(doc, part)) as [string, string, string, string, string];
     barIds.forEach((barId, bar) => {
       const root = next(8);
       const eighths = Array.from({ length: 8 }, (_, index) => index);
       // The first beat of a bar: a dynamic, and a chord name every fourth bar.
       const opening = (index: number): Markings | undefined => (index === 0 ? { dynamic: DYNAMICS[bar % DYNAMICS.length]!, ...(bar % 4 === 0 ? { text: "Em7" } : {}) } : undefined);
       write(doc, lead, barId, eighths.map((index): NewBeat => [8, { [`s${1 + next(4)}`]: and({ fret: 5 + next(12) }, LEAD_TECHNIQUES[index]) }, marks(opening(index))]));
-      if (staffed) {
+      if (STAFFED) {
         // The singer (#51): eighths up and down the scale from the bar's root, a syllable on each,
         // in both scores; no random numbers, so the other parts' notes stay those of M2.
         write(doc, fifth, barId, eighths.map((index): NewBeat => {
@@ -244,7 +245,7 @@ function seedPerf(doc: Y.Doc, bars: number, techniques: boolean): void {
       write(doc, bass, barId, eighths.map((index): NewBeat => {
         const note = and({ fret: root + (index % 4 === 3 ? 2 : 0) }, index % 4 === 1 ? { ghost: true } : index === 7 ? { slideOut: "legato" } : {});
         // From M3 the rhythm guitar's strokes, which left the band with it, go on the bass's other eighths.
-        const other = staffed ? { stroke: index % 4 === 1 ? "down" : "up" } as const : undefined;
+        const other = STAFFED ? { stroke: index % 4 === 1 ? "down" : "up" } as const : undefined;
         return [8, { [`s${index % 4 === 3 ? 3 : 4}`]: note }, marks(index % 4 === 0 ? { slap: true } : index % 4 === 2 ? { pop: true } : other)];
       }));
       // Drums in two voices (#46): hands in the first, eighths of hi-hat with the snare on 2 and 4;
@@ -271,7 +272,7 @@ function seedPerf(doc: Y.Doc, bars: number, techniques: boolean): void {
       }));
       // The keys' left hand on the bass staff (#51): the bar's root two octaves down, then its
       // fifth, in quarters.
-      if (staffed) {
+      if (STAFFED) {
         const low = (scale[root % scale.length] as number) - 24;
         write(doc, keys, barId, [low, low + 7, low, low + 7].map((pitch): NewBeat => [4, { [`n${pitch}`]: flats[pitch + 24] ? { spell: flats[pitch + 24]! } : {} }]), LOWER_STAFF);
       }

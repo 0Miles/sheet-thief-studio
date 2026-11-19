@@ -560,8 +560,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       try {
         if (frozen.has(scoreId)) return "readOnly";
         const document = direct.document!;
-        const name = made.reason === "manual" ? made.name : null;
-        return await createVersion(scoreId, { read: () => docToJson(document), reason: made.reason, createdBy: made.createdBy, name, admit: made.admit });
+        return await createVersion(scoreId, { ...made, name: made.reason === "manual" ? made.name : null, read: () => docToJson(document) });
       } finally {
         await direct.disconnect();
       }

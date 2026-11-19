@@ -10,14 +10,14 @@ import { gunzip, gzip } from "node:zlib";
 
 import { createdVersion, createVersionRequest, renameVersionRequest, type Role, versionList, versionSummary } from "@studio/contracts";
 import { type Migration, migrateJson, MIGRATIONS, type ScoreJSON } from "@studio/score-model";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { Transaction } from "sequelize";
 
 import type { Collab } from "./collab";
 import { Score, ScoreMember, Version, type VersionReason } from "./db/models";
 import { invalidRequest, isUuid } from "./http";
 import { WEBSOCKET_MESSAGE_LIMIT } from "./limits";
-import { Refusal } from "./members";
+import { Refusal, unlessRefused } from "./members";
 import { membership } from "./scores";
 
 const compress = promisify(gzip);
@@ -90,9 +90,13 @@ export interface VersionToMake {
  * member asks for then). Throws `VersionTooLarge`, writing nothing, when the content is more
  * than `MAX_VERSION_BYTES`, and whatever `admit` throws.
  */
+/** The score's row, locked until the transaction ends: what makes the versions of one score, and their names, change one at a time. */
+const lockedScore = (scoreId: string, transaction: Transaction) =>
+  Score.findOne({ where: { id: scoreId }, attributes: ["id", "deletedAt"], lock: transaction.LOCK.UPDATE, transaction });
+
 export async function createVersion(scoreId: string, { read, reason, createdBy = null, name = null, admit }: VersionToMake): Promise<MadeVersion | null> {
   return Version.sequelize!.transaction(async (transaction) => {
-    const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id", "deletedAt"], lock: transaction.LOCK.UPDATE, transaction });
+    const row = await lockedScore(scoreId, transaction);
     if (row === null) return null;
     await admit?.(row, transaction);
     const score = read();
@@ -164,15 +168,19 @@ function summaryOf(version: Version) {
 /** Who may name a score's versions and make one: its Owner and its Editors (docs/spec/routes.md, 3.6). */
 const canWrite = (role: Role) => role !== "viewer";
 
+/** 404 to whoever is no member, 403 to a Viewer when `write`. */
+function refuseUnless(member: { role: Role } | null, write: boolean): void {
+  if (member === null) throw new Refusal(404, "not_found");
+  if (write && !canWrite(member.role)) throw new Refusal(403, "forbidden");
+}
+
 /**
  * Throws the `Refusal` unless the member may read the score's versions, or with `write` change
  * them: checked before the body, and before anything is loaded (docs/spec/routes.md, 3.4). A
  * write checks again with the score's row locked (`admitWriter`).
  */
 async function checkMember(scoreId: string, accountId: string, write: boolean): Promise<void> {
-  const member = await membership(scoreId, accountId);
-  if (member === null) throw new Refusal(404, "not_found");
-  if (write && !canWrite(member.role)) throw new Refusal(403, "forbidden");
+  refuseUnless(await membership(scoreId, accountId), write);
 }
 
 /**
@@ -183,19 +191,7 @@ async function checkMember(scoreId: string, accountId: string, write: boolean): 
  */
 async function admitWriter(row: Score, accountId: string, transaction: Transaction): Promise<void> {
   if (row.deletedAt !== null) throw new Refusal(404, "not_found");
-  const member = await ScoreMember.findOne({ where: { scoreId: row.id, accountId }, attributes: ["role"], transaction });
-  if (member === null) throw new Refusal(404, "not_found");
-  if (!canWrite(member.role)) throw new Refusal(403, "forbidden");
-}
-
-/** The answer `answer` gives, or the refusal it throws. */
-async function answered<T>(reply: FastifyReply, answer: () => Promise<T>): Promise<T | FastifyReply> {
-  try {
-    return await answer();
-  } catch (error) {
-    if (!(error instanceof Refusal)) throw error;
-    return reply.code(error.status).send({ code: error.code });
-  }
+  refuseUnless(await ScoreMember.findOne({ where: { scoreId: row.id, accountId }, attributes: ["role"], transaction }), true);
 }
 
 type ScoreParams = { Params: { id: string } };
@@ -204,7 +200,7 @@ type VersionParams = { Params: { id: string; versionId: string } };
 export function registerVersions(app: FastifyInstance, { collab, migrations }: { collab: Collab; migrations?: readonly Migration[] | undefined }): void {
   // Every member, a Viewer too; a guest has no session, so none of this.
   app.get<ScoreParams>("/api/scores/:id/versions", (request, reply) =>
-    answered(reply, async () => {
+    unlessRefused(reply, async () => {
       await checkMember(request.params.id, request.account!.id, false);
       const versions = await Version.findAll({
         where: { scoreId: request.params.id },
@@ -219,7 +215,7 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
   );
 
   app.get<VersionParams>("/api/scores/:id/versions/:versionId", (request, reply) =>
-    answered(reply, async () => {
+    unlessRefused(reply, async () => {
       const { id: scoreId, versionId } = request.params;
       await checkMember(scoreId, request.account!.id, false);
       let score: ScoreJSON | null;
@@ -240,7 +236,7 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
   // which is the latest one when that holds the same already (200 then, 201 when made). Either
   // way the role and the score are checked again once its row is locked (`admitWriter`).
   app.post<ScoreParams>("/api/scores/:id/versions", (request, reply) =>
-    answered(reply, async () => {
+    unlessRefused(reply, async () => {
       const scoreId = request.params.id;
       const accountId = request.account!.id;
       await checkMember(scoreId, accountId, true);
@@ -259,7 +255,7 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
   // With the score's row locked, as making a version locks it: the retention never deletes a
   // version while it is being named, and the role is the one the member has as it is written.
   app.patch<VersionParams>("/api/scores/:id/versions/:versionId", (request, reply) =>
-    answered(reply, async () => {
+    unlessRefused(reply, async () => {
       const { id: scoreId, versionId } = request.params;
       const accountId = request.account!.id;
       await checkMember(scoreId, accountId, true);
@@ -268,7 +264,7 @@ export function registerVersions(app: FastifyInstance, { collab, migrations }: {
       if (!isUuid(versionId)) throw new Refusal(404, "not_found");
       const { name } = body.data;
       return Version.sequelize!.transaction(async (transaction) => {
-        const row = await Score.findOne({ where: { id: scoreId }, attributes: ["id", "deletedAt"], lock: transaction.LOCK.UPDATE, transaction });
+        const row = await lockedScore(scoreId, transaction);
         if (row === null) throw new Refusal(404, "not_found");
         await admitWriter(row, accountId, transaction);
         const version = await Version.findOne({ where: { id: versionId, scoreId }, attributes: SUMMARY_ATTRIBUTES, transaction });

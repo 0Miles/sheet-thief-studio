@@ -3,12 +3,12 @@
 // the cursor's bar with Enter, never on a part of another kind; its preview wraps and scrolls, clear
 // of the reserved areas; a Viewer's read-only edit view has none.
 import { expect, type Page, test } from "./test";
-import { type BarsFragment, type ScoreJSON } from "@studio/score-model";
+import type { BarsFragment } from "@studio/score-model";
 
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { createPhrase, loggedIn, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
+import { createPhrase, firstStringFrets, loggedIn, openScore, pageErrors, runName, scoreOf, seedScore, synced } from "./pages";
 
 const text = strings.score.phraseSidebar;
 const GUITAR = [64, 59, 55, 50, 45, 40];
@@ -20,12 +20,6 @@ function guitarPhrase(...bars: number[][]): BarsFragment {
     tuning: [...GUITAR],
     bars: bars.map((frets) => ({ timeSig: { numerator: 4, denominator: 4 }, voices: { "0:0": frets.map((fret) => ({ value: 4 as const, dots: 0 as const, notes: { s1: { fret } } })) } })),
   };
-}
-
-/** The frets on the first string of a bar of a part, beat by beat, both by index. */
-function fretsIn(score: ScoreJSON, part: number, bar: number): (number | undefined)[] {
-  const barId = score.bars[bar]!.id;
-  return (score.parts[part]!.content[barId]?.["0:0"] ?? []).map((beat) => beat.notes.s1?.fret);
 }
 
 /** The middle of the cursor as drawn now: a point of its bar, in its part. */
@@ -99,9 +93,9 @@ test("a two-bar phrase dragged onto bar 3 becomes bars 3 and 4 of the part; Ctrl
   await dragTo(page, item, bar3, async () => {
     await expect(page.locator('[data-drop="ok"]').first()).toBeVisible();
   });
-  await expect.poll(async () => fretsIn(await scoreOf(page), 0, 2)).toEqual([1, 2, 3, 4]);
-  expect(fretsIn(await scoreOf(page), 0, 3)).toEqual([5, 6, 7, 8]);
-  expect(fretsIn(await scoreOf(page), 0, 1)).toEqual([]);
+  await expect.poll(async () => firstStringFrets(await scoreOf(page), 0, 2)).toEqual([1, 2, 3, 4]);
+  expect(firstStringFrets(await scoreOf(page), 0, 3)).toEqual([5, 6, 7, 8]);
+  expect(firstStringFrets(await scoreOf(page), 0, 1)).toEqual([]);
   await expect(page.locator("[data-drop-target]")).toHaveCount(0);
   await synced(page);
 
@@ -123,8 +117,8 @@ test("Enter on a phrase, or with its preview open, drops it on the cursor's bar;
   const item = await findPhrase(page, name);
   await item.focus();
   await page.keyboard.press("Enter");
-  await expect.poll(async () => fretsIn(await scoreOf(page), 0, 1)).toEqual([3, 3, 3, 3]);
-  expect(fretsIn(await scoreOf(page), 0, 2)).toEqual([7, 7, 7, 7]);
+  await expect.poll(async () => firstStringFrets(await scoreOf(page), 0, 1)).toEqual([3, 3, 3, 3]);
+  expect(firstStringFrets(await scoreOf(page), 0, 2)).toEqual([7, 7, 7, 7]);
   // Enter dropped it: it did not open the preview, as a click does.
   await expect(page.locator("[data-phrase-preview]")).toBeHidden();
 
@@ -137,8 +131,8 @@ test("Enter on a phrase, or with its preview open, drops it on the cursor's bar;
   await expect(page.locator("[data-phrase-preview]")).toBeFocused();
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await scoreOf(page)).bars.length).toBe(5);
-  expect(fretsIn(await scoreOf(page), 0, 3)).toEqual([3, 3, 3, 3]);
-  expect(fretsIn(await scoreOf(page), 0, 4)).toEqual([7, 7, 7, 7]);
+  expect(firstStringFrets(await scoreOf(page), 0, 3)).toEqual([3, 3, 3, 3]);
+  expect(firstStringFrets(await scoreOf(page), 0, 4)).toEqual([7, 7, 7, 7]);
   await expect(page.getByRole("status").filter({ hasText: text.hints.barsAppended })).toBeVisible();
   expect(errors).toEqual([]);
 });

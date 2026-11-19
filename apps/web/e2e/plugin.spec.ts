@@ -6,14 +6,11 @@ import { randomBytes } from "node:crypto";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 import { strings } from "../src/strings";
-import { bindDiscord, drawn, pageErrors, seedAccount, soundReady, synced, typeBeats } from "./pages";
+import { bindDiscord, drawn, newDiscordId, pageErrors, seedAccount, soundReady, synced, typeBeats } from "./pages";
 import { expect, test } from "./test";
 
 const BASE = "/plugin/sheet-thief-studio/";
 const karyl = strings.login.karyl;
-
-/** A Discord id of this run's own: 18 digits. */
-const newDiscordId = () => `8${BigInt(`0x${randomBytes(7).toString("hex")}`).toString().padStart(17, "0").slice(-17)}`;
 
 /** The link the bot's answer to `/studio` of this Discord user holds, once the plugin has registered. */
 async function studioLink(request: APIRequestContext, userId: string): Promise<string> {
@@ -30,7 +27,7 @@ const keptSession = (page: Page) => page.evaluate((base) => localStorage.getItem
 function boundMember() {
   const member = { username: `e2e-plugin-${randomBytes(4).toString("hex")}`, displayName: "從 Discord 來的成員", password: "e2e plugin password", isAdmin: false, mustChangePassword: false };
   seedAccount(member);
-  const discordId = newDiscordId();
+  const discordId = newDiscordId("8");
   bindDiscord(member.username, discordId);
   return { ...member, discordId };
 }
@@ -72,7 +69,7 @@ test("a member logs in from the link of /studio under the bot's base path; a sco
 });
 
 test("a link of an unbound Discord id, and a link used already: /login says why, and asks for no password", async ({ page, browser, request }) => {
-  const unbound = newDiscordId();
+  const unbound = newDiscordId("8");
   const errors = pageErrors(page);
 
   await page.goto(await studioLink(request, unbound));

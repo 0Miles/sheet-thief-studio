@@ -4,15 +4,13 @@
 // there the player says it cannot play instead, with no error either (#129). Everywhere else, CI's
 // Linux included, it must get to paused.
 import { ADMIN } from "../environment";
-import { drawn, loggedIn, pageErrors, playerSettled, seedScore } from "../pages";
+import { drawn, loggedIn, pageErrors, playerSettled, readOnlyLink, seedScore } from "../pages";
 import { expect, test } from "../test";
 
 test("a guest opens a read-only link: the score is drawn and the player is paused, or says it cannot play without Web Audio", async ({ browser, browserName }) => {
   const id = seedScore({ title: "瀏覽器看譜測試", owner: ADMIN.username });
   const owner = await loggedIn(browser, ADMIN);
-  const made = await owner.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(owner.url()).origin } });
-  expect(made.status()).toBe(200);
-  const { token } = (await made.json()) as { token: string };
+  const token = await readOnlyLink(owner, id);
 
   const guestContext = await browser.newContext();
   const guest = await guestContext.newPage();

@@ -5,11 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { dropSpotOf, fitsPart, phraseContents, phrasesShown } from "../src/phraseSidebar";
 
-const GUITAR = { kind: "fretted" as const, tuning: [64, 59, 55, 50, 45, 40], staves: [{ clef: "tab" as const }] };
-const BASS = { kind: "fretted" as const, tuning: [43, 38, 33, 28], staves: [{ clef: "tab" as const }] };
-const DRUMS = { kind: "percussion" as const, tuning: [], staves: [{ clef: "neutral" as const }] };
-const PIANO = { kind: "pitched" as const, tuning: [], staves: [{ clef: "treble" as const }, { clef: "bass" as const }] };
-const MELODY = { kind: "pitched" as const, tuning: [], staves: [{ clef: "treble" as const }] };
+const { guitar6: GUITAR, bass4: BASS, drums: DRUMS, keys: PIANO, vocals: MELODY } = PART_PRESETS;
 
 const phrase = (kind: "fretted" | "percussion" | "pitched", stringCount: number | null = null, staffCount: number | null = null) => ({ kind, stringCount, staffCount });
 
