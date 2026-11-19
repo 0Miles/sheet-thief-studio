@@ -112,10 +112,14 @@ async function upload(session: string, files: Upload[], on: FastifyInstance = ap
  */
 function imagesOverTheTotal(): Upload[] {
   const largest = Math.floor(RECOGNITION_IMAGES_BYTES / RECOGNITION_IMAGE_BYTES);
-  return [
-    ...Array.from({ length: largest }, (_, index) => ({ data: png(index, RECOGNITION_IMAGE_BYTES - PNG_START.length) })),
-    { data: png(largest, RECOGNITION_BODY_LIMIT - RECOGNITION_IMAGES_BYTES) },
-  ];
+  // The largest image is made once: every upload of that size shares its bytes.
+  const data = png(0, RECOGNITION_IMAGE_BYTES - PNG_START.length);
+  return [...Array.from({ length: largest }, () => ({ data })), { data: png(largest, RECOGNITION_BODY_LIMIT - RECOGNITION_IMAGES_BYTES) }];
+}
+
+/** How many bytes the images are in all. */
+function bytesOf(images: Upload[]): number {
+  return images.reduce((total, { data }) => total + data.length, 0);
 }
 
 /** Start a recognition of these images; its id. */
@@ -200,8 +204,8 @@ test("anything but PNG, JPEG and WebP is refused with 415 unsupported_image, a H
   // A field `images` that is text, not a file.
   const form = new FormData();
   form.append("images", "a text");
-  const encoded = new Response(form);
-  const text = await app.inject({ method: "POST", url: "/api/recognitions", headers: { origin: ORIGIN, "content-type": encoded.headers.get("content-type")! }, cookies: { [COOKIE]: anna }, payload: Buffer.from(await encoded.arrayBuffer()) });
+  const body = new Response(form);
+  const text = await send(anna, { contentType: body.headers.get("content-type")!, payload: Buffer.from(await body.arrayBuffer()) });
   expect(text.json()).toEqual({ code: "unsupported_image", params: { page: 1 } });
   expect(await Recognition.count()).toBe(0);
   expect(recognizer.received).toHaveLength(0);
@@ -229,7 +233,7 @@ test("an image over 10 MB is refused with 413 payload_too_large, and nothing is 
 test("images over 40 MB in all, each within 10 MB, are refused with 413 payload_too_large, and nothing is kept", async () => {
   const images = imagesOverTheTotal();
   expect(Math.max(...images.map(({ data }) => data.length))).toBeLessThanOrEqual(RECOGNITION_IMAGE_BYTES);
-  expect(images.reduce((total, { data }) => total + data.length, 0)).toBeGreaterThan(RECOGNITION_IMAGES_BYTES);
+  expect(bytesOf(images)).toBeGreaterThan(RECOGNITION_IMAGES_BYTES);
   const tooMuch = await upload(anna, images);
   expect([tooMuch.statusCode, tooMuch.json()]).toEqual([413, { code: "payload_too_large" }]);
   expect(await Recognition.count()).toBe(0);
@@ -238,7 +242,7 @@ test("images over 40 MB in all, each within 10 MB, are refused with 413 payload_
 test("15 images are accepted, in a body larger than a JSON request may be", async () => {
   // Together just over the body any other route reads: this one has a limit of its own.
   const images = Array.from({ length: 15 }, (_, index) => ({ data: png(index, Math.ceil(JSON_BODY_LIMIT / 15)) }));
-  expect(images.reduce((total, { data }) => total + data.length, 0)).toBeGreaterThan(JSON_BODY_LIMIT);
+  expect(bytesOf(images)).toBeGreaterThan(JSON_BODY_LIMIT);
   const fifteen = await started(anna, images);
   expect((await finished(fifteen, anna)).pages).toBe(15);
   expect(recognizer.received[0]).toHaveLength(15);

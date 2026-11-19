@@ -49,10 +49,16 @@ function page() {
   return { state, drawing };
 }
 
-test("drawn once the renderer says so; not from the time it starts over until it has drawn again, the overlay placed anew each time", () => {
+/** The page with a renderer it watches. */
+function watched() {
   const { state, drawing } = page();
   const { made, drew, startsOver } = renderer();
   drawing.watch(made);
+  return { state, drawing, drew, startsOver };
+}
+
+test("drawn once the renderer says so; not from the time it starts over until it has drawn again, the overlay placed anew each time", () => {
+  const { state, drawing, drew, startsOver } = watched();
   expect(drawing.ready.value).toBe(false);
   drew();
   expect(drawing.ready.value).toBe(true);
@@ -65,9 +71,7 @@ test("drawn once the renderer says so; not from the time it starts over until it
 });
 
 test("started over with an API that cannot draw either: not drawn for as long as nothing is", () => {
-  const { drawing } = page();
-  const { made, drew, startsOver } = renderer();
-  drawing.watch(made);
+  const { drawing, drew, startsOver } = watched();
   drew();
   startsOver();
   // It failed: the renderer tells no drawing. Retried, it starts over again.
@@ -77,9 +81,7 @@ test("started over with an API that cannot draw either: not drawn for as long as
 });
 
 test("the score is scrolled back to where it was when the renderer started over, once it is drawn and the page has what it shows then", async () => {
-  const { state, drawing } = page();
-  const { made, drew, startsOver } = renderer();
-  drawing.watch(made);
+  const { state, drew, startsOver } = watched();
   drew();
   await nextTick();
   expect(state.sent).toEqual([]);
@@ -99,9 +101,7 @@ test("the score is scrolled back to where it was when the renderer started over,
 });
 
 test("started over more than once before it is drawn: back to where it was the first time", async () => {
-  const { state, drawing } = page();
-  const { made, drew, startsOver } = renderer();
-  drawing.watch(made);
+  const { state, drew, startsOver } = watched();
   drew();
   state.top = 480;
   startsOver();
@@ -127,9 +127,7 @@ test("a renderer watched after another: what the first says is not shown any mor
 });
 
 test("started over by itself while a button shown only of a score drawn has the keyboard: once that leaves the page, the score has it", async () => {
-  const { state, drawing } = page();
-  const { made, drew, startsOver } = renderer();
-  drawing.watch(made);
+  const { state, drew, startsOver } = watched();
   drew();
   state.button.focus();
   expect(document.activeElement).toBe(state.button);
@@ -142,9 +140,7 @@ test("started over by itself while a button shown only of a score drawn has the 
 });
 
 test("started over while the keyboard is elsewhere, or on a button that stays on the page: it stays there", async () => {
-  const { state, drawing } = page();
-  const { made, drew, startsOver } = renderer();
-  drawing.watch(made);
+  const { state, drew, startsOver } = watched();
   drew();
   // A score with no bars keeps its +bar button.
   state.button.focus();

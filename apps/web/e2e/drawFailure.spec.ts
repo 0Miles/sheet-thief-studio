@@ -4,9 +4,10 @@
 // is back online, and on the member's retry. The downloads are cut short with `page.route`, as
 // when the network goes while they come.
 // The `firefox` project runs this file too, but for the tests tagged `CHROMIUM_ONLY`
-// (playwright.config.ts; docs/spec/testing.md, section 3): Firefox is where a font face that
-// failed stays on the page under a name alphaTab gives again (#198).
-import { expect, type Page, test } from "./test";
+// (playwright.config.ts; docs/spec/testing.md, section 3): Chromium and Firefox both keep a font
+// face that failed on the page, under a name alphaTab gives again (#198), and Firefox checks it in
+// a second browser.
+import { expect, type Locator, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
@@ -18,8 +19,8 @@ const OF_FONT = /Bravura|ERR_INTERNET_DISCONNECTED|Loading Failed, rendering can
 /** Not run by the `firefox` project: what the browser logs of a download cut short is read as Chromium words it. */
 const CHROMIUM_ONLY = { tag: "@chromium-only" };
 
-function seed(): string {
-  return seedScore({ title: "載入失敗測試", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }] });
+function seed(bars?: number): string {
+  return seedScore({ title: "載入失敗測試", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], ...(bars === undefined ? {} : { bars }) });
 }
 
 /** Cut every download of `url` short; how many were, so far. */
@@ -105,7 +106,7 @@ test("the phrase editor, a phrase's preview beside the score and a version's pre
   const font = "**/font/Bravura.*";
   await cutShort(page, font);
   const failed = page.locator("[data-draw-failed]");
-  const retry = (within: ReturnType<Page["locator"]>) => within.getByRole("button", { name: text.drawing.retry }).click();
+  const retry = (within: Locator) => within.getByRole("button", { name: text.drawing.retry }).click();
 
   // The phrase editor.
   await page.goto(`/phrases/${phraseId}`);
@@ -157,7 +158,7 @@ test("the phrase editor, a phrase's preview beside the score and a version's pre
 
 test("the player's worker alone could not be had: on the toolbar's retry the score, drawn anew, is back where it was scrolled to", CHROMIUM_ONLY, async ({ browser }) => {
   // Taller than the window.
-  const id = seedScore({ title: "載入失敗測試", owner: ADMIN.username, members: [{ username: EDITOR.username, role: "editor" }], bars: 160 });
+  const id = seed(160);
   const page = await loggedIn(browser, EDITOR);
   const errors = pageErrors(page);
   const worker = "**/alphaTab.worker*.js";
@@ -185,8 +186,8 @@ test("the player's worker alone could not be had: on the toolbar's retry the sco
   expect(errors.filter((error) => !ofDownloads.test(error))).toEqual([]);
 });
 
-// Also in Firefox, which keeps the font face that failed on the page: alphaTab names the score's
-// new font after the preview's, still failed there (docs/spec/playback.md, 4.1).
+// Also in Firefox: like Chromium, it keeps the font face that failed on the page, and alphaTab
+// names the score's new font after the preview's, still failed there (docs/spec/playback.md, 4.1).
 test("the score and a phrase's preview both failed: the score's retry draws the score alone; the preview's draws the preview, which has the keyboard from then on", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, EDITOR);
@@ -200,7 +201,7 @@ test("the score and a phrase's preview both failed: the score's retry draws the 
   const ofScore = page.locator("[data-scroller] [data-draw-failed]");
   const preview = page.locator("[data-phrase-preview]");
   const ofPreview = preview.locator("[data-draw-failed]");
-  const retry = (within: ReturnType<Page["locator"]>) => within.getByRole("button", { name: text.drawing.retry }).click();
+  const retry = (within: Locator) => within.getByRole("button", { name: text.drawing.retry }).click();
 
   await page.goto(`/scores/${id}`);
   await expect(ofScore).toContainText(text.drawing.failed);

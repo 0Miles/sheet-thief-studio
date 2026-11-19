@@ -600,11 +600,16 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     return this.painted.add(listener);
   }
 
+  /** Tell the page the score is drawn, unless it cannot be (`failed`): then no drawing is told. */
+  private tellRendered(event: RenderedEvent): void {
+    if (!this.failed) this.rendered.emit(event);
+  }
+
   private handleRendered(): void {
     const running = this.running;
     this.running = null;
     const timings = running ? { ...running.timings, render: performance.now() - running.startedAt } : { ...NO_TIMINGS };
-    this.rendered.emit({ partial: running?.partial ?? false, timings });
+    this.tellRendered({ partial: running?.partial ?? false, timings });
     const waiting = this.waiting;
     this.waiting = null;
     if (waiting) this.run(waiting);
@@ -978,7 +983,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     surface?.replaceChildren();
     if (surface) surface.style.height = "0px";
     if (this.playerIsReady) this.api.stop();
-    if (!this.failed) this.rendered.emit({ partial: false, timings: { ...NO_TIMINGS } });
+    this.tellRendered({ partial: false, timings: { ...NO_TIMINGS } });
   }
 
   /** Draw the score again as it is, with the parts shown and at the scale asked for now; once alphaTab is free. */

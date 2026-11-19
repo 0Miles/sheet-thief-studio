@@ -2,7 +2,7 @@
 // (#197; docs/spec/keymap.md, 1.1): with the focus on one, a key is the button's, not the score's.
 // Space and Enter press it, and no key plays, opens the text entry or types a note. Every key goes
 // through the real keyboard; the page is read through `window.__studioTest` and the DOM only.
-import { expect, type Page, test } from "./test";
+import { expect, type Locator, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR } from "./environment";
@@ -22,12 +22,25 @@ function playerStates(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as { playerStates: string[] }).playerStates);
 }
 
+/** Press the key with the focus on the target. */
+async function pressOn(target: Locator, key: string): Promise<void> {
+  await target.focus();
+  await expect(target).toBeFocused();
+  await target.page().keyboard.press(key);
+}
+
 /** Press the key with the focus on +bar. */
-async function pressOnAppend(page: Page, key: string): Promise<void> {
-  const append = page.locator("[data-append-bar]");
-  await append.focus();
-  await expect(append).toBeFocused();
-  await page.keyboard.press(key);
+function pressOnAppend(page: Page, key: string): Promise<void> {
+  return pressOn(page.locator("[data-append-bar]"), key);
+}
+
+/** Space plays, the first the player does since `recordPlayer`, and Space again pauses. */
+async function spacePlaysThenPauses(page: Page): Promise<void> {
+  await page.keyboard.press("Space");
+  await expect(page.locator('[data-player="playing"]')).toBeVisible();
+  expect(await playerStates(page)).toEqual(["playing"]);
+  await page.keyboard.press("Space");
+  await expect(page.locator('[data-player="paused"]')).toBeVisible();
 }
 
 /** Cut every download of the music font short; how many were, so far. */
@@ -45,9 +58,7 @@ async function retryByKey(page: Page, key: string, cut: () => number): Promise<v
   const retry = page.locator("[data-draw-retry]");
   await expect(retry).toBeVisible();
   const before = cut();
-  await retry.focus();
-  await expect(retry).toBeFocused();
-  await page.keyboard.press(key);
+  await pressOn(retry, key);
   await expect.poll(cut).toBeGreaterThan(before);
   await expect(page.locator("[data-scroller]")).toBeFocused();
 }
@@ -88,11 +99,7 @@ test("in the edit view, Space and Enter on +bar add a bar each and nothing else;
   await expect(scroller).toBeFocused();
 
   // Nothing played so far: the first the player does is play at this Space, on the score itself.
-  await page.keyboard.press("Space");
-  await expect(page.locator('[data-player="playing"]')).toBeVisible();
-  expect(await playerStates(page)).toEqual(["playing"]);
-  await page.keyboard.press("Space");
-  await expect(page.locator('[data-player="paused"]')).toBeVisible();
+  await spacePlaysThenPauses(page);
   expect(errors).toEqual([]);
 });
 
@@ -122,11 +129,7 @@ test("in the phrase editor, Space and Enter on +bar add a bar each: nothing play
   await expect(entry).toHaveCount(0);
 
   // Nothing played so far: the first the player does is play at this Space, on the phrase itself.
-  await page.keyboard.press("Space");
-  await expect(page.locator('[data-player="playing"]')).toBeVisible();
-  expect(await playerStates(page)).toEqual(["playing"]);
-  await page.keyboard.press("Space");
-  await expect(page.locator('[data-player="paused"]')).toBeVisible();
+  await spacePlaysThenPauses(page);
   expect(errors).toEqual([]);
 });
 
