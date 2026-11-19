@@ -5,7 +5,9 @@ import * as alphaTab from "@coderline/alphatab";
 import {
   type BarJSON,
   type BeatJSON,
+  BEND_SEMITONES,
   type BendType,
+  COMMON_TIME,
   DEFAULT_KEY_SIG,
   DEFAULT_TEMPO,
   DYNAMICS,
@@ -47,6 +49,8 @@ import {
   tupletSchema,
   voiceKey,
 } from "@studio/score-model";
+
+import { ACCIDENTAL_MODES } from "./projection";
 
 type AtScore = alphaTab.model.Score;
 type AtTrack = alphaTab.model.Track;
@@ -262,17 +266,14 @@ function bendOf(note: AtNote, report: Report, bar: number): NoteJSON["bend"] {
   }
   // alphaTab's bend values are quarter tones.
   const semitones = Math.round(highest / 2);
-  if (semitones < 1 || semitones > 4) report.add("bend", bar);
-  return { type, semitones: Math.min(4, Math.max(1, semitones)) };
+  if (semitones < BEND_SEMITONES.min || semitones > BEND_SEMITONES.max) report.add("bend", bar);
+  return { type, semitones: Math.min(BEND_SEMITONES.max, Math.max(BEND_SEMITONES.min, semitones)) };
 }
 
-const ACCIDENTALS: Partial<Record<alphaTab.model.NoteAccidentalMode, number>> = {
-  [model.NoteAccidentalMode.ForceDoubleFlat]: -2,
-  [model.NoteAccidentalMode.ForceFlat]: -1,
-  [model.NoteAccidentalMode.ForceNatural]: 0,
-  [model.NoteAccidentalMode.ForceSharp]: 1,
-  [model.NoteAccidentalMode.ForceDoubleSharp]: 2,
-};
+/** The accidental each forced mode draws: the projection's `ACCIDENTAL_MODES` the other way. */
+const ACCIDENTALS: Partial<Record<alphaTab.model.NoteAccidentalMode, number>> = Object.fromEntries(
+  Object.entries(ACCIDENTAL_MODES).map(([alter, mode]) => [mode, Number(alter)]),
+);
 
 const ACCIDENTAL_TEXT: Record<number, string> = { [-2]: "bb", [-1]: "b", 0: "", 1: "#", 2: "##" };
 const LETTER_CLASSES = [0, 2, 4, 5, 7, 9, 11];
@@ -603,7 +604,7 @@ function timeSigOf(masterBar: alphaTab.model.MasterBar, report: Report, index: n
   const read = timeSigSchema.safeParse({ numerator: masterBar.timeSignatureNumerator, denominator: masterBar.timeSignatureDenominator });
   if (read.success) return read.data;
   report.add("timeSignature", index);
-  return { numerator: 4, denominator: 4 };
+  return { ...COMMON_TIME };
 }
 
 /**

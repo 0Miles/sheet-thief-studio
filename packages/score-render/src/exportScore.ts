@@ -1,9 +1,9 @@
 // Export (docs/spec/import-export.md, section 3): the projection of a score, written by alphaTab as a
 // Guitar Pro 7 file or a MIDI file. What the projection leaves out cannot be exported.
 import * as alphaTab from "@coderline/alphatab";
-import { type KeySignature, keySigsOf, SCHEMA_VERSION, type ScoreJSON } from "@studio/score-model";
+import { COMMON_TIME, type KeySignature, keySigsOf, SCHEMA_VERSION, type ScoreJSON } from "@studio/score-model";
 
-import { beatOf, type Projection, projectScore } from "./projection";
+import { beatOf, KEY_SIGNATURE_TYPES, type Projection, projectScore } from "./projection";
 
 /**
  * The projection to export, with what only a file holds: the artist, and the empty syllable of a
@@ -23,7 +23,7 @@ function projectForExport(json: ScoreJSON, settings: alphaTab.Settings): Project
       staff.bars.forEach((bar, index) => {
         const key = keys[index] as KeySignature;
         bar.keySignature = key.fifths as alphaTab.model.KeySignature;
-        bar.keySignatureType = key.mode === "minor" ? alphaTab.model.KeySignatureType.Minor : alphaTab.model.KeySignatureType.Major;
+        bar.keySignatureType = KEY_SIGNATURE_TYPES[key.mode];
       });
     }
   }
@@ -53,7 +53,7 @@ function drumKit(settings: alphaTab.Settings): Map<number, Articulation> {
   const empty: ScoreJSON = {
     schemaVersion: SCHEMA_VERSION,
     title: "",
-    bars: [{ id: "bar", timeSig: { numerator: 4, denominator: 4 } }],
+    bars: [{ id: "bar", timeSig: { ...COMMON_TIME } }],
     parts: [{ id: "drums", name: "", kind: "percussion", tuning: [], capo: 0, program: 0, staves: [{ clef: "neutral" }], content: {} }],
   };
   const bytes = new alphaTab.exporter.Gp7Exporter().export(projectScore(empty, settings).score, settings);
@@ -101,17 +101,17 @@ export function exportGp7(json: ScoreJSON): Uint8Array {
  * the same generator, without the metronome and the count-in, and as a standard MIDI file (a bend
  * bends its channel). The mixer is the player's, not the score's: it is not applied.
  */
-function midiOf(json: ScoreJSON, standard: boolean): alphaTab.midi.MidiFile {
+function midiOf(json: ScoreJSON): alphaTab.midi.MidiFile {
   const settings = new alphaTab.Settings();
   const file = new alphaTab.midi.MidiFile();
   const { score } = projectScore(json, settings);
   if (score.masterBars.length > 0 && score.tracks.length > 0) {
-    new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file, standard)).generate();
+    new alphaTab.midi.MidiFileGenerator(score, settings, new alphaTab.midi.AlphaSynthMidiFileHandler(file, true)).generate();
   }
   return file;
 }
 
 /** A score as a standard MIDI file (`.mid`). A score with no bars or no parts has no events. */
 export function exportMidi(json: ScoreJSON): Uint8Array {
-  return midiOf(json, true).toBinary();
+  return midiOf(json).toBinary();
 }
