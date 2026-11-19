@@ -176,21 +176,38 @@ test("a tempo and a repeat set while it plays: playback goes on in the bar it wa
   expect(errors).toEqual([]);
 });
 
-/** What the page told the synthesizer's worker, in order: each new sound, and each channel's volume. */
-type SynthMessage = { cmd: "loadMidi" } | { cmd: "volume"; channel: number; volume: number };
+/**
+ * What the page told the synthesizer's worker and what it heard from it, in the order it happened:
+ * each new sound sent, each channel's volume sent, and the worker saying the sound is loaded and
+ * that it is ready to play.
+ */
+type SynthMessage = { cmd: "loadMidi" } | { cmd: "volume"; channel: number; volume: number } | { cmd: "midiLoaded" } | { cmd: "readyForPlayback" };
 
-/** Keep, from the next page load on, what the page sends to alphaTab's synthesizer worker. */
+/** Keep, from the next page load on, what the page sends to alphaTab's synthesizer worker and hears from it. */
 async function recordSynthMessages(page: Page): Promise<void> {
   await page.context().addInitScript(() => {
-    const sent: unknown[] = [];
-    (window as unknown as { __synthMessages: unknown[] }).__synthMessages = sent;
+    const record: unknown[] = [];
+    (window as unknown as { __synthMessages: unknown[] }).__synthMessages = record;
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
       const message = args[0] as { cmd?: string; channel?: number; volume?: number } | null;
-      if (message?.cmd === "alphaSynth.loadMidi") sent.push({ cmd: "loadMidi" });
-      if (message?.cmd === "alphaSynth.setChannelVolume") sent.push({ cmd: "volume", channel: message.channel, volume: message.volume });
+      if (message?.cmd === "alphaSynth.loadMidi") record.push({ cmd: "loadMidi" });
+      if (message?.cmd === "alphaSynth.setChannelVolume") record.push({ cmd: "volume", channel: message.channel, volume: message.volume });
       return (post as (...all: unknown[]) => void).apply(this, args);
     } as typeof post;
+    // Heard by a listener added as the worker is made, before alphaTab adds its own: what the
+    // worker says is in the record before anything the page sends in answer to it.
+    const Original = window.Worker;
+    window.Worker = class extends Original {
+      constructor(...args: ConstructorParameters<typeof Worker>) {
+        super(...args);
+        this.addEventListener("message", (event: MessageEvent) => {
+          const cmd = (event.data as { cmd?: string } | null)?.cmd;
+          if (cmd === "alphaSynth.midiLoaded") record.push({ cmd: "midiLoaded" });
+          if (cmd === "alphaSynth.readyForPlayback") record.push({ cmd: "readyForPlayback" });
+        });
+      }
+    };
   });
 }
 
@@ -205,6 +222,13 @@ function lastVolumes(messages: SynthMessage[]): Record<number, number> {
   return volumes;
 }
 
+/** Whether the worker has said, after the last new sound sent to it, that it is loaded and, after that, that it is ready to play. */
+function lastSoundIsReady(messages: SynthMessage[]): boolean {
+  const heard = messages.map((message) => message.cmd);
+  const loaded = heard.indexOf("midiLoaded", heard.lastIndexOf("loadMidi") + 1);
+  return loaded !== -1 && heard.includes("readyForPlayback", loaded + 1);
+}
+
 test("opened again, the volume a member gave a part is the last one the synthesizer is told: alphaTab's own does not win (#152)", async ({ browser }) => {
   const id = seed();
   const page = await loggedIn(browser, EDITOR);
@@ -216,21 +240,25 @@ test("opened again, the volume a member gave a part is the last one the synthesi
 
   await recordSynthMessages(page);
   await openToPlay(page, id);
-  // After the last new sound, alphaTab says the player is ready once more and sets every channel
-  // to the volume written in the score, 15/16 (docs/spec/playback.md, section 5, #152): wait for
-  // that. The engine answers in the same event, so what follows is already in the record.
-  const ALPHATAB_DEFAULT = 15 / 16;
+  // The worker says the last new sound is loaded, then that it is ready to play once more; each
+  // time it is ready alphaTab sets every channel to the volume written in the score, 15/16
+  // (docs/spec/playback.md, section 5, #152). Between the two the member's volumes are the last
+  // ones sent whatever the engine does when the player is ready, so the volumes are read from a
+  // record that has that last "ready" in it, the very one it was found in (#199). alphaTab and
+  // the engine answer the worker within the event that brings its message: a record with the
+  // message in it has their answers too.
+  let volumes: Record<number, number> | null = null;
   await expect
     .poll(
       async () => {
         const messages = await synthMessages(page);
-        const sinceLastSound = messages.slice(messages.map((message) => message.cmd).lastIndexOf("loadMidi") + 1);
-        return sinceLastSound.some((message) => message.cmd === "volume" && message.volume === ALPHATAB_DEFAULT);
+        volumes = lastSoundIsReady(messages) ? lastVolumes(messages) : null;
+        return volumes !== null;
       },
       { timeout: 30_000 },
     )
     .toBe(true);
   // The guitar on channels 0 and 2, the bass, never set, on 1 and 3.
-  expect(lastVolumes(await synthMessages(page))).toEqual({ 0: 0.5, 1: 1, 2: 0.5, 3: 1 });
+  expect(volumes).toEqual({ 0: 0.5, 1: 1, 2: 0.5, 3: 1 });
   expect(errors).toEqual([]);
 });
