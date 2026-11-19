@@ -43,7 +43,6 @@ test("a copy of a range of beats is the clipboard's text of those beats; without
 
 test("cut copies and clears the beats, pasting elsewhere inserts them, each one undo step", () => {
   const { session, press, beats, doc, partId, barIds } = threeSelected();
-  const all = (bar: number) => docToJson(doc).parts[0]!.content[barIds[bar]!]!["0:0"]!;
   const typed = beats();
   const text = session.cut();
   expect(fragmentOfClipboard(text!)).toMatchObject({ beats: [{ notes: { s6: { fret: 1 } } }, {}, {}] });
@@ -53,20 +52,19 @@ test("cut copies and clears the beats, pasting elsewhere inserts them, each one 
 
   session.moveTo(cursorAt(doc, partId, barIds[1]!, 6));
   expect(session.paste(text!)).toEqual({ hints: [] });
-  expect(frets(all(1))).toEqual([1, 2, 3]);
-  expect(all(1).map((beat) => beat.id)).not.toContain(typed[0]!.id);
-  expect(session.cursor).toMatchObject({ barId: barIds[1], beatId: all(1)[2]!.id, at: "on" });
+  expect(frets(beats(1))).toEqual([1, 2, 3]);
+  expect(beats(1).map((beat) => beat.id)).not.toContain(typed[0]!.id);
+  expect(session.cursor).toMatchObject({ barId: barIds[1], beatId: beats(1)[2]!.id, at: "on" });
   expect(session.selection).toBeNull();
 
-  undoEach(press, "other", () => [frets(all(0)), frets(all(1))], [
+  undoEach(press, "other", () => [frets(beats(0)), frets(beats(1))], [
     [[undefined, undefined, undefined], []],
     [[1, 2, 3], []],
   ]);
 });
 
 test("bars copied and pasted replace the bars from the cursor's, one undo step", () => {
-  const { session, press, doc, partId, barIds } = threeSelected();
-  const all = (bar: number) => docToJson(doc).parts[0]!.content[barIds[bar]!]!["0:0"]!;
+  const { session, press, beats, doc, partId, barIds } = threeSelected();
   press("Home");
   press("ArrowRight", 1000, { shiftKey: true, ctrlKey: true });
   expect(session.selection).toMatchObject({ kind: "bars", anchorBarId: barIds[0], focusBarId: barIds[1] });
@@ -75,13 +73,13 @@ test("bars copied and pasted replace the bars from the cursor's, one undo step",
   // Two bars from the last: one is appended.
   expect(session.paste(text)).toEqual({ hints: ["barsAppended"] });
   expect(docToJson(doc).bars).toHaveLength(4);
-  expect(frets(all(2))).toEqual([1, 2, 3]);
+  expect(frets(beats(2))).toEqual([1, 2, 3]);
   // As after a drop: the cursor settles where it was, in that bar; the selection ends.
   expect(session.cursor).toMatchObject({ barId: barIds[2] });
   expect(session.selection).toBeNull();
   press("z", 1000, { ctrlKey: true });
   expect(docToJson(doc).bars).toHaveLength(3);
-  expect(all(2)).toEqual([]);
+  expect(beats(2)).toEqual([]);
 });
 
 test("what is not a fragment, or one of another kind, is not pasted, and the member is told why", () => {

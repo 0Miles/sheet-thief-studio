@@ -1,22 +1,19 @@
 // A phrase dropped from the sidebar (docs/spec/phrases.md, section 6; docs/spec/commands.md, 5.7):
 // one command of the session, one undo step, refused while read-only; the cursor settles where it
 // was, the selection ends.
-import { type BarsFragment, createScore, docToJson, type TimeSignature } from "@studio/score-model";
+import { type BarsFragment, COMMON_TIME, createScore, docToJson, STANDARD_GUITAR } from "@studio/score-model";
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
 import { createEditorSession, type KeyPlatform } from "../src/index";
 import { band, MODIFIERS, PLATFORMS } from "./band";
 
-const COMMON: TimeSignature = { numerator: 4, denominator: 4 };
-const GUITAR = [64, 59, 55, 50, 45, 40];
-
 /** A guitar phrase: each bar four quarters on string 1, of the frets given. */
 function guitarPhrase(...bars: number[][]): BarsFragment & { kind: "fretted" } {
   return {
     kind: "fretted",
-    tuning: [...GUITAR],
-    bars: bars.map((frets) => ({ timeSig: { ...COMMON }, voices: { "0:0": frets.map((fret) => ({ value: 4 as const, dots: 0 as const, notes: { s1: { fret } } })) } })),
+    tuning: [...STANDARD_GUITAR],
+    bars: bars.map((frets) => ({ timeSig: { ...COMMON_TIME }, voices: { "0:0": frets.map((fret) => ({ value: 4 as const, dots: 0 as const, notes: { s1: { fret } } })) } })),
   };
 }
 
@@ -55,7 +52,7 @@ test("a drop on a part of another kind, or past the strings of the part, is refu
   const { doc, session, partIds, barIds } = band();
   const before = docToJson(doc);
   expect(session.drop({ partId: partIds.drums, barId: barIds[0]! }, guitarPhrase([1, 2, 3, 4]))).toBe("otherKind");
-  const sevenStrings: BarsFragment = { kind: "fretted", tuning: [...GUITAR, 35], bars: [{ timeSig: { ...COMMON }, voices: { "0:0": [{ value: 1, dots: 0, notes: { s7: { fret: 0 } } }] } }] };
+  const sevenStrings: BarsFragment = { kind: "fretted", tuning: [...STANDARD_GUITAR, 35], bars: [{ timeSig: { ...COMMON_TIME }, voices: { "0:0": [{ value: 1, dots: 0, notes: { s7: { fret: 0 } } }] } }] };
   expect(session.drop({ partId: partIds.guitar, barId: barIds[0]! }, sevenStrings)).toBe("tooManyStrings");
   expect(docToJson(doc)).toEqual(before);
 });
