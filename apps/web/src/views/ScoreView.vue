@@ -76,6 +76,7 @@ import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
 import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { hasOwnKeys } from "../ownKeys";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { barsToSave, type BarsToSave } from "../savePhrase";
 import { useNotice } from "../sayAnew";
@@ -899,6 +900,8 @@ function start(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
+  // A button on the page (+bar, the retry) has its own keys.
+  if (hasOwnKeys(event)) return;
   const pageEffect = pageEffectOf(event, keyPlatform());
   if (pageEffect === "playPause") {
     event.preventDefault();
