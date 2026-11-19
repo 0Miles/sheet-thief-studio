@@ -97,8 +97,10 @@ export interface ScoreRenderer {
   /** Called when `failed` changes: true when it fails, false when it is asked for again. */
   onFailed(listener: (failed: boolean) => void): Unsubscribe;
   /**
-   * When `failed`: download what could not be had again, and draw the score asked for last from
-   * scratch. The player starts over too ("loading"). Otherwise nothing.
+   * The same as `ScorePlayer.retry()`. With nothing failed, nothing. When the music font or a
+   * worker could not be had (`failed`, or the player's worker, #151): download all of it again
+   * with a new alphaTab API, and draw the score asked for last from scratch; the player starts
+   * over too ("loading"). Otherwise, when only the soundfont could not be had: download it again.
    */
   retry(): void;
   destroy(): void;
@@ -155,9 +157,11 @@ export interface ScorePlayer {
    */
   load(): Promise<void>;
   /**
-   * The soundfont or the worker that makes the sound could not be had ("failed"): ask for it
-   * again, "loading" meanwhile. A worker is had again with the score drawn anew, as
-   * `ScoreRenderer.retry()` does. Otherwise nothing.
+   * The same as `ScoreRenderer.retry()`. With nothing failed, nothing. When the music font or a
+   * worker could not be had (the score's `failed`, or this player "failed" for its worker, #151):
+   * download all of it again with a new alphaTab API, the score drawn anew, whatever the state
+   * of the player, "loading" meanwhile. Otherwise, when only the soundfont could not be had
+   * ("failed"): download it again, "loading" meanwhile.
    */
   retry(): void;
   play(): void;

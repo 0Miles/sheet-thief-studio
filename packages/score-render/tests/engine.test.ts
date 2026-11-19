@@ -1627,3 +1627,58 @@ test("an engine made with the sources of one still on the page, its font still c
   expect([engine.renderer.failed, other.renderer.failed]).toEqual([true, true]);
   expect(told).toEqual([true]);
 });
+
+/**
+ * The score's engine (S) and a phrase's preview (P, made once S's font had failed) with both
+ * fonts failed, then S retried: alphaTab's table held P's font alone, so S's new font has the name
+ * of P's, whose face is still on the page, failed. Returns P and its API.
+ */
+function retriedBesideAFailedPreview(): { preview: ScoreEngine; previewApi: StandIn } {
+  fonts.failed(api.fontFamily);
+  const preview = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  const previewApi = standIns.at(-1)!;
+  fonts.failed(previewApi.fontFamily);
+  engine.renderer.retry();
+  newApi();
+  expect(api.fontFamily).toBe(previewApi.fontFamily);
+  expect(api.webFont).not.toBe(previewApi.webFont);
+  expect([engine.renderer.failed, preview.renderer.failed]).toEqual([false, true]);
+  return { preview, previewApi };
+}
+
+test("a third engine made beside one retried and one still failed shares the font of the one retried: the failed face of the same name is not its own", () => {
+  const { previewApi } = retriedBesideAFailedPreview();
+  const sources = fontSourcesOf(api);
+  const third = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  const thirdApi = standIns.at(-1)!;
+  expect(thirdApi.webFont).toBe(api.webFont);
+  expect(thirdApi.fontFamily).toBe(previewApi.fontFamily);
+  expect(third.renderer.failed).toBe(false);
+  // Nor did it count as one more failure of the font: the next engine asks from the same sources.
+  createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  expect(fontSourcesOf(standIns.at(-1)!)).toEqual(sources);
+  // The font they share failing is both's.
+  fonts.failedFace(api.webFont.face);
+  expect([engine.renderer.failed, third.renderer.failed]).toEqual([true, true]);
+});
+
+test("the engine retried gone, one made after it registers the font anew under the name of the one still failed, and is not failed", () => {
+  const { previewApi } = retriedBesideAFailedPreview();
+  engine.destroy();
+  const made = createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: null, useWorkers: false });
+  const stand = standIns.at(-1)!;
+  expect(stand.fontFamily).toBe(previewApi.fontFamily);
+  expect(stand.webFont).not.toBe(previewApi.webFont);
+  expect(stand.webFont).not.toBe(api.webFont);
+  expect(made.renderer.failed).toBe(false);
+  // Its own face failing is its own.
+  fonts.failedFace(stand.webFont.face);
+  expect(made.renderer.failed).toBe(true);
+});
+
+test("the face of the engine still failed, told failed again while it is on the page, is not the retried engine's of the same name", () => {
+  const { previewApi } = retriedBesideAFailedPreview();
+  fonts.failedFace(previewApi.webFont.face);
+  expect(engine.renderer.failed).toBe(false);
+  expect(standIns.at(-1)).toBe(api);
+});
