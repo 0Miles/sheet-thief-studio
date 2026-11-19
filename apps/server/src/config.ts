@@ -45,15 +45,17 @@ function sessionCookie(env: NodeJS.ProcessEnv): CookieSettings {
   return insecure ? { name: "studio_session", secure: false } : { name: "__Host-studio_session", secure: true };
 }
 
+/** The variable `name`, else in development `development`; production must set it (`when` says when it must). */
+function settingOf(env: NodeJS.ProcessEnv, name: string, development: string, when = ""): string {
+  const value = env[name];
+  if (value) return value;
+  if (env.NODE_ENV === "production") throw new Error(`${name} must be set in production${when}`);
+  return development;
+}
+
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const production = env.NODE_ENV === "production";
   // Development falls back to compose.dev.yaml and the Vite dev server; production must say.
-  const setting = (name: string, development: string): string => {
-    const value = env[name];
-    if (value) return value;
-    if (production) throw new Error(`${name} must be set in production`);
-    return development;
-  };
+  const setting = (name: string, development: string) => settingOf(env, name, development);
   return {
     host: env.HOST ?? "127.0.0.1",
     port: Number(env.PORT ?? 8031),
@@ -76,12 +78,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
 function karylSettings(env: NodeJS.ProcessEnv): KarylSettings | null {
   const setupSecret = env.KARYL_PLUGIN_SETUP_SECRET?.trim();
   if (!setupSecret) return null;
-  const production = env.NODE_ENV === "production";
-  const address = (name: string, development: string): string => {
-    const value = env[name];
-    if (value) return value.replace(/\/+$/, "");
-    if (production) throw new Error(`${name} must be set in production when KARYL_PLUGIN_SETUP_SECRET is`);
-    return development;
-  };
+  const address = (name: string, development: string) => settingOf(env, name, development, " when KARYL_PLUGIN_SETUP_SECRET is").replace(/\/+$/, "");
   return { setupSecret, botUrl: address("BOT_URL", "http://localhost:3000"), pluginUrl: address("PLUGIN_URL", `http://localhost:${env.PORT ?? 8031}`) };
 }

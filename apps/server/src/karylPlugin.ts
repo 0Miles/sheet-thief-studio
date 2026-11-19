@@ -10,19 +10,13 @@ import { type CommandReply, definePlugin, definePluginCommand, type StartedPlugi
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { KarylSettings } from "./config";
-
-declare module "fastify" {
-  interface FastifyContextConfig {
-    /** A route the bot calls, signed with the plugin's HMAC key instead of sent from our pages: no Origin check. */
-    botDispatch?: boolean;
-  }
-}
+import { DISPATCH_BODY_LIMIT } from "./limits";
 
 export const PLUGIN_KEY = "sheet-thief-studio";
 const PLUGIN_VERSION = "0.1.0";
 
 /** The command that hands out a login link. */
-export const LOGIN_COMMAND = "studio";
+const LOGIN_COMMAND = "studio";
 
 /** How long a link of the command logs in: at least the bot's minimum, a minute (docs/spec/karyl-login.md, section 1). */
 export const LINK_TTL_MS = 2 * 60 * 1000;
@@ -130,9 +124,6 @@ const DISPATCHED: ReadonlyArray<{ method: "GET" | "POST"; url: string }> = [
   { method: "GET", url: "/health" },
   { method: "GET", url: "/health/*" },
 ];
-
-/** A dispatch carries an interaction, larger than an API request may be, never close to this. */
-const DISPATCH_BODY_LIMIT = 1024 * 1024;
 
 /** The headers the SDK reads of a dispatch: its body's type, and the HMAC signature with its timestamp and nonce. */
 function dispatchHeaders(request: FastifyRequest): Record<string, string> {
