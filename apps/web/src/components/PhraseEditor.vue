@@ -38,6 +38,7 @@ import { listenToClipboard } from "../clipboard";
 import { keyPlatform } from "../device";
 import { useLyricEntry } from "../lyricEntry";
 import { drawFailure } from "../drawFailure";
+import { drawnScore } from "../drawnScore";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { hasOwnKeys } from "../ownKeys";
 import { selectionBoxes } from "../presence";
@@ -69,8 +70,15 @@ const NO_PART_ADDED: Record<PartKind, boolean> = { fretted: false, percussion: f
 
 /** The fragment is in the editor: the toolbar shows what plays and changes it. */
 const started = ref(false);
-/** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
-const ready = ref(false);
+/**
+ * The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). Not
+ * while its renderer starts over (a retry); drawn again, the phrase is back where it was scrolled to.
+ */
+const { ready, watch: watchDrawn } = drawnScore({
+  scrollTop: () => scroller.value?.scrollTop ?? null,
+  scrollTo: (top) => scrollTo(top),
+  place: () => updateOverlay(),
+});
 /** Whether the fragment could not be drawn (`drawFailure`). */
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
@@ -110,7 +118,7 @@ const hideFromTests = exposeForTests({
 });
 
 // Typing plays from the start of the cursor's bar; a device that only plays, from where playback is.
-const { playerState, stopped, playingBar, playheadRect, isFollowing, showPlayback, togglePlay, stop, retrySound, cursorMoved, stopFollowing, onScroll, reveal, attach } =
+const { playerState, stopped, playingBar, playheadRect, isFollowing, showPlayback, togglePlay, stop, retrySound, cursorMoved, stopFollowing, scrollTo, onScroll, reveal, attach } =
   useScorePlayback({
     scroller,
     reserved: () => reserved.value,
@@ -310,10 +318,7 @@ function start(fragment: BarsFragment): void {
     scale: 1,
   });
   sound = soundUpdates(engine.player, "a", updateLoop);
-  engine.renderer.onRendered(() => {
-    ready.value = true;
-    updateOverlay();
-  });
+  watchDrawn(engine.renderer);
   watchDrawing(engine.renderer);
   attach(engine);
   draw({ kind: "structure" });
