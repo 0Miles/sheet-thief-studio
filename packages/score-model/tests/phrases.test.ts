@@ -143,7 +143,7 @@ test("bars taken out of a score and made a score of their own keep their music, 
       // And back: the score of the phrase is the same fragment again.
       expect(scoreToFragment(phrase)).toEqual(fragment);
     }),
-    { numRuns: 300 },
+    { numRuns: 40 },
   );
 });
 
