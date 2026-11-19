@@ -1210,3 +1210,306 @@ test("destroyed, a failure reported after is told to no one, and nothing is aske
   expect(states).toEqual([]);
   expect(standIns).toEqual([api]);
 });
+
+/** The music font's sources as an API was given them: none when they are alphaTab's own. */
+function fontSourcesOf(stand: StandIn): string[] {
+  return [...(stand.settings.core.smuflFontSources?.values() ?? [])];
+}
+
+/** What the engine told and asked so far is forgotten (those of `listen()` go on listening). */
+function heardFromNow(): void {
+  states = [];
+  positions = [];
+  seen = api.calls.length;
+}
+
+/** The sound font is in and the worker has the sound of the score the new API drew. */
+function firstSound(): void {
+  api.ready = true;
+  api.loadMidiForScore();
+  newSound();
+}
+
+test("a font of another family that could not be had is not the score's; the score's own, told failed more than once, is told the page once", () => {
+  const told: boolean[] = [];
+  engine.renderer.onFailed((failed) => told.push(failed));
+  fonts.failed("Noto Sans TC");
+  fonts.failed(`${api.fontFamily}Other`);
+  expect(engine.renderer.failed).toBe(false);
+  expect(told).toEqual([]);
+  // One event for each face of the family.
+  fonts.failed(api.fontFamily);
+  fonts.failed(api.fontFamily);
+  expect(engine.renderer.failed).toBe(true);
+  expect(told).toEqual([true]);
+  expect(standIns).toEqual([api]);
+});
+
+test("the global Worker is the browser's own once the engine is made, and once it has made a new API", () => {
+  browserWith();
+  const Worker = globalThis.Worker;
+  const { made, stand } = makeEngine({ useWorkers: true });
+  expect(globalThis.Worker).toBe(Worker);
+  // alphaTab was given a constructor that makes the browser's workers.
+  expect(stand.layoutWorker).toBeInstanceOf(Worker);
+  expect(stand.synthWorker).toBeInstanceOf(Worker);
+  workerFailed(stand.layoutWorker);
+  made.renderer.retry();
+  expect(standIns).toHaveLength(2);
+  expect(globalThis.Worker).toBe(Worker);
+  expect(standIns[1]!.layoutWorker).toBeInstanceOf(Worker);
+});
+
+test("retried, the score asked for last is drawn with the parts shown and at the scale asked for, and those listening before hear the new API", () => {
+  const two = partsScore(["fretted", "fretted"]);
+  engine.renderer.setScore(two, [two.parts[1]!.id]);
+  api.postRenderFinished.emit();
+  engine.renderer.setScale(1.5);
+  api.postRenderFinished.emit();
+  const drawn: boolean[] = [];
+  const painted: string[][] = [];
+  engine.renderer.onRendered(({ partial }) => drawn.push(partial));
+  engine.renderer.onPainted((barIds) => painted.push(barIds));
+  heardFromNow();
+  fonts.failed(api.fontFamily);
+  // The player's retry is the score's.
+  engine.player.retry();
+  newApi();
+  expect(asked()).toEqual(["renderScore"]);
+  expect(api.settings.display.scale).toBe(1.5);
+  expect(api.score!.tracks).toHaveLength(2);
+  expect(api.tracks.map((track) => track.index)).toEqual([1]);
+  expect(drawn).toEqual([]);
+  api.renderer.partialRenderFinished.emit({ firstMasterBarIndex: 0, lastMasterBarIndex: 1 });
+  api.postRenderFinished.emit();
+  expect(drawn).toEqual([false]);
+  expect(painted).toEqual([[two.bars[0]!.id, two.bars[1]!.id]]);
+  firstSound();
+  expect(states).toEqual(["loading", "paused"]);
+});
+
+test("the player's worker failed: the score's retry makes the new API too", () => {
+  workerFailed(api.synthWorker);
+  expect(engine.renderer.failed).toBe(false);
+  engine.renderer.retry();
+  newApi();
+  expect(engine.player.state).toBe("loading");
+});
+
+test("only the sound font failed: the score's retry downloads it again, with the API as it is", () => {
+  withoutSoundFont();
+  soundFontFailed();
+  engine.renderer.retry();
+  expect(standIns).toEqual([api]);
+  expect(asked()).toEqual(["loadSoundFont:/soundfont/test.sf3:false"]);
+  expect(states).toEqual(["failed", "loading"]);
+  expect(engine.renderer.failed).toBe(false);
+});
+
+test("a new API has the member's mix, loop, speed, metronome and count-in; the player loads, then is paused", () => {
+  const two = partsScore(["fretted", "fretted"], 8);
+  newModel(two);
+  const [guitar, bass] = two.parts;
+  engine.player.setVolume(guitar!.id, 0.5);
+  engine.player.setSolo(guitar!.id, true);
+  engine.player.setMute(bass!.id, true);
+  engine.player.setLoop({ startTick: BAR, endTick: 3 * BAR });
+  engine.player.setSpeed(0.75);
+  engine.player.setMetronome(true);
+  engine.player.setCountIn(true);
+  const before = engine.player.settings();
+  heardFromNow();
+  fonts.failed(api.fontFamily);
+  engine.renderer.retry();
+  newApi();
+  expect(states).toEqual(["loading"]);
+  // Nothing of the mix yet: the new player is not ready.
+  expect(api.player.volumes.size).toBe(0);
+  api.postRenderFinished.emit();
+  firstSound();
+  expect(states).toEqual(["loading", "paused"]);
+  // Channels: the guitar 0 and 2, the bass 1 and 3.
+  expect(Object.fromEntries(api.player.volumes)).toEqual({ 0: 0.5, 1: 1, 2: 0.5, 3: 1 });
+  expect([...api.player.soloed].sort()).toEqual([0, 2]);
+  expect([...api.player.muted].sort()).toEqual([1, 3]);
+  expect(api.ranges.at(-1)).toBe(`${BAR}-${3 * BAR}`);
+  expect(api.isLooping).toBe(true);
+  expect([api.playbackSpeed, api.metronomeVolume, api.countInVolume]).toEqual([0.75, 1, 1]);
+  expect(engine.player.settings()).toEqual(before);
+  expect(before).toEqual({
+    speed: 0.75,
+    metronome: true,
+    countIn: true,
+    loop: { startTick: BAR, endTick: 3 * BAR },
+    parts: { [guitar!.id]: { mute: false, solo: true, volume: 0.5 }, [bass!.id]: { mute: true, solo: false, volume: 1 } },
+  });
+});
+
+test("a new API while it played: playback is at the start again, and plays from there", () => {
+  playingAt(5000);
+  fonts.failed(api.fontFamily);
+  engine.renderer.retry();
+  newApi();
+  api.postRenderFinished.emit();
+  firstSound();
+  expect(states).toEqual(["loading", "paused"]);
+  expect(positions.length).toBeGreaterThan(0);
+  expect(new Set(positions)).toEqual(new Set([0]));
+  asked();
+  engine.player.play();
+  expect(asked()).toEqual(["play"]);
+});
+
+test("a sound waited for on the API replaced is waited for no more, whether it was being made or waited for a drawing", async () => {
+  // Being made by the worker.
+  changeInPlace();
+  const making = engine.player.load();
+  expect(asked()).toEqual(["loadMidi"]);
+  fonts.failed(api.fontFamily);
+  engine.renderer.retry();
+  await making;
+
+  // Waiting for the drawing under way.
+  start();
+  const first = withFret(score, 1, 5);
+  const second = withFret(first, 2, 7);
+  engine.renderer.patchBars(first, [first.bars[1]!.id]);
+  engine.renderer.patchBars(second, [second.bars[2]!.id]);
+  const waiting = engine.player.load();
+  workerFailed(api.synthWorker);
+  engine.player.retry();
+  await waiting;
+  // The new API draws the score asked for last, both changes in it.
+  newApi();
+  expect(asked()).toEqual(["renderScore"]);
+  firstSound();
+  expect(api.heard.at(-1)).toBe(2);
+});
+
+test("what the API replaced reports after is told to no one: ready, a position, a state, a sound font or a worker that failed, a drawing", () => {
+  const old = api;
+  const told: boolean[] = [];
+  const drawn: boolean[] = [];
+  engine.renderer.onFailed((failed) => told.push(failed));
+  engine.renderer.onRendered(({ partial }) => drawn.push(partial));
+  fonts.failed(api.fontFamily);
+  engine.renderer.retry();
+  newApi();
+  heardFromNow();
+  expect(told).toEqual([true, false]);
+
+  old.playerReady.emit();
+  old.midiLoaded.emit();
+  old.playerPositionChanged.emit({ currentTick: 2 * BAR, endTick: 8 * BAR, currentTime: 0, endTime: 0 });
+  old.playerStateChanged.emit({ state: AtState.Playing });
+  old.playerFinished.emit();
+  old.player.soundFontLoadFailed.emit(new Error("Loading failed"));
+  old.player.midiLoadFailed.emit(new Error("The sound could not be loaded"));
+  workerFailed(old.synthWorker);
+  old.postRenderFinished.emit();
+  old.renderer.partialRenderFinished.emit({ firstMasterBarIndex: 0, lastMasterBarIndex: 0 });
+  // Its font, told failed once more.
+  fonts.failed(old.fontFamily);
+
+  expect(engine.player.state).toBe("loading");
+  expect(states).toEqual([]);
+  expect(positions).toEqual([]);
+  expect(drawn).toEqual([]);
+  expect(told).toEqual([true, false]);
+  expect(engine.renderer.failed).toBe(false);
+  expect(standIns.at(-1)).toBe(api);
+  expect(asked()).toEqual([]);
+});
+
+test("a worker of the API replaced, failing after, is not the new one's failure", () => {
+  browserWith();
+  const { made, stand } = makeEngine({ useWorkers: true });
+  workerFailed(stand.layoutWorker);
+  made.renderer.retry();
+  expect(made.renderer.failed).toBe(false);
+  workerFailed(stand.layoutWorker);
+  workerFailed(stand.synthWorker);
+  expect(made.player.state).toBe("loading");
+  expect(made.renderer.failed).toBe(false);
+  expect(standIns).toHaveLength(2);
+});
+
+test("back online, a player whose worker could not be had is made again with a new API; back online before its worker is told failed, at once, this once", () => {
+  workerFailed(api.synthWorker);
+  expect(states).toEqual(["failed"]);
+  backOnline();
+  newApi();
+  expect(states).toEqual(["failed", "loading"]);
+
+  backOnline();
+  expect(standIns.at(-1)).toBe(api);
+  workerFailed(api.synthWorker);
+  newApi();
+  expect(engine.player.state).toBe("loading");
+  // Failed again: it stays so until the browser is back online once more, or a retry.
+  workerFailed(api.synthWorker);
+  expect(standIns.at(-1)).toBe(api);
+  expect(engine.player.state).toBe("failed");
+  backOnline();
+  newApi();
+  expect(engine.player.state).toBe("loading");
+});
+
+test("the music font is asked for from alphaTab's own sources until one failed on the page; from then on every API made asks with another ?attempt each time it failed", async () => {
+  // A page on which no font has failed yet: the engine's module anew.
+  vi.resetModules();
+  const fresh = await import("../src/index");
+  browserWith();
+  standIns.length = 0;
+  const make = () => fresh.createAlphaTabEngine({ querySelector: () => null } as unknown as HTMLElement, { fontDirectory: "/font/", soundFont: "/soundfont/test.sf3", useWorkers: false });
+  /** The attempt every source of an API carries; null when none carries a query. */
+  const attemptOf = (stand: StandIn): string | null => {
+    const sources = fontSourcesOf(stand);
+    if (sources.every((source) => !source.includes("?"))) return null;
+    expect(sources).toHaveLength(3);
+    const attempts = sources.map((source) => /^\/font\/Bravura\.\w+\?attempt=(\d+)$/.exec(source)?.[1]);
+    expect(attempts[0]).toBeDefined();
+    expect(new Set(attempts).size).toBe(1);
+    return attempts[0]!;
+  };
+  const first = make();
+  make();
+  expect(standIns.map(attemptOf)).toEqual([null, null]);
+
+  fonts.failed(standIns[0]!.fontFamily);
+  first.renderer.retry();
+  expect(standIns).toHaveLength(3);
+  const afterOne = attemptOf(standIns[2]!);
+  expect(afterOne).not.toBeNull();
+  // Another view opened on the page.
+  make();
+  expect(attemptOf(standIns[3]!)).toBe(afterOne);
+
+  fonts.failed(standIns[2]!.fontFamily);
+  first.renderer.retry();
+  expect(standIns).toHaveLength(5);
+  const afterTwo = attemptOf(standIns[4]!);
+  expect(afterTwo).not.toBeNull();
+  expect(afterTwo).not.toBe(afterOne);
+  make();
+  expect(attemptOf(standIns[5]!)).toBe(afterTwo);
+});
+
+test("destroyed, the worker that lays out failing after is told to no one either", () => {
+  browserWith();
+  const { made, stand } = makeEngine({ useWorkers: true });
+  const told: boolean[] = [];
+  const heard: PlayerState[] = [];
+  made.renderer.onFailed((failed) => told.push(failed));
+  made.player.onState((state) => heard.push(state));
+  made.destroy();
+  workerFailed(stand.layoutWorker);
+  workerFailed(stand.synthWorker);
+  fonts.failed(stand.fontFamily);
+  backOnline();
+  made.player.retry();
+  expect(told).toEqual([]);
+  expect(heard).toEqual([]);
+  expect(made.renderer.failed).toBe(false);
+  expect(standIns).toEqual([stand]);
+});
