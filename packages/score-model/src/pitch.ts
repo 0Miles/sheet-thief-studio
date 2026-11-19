@@ -114,6 +114,14 @@ function drawnSpelling(pitch: number, spell: string | undefined, keySig: KeySign
 }
 
 /**
+ * How a note is drawn spelled in a key, as `spell` writes it: its own spelling when that names its
+ * pitch, else the key's default. Two keys that give one answer draw the note on one position.
+ */
+export function drawnSpell(pitch: number, spell: string | undefined, keySig: KeySignature): string {
+  return spellOf(drawnSpelling(pitch, spell, keySig));
+}
+
+/**
  * The staff position a note is drawn on in a clef: that of its spelled letter (C♯4 and C4 on one
  * position, D♭4 on D4's; B♯3, which sounds as C4, on B3's). A spelling that does not name its
  * pitch is drawn as the key's default, as the projection draws it.
