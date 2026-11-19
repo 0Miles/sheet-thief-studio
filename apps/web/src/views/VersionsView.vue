@@ -15,6 +15,7 @@ import { createAlphaTabEngine, type PlayerState, type ScoreEngine } from "@studi
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 
+import { roleCanType } from "../access";
 import { ApiError, get, patchFor, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
 import PlayerControls from "../components/PlayerControls.vue";
@@ -41,7 +42,7 @@ const error = ref<string | null>(null);
 /** The versions, the latest first; null until known. */
 const versions = ref<VersionSummary[] | null>(null);
 /** An Owner or an Editor: they name versions and save new ones (docs/spec/routes.md, 3.6). */
-const canWrite = computed(() => details.value !== null && details.value.role !== "viewer");
+const canWrite = computed(() => details.value !== null && roleCanType(details.value.role));
 
 const when = new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "medium" });
 const timeOf = (version: VersionSummary) => when.format(new Date(version.createdAt));
@@ -169,20 +170,27 @@ function startNaming(version: VersionSummary): void {
   nameDraft.value = version.name ?? "";
 }
 
-/** Name the version, or take its name away when the field is left empty. */
-async function saveName(version: VersionSummary): Promise<void> {
+/** Do something the member asked for, `sending` meanwhile; a refusal is said above the list. */
+async function send(action: () => Promise<void>): Promise<void> {
   error.value = null;
   sending.value = true;
   try {
-    const trimmed = nameDraft.value.trim();
-    const named = await patchFor(`${path}/${version.id}`, { name: trimmed === "" ? null : trimmed }, versionSummary);
-    versions.value = versions.value?.map((item) => (item.id === named.id ? named : item)) ?? null;
-    naming.value = null;
+    await action();
   } catch (failure) {
     error.value = refusal(failure);
   } finally {
     sending.value = false;
   }
+}
+
+/** Name the version, or take its name away when the field is left empty. */
+function saveName(version: VersionSummary): Promise<void> {
+  return send(async () => {
+    const trimmed = nameDraft.value.trim();
+    const named = await patchFor(`${path}/${version.id}`, { name: trimmed === "" ? null : trimmed }, versionSummary);
+    versions.value = versions.value?.map((item) => (item.id === named.id ? named : item)) ?? null;
+    naming.value = null;
+  });
 }
 
 /**
@@ -194,9 +202,7 @@ async function restore(): Promise<void> {
   const version = restoring.value;
   restoring.value = null;
   if (version === null) return;
-  error.value = null;
-  sending.value = true;
-  try {
+  await send(async () => {
     const result = await restoreVersion(props.id, version.id, props.restoreTarget);
     if (result === "restored") {
       await router.push({ name: "score", params: { id: props.id } });
@@ -206,26 +212,16 @@ async function restore(): Promise<void> {
     error.value = typeof result === "string" ? text.restore[result] : strings.score.readOnly[result.locked];
     // The version made before, if any, is in the list now.
     if (result === "notWritten") await loadList();
-  } catch (failure) {
-    error.value = refusal(failure);
-  } finally {
-    sending.value = false;
-  }
+  });
 }
 
 /** Save what the score is now on the server as a version with this name; it heads the list. */
-async function saveNow(): Promise<void> {
-  error.value = null;
-  sending.value = true;
-  try {
+function saveNow(): Promise<void> {
+  return send(async () => {
     await postFor(path, { name: newName.value.trim() }, createdVersion);
     newName.value = "";
     await loadList();
-  } catch (failure) {
-    error.value = refusal(failure);
-  } finally {
-    sending.value = false;
-  }
+  });
 }
 </script>
 

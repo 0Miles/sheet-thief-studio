@@ -21,6 +21,7 @@ import {
   MAX_BEAT_TEXT,
   MAX_LYRIC,
   observeScore,
+  type PartKind,
   type PitchedClef,
   readScore,
   type ScoreChange,
@@ -29,7 +30,7 @@ import {
   type TimeSignature,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type Rect, type ScoreEngine } from "@studio/score-render";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import * as Y from "yjs";
 
 import { barPanelOf } from "../barPanel";
@@ -38,6 +39,7 @@ import { keyPlatform } from "../device";
 import { useLyricEntry } from "../lyricEntry";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { selectionBoxes } from "../presence";
+import { useNotice } from "../sayAnew";
 import { useScorePlayback } from "../scorePlayback";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { strings } from "../strings";
@@ -59,23 +61,15 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ change: [fragment: BarsFragment] }>();
 const text = strings.phraseEditor;
+/** The phrase editor adds no part, of any kind (one object: the panel is not redrawn for a new one each time). */
+const NO_PART_ADDED: Record<PartKind, boolean> = { fretted: false, percussion: false, pitched: false };
 
 /** The fragment is in the editor: the toolbar shows what plays and changes it. */
 const started = ref(false);
 /** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
-const notice = ref<string | null>(null);
-/**
- * Tell the member something anew, as the score does (#57): the notice is emptied first, so that the
- * same words said again are a change the screen reader reads out again.
- */
-function say(said: string): void {
-  notice.value = null;
-  void nextTick(() => {
-    notice.value = said;
-  });
-}
+const { notice, say } = useNotice();
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const score = shallowRef<ScoreJSON | null>(null);
@@ -418,7 +412,7 @@ defineExpose({ focus, openParts });
         v-if="partsOpen && score"
         :platform="keyPlatform()"
         :parts="score.parts"
-        :can-add="{ fretted: false, percussion: false, pitched: false }"
+        :can-add="NO_PART_ADDED"
         :current="score.parts[0]?.id ?? null"
         phrase
         @tuning="onTuning"

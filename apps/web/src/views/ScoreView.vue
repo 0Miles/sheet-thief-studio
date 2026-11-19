@@ -44,7 +44,7 @@ import {
   type TimeSignature,
 } from "@studio/score-model";
 import { createAlphaTabEngine, type PartMix, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
@@ -76,6 +76,7 @@ import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
 import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
 import { barsToSave, type BarsToSave } from "../savePhrase";
+import { useNotice } from "../sayAnew";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
@@ -198,7 +199,7 @@ const shown = shallowRef<string[]>([]);
 /** The narrow Read view's drawer, with the options that do not fit in its bars, is open. */
 const drawerOpen = ref(false);
 /** A notice for the member, shown above the score, never over it; null when there is none. */
-const notice = ref<string | null>(props.notice ?? null);
+const { notice, say } = useNotice(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 /** The keyboard back on the score, where it is. */
@@ -246,6 +247,20 @@ const sidebarOpen = computed(() => side.value === "phrases");
 function openSide(panel: SidePanel): void {
   side.value = panel;
   placeCursor();
+}
+
+/** Close the panel at the side, the keyboard back on the score. */
+function closeSide(): void {
+  side.value = null;
+  focusScore();
+}
+
+/** Open or close a panel only the editable view has. */
+function toggleEditSide(panel: Exclude<SidePanel, "mixer">): void {
+  if (view.value !== "editable") return;
+  if (side.value !== panel) openSide(panel);
+  else if (panel === "bar") closePanel();
+  else closeSide();
 }
 /** The other tabs on the score (docs/spec/views.md, section 8); never any for a guest, who takes no part in the presence. */
 const peers = shallowRef<Peer[]>([]);
@@ -394,13 +409,8 @@ const mixerParts = computed(() => {
 
 /** The toolbar's button: the mixer opens at the side of the score, alone there, or closes. */
 function toggleMixer(): void {
-  if (mixerOpen.value) closeMixer();
+  if (mixerOpen.value) closeSide();
   else openSide("mixer");
-}
-
-function closeMixer(): void {
-  side.value = null;
-  focusScore();
 }
 
 function onPartMix(partId: string, change: Partial<PartMix>): void {
@@ -433,12 +443,6 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
 const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
 
 /** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
-function togglePanel(): void {
-  if (view.value !== "editable") return;
-  if (panelOpen.value) closePanel();
-  else openSide("bar");
-}
-
 /** The part the member asked to delete, while the page asks them first; null otherwise. */
 const deleting = ref<string | null>(null);
 /** The title bar is being changed. */
@@ -472,17 +476,6 @@ watch(deletion, (asked) => {
 });
 
 /** The toolbar's button: the panel of the parts opens or closes, the keyboard back on the score when it does. */
-function toggleParts(): void {
-  if (view.value !== "editable") return;
-  if (partsOpen.value) closeParts();
-  else openSide("parts");
-}
-
-function closeParts(): void {
-  side.value = null;
-  focusScore();
-}
-
 /** The contents of the phrases previewed and dropped, each asked for once per revision. */
 const contents = phraseContents();
 /** The phrase dragged from the sidebar, while it is. */
@@ -494,28 +487,6 @@ const dropRects = shallowRef<Rect[]>([]);
 const cursorPart = computed(() => score.value?.parts.find((part) => part.id === presence.value.cursor?.partId));
 
 /** F4, or the toolbar's button: the sidebar opens, the keyboard going to its search box, or closes, the keyboard back on the score. */
-function toggleSidebar(): void {
-  if (view.value !== "editable") return;
-  if (sidebarOpen.value) closeSidebar();
-  else openSide("phrases");
-}
-
-function closeSidebar(): void {
-  side.value = null;
-  focusScore();
-}
-
-/**
- * Tell the member something anew: the notice is emptied first, so that the same words said again
- * (the same hint of two drops) are a change the screen reader reads out again.
- */
-function say(said: string): void {
-  notice.value = null;
-  void nextTick(() => {
-    notice.value = said;
-  });
-}
-
 /**
  * What a drop tells the member, no dialog (docs/spec/commands.md, 5.7): why nothing went in, or its
  * hints; a drop with nothing to tell takes away what an earlier one said.
@@ -689,6 +660,7 @@ function onPhraseSaved(name: string): void {
   closeSavePhrase();
 }
 
+/** The bar's panel closed: the structural boxes follow it. */
 function closePanel(): void {
   side.value = null;
   placeCursor();
@@ -934,12 +906,12 @@ function onKey(event: KeyboardEvent): void {
   }
   if (pageEffect === "barPanel") {
     event.preventDefault();
-    togglePanel();
+    toggleEditSide("bar");
     return;
   }
   if (pageEffect === "phraseSidebar") {
     event.preventDefault();
-    toggleSidebar();
+    toggleEditSide("phrases");
     return;
   }
   stopFollowing();
@@ -1262,13 +1234,13 @@ onBeforeUnmount(() => {
           <AppButton variant="ghost" size="sm" data-delete-bars :title="text.bars.removeKey(barKeys.remove)" @click="onToolbar(() => session?.deleteBars())">
             {{ text.bars.remove }}
           </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="togglePanel">
+          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="toggleEditSide('bar')">
             {{ text.bars.panel }}
           </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleParts">
+          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleEditSide('parts')">
             {{ text.parts.panel }}
           </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleSidebar">
+          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleEditSide('phrases')">
             {{ text.phraseSidebar.open }}
           </AppButton>
         </div>
@@ -1513,7 +1485,7 @@ onBeforeUnmount(() => {
         @capo="onCapo"
         @program="onProgram"
         @clef="onClef"
-        @close="closeParts"
+        @close="closeSide"
       />
       <PhraseSidebar
         v-if="view === 'editable'"
@@ -1522,14 +1494,14 @@ onBeforeUnmount(() => {
         :open="sidebarOpen"
         :part="cursorPart"
         :contents="contents"
-        @close="closeSidebar"
+        @close="closeSide"
         @drop="dropAtCursor"
         @drag="onDrag"
       />
       <aside v-if="mixerOpen && view && !narrow" class="score__side" data-mixer-panel :aria-label="text.mixer.title">
         <header class="score__side-header">
           <h2 class="score__side-title">{{ text.mixer.title }}</h2>
-          <AppButton variant="ghost" size="sm" @click="closeMixer">{{ text.mixer.close }}</AppButton>
+          <AppButton variant="ghost" size="sm" @click="closeSide">{{ text.mixer.close }}</AppButton>
         </header>
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="loopText" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
       </aside>

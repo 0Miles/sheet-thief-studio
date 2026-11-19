@@ -8,10 +8,11 @@
 // reload, or save as a new phrase). When it cannot be read, nothing more is sent either until the
 // member asks to check again. A 413 keeps the content here, the next edit sent again. Nothing here
 // knows of the page or of Yjs.
-import { createdPhrase, type ErrorCode, phraseDetails, phraseRevision } from "@studio/contracts";
+import { type ErrorCode, phraseDetails, phraseRevision } from "@studio/contracts";
 import { type BarsFragment, barsFragmentSchema } from "@studio/score-model";
 
-import { ApiError, get, patchFor, postFor, putFor } from "./api";
+import { ApiError, get, patchFor, putFor } from "./api";
+import { saveAsPhrase } from "./savePhrase";
 
 /** How long editing stops before the fragment is put. */
 export const SAVE_DELAY_MS = 1000;
@@ -83,7 +84,7 @@ export interface PhraseSaverStart extends PhraseContent {
  * JSON with the keys of every object in alphabetical order: two contents are the same when theirs
  * are (docs/spec/phrases.md, 5.1).
  */
-export function canonicalJson(value: unknown): string {
+function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) =>
     item !== null && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : item,
   );
@@ -156,11 +157,7 @@ export function createPhraseSaver(start: PhraseSaverStart): PhraseSaver {
 
   function wait(delay: number): void {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = undefined;
-      due = true;
-      void send();
-    }, delay);
+    timer = setTimeout(sendNow, delay);
   }
 
   /** Send now what is left, whatever wait it was in. */
@@ -322,9 +319,7 @@ export function createPhraseSaver(start: PhraseSaverStart): PhraseSaver {
       else if (state === "failed" || state === "tooLarge") sendNow();
     },
     onState,
-    async saveAsNew(name) {
-      return (await postFor("/api/phrases", { name, fragment: latest.fragment }, createdPhrase)).id;
-    },
+    saveAsNew: (name) => saveAsPhrase(name, latest.fragment),
     destroy() {
       destroyed = true;
       clearTimeout(timer);
