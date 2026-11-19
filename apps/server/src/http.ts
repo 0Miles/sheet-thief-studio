@@ -3,6 +3,13 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { z } from "zod";
 
+declare module "fastify" {
+  interface FastifyContextConfig {
+    /** A route the bot calls, signed with the plugin's HMAC key instead of sent from our pages: no Origin check. */
+    botDispatch?: boolean;
+  }
+}
+
 /**
  * Refuse a request that may change something unless the browser says it comes from our own page.
  * Every path, not only /api/: the router decodes a path before matching it, so a test on the raw
@@ -11,6 +18,8 @@ import type { z } from "zod";
 export function registerOriginCheck(app: FastifyInstance, publicOrigin: string): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "GET" || request.method === "HEAD") return;
+    // The karyl-chan bot's dispatches: no browser sends them, and the plugin's HMAC key signs them.
+    if (request.routeOptions.config.botDispatch) return;
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ code: "bad_origin" });
   });
 }
@@ -32,9 +41,25 @@ export function rateLimited(reply: FastifyReply, retryAfterSeconds: number) {
   return reply.code(429).header("retry-after", String(retryAfterSeconds)).send({ code: "rate_limited" });
 }
 
-export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
-  const issues = error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code }));
+/** One field a request got wrong: where it is in the body, and what is wrong with it (a zod issue code). */
+export interface FieldIssue {
+  path: string[];
+  code: string;
+}
+
+/**
+ * 400 `invalid_request` naming the fields at fault: those zod refused, or those that do not fit
+ * what the server already has (docs/spec/routes.md, section 4).
+ */
+export function invalidFields(reply: FastifyReply, issues: FieldIssue[]) {
   return reply.code(400).send({ code: "invalid_request", params: { issues } });
+}
+
+export function invalidRequest(reply: FastifyReply, error: z.ZodError) {
+  return invalidFields(
+    reply,
+    error.issues.map((issue) => ({ path: issue.path.map(String), code: issue.code })),
+  );
 }
 
 /**

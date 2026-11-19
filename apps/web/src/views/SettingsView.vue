@@ -12,6 +12,7 @@ import { RouterLink, useRouter } from "vue-router";
 
 import { ApiError, del, get, patchFor, post, postFor, refusal } from "../api";
 import AppHeader from "../components/AppHeader.vue";
+import { appUrl } from "../served";
 import { strings } from "../strings";
 import NotFoundView from "./NotFoundView.vue";
 
@@ -46,7 +47,7 @@ const dialog = ref<"transfer" | "leave" | "delete" | null>(null);
 const target = ref<ScoreMember | null>(null);
 const dialogError = ref("");
 /** The whole address a guest opens. */
-const address = computed(() => (token.value ? `${location.origin}/s/${token.value}` : ""));
+const address = computed(() => (token.value ? appUrl(`/s/${token.value}`) : ""));
 
 function failed(failure: unknown): void {
   error.value = refusal(failure);

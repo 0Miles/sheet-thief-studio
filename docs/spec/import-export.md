@@ -27,20 +27,20 @@
 | `score.title` | `title`（截到 100 字元，截斷時列入報告；空的時候用檔名，補充） |
 | `score.artist` | `meta.artist`（截到 100 字元） |
 | staff 的 `isPercussion` | `kind: "percussion"` |
-| 有 `stringTuning` 的 staff | `kind: "fretted"`；`tuning` 是 `stringTuning.tunings`，第 1 弦在前；`capo` 是 `staff.capo` |
+| 有 `stringTuning` 而且顯示 TAB（`showTablature`）的 staff（#69 更正，見 2.2） | `kind: "fretted"`；弦數不在 4–7 時改成 pitched 並列入報告；`tuning` 是 `stringTuning.tunings`，第 1 弦在前；`capo` 是 `staff.capo` |
 | 其他 | `kind: "pitched"` |
 | `track.name` | `name`（截到 64 字元） |
 | `track.playbackInfo.program` | `program` |
 | pitched 的 staff 與第一小節的 clef（補充） | `staves`：G2 → `treble`，G2 加 8vb → `treble-8vb`，F4 → `bass`；其他譜號 → `treble` 並列入報告；超過 2 個譜表時只取前 2 個並列入報告 |
 | `MasterBar` 的拍號 | `timeSig` |
 | 小節開頭的速度 automation | `tempo`；小節中途的速度變化列入報告 |
-| `Bar.keySignature`、`keySignatureType`（第一個 staff 的） | `keySig` |
+| `Bar.keySignature`、`keySignatureType`（第一個不是鼓的 staff 的；#69 更正，見 2.2） | `keySig` |
 | `isRepeatStart`、`repeatCount`、`alternateEndings` | `repeatStart`、`repeatEnd`、`voltas` |
 | `section.text` | `section`（截到 64 字元） |
 | `isAnacrusis`（只有第一小節） | `anacrusis` |
 | fretted 音符 | `s<弦數 − note.string + 1>`、`fret`（超過 36 時丟掉並列入報告） |
 | percussion 音符的 `percussionArticulation` | `p<id>` |
-| pitched 音符 | `n<實際音高>`；`accidentalMode` 是強制升、降、重升、重降時寫入 `spell`，其他情況不寫（投影時依調號決定，[`schema.md`](schema.md) 8.1） |
+| pitched 音符 | `n<實際音高>`；`accidentalMode` 是強制升、降、重升、重降或本位時寫入 `spell`（#69 加上本位，見 2.2），其他情況不寫（投影時依調號決定，[`schema.md`](schema.md) 8.1） |
 | 技巧欄位 | [`schema.md`](schema.md) 第 8 節投影對照的反向；支援範圍以外的列入報告 |
 | `beat.lyrics[0]` | `lyric`（截到 32 字元）；第二行以後列入報告 |
 | `beat.text` | `text`（截到 64 字元） |
@@ -51,6 +51,34 @@
 - 列入報告的「不做」項目（[`schema.md`](schema.md) 第 3、8 節）：D.S.、D.C.、Coda、Fine 等跳躍，小節中途變速或變拍，swing feel，速度文字，裝飾音、搖桿、tremolo picking、trill、自由推弦曲線、指法、漸強漸弱，flam、roll、choke，圓滑線、踏板、ottava、跨譜表連桿、和弦指法圖、斜線節奏譜，移調樂器。
 - 多小節休止在 alphaTab 的模型裡本來就是一個個小節，照常匯入。
 
+### 2.2 實作（#69）
+
+寫法在 `packages/score-render/src/importScore.ts` 的 `importScore(bytes, fileName)`，回傳 `{ ok: true, score, report }` 或 `{ ok: false, failure }`。
+
+- **failure**：`fileTooLarge`（超過 20 MB，讀檔前檢查）、`unreadable`（alphaTab 讀不了）、`tooManyParts`、`tooManyNonDrumParts`、`tooManyBars`、`tooLarge`（JSON 超過 5 MB）、`invalid`（產生的 `ScoreJSON` 沒通過 `importedScoreSchema`；是這裡的錯，不是檔案的）。數量在轉換前檢查，5 MB 在轉換後檢查。
+- **報告**：`ImportReportItem` 是 `{ loss, count, bars }`，`loss` 是 `IMPORT_LOSSES` 之一（代碼，介面文字由 `strings.ts` 對照），`bars` 是發生的小節（從 1 起算，排序、不重複；整份或整個聲部的事是空陣列）。
+- **聲部種類**（更正 2.1）：alphaTab 讀 Guitar Pro 6–8 時，會替只有五線譜的譜表補上吉他的調弦（`_assignFingeringForGp6`，為了算指法），而 Guitar Pro 3–5 的每個 track 都有弦。所以「有 `stringTuning`」分不出 fretted：改成「有 `stringTuning` 而且 `showTablature`」。我們自己匯出的 pitched 聲部不顯示 TAB，讀回來仍是 pitched；GP5 的鋼琴 track 只顯示五線譜時也是 pitched，音高取 `realValueWithoutHarmonic`。
+- **拼寫**（更正 2.1）：本位（`ForceNatural`）也寫入 `spell`（白鍵的字母）。理由：GP7 會寫出每個音的升降記號，介面輸入的音一律有 `spell`（[`schema.md`](schema.md) 8.1），不寫本位的話，這些音 round-trip 後就少了 `spell`。反過來，沒有 `spell` 的音匯出 GP7 再讀回來時，會帶上它畫出來的拼寫（預設拼寫）；畫法相同，只是之後改調號時不再跟著變。
+- **力度**：只在一條聲線裡力度改變的拍點寫 `dynamic`（開頭是 alphaTab 的 `f`），因為 alphaTab 每個拍點都有當時生效的力度。ppp、fff 照 2.1；pppp 以下、ffff 以上取 pp、ff 並列入報告；sf、fz 等不改變生效的力度，列入報告。
+- **調號從哪個譜表讀**（更正 2.1）：第一個不是鼓的譜表（全部是鼓時才用第一個）。理由：鼓譜表沒有調號，alphaTab 讀成 C 大調；MusicXML 每個 part 有自己的 `<key>`，第一個 part 是鼓時，照原文會把整份讀成 C 大調。測試：`importExport.test.ts` 的「the key of a bar is that of the first staff that is not a drum staff …」。
+- **只顯示五線譜的吉他、貝斯**：照上面的規則讀成 pitched，調弦與格號不保留。GP6–8 裡每個只有五線譜的譜表讀出來都有調弦（我們自己匯出的 pitched 聲部也是），分不出原本是不是弦樂器，所以只在 program 是 General MIDI 的吉他或貝斯（從 0 起算 24–39）時列入報告，代碼 `tablatureHidden`；鋼琴、人聲等不列。
+- **速度與調號**：第一小節一律寫 `tempo`（和新團譜一樣），之後只在改變的小節寫；`keySig` 只在和 C 大調或前一個生效的調號不同時寫。小節開頭有多個速度 automation 時取最後一個；速度夾在 20–400，超出時列入報告。
+- **聲線**：每個譜表的第一條聲線一律寫出，第二條只在有拍點時寫出（和 `docToJson` 相同）。整條聲線都是什麼都沒寫的休止（例如投影補上的整小節休止）讀成空的聲線。alphaTab 的 `isEmpty` 拍點略過。
+- **音符**：dead note 的格號是 0 時不寫 `fret`（和介面在空弦上做出的 dead note 相同，投影也一樣用 0）；`beat.tap` 寫在拍點每個音符上；重音的 `Heavy` 讀成 `accent` 並列入報告，`Tenuto` 只列入報告。
+- **鼓**：音符的 `percussionArticulation` 是 track 的 `percussionArticulations` 的索引（索引超出時才是 articulation id）；鍵是那個 articulation 的 `id`。
+- **段落**：`section.text` 是空的時取 `section.marker`（MusicXML 的 rehearsal 在那裡）。
+- **標題與 artist**：alphaTab 讀 MusicXML 時把空白換成不換行空白（`_sanitizeDisplay`），匯入換回一般空白。
+- **歌詞**：MusicXML 的 `syllabic` 不在 alphaTab 的模型裡，所以從 MusicXML 讀到的音節不帶結尾的 `-`；Guitar Pro 的歌詞照原樣保留。
+
+### 2.3 建立新團譜（#70）
+
+- **介面**：`/` 的「匯入」按鈕開檔案選擇（`.gp`、`.gp3`、`.gp4`、`.gp5`、`.gpx`、`.musicxml`、`.xml`、`.mxl`）。選好檔案後開「匯入檔案」對話框（`apps/web/src/components/ImportScoreDialog.vue`）：先檢查 20 MB（`MAX_IMPORT_FILE_BYTES`，在讀檔前），再以動態 import 載入 score-render 讀檔（`/` 不帶 alphaTab；為此 zod 的 jitless 設定改成 vite alias，見 [`security.md`](security.md) 第 7 節）。讀完顯示標題、artist、聲部數與小節數，以及匯入報告（每一項是代碼的文字、幾處、在哪些小節；超過 8 個小節時列前 8 個加總數）；報告是空的時說「所有內容都能轉換」。按「建立團譜」才送出，成功後打開新團譜。讀不了或超過上限時只顯示原因（`strings.importScore.failures`），沒有建立按鈕。
+- **`MAX_IMPORT_FILE_BYTES`** 定義在 score-model（score-render 照舊匯出），介面文字讀它時不必載入 alphaTab。
+- **伺服器**：`POST /api/scores/import` 的 body 上限是 `IMPORT_BODY_LIMIT`（5 MB 加 `BODY_MARGIN` 64 KB，`apps/server/src/limits.ts`；fragment 的上限也改用 `BODY_MARGIN`），超過時 Fastify 在讀完 body 之前回 413 `payload_too_large`。body 以 `parsePlain` 讀（只留自有欄位、`__proto__` 鍵與超過深度上限的值都不通過），驗證是 contracts 的 `importScoreRequest`：`importedScoreSchema`（聲部、小節、5 MB）加上 `schemaVersion` 必須是目前的版本（`jsonToDoc` 只寫這個版本）。不通過時回 400 `invalid_request`，不建立任何東西。通過後以 `writableCopy` 的複本，和新增團譜同一條路（`makeScore`）：建立 `scores` 列（標題與 artist 寫入）與 Owner 成員，再以參與者身分（`collab.change`）用 `jsonToDoc` 寫入文件；寫入失敗時刪掉這一列。
+- **標題**（更正 2.1 的「空的時候用檔名」）：`importScore` 先去掉標題前後的空白，剩下空的時用檔名：去掉副檔名後再去掉前後空白；這樣是空的（例如 `.gp`）時用整個檔名去掉前後空白。最後截到 100 字元（截斷時列入報告）。檔名整個是空白時沒有標題可用（`invalid`），所以介面在檔名整個是空白時改傳 `strings.score.untitled`（「未命名」，和讀到空標題時顯示的相同）。伺服器與 `importScore` 用同一個 `importedScoreSchema`：標題 1–100 字元、不能只有空白（和建立團譜相同，[`schema.md`](schema.md) 第 2 節），不通過時回 400。
+- **上限的數字**：報告文字裡的速度範圍、反覆次數、弦數、譜表數、格數取自 score-model 的 `TEMPO_RANGE`、`MAX_REPEAT`、`STRING_COUNTS`、`MAX_STAVES`、`MAX_FRET`（schema 與 `importScore` 也用它們），不另外寫死。
+- **alphaTab 的 log**：讀不了的檔案是一個答案（`unreadable`），不是頁面的錯誤；`importScore` 讀檔時把 alphaTab 的全域 log level 設成 `None`，讀完放回。
+
 ## 3. 匯出
 
 - `projectScore` 加上 `Gp7Exporter`，或 `MidiFileGenerator`；前身 `frontend/src/score/exporters.ts:7-16` 有寫法。
@@ -59,6 +87,25 @@
 - 不做 PDF、列印、圖片匯出。
 - **補充**：檔名是團譜標題加 `.gp` 或 `.mid`，把檔名不允許的字元換成 `_`；標題是空的時用「未命名」。
 - **補充**：Mixer 的設定（靜音、獨奏、音量、速度）不套用到匯出；匯出的是團譜本身。MIDI 匯出不含節拍器與預備拍。
+
+### 3.1 實作（#69）
+
+寫法在 `packages/score-render/src/exportScore.ts`：`exportGp7(json)`、`exportMidi(json)`，都回傳 `Uint8Array`。檔名由 #71 決定。
+
+- **MIDI**：和播放器同一個投影（`projectScore`）、同一個 `MidiFileGenerator`，handler 用標準 MIDI 檔的模式（`AlphaSynthMidiFileHandler(file, true)`）：不寫 alphaTab 自己的休止與節拍器事件，per-note bend 改成聲道的 pitch bend。0 個小節或 0 個聲部時是沒有音符的 MIDI 檔（alphaTab 對這種模型會丟例外，所以不呼叫 generator）。測試比對匯出檔的 note on/off 與播放器模式的產生結果（`importExport.test.ts`）。
+- **GP7**：投影之外再補兩件只有檔案需要的事：`score.artist`（畫譜時不設，免得畫出作者）；旋律的空音節（melisma）寫成 `beat.lyrics = [""]`，讀回來才是 `""`（畫譜時照 [`schema.md`](schema.md) 第 6 節不寫）。
+- **GP7 的調號**：GP7 一個小節只有一個調號，alphaTab 從整份的第一個譜表寫出。投影的鼓譜表不帶調號（C 大調，免得畫出升降記號），所以第一個聲部是鼓時，檔案裡就沒有調號了。匯出時把鼓譜表的調號也設成當時生效的調號（只在匯出用的投影上）。
+- **GP7 的鼓**（alphaTab 1.9 的問題）：投影讓鼓的音符直接帶 articulation id、track 沒有自己的 articulation 清單。這時 alphaTab 的 GP7 writer 寫出整套鼓組，卻把 id 當成清單的索引寫進音符，讀回來變成別的鼓（hi-hat 42 變成清單第 43 個的 agogo）。所以匯出前把每個鼓的音符用到的 articulation 登記到 track（`getOrRegisterPercussionArticulation`），音符改帶索引。alphaTab 的鼓組表不公開，每次匯出有鼓的團譜時，用同一份 settings 把「一個沒有清單、只有一個空小節的鼓聲部」匯出再讀回來取得（`drumKit`），不跨呼叫快取。
+
+### 3.2 介面（#71）
+
+- 匯出選單是 `apps/web/src/components/ExportMenu.vue`，檔案的產生、命名與下載在 `apps/web/src/exportFile.ts`（`exportName`、`exportedFile`、`saveFile`）。
+- 位置：寬版（兩種編輯視圖與寬版的 Read view）在工具列，Mixer 按鈕旁，一個「匯出」的下拉選單；窄螢幕的 Read view 在「選項」抽屜裡，直接列出兩種格式（抽屜會捲動，不放下拉）。訪客的頁面不畫這個元件。
+- 匯出的是最近一次畫出的團譜（`readScore` 的結果，和投影用的同一份），在瀏覽器裡產生，用 Blob URL 加 `<a download>` 交給瀏覽器存檔，不送到伺服器。
+- **補充**：檔名不允許的字元是 Windows 保留的 `< > : " / \ | ? *` 與控制字元（U+0000–U+001F、U+007F）。MIME：GP7 是 `application/octet-stream`（沒有註冊的類型），MIDI 是 `audio/midi`。
+- **補充**：alphaTab 寫檔時丟例外時不下載，在團譜上方的通知顯示「匯出失敗，請再試一次」。
+- 選了格式之後鍵盤回到譜面，和工具列其他按鈕一樣。
+- e2e 在 `apps/web/e2e/export.spec.ts`：攔截 Playwright 的 `download` 事件；GP7 用 `importScore` 讀回比對聲部、小節數與音符，MIDI 檢查檔頭 `MThd`。
 
 ## 4. Round-trip 測試
 

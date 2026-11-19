@@ -104,11 +104,12 @@ test("while read-only, a technique key changes nothing", () => {
   expect(refused).toBe(1);
 });
 
-test.each(["percussion", "pitched"] as const)("on a %s part, the fretted technique keys are not the session's", (kind) => {
+test.each(["percussion", "pitched"] as const)("on a %s part, the fretted technique keys are not the session's (drums keep ghost and accent, staves accent and staccato)", (kind) => {
   const { press } = sessionOn(kind);
-  for (const [letter] of [...TECHNIQUES, ["s"], ["e"], ["b"]]) expect(press(letter!, 1000, shift)).toBe(false);
-  // Shift+↑ and Shift+↓ are a bend's semitones on a fretted part only (a staff's octave is M3's).
-  for (const arrow of ["ArrowUp", "ArrowDown"]) expect(press(arrow, 1000, shift)).toBe(false);
+  const kept = kind === "percussion" ? ["g", "a"] : ["a", "c"];
+  for (const [letter] of [...TECHNIQUES, ["s"], ["e"], ["b"]]) expect(press(letter!, 1000, shift), letter).toBe(kept.includes(letter!));
+  // Shift+↑ and Shift+↓ are a bend's semitones on a fretted part only; on a staff they are the octave (staff.test.ts), on drums nothing.
+  for (const arrow of ["ArrowUp", "ArrowDown"]) expect(press(arrow, 1000, shift)).toBe(kind === "pitched");
 });
 
 test("on Windows and on a Mac, Shift+L ties the note of the cursor's string to the one before, taking its fret, and again unties it, one undo step each", () => {

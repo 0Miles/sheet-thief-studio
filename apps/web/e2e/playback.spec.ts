@@ -8,7 +8,7 @@ import { expect, test } from "./test";
 import { overlaps } from "../src/overlay";
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { barsShown, cursorOf, loggedIn, oneAfterAnother, openToPlay, pageErrors, recordBarsShown, scoreOf, seedScore, untilShown } from "./pages";
+import { barsShown, cursorOf, loggedIn, oneAfterAnother, openScore, openToPlay, pageErrors, recordBarsShown, scoreOf, seedScore, soundReady, untilShown } from "./pages";
 
 const text = strings.score.player;
 
@@ -63,9 +63,12 @@ test("a click on the score while it plays moves the cursor there, and playback g
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[0]!.id });
 
   await recordBarsShown(page);
+  const scoreTop = (await page.locator("[data-scroller]").boundingBox())!.y;
   // Space plays, as the toolbar's button does.
   await page.keyboard.press("Space");
   await untilShown(page, 2);
+  // Where playback is, said in the toolbar, never moves the score: the click lands where bar 6 was seen.
+  expect((await page.locator("[data-scroller]").boundingBox())!.y).toBe(scoreTop);
   await page.mouse.click(sixth.x + sixth.width / 2, sixth.y + sixth.height / 2);
   expect(await cursorOf(page)).toMatchObject({ barId: start.bars[5]!.id, line: 1 });
   await untilShown(page, 3);
@@ -256,4 +259,51 @@ test("further into a bar of several beats, playback is drawn on the beat played"
   expect(holds(onFirst, first) && !holds(onFirst, second)).toBe(true);
   expect(holds(onSecond, second) && !holds(onSecond, first)).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test("a sound font that could not be had: the toolbar says so, asks again once back online, and plays once it is had on retry", async ({ browser }) => {
+  const id = seed();
+  const page = await loggedIn(browser, EDITOR);
+  const errors = pageErrors(page);
+  // The download is cut short, as when the network goes while it comes (#132).
+  const soundFont = "**/soundfont/sonivox.sf3";
+  let cut = 0;
+  await page.route(soundFont, (route) => {
+    cut += 1;
+    return route.abort("internetdisconnected");
+  });
+  await openScore(page, id);
+  const failed = page.locator('[data-player="failed"]');
+  await expect(failed).toContainText(text.failed);
+  // The play button asks for it again instead; stop has nothing to stop.
+  await expect(page.getByRole("button", { name: text.play })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: text.retry })).toBeEnabled();
+  await expect(page.getByRole("button", { name: text.stop })).toBeDisabled();
+  // Said failed, the toolbar is as wide as when paused: the score is where it will be then.
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+  const scoreTop = (await page.locator("[data-scroller]").boundingBox())!.y;
+  expect(cut).toBe(1);
+
+  // Back online, the page asks for it again by itself; still cut short, it says so again.
+  await page.context().setOffline(true);
+  await page.context().setOffline(false);
+  await expect.poll(() => cut).toBe(2);
+  await expect(failed).toBeVisible();
+
+  // To be had now: on retry, it is in, and the score plays.
+  await page.unroute(soundFont);
+  await page.getByRole("button", { name: text.retry }).click();
+  await soundReady(page);
+  // Back in step with the server, as when the score was first measured (no offline banner).
+  await expect(page.locator("[data-offline]")).toHaveCount(0);
+  await expect(page.locator('[data-sync="synced"]')).toBeVisible();
+  expect((await page.locator("[data-scroller]").boundingBox())!.y).toBe(scoreTop);
+  await page.getByRole("button", { name: text.play }).click();
+  await expect(page.locator('[data-player="playing"]')).toBeVisible();
+  // What the browser, alphaTab and the engine log of each download cut short, and nothing else:
+  // alphaTab tells the API of the failure as an error (with no message), which it logs.
+  const ofDownloads = /sonivox\.sf3|ERR_INTERNET_DISCONNECTED|\[AlphaSynth\] Loading failed|\[score-render\]/;
+  const apiErrors = errors.filter((error) => error.startsWith("[AlphaTab][API] An unexpected error occurred Error: "));
+  expect(apiErrors).toHaveLength(cut);
+  expect(errors.filter((error) => !ofDownloads.test(error) && !apiErrors.includes(error))).toEqual([]);
 });

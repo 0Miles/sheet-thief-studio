@@ -8,9 +8,10 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 - Session 存在 Redis，sliding 30 天：每次帶著有效 session 的請求，把到期時間延長成 30 天後。
 - **補充**：session id 是 32 bytes 的亂數（base64url）。Redis 鍵 `session:<id>` 存 `{ accountId, createdAt, via }`；`via` 是登入方式（`'password'` 或 `'karyl-chan'`，#7），強制改密碼只看用密碼登入的 session，沒有 `via` 的舊 session 視為密碼登入；另有集合 `account-sessions:<accountId>`，用來刪除一個帳號的所有 session。
 - 登入成功時換一個新的 session id（避免 session fixation，補充）。
+- **Bearer**（#72）：karyl-chan bot 的代理會刪掉 cookie，所以 `/api/*` 也接受 `Authorization: Bearer <session id>`，兩個都有時用 Bearer；session 與 cookie 的是同一種。用 Bearer 的請求不會收到 `Set-Cookie`（[`karyl-login.md`](karyl-login.md) 第 5 節）。
 - 停用帳號或重設密碼時，刪除該帳號所有的 Redis session，並關閉它的 `/collab` 連線（[`accounts.md`](accounts.md)）。
 - **補充**（#87）：結束單一 session 時，只要已經請 Redis 刪除它，就通知關閉該 session 的 `/collab` 連線，不論 Redis 回覆成功或失敗（刪除可能已執行、只是回覆遺失）；唯一不通知的情況是 Redis 明確回答沒有這個 session。回覆遺失時不知道帳號，通知只帶 session id；錯誤照樣丟給呼叫端。
-- **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：環境變數是 `INSECURE_COOKIES=1`；名稱是 `studio_session` 與 `karyl_result`（[`karyl-login.md`](karyl-login.md) 第 5 節的 cookie 也跟著同一個設定）。
+- **開發與測試環境的例外**：走 http 的開發與測試環境（`http://localhost`、區網的實機測試）可以用環境變數改用不帶前綴、不帶 `Secure` 的 cookie 名稱，做法同前身 `app/config.py` 的 `cookie_secure`。**補充**：環境變數是 `INSECURE_COOKIES=1`；名稱是 `studio_session`。
   - WebKit（Safari）在 http 上不接受 `__Host-` cookie，所以 CI 的 WebKit 打譜 smoke、在 Mac 上用 Safari 開發，以及手機的區網實機測試都要用這個設定（owner 在 2026-11-13 裁定桌面 Safari 要能打譜）。
   - Firefox 要不要用，看 [`testing.md`](testing.md) 第 5 節確認檢查 1 的結果。
   - `NODE_ENV=production` 時這個設定不生效；正式環境一律用 `__Host-` 名稱。
@@ -38,7 +39,7 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 | 自己改密碼（`POST /api/me/password`） | 同一帳號 15 分鐘內最多 10 次（防止拿到 session 的人猜目前的密碼）。和登入一樣只計猜錯的次數；強制改密碼不檢查目前的密碼，所以不計（#7） | 補充 |
 | 訪客取 ticket（`POST /api/s/:token`） | 同一 IP 每分鐘最多 30 次 | 補充 |
 | 成員取 ticket（`POST /api/scores/:id/collab-ticket`） | 同一帳號每分鐘最多 60 次；每次請求都計，不論團譜、不論結果（#18） | 補充 |
-| karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次 | 補充 |
+| karyl-chan 登入（`GET /auth/karyl`） | 同一 IP 15 分鐘內最多 10 次；和密碼登入一樣只計失敗的（#72） | 補充 |
 | 其他 API | 不另設限制：平台只對登入的成員開放，辨識另有「每個帳號同時一件」的限制 | 補充 |
 
 - 登入的計數（#5）：照 #5 的驗收條件「第 11 次錯誤登入被擋」，只計失敗的登入，成功的登入把它用掉的兩個名額還回去；帳號名稱以儲存的形式計算（去掉前後空白、轉小寫）。這是對上表「最多 10 次」的解讀，數字不變（補充）。
@@ -52,11 +53,12 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 |---|---|---|
 | WebSocket 單則訊息 | 8 MB。2 MB 不夠：還原版本是客戶端送出整份內容的一筆交易，100 × 5 約 501 KB，約 125 bytes／拍點 | 設計決定 |
 | 匯入的 `ScoreJSON`（`POST /api/scores/import`） | 5 MB；請求的 body 上限 5 MB 加 64 KB | 設計決定；body 的餘量是補充 |
-| 樂句的 fragment（`POST`、`PUT /api/phrases*`） | 1 MB，超過回 413；請求的 body 上限 1 MB 加 64 KB | 設計決定；body 的餘量是補充 |
-| 辨識的圖片（`POST /api/recognitions`） | 每張 10 MB、合計 40 MB、最多 15 張、每張最多 40 百萬像素 | 補充：沿用前身 `app/config.py` 的預設值 |
+| 樂句的 fragment（`POST`、`PUT /api/phrases*`；`POST /api/recognitions/:id/save`，補充，#64） | 1 MB，超過回 413；請求的 body 上限 1 MB 加 64 KB | 設計決定；body 的餘量是補充 |
+| 辨識的圖片（`POST /api/recognitions`） | 每張 10 MB、合計 40 MB、最多 15 張、每張最多 40 百萬像素（像素由辨識服務檢查，該頁回報 `image_too_large`）；請求的 body 上限 40 MB 加 64 KB | 補充：沿用前身 `app/config.py` 的預設值；body 的餘量是補充（#63） |
 | 其他 JSON 請求 | 64 KB | 補充 |
+| 文件裡 JSON 值的巢狀深度 | 64 層（score-model 的 `MAX_VALUE_DEPTH`）；`/collab` 收到含有更深的值、或解不開的更新時，關閉那條連線（[`collab.md`](collab.md) 第 9 節） | 補充（#102，使用者裁定） |
 
-- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出）。
+- **補充**（#18）：WebSocket 的上限交給 `ws` 的 `maxPayload`：超過的訊息不會被整則讀進記憶體，那條連線以 1009 關閉，其他連線不受影響。版本內容的上限（`MAX_VERSION_BYTES`）和它是同一個常數。server 的大小上限都定義在 `apps/server/src/limits.ts`（fragment 的 1 MB 來自 score-model 的 `MAX_FRAGMENT_BYTES`，由這裡轉出；辨識的 15 張來自 contracts 的 `recognitionLimits`，同樣由這裡轉出成 `MAX_RECOGNITION_IMAGES`，#63；每張 10 MB、合計 40 MB 也是 `recognitionLimits` 的 `imageBytes`、`imagesBytes`，網頁的提示文字從同一處取，#64）。
 - body 上限的做法沿用前身 `app/security.py` 的 `BodySizeLimitMiddleware`：先看 `Content-Length`，再在讀取時累計，不先整個讀進記憶體。超過時回 413 `payload_too_large`。
 
 ## 6. 回應標頭
@@ -97,15 +99,16 @@ Cookie、session、Origin、速率限制、密碼、大小上限、CSP、回應�
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:;
 media-src 'self' blob:;
-object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
 ```
 
 （實際送出時是一行，各段之間以 `; ` 分隔。）
 
+- `base-uri 'self'`（#72，原本是 `'none'`）：頁面在 karyl-chan bot 的 `/plugin/<key>/` 底下送出時，靠自己的 `<base href>` 找到 script、API 與 `/collab`（[`karyl-login.md`](karyl-login.md) 第 6 節）。`<base>` 只能指向自己的 origin，注入的 `<base>` 也導不到別的網域。
 - 行內樣式允許，因為 UI 元件與 alphaTab 會在執行時設定樣式；script 維持嚴格，這才是擋 XSS 的地方。
 - **補充**（#18）：頁面不向別的 host 要任何東西，也不在執行時產生程式碼，所以上面的字串不必放寬：
   - 圖示打包在 `apps/web/src/icons.ts`。`@karyl-chan/ui` 用的 `@iconify/vue` 預設會向 `api.iconify.design` 取圖示，`apps/web/vite.config.ts` 把它換成 `icons.ts` 匯出的 `Icon`（包著不連線的 `@iconify/vue/offline`）。UI 或 `@karyl-chan/ui` 用到新的圖示時要加進 `icons.ts`：`apps/web/tests/icons.test.ts` 檢查原始碼裡任何 `prefix:name` 形狀的字串與 `icon` 的字串值；執行時才組出來的名稱（`:icon="…"`）測試看不到，由 `Icon` 在找不到時 `console.error`，e2e 會因此失敗。
-  - zod 預設會試一次 `new Function("")` 來決定要不要編譯 parser；CSP 會擋下並回報違規。網頁在最前面 import `@studio/contracts/without-eval`（`z.config({ jitless: true })`），server 不受影響。
+  - zod 預設會試一次 `new Function("")` 來決定要不要編譯 parser；CSP 會擋下並回報違規。網頁的 build 把每個 `"zod"` import 都解析到 `packages/contracts/src/withoutEval.ts`（`apps/web/vite.config.ts` 的 alias；它 `z.config({ jitless: true })` 之後再匯出 zod）。alias 只對 `"zod"` 這個名字，所以 eslint 禁止在 apps 與 packages 裡 import zod 的子路徑（`zod/v4`、`zod/mini` 等；`no-restricted-imports`，只有 `withoutEval.ts` 本身例外），所以不論 build 把 zod 與 schema 切到哪個 chunk，設定都在任何 schema 建立之前；server 不受影響。**補充**（#70）：原本是在 `main.ts` 最前面 import；`/` 改成按需載入 score-render 之後，build 把 score-model 與 zod 切到一個比 `main.ts` 先執行的 chunk，每一頁都觸發一次 eval 違規，所以改成 alias。
 - `connect-src 'self'` 也涵蓋同一個 host 的 `wss:`（CSP Level 3）。**補充**：e2e 監聽 `securitypolicyviolation` 事件並斷言為 0；三種瀏覽器都要過，任何瀏覽器擋了 WebSocket，就把 `wss://<公開 host>` 明確加進 `connect-src`。
 
 ## 8. 404 規則
@@ -122,6 +125,7 @@ object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
 ## 9. Log 與部署
 
 - token 不得進 log：Fastify 的 request log 遮掉 query 的 `token` 參數，以及 `/s/` 與 `/api/s/` 後面的路徑段（補充）。
-- nginx 範例設定：WebSocket upgrade（`/collab`）；`/auth/karyl` 關掉 `access_log`，否則 token 會留在 log 裡。**補充**：`/s/` 與 `/api/s/` 也關掉 `access_log`。
-- 部署：agent 只產出 Docker Compose（server、postgres、redis、recognizer）、nginx 範例與 `docs/DEPLOYMENT.md`。實際部署是人工步驟；agent 不部署，也不改任何正式環境的設定。
+- nginx 範例設定（`deploy/nginx/`，[`DEPLOYMENT.md`](../DEPLOYMENT.md)）：WebSocket upgrade（`/collab`）；`client_max_body_size` 等於 server 最大的 body 上限（第 5 節的辨識）。**補充**：`/s/`、`/api/s/` 與 `/auth/karyl` 關掉 `access_log`。
+- plugin 模式的 `/auth/karyl` 連結經過 bot 的代理，studio 管不到那一側的 log；所以連結只能用一次、2 分鐘到期（[`karyl-login.md`](karyl-login.md) 第 2 節）。bot 前面若還有 nginx，`/plugin/` 也要轉發 Upgrade。
+- 部署：agent 只產出 Docker Compose（server、postgres、redis、recognizer）、nginx 範例與 [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md)。實際部署是人工步驟；agent 不部署，也不改任何正式環境的設定。
 - 辨識服務只在 Compose 的內部網路上，不對外開 port（補充，[`recognizer.md`](recognizer.md)）。

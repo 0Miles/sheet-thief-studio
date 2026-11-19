@@ -13,21 +13,24 @@
 // (docs/spec/collab.md, section 7). A score nobody may change here opens read-only (access.ts).
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { AppButton, AppConfirmDialog } from "@karyl-chan/ui";
-import { type CollabTicket, type Role, scoreDetails } from "@studio/contracts";
+import { type ClosedNotice, type CollabTicket, type PhraseSummary, type Role, scoreDetails } from "@studio/contracts";
 import { createEditorSession, decideView, type EditorSession, keyNameOf, type LocalPresence, pageEffectOf, type TextRequest, type View } from "@studio/score-editor";
 import {
   barsWithContent,
   canAddPart,
   type Cursor,
   cursorAt,
-  DEFAULT_KEY_SIG,
   docToJson,
+  type DropRefusal,
+  type Dropped,
+  type DropTarget,
   type Flag,
   flagsOf,
   type FlagStop,
   type KeySignature,
-  keySigAt,
   MAX_BEAT_TEXT,
+  MAX_LYRIC,
+  metaOf,
   nextFlag,
   observeScore,
   type PartKind,
@@ -38,41 +41,59 @@ import {
   type ScoreChange,
   type ScoreJSON,
   stillAt,
-  tempoAt,
   type TimeSignature,
-  voltaRepeatTimes,
 } from "@studio/score-model";
-import { createAlphaTabEngine, type PartMix, type PlayerState, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
+import { createAlphaTabEngine, type PartMix, type Rect, type ScoreEngine, sharesChannels } from "@studio/score-render";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { RouterLink } from "vue-router";
 import * as Y from "yjs";
 
-import { afterRoleChange, type Closing, openedView, type ReadOnlyReason, readOnlyReasonOf, ticketRefusal } from "../access";
+import { afterRoleChange, type Closing, openedView, ownChangesOf, type ReadOnlyReason, readOnlyReasonOf, roleCanType, ticketRefusal, whyRefused } from "../access";
 import { ApiError, collabUrl, get, guestTicketFor, newCollabTicket, refusal } from "../api";
+import { barPanelOf } from "../barPanel";
+import { listenToClipboard } from "../clipboard";
 import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
+import ExportMenu from "../components/ExportMenu.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
+import LyricEntry from "../components/LyricEntry.vue";
 import MixerControls from "../components/MixerControls.vue";
 import PartPanel from "../components/PartPanel.vue";
+import PhraseSidebar from "../components/PhraseSidebar.vue";
 import PlayerControls from "../components/PlayerControls.vue";
+import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
+import { type ExportFormat, exportedFile, saveFile } from "../exportFile";
+import { useLyricEntry } from "../lyricEntry";
 import { measureEditView } from "../measureHook";
+import { lockWhenReadOnly, stopWhenClosed } from "../notices";
 import { partMix, type PlaybackOptions, saveMix, savePlayback, type ScoreMix, startPlayback } from "../mixer";
-import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, sameRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { type DropSpot, dropSpotOf, phraseContents } from "../phraseSidebar";
+import { clearOf, entryRect, FLAG_STROKE, flagMarksOf, type FlagMark, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { joinPresence, localStateOf, membersOf, type Peer, type PeerMark, peerMarksOf, type PresenceLink, selectionBoxes, TAG } from "../presence";
+import { barsToSave, type BarsToSave } from "../savePhrase";
+import { useNotice } from "../sayAnew";
 import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
+import type { RestoreTarget } from "../restore";
+import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
+import { fontDirectory, soundFontUrl } from "../served";
 
-/** One of the two: a member's score id, or a guest's link token; and what to say first, when the score was opened anew. */
-const props = defineProps<{ id?: string; token?: string; notice?: string }>();
-const emit = defineEmits<{ closed: [closing: Closing] }>();
+/**
+ * One of the two: a member's score id, or a guest's link token; and what to say first, when the
+ * score was opened anew. `readOnly`: why it opens read-only from the start, locked on this page
+ * before it was opened anew.
+ */
+const props = defineProps<{ id?: string; token?: string; notice?: string; readOnly?: ReadOnlyReason }>();
+/** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
+const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
 const isGuest = props.token !== undefined;
 /** Who is logged in here: their own other tabs are not listed among the members present. */
@@ -123,6 +144,8 @@ async function asMember(id: string): Promise<Opening> {
 const opening = ref<Opening | null>(null);
 /** A guest's link stopped opening the score (revoked, or made anew) while the page was open. */
 const gone = ref(false);
+/** Why the server closed this tab's connection for good (its `closed` notice); null while it has not. */
+const closedBecause = ref<ClosedNotice["reason"] | null>(null);
 
 /**
  * A guest's: the link gives the score's id with a first ticket; every later connection asks the
@@ -158,7 +181,7 @@ const online = ref(navigator.onLine);
 /** What the indicator shows (`data-sync`): offline throughout, while the browser is, and not only between the provider's attempts. */
 const shownSync = computed(() => (online.value ? sync.value : "offline"));
 /** Why nobody may change the score here, whatever their role; null while they may (access.ts). */
-let readOnlyBecause: ReadOnlyReason | null = null;
+let readOnlyBecause: ReadOnlyReason | null = props.readOnly ?? null;
 const view = ref<View | null>(null);
 /** One of the two edit views: the cursor and the keys of the score are there. */
 const editing = computed(() => view.value === "editable" || view.value === "readOnlyEdit");
@@ -176,7 +199,7 @@ const shown = shallowRef<string[]>([]);
 /** The narrow Read view's drawer, with the options that do not fit in its bars, is open. */
 const drawerOpen = ref(false);
 /** A notice for the member, shown above the score, never over it; null when there is none. */
-const notice = ref<string | null>(props.notice ?? null);
+const { notice, say } = useNotice(props.notice ?? null);
 const host = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 /** The keyboard back on the score, where it is. */
@@ -199,11 +222,51 @@ const flagStop = shallowRef<FlagStop | null>(null);
 /** The key of the toolbar's next-flag button, as this platform names it. */
 const nextFlagKey = keyNameOf("nextFlag", keyPlatform());
 /** The keys of the toolbar's buttons of bars, as this platform names them (docs/spec/keymap.md, section 7). */
-const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: keyNameOf("deleteBars", keyPlatform()), panel: keyNameOf("barPanel", keyPlatform()) };
+const barKeys = {
+  insert: keyNameOf("insertBarBefore", keyPlatform()),
+  remove: keyNameOf("deleteBars", keyPlatform()),
+  panel: keyNameOf("barPanel", keyPlatform()),
+  phrases: keyNameOf("phraseSidebar", keyPlatform()),
+};
 /** Where the bars a structural command works on are drawn, dashed over every part, out of the reserved areas. */
 const structureRects = shallowRef<Rect[]>([]);
-/** The panel of the cursor's bar is open (docs/spec/commands.md, section 6): the editable view only. */
-const panelOpen = ref(false);
+/**
+ * The one panel at the side of the score, null while none is: the panel of the cursor's bar
+ * (docs/spec/commands.md, section 6), the panel of the parts (7.1 and 7.2) and the phrase sidebar
+ * (docs/spec/phrases.md, section 6) in the editable view only; the mixer in any view but the narrow
+ * Read view, whose drawer has it.
+ */
+type SidePanel = "bar" | "parts" | "mixer" | "phrases";
+const side = ref<SidePanel | null>(null);
+const panelOpen = computed(() => side.value === "bar");
+const partsOpen = computed(() => side.value === "parts");
+const mixerOpen = computed(() => side.value === "mixer");
+const sidebarOpen = computed(() => side.value === "phrases");
+
+/** Open a panel at the side of the score, closing the one open there: the structural boxes follow the bar's panel. */
+function openSide(panel: SidePanel): void {
+  side.value = panel;
+  placeCursor();
+}
+
+/** Close the panel at the side, the keyboard back on the score. */
+function closeSide(): void {
+  side.value = null;
+  focusScore();
+}
+
+/**
+ * A toolbar's button, or F2 for the bar's panel and F4 for the phrase sidebar: a panel only the
+ * editable view has opens, the keyboard going to it (the sidebar's search box), or closes, the
+ * keyboard back on the score.
+ */
+function toggleEditSide(panel: Exclude<SidePanel, "mixer">): void {
+  if (view.value !== "editable") return;
+  if (side.value !== panel) openSide(panel);
+  else if (panel === "bar") closePanel();
+  else closeSide();
+}
+
 /** The other tabs on the score (docs/spec/views.md, section 8); never any for a guest, who takes no part in the presence. */
 const peers = shallowRef<Peer[]>([]);
 /** Where the other tabs' cursors, name tags and selections are drawn, out of the reserved areas. */
@@ -216,42 +279,63 @@ const presence = shallowRef<LocalPresence>({ cursor: null, selection: null });
 const reserved = shallowRef<Rect[]>([]);
 /** The box the text of a beat is typed in, while Enter has it open: what it asked for and where it is. */
 const textEntry = shallowRef<{ request: TextRequest; rect: Rect } | null>(null);
-const playerState = ref<PlayerState>("loading");
-/**
- * Not playing and not paused: never started, stopped, or played to the end. Never in the Read
- * view, which always shows where playback is (where a click sent it, the start after a stop).
- */
-const stopped = ref(true);
-/** The bar playback is in, counted from 1, as the toolbar shows it; null while stopped. */
-const playingBar = ref<number | null>(null);
-/** Where playback is drawn, out of the reserved areas; null while stopped. */
-const playheadRect = shallowRef<Rect | null>(null);
-/** The member paused, and the cursor has not moved since: playing goes on from there. */
-let resumable = false;
-/** Playback is to be kept on screen: from pressing play until the member presses a key or scrolls. */
-let keepInSight = false;
-/**
- * Playback is followed now: it plays and is kept on screen, so the page goes with it, not with the
- * cursor. The Read view follows it whenever it plays (docs/spec/views.md, section 5).
- */
-const isFollowing = () => (keepInSight || reading.value) && playerState.value === "playing";
-/** Where the page itself last scrolled the score to (`scrollTo`): a scroll anywhere else is the member's. */
-let ownScrollTop: number | null = null;
+/** Lyrics mode, while Shift+Enter has it open (docs/spec/keymap.md, 6.2): its box below the beat sung. */
+const lyrics = useLyricEntry({
+  session: () => session,
+  boundsOf: (cursor) => engine?.renderer.boundsOf(cursor) ?? null,
+  reserved: () => reserved.value,
+  tell: say,
+  done: focusScore,
+});
+const { request: lyricRequest, rect: lyricRect } = lyrics;
+const {
+  playerState,
+  stopped,
+  playingBar,
+  playheadRect,
+  isFollowing,
+  showPlayback,
+  togglePlay,
+  stop,
+  retrySound,
+  cursorMoved,
+  stopFollowing,
+  onScroll,
+  reveal,
+  attach: attachPlayer,
+} = useScorePlayback({
+  scroller,
+  reserved: () => reserved.value,
+  // The edit views play from the start of the cursor's bar (docs/spec/playback.md, section 4); the
+  // Read view from where playback is.
+  startTick: (player) => {
+    if (!editing.value) return null;
+    const at = session?.cursor ?? null;
+    return (at && player.tickOf(at.barId)) ?? 0;
+  },
+  reading: () => reading.value,
+  // Under the versions page: stopped as it went there (`stepAside`), and never scrolled to follow.
+  hidden: () => aside,
+});
 /** The member's settings of every score, kept in this browser (docs/spec/playback.md, section 1). */
 const playback = ref<PlaybackOptions>({ metronome: false, countIn: false, whilePlaying: "a" });
 /** The member's mix and speed of this score, kept in this browser under its id. */
 const mix = shallowRef<ScoreMix>({ parts: new Map(), speed: 1 });
-/** The panel of the mixer is open, at the side of the score (in the narrow Read view, the drawer has it). */
-const mixerOpen = ref(false);
 /** Behaviour (b): what plays is the score before a change (docs/spec/views.md, section 10). */
 const behind = ref(false);
 /** When the sound is made again after a change of content (docs/spec/playback.md, section 3). */
 let sound: SoundUpdates | undefined;
 
 const doc = new Y.Doc();
+/** What this tab wrote that the server may not have: said when the score is opened anew without it. */
+const ownChanges = ownChangesOf(doc);
 let engine: ScoreEngine | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
+/** The versions page is shown over this score, hidden under it (ScorePage). */
+let aside = false;
+/** An Owner or an Editor, whatever the view: they may restore a version here. */
+const mayChange = (): boolean => opening.value?.role != null && roleCanType(opening.value.role);
 /** This tab in the presence: a member's, once the provider is made. */
 let presenceLink: PresenceLink | null = null;
 let stopObserving: (() => void) | undefined;
@@ -261,6 +345,7 @@ const hideFromTests = exposeForTests({
   cursor: () => session?.cursor ?? null,
   flags: () => flags.value,
   player: () => engine?.player.settings() ?? null,
+  writeMeta: (field, json) => metaOf(doc).set(field, JSON.parse(json)),
 });
 const measurement = measureEditView({
   doc,
@@ -280,6 +365,7 @@ function placeCursor(): void {
   // Cut only where it is under a reserved area: the boxes of the other bars of a system keep their height.
   selectionRects.value = selection === null ? [] : selectionBoxes(engine.renderer, selection, reserved.value);
   structureRects.value = structureBoxesOf(engine.renderer, structuralEnds(selection, at, panelOpen.value), reserved.value);
+  lyrics.place();
   updateLoop();
 }
 
@@ -294,7 +380,8 @@ function placePeers(): void {
 /** Tell the other tabs where this one is: the view's mode, and in the edit views the cursor and the selection. */
 function tellPresence(): void {
   if (presenceLink === null || view.value === null) return;
-  presenceLink.tell(localStateOf(view.value, session?.presence() ?? { cursor: null, selection: null }));
+  // On the versions page, the score under it: reading, with no cursor (docs/spec/collab.md, 8.5).
+  presenceLink.tell(localStateOf(aside ? "read" : view.value, session?.presence() ?? { cursor: null, selection: null }));
 }
 
 /**
@@ -327,19 +414,8 @@ const mixerParts = computed(() => {
 
 /** The toolbar's button: the mixer opens at the side of the score, alone there, or closes. */
 function toggleMixer(): void {
-  if (mixerOpen.value) {
-    closeMixer();
-    return;
-  }
-  panelOpen.value = false;
-  partsOpen.value = false;
-  placeCursor();
-  mixerOpen.value = true;
-}
-
-function closeMixer(): void {
-  mixerOpen.value = false;
-  focusScore();
+  if (mixerOpen.value) closeSide();
+  else openSide("mixer");
 }
 
 function onPartMix(partId: string, change: Partial<PartMix>): void {
@@ -369,54 +445,8 @@ function onPlayback(change: Partial<PlaybackOptions>): void {
 
 
 /** What the panel shows: the cursor's bar, the bars a selection names, its time signature and tempo; null while it is closed. */
-const panel = computed(() => {
-  const json = score.value;
-  const { cursor: at, selection } = presence.value;
-  if (!panelOpen.value || json === null || at === null) return null;
-  const index = json.bars.findIndex((bar) => bar.id === at.barId);
-  const bar = json.bars[index];
-  if (bar === undefined) return null;
-  const numberOf = (barId: string) => json.bars.findIndex((each) => each.id === barId) + 1;
-  const ends = selection === null ? null : selection.kind === "beats" ? [selection.barId, selection.barId] : [selection.anchorBarId, selection.focusBarId];
-  const numbers = ends?.map(numberOf);
-  const range = numbers && numbers.every((number) => number > 0) ? { first: Math.min(...numbers), last: Math.max(...numbers) } : null;
-  // A repeat set here starts on the first bar of the selection and ends on its last (docs/spec/commands.md, section 6).
-  const repeatFirst = json.bars[(range?.first ?? index + 1) - 1];
-  const repeatLast = json.bars[(range?.last ?? index + 1) - 1];
-  return {
-    bar: index + 1,
-    range,
-    timeSig: bar.timeSig,
-    tempo: bar.tempo,
-    tempoInForce: tempoAt(json, bar.id) ?? 0,
-    keySig: bar.keySig,
-    keySigInForce: keySigAt(json, bar.id) ?? DEFAULT_KEY_SIG,
-    section: bar.section,
-    repeatStart: repeatFirst?.repeatStart === true,
-    repeatEnd: repeatLast?.repeatEnd,
-    voltas: bar.voltas ?? [],
-    // Voltas go on every bar of the selection, else on the cursor's.
-    voltaRepeatTimes: voltaRepeatTimes(json, range ? json.bars.slice(range.first - 1, range.last).map((each) => each.id) : [bar.id]),
-    firstBar: index === 0,
-    anacrusis: bar.anacrusis === true,
-  };
-});
+const panel = computed(() => (panelOpen.value && score.value !== null ? barPanelOf(score.value, presence.value) : null));
 
-/** F2, or the toolbar's button: the panel opens, the keyboard going to it, or closes, the keyboard back on the score. */
-function togglePanel(): void {
-  if (view.value !== "editable") return;
-  if (panelOpen.value) closePanel();
-  else {
-    // One panel at the side of the score at a time.
-    partsOpen.value = false;
-    mixerOpen.value = false;
-    panelOpen.value = true;
-    placeCursor();
-  }
-}
-
-/** The panel of the parts is open (docs/spec/commands.md, 7.1 and 7.2): the editable view only. */
-const partsOpen = ref(false);
 /** The part the member asked to delete, while the page asks them first; null otherwise. */
 const deleting = ref<string | null>(null);
 /** The title bar is being changed. */
@@ -449,21 +479,101 @@ watch(deletion, (asked) => {
   if (asked === null) deleting.value = null;
 });
 
-/** The toolbar's button: the panel of the parts opens or closes, the keyboard back on the score when it does. */
-function toggleParts(): void {
-  if (view.value !== "editable") return;
-  if (partsOpen.value) closeParts();
-  else {
-    panelOpen.value = false;
-    mixerOpen.value = false;
-    placeCursor();
-    partsOpen.value = true;
-  }
+/** The contents of the phrases previewed and dropped, each asked for once per revision. */
+const contents = phraseContents();
+/** The phrase dragged from the sidebar, while it is. */
+const dragged = shallowRef<PhraseSummary | null>(null);
+/** Where the phrase dragged would go now, and the boxes drawn there, out of the reserved areas. */
+const dropSpot = shallowRef<DropSpot | null>(null);
+const dropRects = shallowRef<Rect[]>([]);
+/** The cursor's part, which the phrases the sidebar lists fit. */
+const cursorPart = computed(() => score.value?.parts.find((part) => part.id === presence.value.cursor?.partId));
+
+/**
+ * What a drop tells the member, no dialog (docs/spec/commands.md, 5.7): why nothing went in, or its
+ * hints; a drop with nothing to tell takes away what an earlier one said.
+ */
+function tellDrop(result: Dropped | DropRefusal | null): void {
+  if (result === null) return;
+  if (typeof result === "string") say(text.phraseSidebar.refused[result]);
+  else if (result.hints.length > 0) say(result.hints.map((hint) => text.phraseSidebar.hints[hint]).join("；"));
+  else notice.value = null;
 }
 
-function closeParts(): void {
-  partsOpen.value = false;
+/** Drop a phrase on a bar of a part, once its content is here: one command, undone with Ctrl+Z. */
+async function dropPhrase(phrase: PhraseSummary, target: DropTarget): Promise<void> {
+  let fragment;
+  try {
+    fragment = await contents.of(phrase);
+  } catch (failure) {
+    say(refusal(failure));
+    return;
+  }
+  if (session === undefined || view.value !== "editable") return;
+  tellDrop(session.drop(target, fragment));
+}
+
+/** Enter in the sidebar: the phrase goes on the cursor's bar, of the cursor's part. */
+function dropAtCursor(phrase: PhraseSummary): void {
+  const at = session?.cursor;
+  if (at == null) return;
+  void dropPhrase(phrase, { partId: at.partId, barId: at.barId });
+}
+
+function onDrag(phrase: PhraseSummary | null): void {
+  dragged.value = phrase;
+  if (phrase === null) forgetDropSpot();
+}
+
+function forgetDropSpot(): void {
+  dropSpot.value = null;
+  dropRects.value = [];
+}
+
+/** Where on the score the pointer is, while a phrase is dragged: the bar `hitTest` gives, and whether it can go there. */
+function spotAt(event: DragEvent): DropSpot | null {
+  const phrase = dragged.value;
+  if (phrase === null || engine === undefined || host.value === undefined || score.value === null) return null;
+  const box = host.value.getBoundingClientRect();
+  return dropSpotOf(score.value, engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top), phrase);
+}
+
+/**
+ * A phrase dragged over the score: the bars it would replace are drawn, or the bar of a part of
+ * another kind, marked as one it cannot be dropped on (no drop is let through there).
+ */
+function onDragOver(event: DragEvent): void {
+  if (dragged.value === null) return;
+  const spot = spotAt(event);
+  if (spot !== null && !spot.refused) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  } else if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+  const before = dropSpot.value;
+  if (spot !== null && before !== null && spot.partId === before.partId && spot.barId === before.barId) return;
+  dropSpot.value = spot;
+  dropRects.value =
+    spot === null || engine === undefined
+      ? []
+      : selectionBoxes(engine.renderer, { kind: "bars", partId: spot.partId, anchorBarId: spot.barId, focusBarId: spot.last }, reserved.value);
+}
+
+/** Out of the score, not into something on it. */
+function onDragLeave(event: DragEvent): void {
+  if (event.relatedTarget instanceof Node && scroller.value?.contains(event.relatedTarget)) return;
+  forgetDropSpot();
+}
+
+function onDrop(event: DragEvent): void {
+  const phrase = dragged.value;
+  const spot = spotAt(event);
+  forgetDropSpot();
+  dragged.value = null;
+  if (phrase === null || spot === null || spot.refused) return;
+  event.preventDefault();
+  // The score has the keyboard: Ctrl+Z undoes the drop.
   focusScore();
+  void dropPhrase(phrase, { partId: spot.partId, barId: spot.barId });
 }
 
 function onAddPart(preset: PartPresetId, tuning: number[] | undefined): void {
@@ -520,8 +630,41 @@ function cancelTitle(): void {
   focusScore();
 }
 
+/**
+ * Bars may be saved as a phrase (docs/spec/phrases.md, section 3): in either edit view, a Viewer's
+ * too, once a range of bars is selected; never a range of beats. A guest has no edit view, nor a
+ * library to save to.
+ */
+const selectedBars = computed(() => {
+  const json = score.value;
+  // One source for the button and for what it saves: the selection as the session last said it, in the score drawn last.
+  return editing.value && json !== null ? barsToSave(json, presence.value.selection, flags.value) : null;
+});
+/** The bars being saved as a phrase, as they were when the member asked; null while the dialog is closed. */
+const savingPhrase = shallowRef<BarsToSave | null>(null);
+
+/**
+ * The toolbar's button: the bars selected, as they are now, wait in the dialog for a name. Without
+ * a range of bars it stays where it is in the keys' order, saying why, and does nothing.
+ */
+function openSavePhrase(): void {
+  if (selectedBars.value !== null) savingPhrase.value = selectedBars.value;
+}
+
+function closeSavePhrase(): void {
+  savingPhrase.value = null;
+  focusScore();
+}
+
+function onPhraseSaved(name: string): void {
+  // What could not be read in those bars was left out: said, the score flagging where.
+  notice.value = savingPhrase.value?.skipped ? strings.savePhrase.savedSkipping(name) : strings.savePhrase.saved(name);
+  closeSavePhrase();
+}
+
+/** The bar's panel closed: the structural boxes follow it. */
 function closePanel(): void {
-  panelOpen.value = false;
+  side.value = null;
   placeCursor();
   focusScore();
 }
@@ -564,117 +707,21 @@ function updateOverlay(): void {
   showPlayback(engine.player.position.tick);
 }
 
-/** Room left above playback when the page scrolls to it. */
-const FOLLOW_MARGIN = 40;
-
-/** Show where playback is: the bar in the toolbar, the place on the page, kept on screen while following. */
-function showPlayback(tick: number): void {
-  if (engine === undefined || stopped.value) return;
-  const played = engine.player.barAt(tick);
-  if (played !== null) playingBar.value = played.index + 1;
-  const rect = engine.renderer.boundsAtTick(tick);
-  const placed = rect && clearOf(rect, reserved.value);
-  // Most positions fall on the beat drawn already: the page is not drawn again for them.
-  if (!sameRect(placed, playheadRect.value)) playheadRect.value = placed;
-  const element = scroller.value;
-  if (!isFollowing() || rect === null || element === undefined) return;
-  const top = element.scrollTop;
-  if (rect.y >= top && rect.y + rect.height <= top + element.clientHeight) return;
-  scrollTo(Math.max(rect.y - FOLLOW_MARGIN, 0));
-}
-
-/**
- * Play from the start of the cursor's bar (docs/spec/playback.md, section 4); after the member
- * paused, from where it was, unless the cursor moved since. The Read view plays from where
- * playback is.
- */
-function play(): void {
-  const player = engine?.player;
-  if (player === undefined || player.state !== "paused") return;
-  if (!resumable && editing.value) {
-    const at = session?.cursor ?? null;
-    player.seek((at && player.tickOf(at.barId)) ?? 0);
-  }
-  resumable = false;
-  stopped.value = false;
-  keepInSight = true;
-  player.play();
-}
-
-function pause(): void {
-  if (engine?.player.state !== "playing") return;
-  resumable = true;
-  engine.player.pause();
-}
-
-/** Nothing plays any more: stopped, or at the end of the score, where the player is back at its start. */
-function showStopped(): void {
-  resumable = false;
-  // The Read view shows playback back at the start.
-  if (reading.value) return;
-  stopped.value = true;
-  playingBar.value = null;
-  playheadRect.value = null;
-}
-
-function stop(): void {
-  if (engine === undefined || engine.player.state === "loading") return;
-  showStopped();
-  engine.player.stop();
-}
-
-function togglePlay(): void {
-  if (playerState.value === "playing") pause();
-  else play();
-}
-
 /** A button of the toolbar did its work: the score has the keyboard again. */
 function onToolbar(action: () => void): void {
   action();
   focusScore();
 }
 
-/** The member looks over the score themselves: playback is no longer kept on screen, until they press play. */
-function stopFollowing(): void {
-  keepInSight = false;
-}
-
-/** Scroll the score, as the page: following playback, or showing the cursor. */
-function scrollTo(top: number): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  element.scrollTop = top;
-  // As far as it could go: at the end of the score, less than asked.
-  ownScrollTop = element.scrollTop;
-}
-
-/**
- * A scroll the page did not make is the member's, however they made it: the wheel, a touch, a
- * scroll bar (overlay scroll bars take no room, so a click on them cannot be told apart), keys.
- */
-function onScroll(): void {
-  const element = scroller.value;
-  if (element === undefined) return;
-  if (ownScrollTop !== null) {
-    if (Math.abs(element.scrollTop - ownScrollTop) < 1) return;
-    // The score got shorter, or the view taller, than where the page had put it: the browser
-    // brought it back as far as it goes. Not the member.
-    if (element.scrollTop < ownScrollTop && element.scrollTop >= element.scrollHeight - element.clientHeight - 1) {
-      ownScrollTop = element.scrollTop;
-      return;
-    }
+/** The score as drawn last, downloaded as a file (docs/spec/import-export.md, section 3). */
+function exportAs(format: ExportFormat): void {
+  if (score.value === null) return;
+  try {
+    saveFile(exportedFile(score.value, format));
+  } catch {
+    // A projection alphaTab cannot write: nothing to save, and the member is told.
+    say(text.export.failed);
   }
-  stopFollowing();
-}
-
-/** Scroll so that the cursor is on screen, with some room around it. */
-function reveal(): void {
-  const element = scroller.value;
-  const box = cursorRect.value;
-  if (element === undefined || box === null) return;
-  const margin = 80;
-  if (box.y < element.scrollTop + margin) scrollTo(Math.max(box.y - margin, 0));
-  else if (box.y + box.height > element.scrollTop + element.clientHeight - margin) scrollTo(box.y + box.height - element.clientHeight + margin);
 }
 
 function draw(change: ScoreChange): void {
@@ -812,17 +859,19 @@ function startEditing(json: ScoreJSON): void {
     keepCursorShown();
     forgetStaleStop();
     placeCursor();
-    resumable = false;
+    cursorMoved();
     // While playback is followed, the page stays with it (a click moves the cursor where the member looks).
-    if (!isFollowing()) reveal();
+    if (!isFollowing()) reveal(cursorRect.value);
   });
   session.onRefused(() => {
-    notice.value = readOnlyBecause === null ? text.viewerCannotEdit : text.readOnly[readOnlyBecause];
+    const why = whyRefused(readOnlyBecause, mayChange());
+    notice.value = why === "viewer" ? text.viewerCannotEdit : text.readOnly[why];
   });
   session.onHint((hint) => {
     notice.value = text.hints[hint];
   });
   session.onEditText(openText);
+  session.onEditLyric(lyrics.open);
   tellPresence();
   // The first drawing may be laid out already: the cursor it starts with is drawn now.
   placeCursor();
@@ -834,9 +883,15 @@ function start(): void {
   if (stopObserving !== undefined || engine === undefined) return;
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, draw);
-  if (editing.value && score.value) startEditing(score.value);
+  if (editing.value && score.value) {
+    startEditing(score.value);
+    return;
+  }
+  // The Read view of an Owner or an Editor (a device that cannot be typed on): a session with no
+  // cursor, for a version restored here to be undone and done again by key (docs/spec/collab.md, 8.5).
+  if (mayChange() && readOnlyBecause === null) session = createEditorSession(doc, { platform: keyPlatform(), cursorless: true });
   // Space plays and pauses in the Read view too.
-  else focusScore();
+  focusScore();
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -853,7 +908,12 @@ function onKey(event: KeyboardEvent): void {
   }
   if (pageEffect === "barPanel") {
     event.preventDefault();
-    togglePanel();
+    toggleEditSide("bar");
+    return;
+  }
+  if (pageEffect === "phraseSidebar") {
+    event.preventDefault();
+    toggleEditSide("phrases");
     return;
   }
   stopFollowing();
@@ -870,7 +930,7 @@ function onPointer(event: PointerEvent): void {
   if (event.button !== 0 || event.target === scroller.value) return;
   // A button on the page (+bar) is not the score.
   if (event.target instanceof Element && event.target.closest("button") !== null) return;
-  if (session === undefined || engine === undefined || host.value === undefined) return;
+  if (!editing.value || session === undefined || engine === undefined || host.value === undefined) return;
   const box = host.value.getBoundingClientRect();
   const hit = engine.renderer.hitTest(event.clientX - box.left, event.clientY - box.top);
   if (hit) session.moveTo(hit);
@@ -888,21 +948,33 @@ function isSynced(): boolean {
 
 function updateSync(): void {
   if (provider === undefined) return;
-  if (isSynced()) sync.value = "synced";
-  else if (sync.value !== "offline") sync.value = "syncing";
+  if (isSynced()) {
+    sync.value = "synced";
+    ownChanges.synced();
+  } else if (sync.value !== "offline") sync.value = "syncing";
 }
 
 /**
  * Nobody may change the score here: a newer schema (docs/spec/schema.md, section 9), or the
- * server's `readOnly` notice (#109 hands its reason here). The edit view opens read-only, saying
- * why; one open for typing already is closed and opened anew, read-only, from the server's document.
+ * server's `readOnly` notice (docs/spec/collab.md, 2.1). The edit view opens read-only, saying
+ * why; one open for typing already is closed and opened anew, read-only from the start (`close`
+ * hands the reason on), from the server's document, saying so when what this tab wrote and the
+ * server may not have is dropped with it. The Read view's session goes: no undo writes in the
+ * document any more. Locked until the page is loaded again.
  */
 function lockReadOnly(reason: ReadOnlyReason): void {
   if (readOnlyBecause !== null) return;
   readOnlyBecause = reason;
   notice.value = text.readOnly[reason];
-  if (view.value === "editable" && session !== undefined) close({ kind: "reopen", notice: text.readOnly[reason] });
-  else if (view.value !== null) view.value = openedView(view.value, reason);
+  if (view.value === "editable" && session !== undefined) {
+    close({ kind: "reopen", notice: ownChanges.pending() ? text.readOnlyDropped(text.readOnly[reason]) : text.readOnly[reason] });
+    return;
+  }
+  if (view.value === "read" && session !== undefined) {
+    session.destroy();
+    session = undefined;
+  }
+  if (view.value !== null) view.value = openedView(view.value, reason);
 }
 
 /** Closed once: the provider goes at once, so that nothing more of this document reaches the server; ScorePage does the rest. */
@@ -924,7 +996,26 @@ function close(closing: Closing): void {
   peers.value = [];
   peerMarks.value = [];
   dropProvider();
-  emit("closed", closing);
+  // A score locked here is opened anew locked: the server's notice may come again only once it has synced.
+  emit("closed", closing.kind === "reopen" && readOnlyBecause !== null ? { ...closing, readOnly: readOnlyBecause } : closing);
+}
+
+/**
+ * The server closed the connection for good (`stopWhenClosed`): the provider goes and no other
+ * connects; the page says why and offers the score anew from the server, dropping what this tab
+ * holds and the server never took.
+ */
+function closedByServer(reason: ClosedNotice["reason"]): void {
+  closedBecause.value = reason;
+  sync.value = "offline";
+  dropProvider();
+  // The versions page over the score can restore nothing any more: ScorePage shows the score, which says why.
+  emit("stopped");
+}
+
+/** The score opened anew from the server's document, this tab's own dropped. */
+function reloadFromServer(): void {
+  close({ kind: "reopen", notice: text.closed.reloaded });
 }
 
 /**
@@ -959,6 +1050,8 @@ function warnUnsynced(event: BeforeUnloadEvent): void {
 window.addEventListener("offline", goOffline);
 window.addEventListener("online", goOnline);
 window.addEventListener("beforeunload", warnUnsynced);
+// Copy, cut and paste while the score has the keyboard (docs/spec/phrases.md, section 2); told as a drop is.
+const stopClipboard = listenToClipboard({ scroller: () => scroller.value, session: () => session, tell: say });
 
 onMounted(async () => {
   let opened: Opening;
@@ -982,8 +1075,8 @@ onMounted(async () => {
   // The edit views lay out on the page's own thread: in place, bar by bar (docs/adr/0003); the
   // Read view in a worker, and a click on it sends playback there.
   engine = createAlphaTabEngine(host.value, {
-    fontDirectory: "/font/",
-    soundFont: "/soundfont/sonivox.sf3",
+    fontDirectory: fontDirectory(),
+    soundFont: soundFontUrl(),
     useWorkers: reading.value,
     seekOnClick: reading.value,
     scale: display.value.scale,
@@ -1001,13 +1094,7 @@ onMounted(async () => {
     ready.value = true;
     updateOverlay();
   });
-  engine.player.onState((state) => {
-    playerState.value = state;
-    // Once the first sound is in, the Read view can show where playback is.
-    if (engine) showPlayback(engine.player.position.tick);
-  });
-  engine.player.onFinished(showStopped);
-  engine.player.onPosition((position) => showPlayback(position.tick));
+  attachPlayer(engine);
   // After the page's own listeners: a drawing is measured once the cursor is drawn on it.
   measurement.watch(engine);
   provider = new HocuspocusProvider({
@@ -1040,6 +1127,12 @@ onMounted(async () => {
       else if (status === "connecting") sync.value = "syncing";
     },
   });
+  stopWhenClosed(provider, closedByServer);
+  // The server takes nothing of this tab's (docs/spec/collab.md, 2.1): an Owner's or an Editor's
+  // score turns read-only, saying why. A Viewer or a guest reads only anyway.
+  lockWhenReadOnly(provider, (reason) => {
+    if (mayChange()) lockReadOnly(reason);
+  });
   // A member's tab is in the presence from now on, in "read" mode with no cursor until the
   // score is open; a guest's provider has no awareness.
   if (provider.awareness !== null) {
@@ -1054,10 +1147,52 @@ onMounted(async () => {
 // The view can turn read-only after the score opened (a newer schema): the mode follows it.
 watch(view, tellPresence);
 
+/**
+ * Restore a version in this tab's document (docs/spec/collab.md, 8.5), for the versions page, which
+ * shares it: in the edit view one types in, one command of the session, undone with Ctrl+Z like any
+ * other; in the Read view of an Owner or an Editor (a device that cannot type), written straight.
+ * Not before the score is open, in step with the server: written over a document still empty,
+ * the score would come in afterwards beside the version.
+ */
+const restoreTarget: RestoreTarget = {
+  canRestore() {
+    if (closed || stopObserving === undefined || provider === undefined || readOnlyBecause !== null || session === undefined) return false;
+    return view.value === "editable" || (view.value === "read" && mayChange());
+  },
+  lockedBecause: () => (mayChange() ? readOnlyBecause : null),
+  replace(version) {
+    return restoreTarget.canRestore() && session!.replaceScore(version);
+  },
+};
+
+defineExpose({
+  restoreTarget,
+  /**
+   * The versions page is shown over the score: playback stops and the question of a part's
+   * deletion goes, as they would were the page left (the question is teleported to the body, out
+   * of the hidden score); the others see this tab reading.
+   */
+  stepAside(): void {
+    aside = true;
+    stop();
+    deleting.value = null;
+    textEntry.value = null;
+    lyrics.drop();
+    tellPresence();
+  },
+  /** Back from the versions page: in the presence as before, and the score has the keyboard again. */
+  stepBack(): void {
+    aside = false;
+    tellPresence();
+    focusScore();
+  },
+});
+
 onBeforeUnmount(() => {
   window.removeEventListener("offline", goOffline);
   window.removeEventListener("online", goOnline);
   window.removeEventListener("beforeunload", warnUnsynced);
+  stopClipboard();
   sound?.destroy();
   hideFromTests();
   measurement.stop();
@@ -1087,11 +1222,12 @@ onBeforeUnmount(() => {
         </template>
         <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
         <template v-if="view && !narrow">
-          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
           <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
           <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
             {{ text.mixer.open }}
           </AppButton>
+          <ExportMenu v-if="!isGuest && score" @export="onToolbar(() => exportAs($event))" />
         </template>
         <div v-if="view === 'editable'" class="score__bars">
           <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
@@ -1100,13 +1236,35 @@ onBeforeUnmount(() => {
           <AppButton variant="ghost" size="sm" data-delete-bars :title="text.bars.removeKey(barKeys.remove)" @click="onToolbar(() => session?.deleteBars())">
             {{ text.bars.remove }}
           </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="togglePanel">
+          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="toggleEditSide('bar')">
             {{ text.bars.panel }}
           </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleParts">
+          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleEditSide('parts')">
             {{ text.parts.panel }}
           </AppButton>
+          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleEditSide('phrases')">
+            {{ text.phraseSidebar.open }}
+          </AppButton>
         </div>
+        <!--
+          Without a range of bars the button is disabled only to assistive technology (aria-disabled):
+          it stays in the keys' order, its description saying why, and a press does nothing.
+        -->
+        <template v-if="editing">
+          <AppButton
+            variant="ghost"
+            size="sm"
+            data-save-phrase
+            :class="{ score__unavailable: selectedBars === null }"
+            :aria-disabled="selectedBars === null"
+            :aria-describedby="selectedBars === null ? 'save-phrase-why' : undefined"
+            :title="selectedBars === null ? strings.savePhrase.barsOnly : strings.savePhrase.openTitle"
+            @click="openSavePhrase"
+          >
+            {{ strings.savePhrase.open }}
+          </AppButton>
+          <span id="save-phrase-why" hidden>{{ strings.savePhrase.barsOnly }}</span>
+        </template>
         <FlagControls
           v-if="view"
           :count="flags.length"
@@ -1128,14 +1286,26 @@ onBeforeUnmount(() => {
             <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
           </li>
         </ul>
+        <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
         <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
-        <p v-if="notice" class="score__notice" role="status">
-          <span>{{ notice }}</span>
-          <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
-        </p>
+        <!--
+          The live region is always in the page, only what is in it changes: one inserted with its
+          words is not read out everywhere. The notice itself (`.score__notice`) is in it only while
+          there is one, so that "no notice" is no element, as before.
+        -->
+        <div class="score__status" role="status">
+          <p v-if="notice" class="score__notice">
+            <span>{{ notice }}</span>
+            <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
+          </p>
+        </div>
       </header>
       <p v-if="loadError" class="score__error" role="alert">{{ loadError }}</p>
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
+      <p v-else-if="closedBecause" class="score__error" role="alert" data-closed>
+        <span>{{ text.closed.reasons[closedBecause] }}</span>
+        <button type="button" class="score__dismiss" @click="reloadFromServer">{{ text.closed.reload }}</button>
+      </p>
       <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
         {{ view === "editable" ? text.offline.editing : text.offline.reading }}
@@ -1151,6 +1321,9 @@ onBeforeUnmount(() => {
         @keydown="onKey"
         @pointerdown="onPointer"
         @scroll.passive="onScroll"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
       >
         <div class="score__page">
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
@@ -1225,6 +1398,18 @@ onBeforeUnmount(() => {
                 rx="2"
               />
             </template>
+            <rect
+              v-for="(box, index) in dropRects"
+              :key="`drop-${index}`"
+              data-drop-target
+              :data-drop="dropSpot?.refused ? 'refused' : 'ok'"
+              :data-part="dropSpot?.partId"
+              :class="['score__drop', { 'score__drop--refused': dropSpot?.refused }]"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+            />
             <rect v-if="cursorRect" data-cursor :class="['score__cursor', { 'score__cursor--read': view === 'readOnlyEdit' }]" :x="cursorRect.x" :y="cursorRect.y" :width="cursorRect.width" :height="cursorRect.height" rx="2" />
           </svg>
           <!-- The names are what members typed: text only, never markup. -->
@@ -1247,6 +1432,14 @@ onBeforeUnmount(() => {
               >{{ mark.name }}</span
             >
           </template>
+          <!-- Inside the box of the bar it is about, which is clear of the reserved areas. -->
+          <span
+            v-if="dropSpot?.refused && dropRects[0]"
+            class="score__drop-label"
+            data-drop-label
+            :style="{ left: `${dropRects[0].x + 2}px`, top: `${dropRects[0].y + 2}px`, maxWidth: `${Math.max(dropRects[0].width - 4, 0)}px` }"
+            >{{ text.phraseSidebar.cannotDrop }}</span
+          >
           <InlineTextEntry
             v-if="textEntry"
             :rect="textEntry.rect"
@@ -1254,6 +1447,16 @@ onBeforeUnmount(() => {
             :max-length="MAX_BEAT_TEXT"
             :label="text.beatText"
             @close="closeText"
+          />
+          <LyricEntry
+            v-if="lyricRequest && lyricRect"
+            :rect="lyricRect"
+            :initial="lyricRequest.lyric"
+            :beat-key="`${lyricRequest.cursor.barId}/${lyricRequest.cursor.beatId}`"
+            :max-length="MAX_LYRIC"
+            :label="text.lyrics"
+            @key="lyrics.onKey"
+            @close="lyrics.close"
           />
         </div>
       </div>
@@ -1284,12 +1487,23 @@ onBeforeUnmount(() => {
         @capo="onCapo"
         @program="onProgram"
         @clef="onClef"
-        @close="closeParts"
+        @close="closeSide"
+      />
+      <PhraseSidebar
+        v-if="view === 'editable'"
+        v-show="sidebarOpen"
+        :platform="keyPlatform()"
+        :open="sidebarOpen"
+        :part="cursorPart"
+        :contents="contents"
+        @close="closeSide"
+        @drop="dropAtCursor"
+        @drag="onDrag"
       />
       <aside v-if="mixerOpen && view && !narrow" class="score__side" data-mixer-panel :aria-label="text.mixer.title">
         <header class="score__side-header">
           <h2 class="score__side-title">{{ text.mixer.title }}</h2>
-          <AppButton variant="ghost" size="sm" @click="closeMixer">{{ text.mixer.close }}</AppButton>
+          <AppButton variant="ghost" size="sm" @click="closeSide">{{ text.mixer.close }}</AppButton>
         </header>
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="loopText" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
       </aside>
@@ -1306,13 +1520,15 @@ onBeforeUnmount(() => {
         @close="closeDeletion"
         @confirm="confirmDelete"
       />
+      <SavePhraseDialog v-if="editing" :saving="savingPhrase" :title="score?.title ?? ''" @close="closeSavePhrase" @saved="onPhraseSaved" />
       <!-- The narrow Read view: the player stays at the bottom, below the score, never over it. -->
       <section v-if="narrow && drawerOpen" class="score__drawer" data-drawer>
         <DisplayControls :hidden="display.hidden" :scale="display.scale" @scale="onScale" />
         <MixerControls :parts="mixerParts" :mix="mix" :playback="playback" :loop="null" @part="onPartMix" @speed="onSpeed" @playback="onPlayback" />
+        <ExportMenu v-if="!isGuest && score" inline @export="exportAs" />
       </section>
       <footer v-if="narrow" class="score__playbar" data-playbar>
-        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" />
+        <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
         <AppButton variant="ghost" size="sm" :aria-expanded="drawerOpen" @click="drawerOpen = !drawerOpen">
           {{ drawerOpen ? text.display.closeOptions : text.display.options }}
         </AppButton>
@@ -1398,11 +1614,14 @@ onBeforeUnmount(() => {
 .score__sync[data-sync="offline"] {
   color: var(--danger);
 }
+.score__status {
+  margin: 0 0 0 auto;
+}
 .score__notice {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin: 0 0 0 auto;
+  margin: 0;
   font-size: 0.875rem;
 }
 .score__error {
@@ -1426,6 +1645,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+/* A button that does nothing yet (aria-disabled): looks it, still reachable by the keys. */
+.score__unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .score__bars {
   display: flex;
@@ -1495,6 +1719,26 @@ onBeforeUnmount(() => {
 /* The read-only edit view's cursor: pale, nothing is typed there (docs/spec/views.md, section 4). */
 .score__cursor--read {
   fill: rgba(234, 88, 12, 0.18);
+}
+/* Where a phrase dragged would go: filled only, as the selection is. */
+.score__drop {
+  fill: rgba(22, 163, 74, 0.22);
+}
+/* A part of another kind: the phrase cannot be dropped there. */
+.score__drop--refused {
+  fill: rgba(220, 38, 38, 0.22);
+}
+.score__drop-label {
+  position: absolute;
+  z-index: 5;
+  overflow: hidden;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* The other members' marks, in their colour (`fill`): filled only, as one's own are. */
 .score__peer-cursor--edit {

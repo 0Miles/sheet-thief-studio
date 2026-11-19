@@ -26,6 +26,7 @@ Y.Doc
   - **補充**（#22）：fractional-indexing 在兩個鍵之間產生的鍵是確定的，兩個人同時插在同一個地方（例如都在同一個小節按 `Ctrl+Insert`、同時新增聲部）會拿到相同的鍵，而兩個相同的鍵之間產生不出鍵。所以指令產生的鍵一律經過 `commands.ts` 的 `keysAfter`，在產生的鍵後面加 5 個隨機的 base-62 字元（`withSuffix`；最後一個字元不是 `0`，因為鍵的小數部分不能以 `0` 結尾）。加了之後仍嚴格介於前後兩個鍵之間。產生的鍵是後一個鍵的前綴時（例如 `a1` 在 `a1Y…` 之下；後一個鍵帶後綴時常見），加了後綴可能超過後一個鍵：這時先在兩者之間再產生一個鍵，直到加上後綴放得下，所以每個鍵都帶後綴。指令不改寫其他項目的 `order`。
     - 舊的資料裡同鍵的項目照樣依 id 排：插在其中一個之後時，新項目排在這一群同鍵的項目之後，不丟例外。
     - `jsonToDoc` 從零依序產生鍵，不加後綴。
+    - **補充**（#68）：還原版本（`replaceScore`）的小節與聲部各用一串連續的鍵（`keysOfARun`）：先像 `keysAfter` 一樣產生第一個鍵再加上隨機後綴當作「字根」（`a0` 加 5 個隨機字元），每個鍵是字根接上 `a0` 與 `a1` 之間依序產生的鍵的小數部分。整串都排在字根之後、任何別的字根之前，所以兩人同時還原的兩串不會交錯。直接用 `keysAfter` 不行：它的每個鍵各有自己的後綴，兩串從零產生的鍵會輪流排列（`a0x`、`a0y`、`a1x`、`a1y`…）。**補充**（#58）：`insertBars` 也改用 `keysOfARun`，字根取在插入位置前後兩個小節的鍵之間，所以兩人同時在同一處插入或在譜尾附加的兩串小節同樣不交錯。
     - 測試在 `packages/score-model/tests/bars.test.ts`：兩人同時插在同一處；一人插在 X 之後、另一人同時插在 Y 之後，跑 200 次；三人同時插在同一處，抵達順序不同；產生的鍵是後一個鍵的前綴，跑 50 次；舊的同鍵資料；同時新增聲部。每個測試都斷言插入落在指定的位置、各份文件順序一致，之後在任何位置插入都不丟例外。
 - id 用 `nanoid(10)`（`commands.ts` 的 `newId`）。
 
@@ -100,7 +101,8 @@ Y.Doc
 | 聲線 | 每個譜表 2 條（schema 允許）；介面不提供第二聲線 | 預設一條，允許第二條（手、腳分開） | 每個譜表最多 2 條 |
 
 - `name`：1–64 字元（補充）。**補充**：和 `title` 一樣，讀取時允許空字串（讀不懂的名稱讀成空字串，見第 11 節），所以 `ScoreJSON` 的 `name` 是 0–64 字元；新增聲部與改名的指令要求 1–64 字元。理由：`docToJson` 的結果要能直接存成版本、再用 `jsonToDoc` 還原。
-- 譜表數改由 `staves` 決定，不再從 content 推出（現在的 `projection.ts:70-81` 要改）。
+- 譜表數與譜號由 `staves` 決定，不從 content 推出。
+  - **補充**（#47）：投影的譜表數是 `staves.length`，每個譜表的譜號取 `staves[i].clef`：`treble` → alphaTab 的 G2、`bass` → F4、`treble-8vb` → G2 加 `clefOttava = _8vb`（音符畫高一個八度）；每個譜表的聲線數仍由 content 推出。寫法是 `projection.ts` 的 `staffVoiceCounts` 與 `clefOf`。這次實際的改變只有譜號（F4 與 `_8vb`，以前每個非鼓譜表都是 G2）：讀取（`read.ts` 的 `readVoices`）與 `emptyBarContent` 本來就替每個譜表放了 `"<譜表>:0"` 鍵，所以以前從 content 推出的譜表數也和 `staves` 一樣，就地換小節的行為不變。改譜號是聲部欄位的修改（`observeScore` 的 `structure`），照舊整份重投影；`replaceBars` 沒有新增整份重投影的情況。測試：`projection.test.ts` 的「each staff of a part has the clef its `staves` give it …」與「a bar replaced on a bass staff, or on a staff an octave down, keeps its clef …」。
 - 聲部總共最多 16 個，其中非鼓聲部最多 15 個（理由見 [`playback.md`](playback.md) 的 MIDI 聲道）。
 - 弦樂聲部固定只顯示 TAB 加節奏符桿，不做「五線譜＋TAB」並列。
 
@@ -145,7 +147,7 @@ Y.Doc
 
 ### 7.1 介面提供的 18 個鼓件
 
-id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最上面那條線，一格是半個間距）與符頭是 alphaTab 內建表的值（`spike-report.md` S6）。
+id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`；譜表位置（0 是最上面那條線，一格是半個間距）與符頭是 alphaTab 內建表的值（`spike-report.md` S6）。
 
 | 鼓件 | 鍵 | 發出的 MIDI 音 | 譜表位置 |
 |---|---|---|---|
@@ -168,7 +170,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 | splash | `p55` | 55 | −2 |
 | cowbell | `p56` | 56 | 0 |
 
-**補充**：`EditorSession` 需要「鼓件 → 譜表位置」才能處理鼓的 `Delete` 與游標位置，但它不能依賴 alphaTab。做法：`score-render` 匯出一份由 alphaTab 內建表產生的純資料對照（`ReadonlyMap<number, number>`），由 Vue 殼傳給 `EditorSession`。對照裡沒有的 id，不受 `Delete` 的「整條線」規則影響，只能用 `Shift+R` 清空拍點。
+**補充**（#44 改寫）：`EditorSession` 需要「鼓件 → 譜表位置」才能處理鼓的 `Delete` 與游標位置，但它不能依賴 alphaTab。做法：這張表（id、發出的 MIDI 音、譜表位置）只有一份，放在 `score-model` 的 `drums.ts`（`DRUM_PIECES`、`drumLineOf`、`drumLineOfKey`），編輯器、`score-render` 的測試與量測都讀它；`score-render` 不再有自己的一份，殼也不必轉交。表的值以 alphaTab 為準：`packages/score-render/tests/geometry.test.ts` 的「each of the 18 drum pieces is drawn on the line the table gives it」逐一畫出 18 個鼓件，確認符頭落在表上那條線的游標裡；`sound.test.ts` 確認發出的 MIDI 音。表裡沒有的 id，不受 `Delete` 的「整條線」規則影響，只能用 `Shift+R` 清空拍點。
 
 ## 8. 音符（NoteJSON）
 
@@ -214,6 +216,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
   - **補充**（#30，host 在 2026-11-14 的兩次裁定）：`dynamic` 表示「從這個拍點起」，和樂譜的寫法一樣：在同一個聲部、同一條聲線（`"譜表:聲線"`）裡往後延續，跨小節也延續，直到下一個寫著 `dynamic` 的拍點；在那之前沒有任何 `dynamic` 時是 alphaTab 的 `F`。投影時每個 alphaTab 拍點（包括補滿小節的休止）的 `Beat.dynamics` 都是當時生效的力度，所以後面沒寫的拍點聲音一樣小（`projection.ts` 的 `projectBar`：每條聲線以前一小節同一條聲線最後一個拍點的力度開始）。`replaceBars` 重建一個小節之後，若它留給下一小節的力度和原本不同，就連下一小節一起重建，直到某個小節的每條聲線都和原本接得上，也就是下一個寫著力度的地方。
   - **補充**（#30）：力度記號只畫在寫著 `dynamic` 的拍點上：每個拍點的 `Beat.showDynamics` 是「這個拍點寫著 `dynamic`」（alphaTab 1.9 的欄位；有設定時直接決定畫不畫，`shouldCreateDynamicsGlyph`）。不設的話，alphaTab 會在力度改變的地方畫，而且在每個譜表第一條聲線的第一個非休止拍點畫它預設的 `f`，從沒寫過力度的團譜也會出現 `f`。寫在休止拍點上的 `dynamic` 照樣往後延續，但 alphaTab 從不在休止上畫力度記號，所以改畫在後面的拍點（下一條 #97 補充）。測試：`packages/score-render/tests/dynamics.test.ts` 以 SVG 畫出整份譜，數力度記號。
   - **補充**（#97，使用者在 2026-11-17 的裁定）：寫在休止拍點上的 `dynamic`，記號畫在同一個聲部、同一條聲線裡下一個非休止拍點（投影後的 alphaTab `Beat.isRest` 為假，也就是至少投影出一個音），同一小節或之後的小節都可以：那個拍點的 `Beat.showDynamics` 設成 true，畫的是它的 `Beat.dynamics`，也就是當時生效的力度。所以那個拍點、或它之前的休止拍點自己也寫著 `dynamic` 時，只畫最後寫的那一個，休止上的被覆蓋，不重複畫。到譜尾都沒有非休止拍點就不畫。各聲線、各聲部各自獨立。只改繪製：文件內容不變，聲音照上面兩條從休止拍點開始生效。做法在 `projection.ts` 的 `projectBar`：每條聲線帶著「還沒畫的力度」，跨小節時從前一小節讀（`dynamicsUndrawn`，存在以 alphaTab `Bar` 為鍵的 `WeakMap`）；`replaceBars` 重建一個小節後，這個狀態和原本不同時也重建下一小節。測試：`dynamics.test.ts`（數 SVG 的力度記號）、`projection.test.ts`（部分重建與整份投影相同）、`sound.test.ts`（發聲和寫在休止後第一個音上相同）。
+  - **補充**（#45，#30 留下的）：同一個聲部、同一個譜表、同一個小節裡，第二條聲線在和第一條聲線同一個位置（小節內的 tick）畫出同樣的力度時，只畫一次：第二條聲線那個拍點的 `Beat.showDynamics` 設成 false。不同的力度、或不同的位置，各自照畫；不同聲部也各自照畫。理由：設了 `showDynamics` 之後，alphaTab 跳過它自己「同位置、同力度，前面的聲線畫過就不畫」的檢查（`shouldCreateDynamicsGlyph`），兩條聲線會在同一處畫出兩個一樣的記號。只改繪製：聲音照舊，每條聲線各自從它的力度開始。做法在 `projection.ts` 的 `projectBar`（以小節為單位，`replaceBars` 重建小節時一起重算）。測試：`dynamics.test.ts` 的「the same dynamic written at the same place in both voices of a staff is drawn once …」。
 - 小節層級的投影對照：`keySig` → 每個聲部每個 `Bar` 的 `keySignature` 與 `keySignatureType`（`MasterBar` 上的同名欄位在 1.9 已 deprecated，`alphaTab.d.ts:11229-11250`）；`repeatStart` → `MasterBar.isRepeatStart`；`repeatEnd` → `repeatCount`；`voltas` → `alternateEndings` 的位元；`section` → `MasterBar.section`；`anacrusis` → `isAnacrusis`；`tempo` → 小節開頭的速度 automation。
   - **補充**（#23）：寫法在 `projection.ts` 的 `projectScore` 與 `placesOf`。`keySig` 投影成該小節「生效的調號」（`keySigsOf`），所以 alphaTab 在調號改變的地方畫新調號；鼓聲部的 `Bar` 一律是 C 大調，不畫升降記號。`voltas` 的第 n 遍是 `alternateEndings` 的第 n−1 個位元；`section` 是 `Section` 的 `text`（`marker` 空白）。
   - **補充**（#23）：弱起小節（第一小節帶 `anacrusis`）的長度是它在所有聲部、所有聲線裡最長的那一條（不超過拍號；全部是空的時就是拍號的長度）：每條聲線只用休止補到這個長度，空的第一條聲線也是，不畫整小節休止；alphaTab 以最長的聲線當這個小節的長度，下一小節緊接在它之後發聲。
@@ -233,12 +236,14 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 拼寫必須和音符鍵的音高相符（音名加升降後的 pitch class 等於 `音高 mod 12`）。不相符時，投影忽略 `spell`、改用預設拼寫，不標 Flag（補充）。
 - **預設拼寫**（沒有 `spell` 時，投影依該小節生效的 `keySig` 決定黑鍵怎麼寫）：`fifths > 0` 寫成升，`fifths < 0` 寫成降。**補充**：`fifths = 0`（C 大調、A 小調）寫成升。
 - **補充**：從介面輸入的 pitched 音一律寫入 `spell`，所以之後改調號不會改變已經寫好的音；只有匯入或其他來源的音可能沒有 `spell`。
+- **補充**（#48）：預設拼寫是 `pitch.ts` 的 `defaultSpelling(pitch, keySig)`：白鍵寫成本位，黑鍵依上一條寫成升或降。一個音畫在哪個譜表位置（`lineOfPitch(clef, pitch, spell, keySig)`）由它拼出的音名決定：`spell` 和音高相符時用它，否則用預設拼寫。投影照同一個規則畫（`pitch.ts` 的 `drawnAccidentalOf`，`projection.ts` 的 `accidentalModeOf`）：`spell` 相符時強制它的升降，本位也強制（`ForceNatural`）；沒有相符的 `spell` 時，白鍵強制本位，黑鍵交給 alphaTab 依調號決定（`Default`，和 `defaultSpelling` 相同）。理由：alphaTab 自己決定時會優先選調號裡有的拼法，六、七個升號時把 F（`n65`）畫成 E♯、六、七個降號時把 B（`n71`）畫成 C♭，畫的位置就和編輯器找的線不一樣（#48 審查）。測試：`packages/score-render/tests/spelling.test.ts`。八度跟著音名：B♯3（`n60`、`"B#"`）畫在 B3 的位置，C♭5（`n71`、`"Cb"`）畫在 C5 的位置。編輯器用它找「游標那條線上的音」（[`commands.md`](commands.md) 5.8 的補充）。
 
 ## 9. `schemaVersion` 與加法規則
 
 - 完整 schema 發布時是 `schemaVersion: 1`（補充）。M0 沒有持久化任何文件（`collab.ts:17-25` 只存在記憶體），不需要從 M0 遷移；現在的 `SCHEMA_VERSION = 1`（`schema.ts` 的 `SCHEMA_VERSION`）照用。
 - 新增 optional 欄位屬於加法改動，**不升** `schemaVersion`。條件：同一個 PR 也改本檔、ADR 0002 的增補（形狀有變時）與 zod schema。
 - 讀到不認得的欄位：忽略，不標 Flag，並原樣保留。改寫音符的指令以儲存的原值為底（`{ ...原值, 修改 }`），不以 zod 解析後的值為底；否則部署新版之後還開著的舊分頁，會把新欄位刪掉。
+  - **補充**（#103）：「原值」指它自己的欄位，和第 11 節的 `parsePlain` 一樣不算名為 `__proto__` 的欄位。做法是 score-model 的 `ownFields`：指令先把原值複製成只有這些欄位的新物件，再從它判斷（例如「已經是 ghost 了嗎」）、以它為底寫入。理由：寫入者手上 `__proto__` 是普通的鍵，其他成員解碼後它是 prototype，直接讀原值時兩邊的判斷不同（接收者以為已經是 ghost 而不寫入），寫入者還會把 `__proto__` 寫回去。複製是有界的遞迴，每一層都去掉 `__proto__`，所以 `__proto__` 欄位改寫後消失，不論誰寫，存下的值都相同。**更正**（#102）：原本只複製到 `PLAIN_DEPTH`（2）層、再往下原樣保留；現在複製到底，因為值的深度有上限（第 13 節），複製最多走 `MAX_VALUE_DEPTH` 層，巢狀再深也不會丟例外。會讓音符超過上限的欄位（不論認不認得）改寫時丟掉，所以指令寫出的音符一律在上限內。不認得的欄位照樣保留：`__proto__` 本來就不算欄位（#78），丟掉它不違反上面的「原樣保留」。原值不是物件（數字、字串、陣列、Y 型別）時沒有欄位可保留，`setFret` 寫成 `{ fret }`。
 - 非加法的改動（改名、改形狀、改語意、刪欄位）要升 `schemaVersion` 並寫遷移。agent 不得自行決定，要開 `ready-for-human` 票。
 - 客戶端遇到比自己新的 `schemaVersion`：以唯讀開啟（`EditorSession` 的唯讀旗標），並顯示「這份團譜由較新的版本建立，請重新整理頁面」（ADR 0002:22）。
 - **補充**：伺服器載入時發現文件比自己新：不遷移、不執行 `fillMissingContent`，這份文件的所有連線都設成 readOnly，並寫 log。伺服器怎麼做、怎麼告訴客戶端，見 [`collab.md`](collab.md) 2.1。
@@ -257,7 +262,7 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 
 ## 11. 讀取時容錯
 
-伺服器不做語意驗證（Editor 視為可信任，見 ADR 0002 增補）。容錯在讀取時做：
+伺服器不做語意驗證（Editor 視為可信任，見 ADR 0002 增補）；**補充**（#102）：唯一的例外是值的巢狀深度（第 13 節），這是結構而不是語意。容錯在讀取時做：
 
 - `docToJson` 對每個拍點、每個音符用 zod 的 `safeParse`：讀不懂的跳過，記成 `invalidContent` Flag，永遠不丟例外。
 - 小節：
@@ -273,7 +278,8 @@ id 對照 `packages/score-render/src/drums.ts:15-34`；譜表位置（0 是最�
 - 聲線鍵超出範圍：該聲線略過，並標記。
 - 拍點讀不懂：略過該拍點（後面的拍點照常讀），並標記。音符讀不懂：略過該音符，並標記。
 - 不認得的欄位：忽略，不標記（第 9 節）。
-- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。複製只做到合法值的深度（兩層：帶 `bend` 的音符、`staves` 的陣列與物件、帶 `tuplet` 的拍點欄位）；更深的陣列或物件，落在認得的欄位上就是讀不懂（照上面各條標記），落在不認得的欄位下則照樣忽略、不標記、原樣保留，所以巢狀再深也不會丟例外，也不妨礙日後的加法欄位。
+- **補充**（#78）：文件裡的 JSON 值（音符、`tuplet`、`timeSig`、`keySig`、`staves`、`tuning` 等）只讀它自己的欄位，名為 `__proto__` 的欄位一律不算。理由：寫入者手上它是一個普通的鍵，其他成員經 lib0 `readAny` 解碼後它卻成了那個值的 prototype，zod 會讀到繼承來的欄位，各成員讀到的就不一樣。做法是所有讀取都經過 score-model 的 `parsePlain(schema, value)`（`docToJson`、`durationOf`、`staffCountOf`、`stringCountOf`、游標量小節長度都一樣）：先把值複製成只有自有欄位的物件，再交給 zod。
+- **補充**（#102，取代 #78 原本「更深的值落在不認得的欄位下照樣忽略」的寫法）：巢狀超過 `MAX_VALUE_DEPTH`（64 層，第 13 節）的值讀不懂，不論深度落在認得或不認得的欄位下，照上面各條標記（音符、拍點、`timeSig` 等）。`parsePlain` 的複製每一層都去掉 `__proto__`，最多走 65 層，所以巢狀再深（實測 20000 層）也不丟例外。拍點的欄位（`readBeatFields`、`durationOf`）各自是一個值，各自算深度（`parsePlainFields`：收集欄位那一層不算）；任一欄位超過上限，整個拍點讀不懂。上限內的不認得欄位照樣忽略、不標記、原樣保留。理由：lib0 的 `readAny` 解碼時每一層遞迴一次，幾千層的值寫入者讀得到，其他成員的 `Y.applyUpdate` 卻丟 `RangeError`，而且門檻隨瀏覽器的 stack 大小而不同；上限讓所有成員對「讀得懂」的判斷一致，伺服器也不放行、不送出這樣的值（[`collab.md`](collab.md) 第 2、9 節）。
 - **補充**（#78）：`ScoreJSON` 與 phrase fragment 裡的 record（聲部的 `content`、小節的聲線、拍點的 `notes`、fragment 的 `voices`）帶有自有的 `__proto__` 鍵時，驗證不通過（匯入與儲存樂句會被拒絕）；zod 的 `z.record` 本來會不經驗證就把這個鍵丟掉。
 - `meta`（補充）：`schemaVersion` 讀不懂當成目前的版本，`title` 讀不懂當成空字串，`artist` 讀不懂當成沒寫，讀不懂時各自標記。沒寫的欄位不標記：`schemaVersion` 沒寫當成目前的版本、`title` 沒寫當成空字串（還沒建立團譜的空文件就是這樣）。
 - 讀取的結果另外附上 `invalidContent` 的清單（`readScore`）；`docToJson` 只回傳 `ScoreJSON`。Flag 的 `what` 是讀不懂的那一層：`meta.<欄位>`、`bar`、`bar.order`、`bar.<欄位>`、`part`、`part.order`、`part.<欄位>`、`content`、`voice`、`beat`、`beat.pop`、`note`（補充）。
@@ -355,5 +361,8 @@ interface BeatJSON {
 | 匯入的 `ScoreJSON` | 5 MB（UTF-8 序列化後；`importedScoreSchema`） |
 | 單一樂句的 JSON | 1 MB |
 | WebSocket 單則訊息 | 8 MB |
+| 文件裡 JSON 值的巢狀深度（補充，#102） | 64 層（`MAX_VALUE_DEPTH`）：每一個陣列或物件算一層，數字、字串、bytes 不算一層，`{"a":[1]}` 是兩層。合法的值最多兩層（帶 `bend` 的音符），其餘留給日後的加法欄位 |
 
+- **補充**（#102，使用者裁定：寫入端限制深度）：深度上限由 score-model `depth.ts` 定義，所有入口一起守：讀取（`parsePlain`，第 11 節）讀不懂超過上限的值；指令不寫出超過上限的值（[`commands.md`](commands.md) 第 1 節）；伺服器不放行含有這種值的更新，載入時把儲存的狀態裡這種值拿掉（[`collab.md`](collab.md) 第 2、9 節）。zod 驗證過的入口（`jsonToDoc` 的匯入與還原、phrase fragment、awareness）只留下 schema 認得的欄位，深度本來就在上限內，不另外檢查。名為 `__proto__` 的欄位不算深度，在每一個檢查都一樣（`parsePlain`、`ownFields`、`writableCopy` 複製時去掉它；伺服器檢查更新的 `updateWithinDepth` 也不算它），也不會被寫出（第 11 節 #78）：其他成員與伺服器解碼後它是 prototype，不是欄位，重新編碼時也不會帶出去。
+- **補充**（#102）：值裡面的 shared type（`Y.Map` 等）不是值。`writableCopy`（指令寫入呼叫端給的值）遇到它就不寫入；`ownFields`（改寫儲存的音符）丟掉含有它的欄位；`parsePlain` 把它讀成沒有 schema 讀得懂的東西（在認得的欄位上就是讀不懂）。bytes（`Uint8Array` 等 ArrayBuffer view）是純值、不算一層，也不是「欄位物件」：`ownFields` 對它回傳沒有欄位，和數字、字串、陣列一樣。
 - **補充**（host 在 2026-11-13 的裁定）：**聲部與小節的數量上限只約束指令與匯入**。兩人同時新增小節或聲部，總數可能超過上限；這樣的團譜照常讀取，它的版本也必須能預覽、還原。所以 `scoreSchema`（版本、`migrateJson`、`jsonToDoc` 用的）不檢查數量，`importedScoreSchema`（匯入用）才檢查數量與 5 MB。指令端的拒絕在插入小節與聲部管理的票裡做（#22、#24）。

@@ -8,8 +8,8 @@ import type { Duplex } from "node:stream";
 import { type CloseEvent, Forbidden, ResetConnection, Unauthorized } from "@hocuspocus/common";
 import { type Connection, type ConnectionConfiguration, Hocuspocus, IncomingMessage, MessageType } from "@hocuspocus/server";
 import crossws from "crossws/adapters/node";
-import type { CollabNotice } from "@studio/contracts";
-import { docToJson, fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore } from "@studio/score-model";
+import type { CollabNotice, ReadOnlyNotice } from "@studio/contracts";
+import { docToJson, dropTooDeep, fillMissingContent, isNewerSchema, migrateDoc, type Migration, MIGRATIONS, MissingMigration, readScore, updateWithinDepth } from "@studio/score-model";
 import type { FastifyInstance } from "fastify";
 import { literal } from "sequelize";
 import * as Y from "yjs";
@@ -21,7 +21,7 @@ import { scoreOfLink } from "./links";
 import { screenAwareness } from "./presence";
 import { liveScore, membership } from "./scores";
 import type { Sessions } from "./sessions";
-import { createVersion, VERSION_INTERVAL_MS } from "./versions";
+import { createVersion, type MadeVersion, VERSION_INTERVAL_MS, type VersionToMake } from "./versions";
 
 export const COLLAB_PATH = "/collab";
 
@@ -45,8 +45,34 @@ class NotInMemory extends Error {}
 /** The `socketId` Hocuspocus gives the `onDisconnect` of a direct connection: the server's own, not a member's. */
 const SERVER_SOCKET = "server";
 
+/** How many of the places a load took values nested too deep out of are logged. */
+const TAKEN_PATHS_LOGGED = 5;
+
+/** The first message of a sync, a state vector (y-protocols): it changes nothing. */
+const SYNC_STEP_1 = 0;
+
+/**
+ * A score's stored state as the members are sent it (#102): as stored, unless it holds values
+ * nested deeper than a value may be (`MAX_VALUE_DEPTH`), written before there was a limit. Those
+ * are taken out first (`dropTooDeep`), on a copy, so that no member is sent a value its browser
+ * may not decode. Throws when the server cannot decode the state either.
+ */
+function withinDepth(docState: Uint8Array): { state: Uint8Array; taken: string[] } {
+  if (updateWithinDepth(docState)) return { state: docState, taken: [] };
+  const copy = new Y.Doc();
+  try {
+    Y.applyUpdate(copy, docState);
+    const taken = dropTooDeep(copy);
+    const state = Y.encodeStateAsUpdate(copy);
+    if (!updateWithinDepth(state)) throw new Error("values nested too deep are left once taken out");
+    return { state, taken };
+  } finally {
+    copy.destroy();
+  }
+}
+
 /** Why a document is frozen: read-only for every connection, neither migrated, filled in nor stored. */
-type FrozenReason = CollabNotice["reason"];
+type FrozenReason = ReadOnlyNotice["reason"];
 
 /**
  * Who a connection belongs to: what `onAuthenticate` read from its ticket and the database. A
@@ -54,6 +80,13 @@ type FrozenReason = CollabNotice["reason"];
  * the one they have now, kept up to date as they change it (`renamed`): their presence shows it.
  */
 export type CollabContext = (Member & { displayName: string }) | Guest;
+
+/**
+ * A version a member asks for: who asks, and what must still hold once the score's row is locked
+ * (`VersionToMake.admit`). A member's own (`manual`), named as it is made; or the one a restore
+ * makes first (`before_restore`), with no name, none made when the latest holds the same.
+ */
+export type SavedVersion = { createdBy: string; admit: NonNullable<VersionToMake["admit"]> } & ({ reason: "manual"; name: string } | { reason: "before_restore" });
 
 /** The connections to close: those that match every field given. */
 export interface ConnectionsToClose {
@@ -70,6 +103,14 @@ export interface Collab {
    * changing nothing, when the document is frozen (docs/spec/schema.md, sections 9 and 10).
    */
   change(scoreId: string, transaction: (doc: Y.Doc) => void): Promise<void>;
+  /**
+   * Make a version, asked for by a member (named, or before a restore), of what the score is now on this server: the document
+   * the members have open, or the stored one brought up to date as any load does
+   * (docs/spec/collab.md, 8.3). `readOnly`, with none made, when the document is frozen: this
+   * server cannot read it for sure. Null when the score is gone, or deleted before it could be
+   * loaded; rejects with what `admit` throws.
+   */
+  saveVersion(scoreId: string, made: SavedVersion): Promise<MadeVersion | "readOnly" | null>;
   /**
    * Close the connections that match, and only those (never `closeConnections(documentName)`,
    * which closes everyone's). Their providers reconnect, each with a new ticket of its own. A
@@ -210,7 +251,7 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       return null;
     };
     const making = Promise.resolve()
-      .then(() => createVersion(scoreId, read, reason))
+      .then(() => createVersion(scoreId, { read, reason }))
       .then(
         () => undefined,
         (error: unknown) => app.log.error({ scoreId, reason, error }, "making a version of a score failed"),
@@ -344,6 +385,21 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       // is loaded, and each message, the ones queued meanwhile too, passes here before it is applied.
       if (frozen.has(documentName)) connection.readOnly = true;
     },
+    async beforeSync({ connection, documentName, type, payload }) {
+      // What a read-only connection sends is never applied, and a state vector changes nothing.
+      if (connection.readOnly || type === SYNC_STEP_1) return;
+      // No value nested deeper than a value may be is let in, nor one the server cannot decode
+      // (lib0's readAny overflows the stack): the other members' browsers may not decode it
+      // (#102, docs/spec/collab.md, section 9). The tab is told first (`closed` notice): it holds
+      // the value and would send it again at every reconnection, so it stops reconnecting. Then
+      // the connection is closed, its socket too, as `close` does, with Forbidden. Thrown here, the
+      // message is not applied, nor anything the connection had queued after it.
+      if (updateWithinDepth(payload)) return;
+      app.log.warn({ scoreId: documentName, socketId: connection.socketId }, "an update holding a value nested too deep: refused, its connection closed");
+      connection.sendStateless(JSON.stringify({ type: "closed", reason: "tooDeep" } satisfies CollabNotice));
+      close(connection, Forbidden);
+      throw Forbidden;
+    },
     async beforeHandleAwareness({ context, connection, document, states, removedClients }) {
       // Not from a connection: the server's own, which says nothing.
       if (connection === undefined) return;
@@ -366,11 +422,24 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       const score = await liveScore(documentName);
       if (score === null) throw new Error(`no score ${documentName} to load`);
       frozen.delete(documentName);
+      // Before anything reads it, and whether it is frozen or not: no member is to be sent a
+      // value nested too deep (#102). Taken out of a frozen document in memory only.
+      let loaded: ReturnType<typeof withinDepth>;
+      try {
+        loaded = withinDepth(score.docState);
+      } catch (error) {
+        app.log.error({ scoreId: documentName, error }, "a score this server cannot decode: not opened");
+        throw new Error(`score ${documentName} cannot be decoded`, { cause: error });
+      }
+      const { state, taken } = loaded;
+      const trimmed = taken.length > 0;
+      // How many, and where the first few were: enough to find them in the versions.
+      if (trimmed) app.log.warn({ scoreId: documentName, taken: taken.length, paths: taken.slice(0, TAKEN_PATHS_LOGGED) }, "a score held values nested too deep: taken out as it loaded");
       // Migrating and filling in happen here and never while storing (a change made there would
       // be stored again). The migration runs on a copy: a step that fails half-way leaves the
       // members the document as it was stored.
       const migrated = new Y.Doc();
-      Y.applyUpdate(migrated, score.docState);
+      Y.applyUpdate(migrated, state);
       let changed = false;
       if (isNewerSchema(migrated)) {
         frozen.set(documentName, "newerSchema");
@@ -388,9 +457,11 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
           }
         }
       }
-      Y.applyUpdate(document, frozen.has(documentName) || !changed ? score.docState : Y.encodeStateAsUpdate(migrated));
+      Y.applyUpdate(document, frozen.has(documentName) || !changed ? state : Y.encodeStateAsUpdate(migrated));
       migrated.destroy();
       if (frozen.has(documentName)) return;
+      // What was taken out is stored, like what the migration changed.
+      if (trimmed) changed = true;
       // What the last members left missing, when they all left before the debounced fill ran.
       const filled = () => {
         changed = true;
@@ -470,6 +541,26 @@ export function attachCollab(app: FastifyInstance, { tickets, sessions, migratio
       try {
         if (frozen.has(scoreId)) throw new Error(`score ${scoreId} is read-only (${frozen.get(scoreId)}): not changed`);
         await direct.transact(transaction);
+      } finally {
+        await direct.disconnect();
+      }
+    },
+    async saveVersion(scoreId, made) {
+      // Loaded as a member's connection loads it, or the one in memory: migrated, frozen or not.
+      // Held in memory until the version is made: the content is read once the row is locked.
+      let direct: Awaited<ReturnType<typeof hocuspocus.openDirectConnection>>;
+      try {
+        direct = await hocuspocus.openDirectConnection(scoreId);
+      } catch (error) {
+        // Not in memory, and deleted since the request was let in: `onLoadDocument` loads no
+        // deleted score. The same answer as when it is deleted after it was loaded (`admit`).
+        if ((await liveScore(scoreId)) === null) return null;
+        throw error;
+      }
+      try {
+        if (frozen.has(scoreId)) return "readOnly";
+        const document = direct.document!;
+        return await createVersion(scoreId, { ...made, name: made.reason === "manual" ? made.name : null, read: () => docToJson(document) });
       } finally {
         await direct.disconnect();
       }

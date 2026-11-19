@@ -1,16 +1,18 @@
 // The server's command line, run on the server itself (`pnpm --filter @studio/server cli …`):
 //   migrate                                    bring the database up to the latest schema
 //   create-admin <username> <display name>     create an admin; the password is read from stdin
+//   bind-discord <username> <discord id>       bind a Discord id, to log in from the karyl-chan bot
 // A password is never an argument: arguments end up in the shell history and the process list.
 import type { Readable, Writable } from "node:stream";
 
-import { accountLimits } from "@studio/contracts";
+import { accountLimits, discordId } from "@studio/contracts";
 import type { Sequelize } from "sequelize";
 import { ZodError } from "zod";
 
-import { createAccount, UsernameTaken } from "./accounts";
+import { bindKarylIdentity, createAccount, IdentityTaken, normalizeUsername, UsernameTaken } from "./accounts";
 import { readConfig } from "./config";
 import { connectDatabase } from "./db/database";
+import { Account } from "./db/models";
 import { migrate } from "./db/migrate";
 
 export interface CliIo {
@@ -24,13 +26,25 @@ export interface CliIo {
 const USAGE = `用法：
   cli migrate
   cli create-admin <帳號名稱> <顯示名稱>    密碼從標準輸入讀取
+  cli bind-discord <帳號名稱> <Discord ID>   綁定之後可以從 karyl-chan bot 的連結登入
 `;
 
+export interface CliOptions {
+  /**
+   * A connection the models (src/db/models.ts) are already bound to, used as it is and left
+   * open: the server's tests run the commands in the test process, on the test file's own
+   * connection, instead of starting a process for each (#116). Without one, the command connects to the database of `io.env` and closes it.
+   */
+  sequelize?: Sequelize;
+}
+
 /** Run one command; resolves to the process exit code. */
-export async function runCli(args: string[], io: CliIo): Promise<number> {
+export async function runCli(args: string[], io: CliIo, options: CliOptions = {}): Promise<number> {
+  const withDatabase = (run: (sequelize: Sequelize) => Promise<number>) =>
+    options.sequelize === undefined ? withOwnDatabase(io, run) : run(options.sequelize);
   const [command, ...rest] = args;
   if (command === "migrate" && rest.length === 0) {
-    return withDatabase(io, async (sequelize) => {
+    return withDatabase(async (sequelize) => {
       const ran = await migrate(sequelize);
       io.stdout.write(ran.length === 0 ? "資料庫已是最新。\n" : `已執行遷移：${ran.join("、")}\n`);
       return 0;
@@ -38,7 +52,7 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
   }
   if (command === "create-admin" && rest.length === 2) {
     const [username, displayName] = rest as [string, string];
-    return withDatabase(io, async () => {
+    return withDatabase(async () => {
       const password = await readPassword(io);
       if (password === null) return 1;
       try {
@@ -54,12 +68,31 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
       return 0;
     });
   }
+  // Behind the karyl-chan bot nobody logs in with a password (its proxy drops the cookie): the
+  // first admin binds their Discord id here (docs/spec/karyl-login.md, section 4).
+  if (command === "bind-discord" && rest.length === 2) {
+    const [username, subject] = rest as [string, string];
+    if (!discordId.safeParse(subject).success) return fail(io, "Discord ID 是 17–20 位數字。");
+    return withDatabase(async () => {
+      const account = await Account.findOne({ where: { username: normalizeUsername(username) } });
+      if (account === null) return fail(io, `沒有帳號 ${username}。`);
+      try {
+        await bindKarylIdentity(account.id, subject);
+      } catch (error) {
+        if (error instanceof IdentityTaken) return fail(io, `Discord ID ${subject} 已經綁定別的帳號，或 ${account.username} 已經綁定了一個。`);
+        throw error;
+      }
+      io.stdout.write(`已把 Discord ID ${subject} 綁定到 ${account.username}。
+`);
+      return 0;
+    });
+  }
   io.stderr.write(USAGE);
   return 2;
 }
 
 /** Run with a connection bound to the models (src/db/models.ts), closed afterwards. */
-async function withDatabase(io: CliIo, run: (sequelize: Sequelize) => Promise<number>): Promise<number> {
+async function withOwnDatabase(io: CliIo, run: (sequelize: Sequelize) => Promise<number>): Promise<number> {
   const sequelize = connectDatabase(readConfig(io.env).databaseUrl);
   try {
     return await run(sequelize);

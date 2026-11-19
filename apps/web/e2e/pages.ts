@@ -1,13 +1,15 @@
 // Helpers for the end-to-end tests that go through the real pages: logging in, creating a score,
 // opening it and reading it, and collecting the errors a page throws or logs.
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
-import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page } from "@playwright/test";
+import { type Browser, type BrowserContextOptions, type ConsoleMessage, expect, type Page, test, type TestInfo } from "@playwright/test";
 import type { Role } from "@studio/contracts";
-import type { BeatJSON, Cursor, PartKind, ScoreJSON } from "@studio/score-model";
+import { type BarsFragment, type BeatJSON, blankFragment, type Cursor, type NewPart, PART_PRESETS, type ScoreJSON } from "@studio/score-model";
 
 import { strings } from "../src/strings";
-import { SERVER_ENV } from "./environment";
+import { RECOGNIZER_URL, SERVER_ENV } from "./environment";
 
 /** An answer the test expects the server to refuse: the browser logs it as an error, which it is not here. */
 export interface Refusal {
@@ -95,6 +97,31 @@ export async function createScore(page: Page, title: string): Promise<string> {
   return ((await response.json()) as { id: string }).id;
 }
 
+/** A name of this run only, for data the tests' database keeps from earlier runs (phrases). */
+export function runName(name: string): string {
+  return `${name} ${test.info().repeatEachIndex}-${Date.now()}`;
+}
+
+/** A read-only link to the score, made through the API as its Owner logged in on the page; returns its token. */
+export async function readOnlyLink(page: Page, id: string): Promise<string> {
+  const made = await page.request.post(`/api/scores/${id}/link`, { headers: { origin: new URL(page.url()).origin } });
+  expect(made.status()).toBe(200);
+  return ((await made.json()) as { token: string }).token;
+}
+
+/** A phone held upright (the Browser pane's mobile preset): narrower than 768 px, touch, no fine pointer. */
+export const PHONE: BrowserContextOptions = { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true };
+/** A tablet's width, or a narrow desktop window: the wide Read view, which cannot be typed on. */
+export const TABLET: BrowserContextOptions = { viewport: { width: 900, height: 900 } };
+
+/** Create a phrase through the API as the account logged in on the page (a blank 6-string guitar one unless given); returns its id. */
+export async function createPhrase(page: Page, name: string, fragment: BarsFragment = blankFragment(PART_PRESETS.guitar6)): Promise<string> {
+  const origin = new URL(page.url()).origin;
+  const response = await page.request.post("/api/phrases", { data: { name, fragment }, headers: { origin } });
+  expect(response.status()).toBe(201);
+  return ((await response.json()) as { id: string }).id;
+}
+
 /**
  * What `seedScore` makes: account names, how many bars the score starts with (8 when left out),
  * and the parts it has after the first one every new score has (「吉他 1」); or, for the measure
@@ -105,8 +132,11 @@ export interface ScoreFixture {
   owner: string;
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
-  parts?: { name: string; kind: PartKind }[];
+  /** Parts after the first one, with their kind's staves unless told (a keyboard's two). */
+  parts?: Pick<NewPart, "name" | "kind" | "staves">[];
   state?: string;
+  /** The schema version the score says it is of: the current one when left out. */
+  schemaVersion?: number;
 }
 
 /**
@@ -130,6 +160,21 @@ function runServerScript(script: string, fixture: object, made: string): string 
   return run.stdout;
 }
 
+/** Bind a Discord id to an account with the server's CLI, as the first admin of a plugin does (docs/spec/karyl-login.md, section 4). */
+export function bindDiscord(username: string, discordId: string): void {
+  const run = spawnSync("pnpm", ["--silent", "--filter", "@studio/server", "cli", "bind-discord", username, discordId], {
+    env: { ...process.env, ...SERVER_ENV },
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (run.status !== 0) throw new Error(`Could not bind the Discord id: ${run.stderr}`);
+}
+
+/** A Discord id of this run's own: 18 digits, the first of them `lead` (each spec its own, so that two never share one). */
+export function newDiscordId(lead: string): string {
+  return `${lead}${BigInt(`0x${randomBytes(7).toString("hex")}`).toString().padStart(17, "0").slice(-17)}`;
+}
+
 /** An account as the server's script makes it (apps/server/tests/accountE2e.ts). */
 export interface AccountFixture {
   username: string;
@@ -147,14 +192,50 @@ export function seedAccount(fixture: AccountFixture): void {
   runServerScript("account:e2e", fixture, "the account");
 }
 
+/**
+ * Accounts of a test's own, whose roles and sessions it changes: every run, retry and browser
+ * makes them anew. `run` tells this one apart (in titles too); `account` seeds one and returns it,
+ * to log in with.
+ */
+export function accountsFor(testInfo: TestInfo) {
+  const run = `${testInfo.project.name.slice(0, 4)}-${Date.now().toString(36)}`;
+  const account = (name: string, displayName: string) => {
+    const made = { username: `e2e-${name}-${run}`, displayName, password: "e2e own account password", isAdmin: false, mustChangePassword: false };
+    seedAccount(made);
+    return made;
+  };
+  return { run, account };
+}
+
 /** Every change typed here has reached the server. */
 export async function synced(page: Page): Promise<void> {
   await expect(page.locator('[data-sync="synced"]')).toBeVisible();
 }
 
+/**
+ * Wait until the server has stored a score's title and artist in its row, which the list of scores
+ * reads (GET /api/scores). `synced` says only that the server has the change: it writes the row
+ * when it stores the document, a while later (`STORE_DEBOUNCE_MS`, apps/server/src/collab.ts). A
+ * page that reads the list before then shows the title as it was (#163).
+ */
+export async function storedAs(page: Page, id: string, row: { title: string; artist: string | null }): Promise<void> {
+  await expect
+    .poll(async () => {
+      const { scores } = (await (await page.request.get("/api/scores")).json()) as { scores: { id: string; title: string; artist: string | null }[] };
+      const listed = scores.find((score) => score.id === id);
+      return listed && { title: listed.title, artist: listed.artist };
+    })
+    .toEqual(row);
+}
+
+/** Wait until the score, the phrase or the recognition on the page is drawn (`data-ready`). */
+export async function ready(page: Page): Promise<void> {
+  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+}
+
 /** Wait until the score is drawn and in step with the server; the score then has the keyboard. */
 export async function drawn(page: Page): Promise<void> {
-  await expect(page.locator('[data-ready="true"]')).toBeVisible({ timeout: 30_000 });
+  await ready(page);
   await synced(page);
 }
 
@@ -163,9 +244,26 @@ export async function openScore(page: Page, id: string): Promise<void> {
   await drawn(page);
 }
 
+/** Open the phrase in the phrase editor and wait until it is drawn. */
+export async function openPhrase(page: Page, id: string): Promise<void> {
+  await page.goto(`/phrases/${id}`);
+  await ready(page);
+}
+
 /** Wait until the score's sound is ready: the player is there, paused. */
 export async function soundReady(page: Page): Promise<void> {
   await expect(page.locator('[data-player="paused"]')).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Wait until the player is where it stays until asked to play, as the page tells it: paused once
+ * its sound is ready, or unavailable in a browser it cannot play in (docs/spec/playback.md, 4.1;
+ * Playwright's WebKit for Windows has no Web Audio, #129). Which of the two, the page decides.
+ */
+export async function playerSettled(page: Page): Promise<"paused" | "unavailable"> {
+  const player = page.locator('[data-player="paused"], [data-player="unavailable"]');
+  await expect(player).toBeVisible({ timeout: 30_000 });
+  return (await player.getAttribute("data-player")) as "paused" | "unavailable";
 }
 
 /** Open the score and wait until it is drawn, in step with the server, and its sound is ready. */
@@ -178,10 +276,15 @@ export function scoreOf(page: Page): Promise<ScoreJSON> {
   return page.evaluate(() => window.__studioTest!.scoreJson()!);
 }
 
-/** The beats of the first voice of a bar of a part, both by index. */
-export function beatsIn(score: ScoreJSON, part: number, bar: number): BeatJSON[] {
+/** The beats of a voice (the first unless told) of a bar of a part, both by index. */
+export function beatsIn(score: ScoreJSON, part: number, bar: number, voice = "0:0"): BeatJSON[] {
   const barId = score.bars[bar]!.id;
-  return score.parts[part]!.content[barId]?.["0:0"] ?? [];
+  return score.parts[part]!.content[barId]?.[voice] ?? [];
+}
+
+/** The frets on the first string, beat by beat, in the first voice of a bar of a part, both by index. */
+export function firstStringFrets(score: ScoreJSON, part: number, bar: number): (number | undefined)[] {
+  return beatsIn(score, part, bar).map((beat) => beat.notes.s1?.fret);
 }
 
 export function cursorOf(page: Page): Promise<Cursor | null> {
@@ -234,4 +337,30 @@ export function oneAfterAnother(bars: number[]): boolean {
 /** Wait until the toolbar has shown this bar playing (a 4/4 bar lasts 2 seconds at 120). */
 export async function untilShown(page: Page, bar: number): Promise<void> {
   await expect.poll(() => barsShown(page), { timeout: 15_000 }).toContain(bar);
+}
+
+/** A TAB on one page, one of the recognizer's own test images. */
+const TAB_IMAGE = fileURLToPath(new URL("../../../services/recognizer/tests/fixtures/single-page.png", import.meta.url));
+
+/**
+ * Have the stand-in recognizer answer this contract fixture, then upload a TAB image from the
+ * library as the account logged in on the page: the review page opens, and once recognized,
+ * draws the result. The recognition's id.
+ */
+export async function recognizeImage(page: Page, fixture: string): Promise<string> {
+  const answer = await page.request.put(`${RECOGNIZER_URL}/fixture/${fixture}`);
+  expect(answer.status()).toBe(204);
+  await page.goto("/phrases");
+  await page.locator("[data-recognize-input]").setInputFiles(TAB_IMAGE);
+  await expect(page).toHaveURL(/\/recognitions\/[0-9a-f-]{36}$/);
+  await ready(page);
+  return new URL(page.url()).pathname.split("/").at(-1)!;
+}
+
+/** The original image of a one-page recognition is shown, loaded. */
+export async function originalShown(page: Page): Promise<void> {
+  const image = page.locator("[data-original]");
+  await expect(image).toHaveCount(1);
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 }

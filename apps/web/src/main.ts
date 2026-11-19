@@ -1,8 +1,9 @@
-// First: the schemas the modules below build must already know (see the module).
-import "@studio/contracts/without-eval";
+// zod parses without eval: vite.config.ts resolves "zod" to packages/contracts/src/withoutEval.ts.
 import "@karyl-chan/ui/tokens.css";
 import "./styles/app.css";
 import "./icons";
+// Before the router is made: it reads the address once, as the page starts.
+import "./linkResult";
 
 import { useColorScheme } from "@karyl-chan/ui";
 import { createPinia } from "pinia";

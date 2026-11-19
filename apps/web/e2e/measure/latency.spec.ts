@@ -16,7 +16,7 @@ import type { KeySample, RenderSample } from "../../src/measureHook";
 import { EDITOR } from "../environment";
 import { logInFromStart } from "../pages";
 import { logInAsAdmin, median, openEditView, p95, placeCursor, runs } from "./editView";
-import { browserOf, environment, MODE, writeData, writeText } from "./output";
+import { browserOf, environment, MILESTONE, MODE, writeData, writeText } from "./output";
 import { perfScore, type SeededScore } from "./scores";
 
 const RUNS = runs(50);
@@ -85,7 +85,7 @@ test("stages of an edit", async ({ page }) => {
     return `| ${cell.score} | ${cell.shown} | ${cell.bar} | ${stat(column("toJson"))} | ${stat(column("flags"))} | ${stat(column("project"))} | ${stat(column("finish"))} | ${stat(column("render"))} | ${stat(column("total"))} |`;
   });
   const table = ["| score | shown | bar | readScore | flagsOf | projection | finish() | render → rendered | total |", "|---|---|---|---|---|---|---|---|---|", ...rows].join("\n");
-  const name = `s2-stages-${browserOf(page)}-${MODE}`;
+  const name = `${MILESTONE}-s2-stages-${browserOf(page)}-${MODE}`;
   const flags = Object.fromEntries(scores.map(({ id, score }) => [id, score.flags]));
   writeData(`${name}.json`, { environment: await environment(page), runs: RUNS, restBetweenEditsMs: IDLE, flags, cells });
   writeText(`${name}.md`, `Median / p95 in milliseconds, ${RUNS} runs per row, ${IDLE} ms of rest between edits (${browserOf(page)}, ${MODE}). Flags in the scores as written: ${JSON.stringify(flags)}.\n\n${table}\n`);
@@ -101,7 +101,7 @@ test("key press to painted frame", async ({ page }) => {
       await expectNoErrors(page);
     }
   }
-  const name = `s2-keys-${browserOf(page)}-${MODE}`;
+  const name = `${MILESTONE}-s2-keys-${browserOf(page)}-${MODE}`;
   writeData(`${name}.json`, { environment: await environment(page), runs: RUNS, cells });
   writeText(`${name}.md`, `Milliseconds since the key press, median / p95, ${RUNS} keys per row (${browserOf(page)}, ${MODE}).\n\n${keyTable(cells)}\n`);
   console.log(keyTable(cells));
@@ -125,7 +125,7 @@ test("key press to painted frame while another member edits", async ({ page, bro
   }
   await expectNoErrors(other);
   await other.context().close();
-  const name = `s2-concurrent-${browserOf(page)}-${MODE}`;
+  const name = `${MILESTONE}-s2-concurrent-${browserOf(page)}-${MODE}`;
   const rate = cells.map((cell) => `bar ${cell.bar} (${cell.shown}): ${cell.otherEditsPerSecond.toFixed(1)} edits/s, ${cell.drawingsSeen} drawings`).join("; ");
   writeData(`${name}.json`, { environment: await environment(page), runs: RUNS, otherEveryMs: OTHER_EVERY, cells });
   writeText(`${name}.md`, `Milliseconds since the key press, median / p95, ${RUNS} keys per row, while an Editor changes a fret of Guitar 1 in another bar every ${OTHER_EVERY} ms (${browserOf(page)}, ${MODE}). Other member: ${rate}.\n\n${keyTable(cells)}\n`);

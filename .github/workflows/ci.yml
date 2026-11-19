@@ -63,19 +63,109 @@ jobs:
             exit 1
           fi
 
+  # The recognition service, the repository's only Python: its pytest suite in the Docker image that
+  # has the OCR packages, where a test marked "ocr" fails instead of skipping when they are missing
+  # (docs/spec/recognizer.md, ADR 0006). Then its runtime target, the one Compose will build.
+  recognizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the test image
+        run: docker build --target test --tag studio-recognizer-test services/recognizer
+      - name: Recognizer tests
+        run: docker run --rm studio-recognizer-test
+      - name: Build the service image
+        run: docker build --tag studio-recognizer services/recognizer
+
+  # The deployment's files (docs/DEPLOYMENT.md): both modes' Compose files with the example
+  # settings, the server's image, and the nginx examples in nginx's official image, against
+  # certificates made for the run.
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose, standalone mode
+        working-directory: deploy
+        run: docker compose --env-file .env.example -f compose.yaml -f compose.standalone.yaml config --quiet
+      - name: Compose, plugin mode
+        working-directory: deploy
+        # The one setting the example leaves to the host: the bot's address on karyl-chan-net.
+        env:
+          TRUSTED_PROXIES: 172.18.0.0/16
+        run: docker compose --env-file .env.example -f compose.yaml -f compose.plugin.yaml config --quiet
+      - name: Build the server's image
+        run: docker build -f apps/server/Dockerfile -t sheet-thief-studio-server .
+      # The command line answers its usage (exit 2): the image's Node, tsx and the server's
+      # modules load without a database.
+      - name: The image runs the server's code
+        run: |
+          status=0
+          docker run --rm sheet-thief-studio-server studio-cli || status=$?
+          test "$status" = 2
+      - name: nginx examples
+        run: |
+          for site in studio.example.com bot.example.com; do
+            mkdir -p "certs/$site"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$site" \
+              -keyout "certs/$site/privkey.pem" -out "certs/$site/fullchain.pem" 2>/dev/null
+          done
+          for conf in studio karyl-chan-plugin; do
+            docker run --rm \
+              -v "$PWD/deploy/nginx/$conf.conf:/etc/nginx/conf.d/default.conf:ro" \
+              -v "$PWD/certs:/etc/nginx/certs:ro" \
+              nginx:stable-alpine nginx -t
+          done
+
+  # The Playwright version pnpm-lock.yaml holds, which names the image the e2e jobs run in.
+  playwright-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.lockfile.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: pnpm-lock.yaml
+          sparse-checkout-cone-mode: false
+      - id: lockfile
+        name: Playwright's version in the lockfile
+        run: |
+          versions=$(sed -nE "s#^  '@playwright/test@([0-9.]+)':\$#\1#p" pnpm-lock.yaml | sort -u)
+          if [ "$(echo "$versions" | wc -w)" != 1 ]; then
+            echo "pnpm-lock.yaml must hold exactly one @playwright/test, holds: $versions" >&2
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
   # The pages through a real browser, against the real server, Postgres and Redis: the whole suite
   # in Chromium, smoke tests in Firefox and WebKit (docs/spec/testing.md, section 3). WebKit's
   # Playwright project logs in to a server of its own with the development cookie
   # (INSECURE_COOKIES=1, apps/web/playwright.config.ts); Chromium and Firefox keep `__Host-`.
+  #
+  # The jobs run in Playwright's image of the lockfile's version, which holds the browsers and the
+  # system libraries they need: nothing comes from an Ubuntu mirror, whose slow hours used to eat
+  # the job's whole time budget installing them (#145). User 1001 is the runner's, which owns the
+  # workspace; Firefox refuses to run as root under GitHub's HOME. In a container job the services
+  # are reached by their names on their own ports, not through localhost (e2e/environment.ts).
   e2e:
     name: ${{ matrix.name }}
+    needs: playwright-version
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The image pull and setup take a minute or two, the whole Chromium suite over 7 minutes and growing.
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
+      options: --user 1001 --ipc=host
+    env:
+      E2E_DATABASE_URL: postgres://studio:studio@postgres:5432/studio_e2e
+      E2E_REDIS_URL: redis://redis:6379/2
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: e2e, browser: chromium, projects: --project=chromium --project=served }
+          - { name: e2e, browser: chromium, projects: --project=chromium --project=served --project=plugin }
           - { name: e2e-firefox, browser: firefox, projects: --project=firefox }
           - { name: e2e-webkit, browser: webkit, projects: --project=webkit }
     services:
@@ -85,11 +175,9 @@ jobs:
           POSTGRES_USER: studio
           POSTGRES_PASSWORD: studio
           POSTGRES_DB: studio_e2e
-        ports: ["5438:5432"]
         options: --health-cmd "pg_isready -U studio -d studio_e2e" --health-interval 2s --health-timeout 3s --health-retries 30
       redis:
         image: redis:7-alpine
-        ports: ["6388:6379"]
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
@@ -99,18 +187,15 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: playwright
-        name: Playwright's version
-        run: echo "version=$(pnpm --filter @studio/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      # Only the browser of this job, kept between runs of the same Playwright version; the
-      # system libraries it needs are installed each time (--with-deps), the browser only if missing.
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ steps.playwright.outputs.version }}
+        timeout-minutes: 5
+      # The image already holds every browser of its version (PLAYWRIGHT_BROWSERS_PATH=/ms-playwright),
+      # so this finds the browser and downloads nothing; it fails here, within its own budget,
+      # rather than in the tests if the image ever lacks it.
       - name: Install ${{ matrix.browser }}
-        run: pnpm --filter @studio/web exec playwright install --with-deps ${{ matrix.browser }}
+        timeout-minutes: 3
+        run: pnpm --filter @studio/web exec playwright install ${{ matrix.browser }}
       - name: End-to-end tests
+        timeout-minutes: 20
         run: pnpm --filter @studio/web test:e2e ${{ matrix.projects }}
       - name: Keep the Playwright report of a failed run
         if: ${{ failure() }}

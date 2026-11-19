@@ -7,6 +7,7 @@ import {
   type Cursor,
   cursorAt,
   docToJson,
+  DRUM_PIECES,
   durationStep,
   DYNAMICS,
   dynamicCycle,
@@ -17,6 +18,7 @@ import {
   type NoteValue,
   setFret,
   setKeySig,
+  setLyric,
   setNote,
   setRepeat,
   setSection,
@@ -29,7 +31,6 @@ import {
 import { expect, test } from "vitest";
 import * as Y from "yjs";
 
-import { DRUM_PIECES } from "../src/drums";
 import { beatIdOf, beatOf, type Projection, projectScore, replaceBars, restsFilling } from "../src/projection";
 
 const settings = new alphaTab.Settings();
@@ -99,6 +100,62 @@ test("bars and parts become master bars and tracks, in score order, each kind on
   expect(score.tracks.map((track) => track.playbackInfo.program)).toEqual([29, 0, 4]);
 });
 
+test("each staff of a part has the clef its `staves` give it: treble G2, bass F4, treble an octave down G2 with an 8vb mark (#47)", () => {
+  const { doc, barIds } = band();
+  addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  addPart(doc, { name: "Guitar 8vb", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
+  const { score } = projectScore(docToJson(doc), settings);
+  const clefs = (track: number) => score.tracks[track]!.staves.map((staff) => staff.bars.map((bar) => [bar.clef, bar.clefOttava]));
+  const { Clef, Ottavia } = alphaTab.model;
+  const every = (clef: alphaTab.model.Clef, ottava = Ottavia.Regular) => barIds.map(() => [clef, ottava]);
+  // The tablature, the drums, the one treble staff of the keys.
+  expect(clefs(0)).toEqual([every(Clef.G2)]);
+  expect(clefs(1)).toEqual([every(Clef.Neutral)]);
+  expect(clefs(2)).toEqual([every(Clef.G2)]);
+  // Two staves for the piano, treble and bass; a treble clef an octave down for the other part.
+  expect(clefs(3)).toEqual([every(Clef.G2), every(Clef.F4)]);
+  expect(clefs(4)).toEqual([every(Clef.G2, Ottavia._8vb)]);
+  expect(score.tracks[3]!.staves.map((staff) => [staff.showStandardNotation, staff.showTablature])).toEqual([
+    [true, false],
+    [true, false],
+  ]);
+});
+
+test("a beat written on the second staff of a part, or in a second voice, is in its place there: the voice key decides the staff and the voice (#47)", () => {
+  const { doc, barIds } = band();
+  const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const low = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[0]!), voice: "1:0" }, { value: 2 }), "n48", {});
+  const upper = setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[0]!), voice: "0:1" }, { value: 4 }), "n67", {});
+  const projection = projectScore(docToJson(doc), settings);
+  const track = projection.score.tracks[3]!;
+  expect(track.staves).toHaveLength(2);
+  expect(projection.addresses.get(low.beatId!)).toEqual({ track: 3, staff: 1, bar: 0, voice: 0, beat: 0 });
+  expect(projection.addresses.get(upper.beatId!)).toEqual({ track: 3, staff: 0, bar: 0, voice: 1, beat: 0 });
+  expect(beatOf(projection, low.beatId!)!.notes[0]!.realValue).toBe(48);
+  expect(beatOf(projection, upper.beatId!)!.notes[0]!.realValue).toBe(67);
+  // The second voice of the first staff; the second staff has one voice only.
+  expect(track.staves.map((staff) => staff.bars[0]!.voices.length)).toEqual([2, 1]);
+});
+
+test("a bar replaced on a bass staff, or on a staff an octave down, keeps its clef and its octave mark: as projecting the whole score again (#47)", () => {
+  const { doc, barIds } = band();
+  const piano = addPart(doc, { name: "Piano", kind: "pitched", staves: [{ clef: "treble" }, { clef: "bass" }] });
+  const guitar = addPart(doc, { name: "Guitar 8vb", kind: "pitched", staves: [{ clef: "treble-8vb" }] });
+  const projection = projectScore(docToJson(doc), settings);
+  setNote(doc, insertBeat(doc, { ...cursorAt(doc, piano, barIds[1]!), voice: "1:0" }, { value: 4 }), "n43", {});
+  setNote(doc, insertBeat(doc, cursorAt(doc, guitar, barIds[1]!), { value: 4 }), "n52", {});
+  const json = docToJson(doc);
+  expect(replaceBars(projection, json, [barIds[1]!], settings)).toBe(1);
+  const whole = projectScore(json, settings);
+  const clefs = (of: Projection) => [of.score.tracks[3]!.staves[1]!.bars[1]!, of.score.tracks[4]!.staves[0]!.bars[1]!].map((bar) => [bar.clef, bar.clefOttava]);
+  const { Clef, Ottavia } = alphaTab.model;
+  expect(clefs(projection)).toEqual([
+    [Clef.F4, Ottavia.Regular],
+    [Clef.G2, Ottavia._8vb],
+  ]);
+  expect(clefs(projection)).toEqual(clefs(whole));
+});
+
 test("the tuning of each fretted part is written beside its own tablature, not listed above the score where those of several parts overlap", () => {
   const { doc } = band();
   addPart(doc, { name: "Bass", kind: "fretted", tuning: [43, 38, 33, 28] });
@@ -125,7 +182,8 @@ test("strings count from the highest, drum pieces are articulation ids, pitches 
   expect([sharp!.notes[0]!.realValue, sharp!.notes[0]!.accidentalMode]).toEqual([61, NoteAccidentalMode.ForceSharp]);
   const spelledFlat = flat!.notes.find((note) => note.realValue === 61)!;
   expect(spelledFlat.accidentalMode).toBe(NoteAccidentalMode.ForceFlat);
-  expect(flat!.notes.find((note) => note.realValue === 72)!.accidentalMode).toBe(NoteAccidentalMode.Default);
+  // A white key without a spelling is forced natural, as the editor finds it (#48: spelling.test.ts).
+  expect(flat!.notes.find((note) => note.realValue === 72)!.accidentalMode).toBe(NoteAccidentalMode.ForceNatural);
 });
 
 test("an empty bar is a whole-bar rest and a short voice is completed with rests, in the projection only", () => {
@@ -291,6 +349,24 @@ test("the markings of a beat become its alphaTab fields: stroke the brush, slap,
   expect(beats[5]!.notes.map((note) => note.dynamics)).toEqual([DynamicValue.MF, DynamicValue.MF, DynamicValue.MF]);
   const staff = score.tracks[1]!.staves[0]!.bars[0]!.voices[0]!.beats[0]!;
   expect([staff.dynamics, staff.text]).toEqual([DynamicValue.PP, "C"]);
+});
+
+test("a syllable becomes the beat's one line of lyrics, its - kept; an empty one (a melisma) and none are no lyrics, not [\"\"] (#50)", () => {
+  const { doc, barIds, keys } = band();
+  write(doc, keys, barIds[1]!, [
+    [4, { n60: {} }],
+    [4, { n62: {} }],
+    [4, { n64: {} }],
+    [4, { n65: {} }],
+  ]);
+  const beatIds = docToJson(doc).parts[2]!.content[barIds[1]!]!["0:0"]!.map((beat) => beat.id);
+  const on = (index: number): Cursor => ({ ...cursorAt(doc, keys, barIds[1]!), beatId: beatIds[index]!, at: "on" });
+  setLyric(doc, on(0), "Hel-");
+  setLyric(doc, on(1), "lo");
+  setLyric(doc, on(2), "");
+  const { score } = projectScore(docToJson(doc), settings);
+  const beats = score.tracks[2]!.staves[0]!.bars[1]!.voices[0]!.beats;
+  expect(beats.map((beat) => beat.lyrics)).toEqual([["Hel-"], ["lo"], null, null]);
 });
 
 test("replacing a bar whose dynamic changed rebuilds the bars after it up to the next written dynamic in that voice", () => {

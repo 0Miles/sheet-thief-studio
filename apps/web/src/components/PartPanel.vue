@@ -36,6 +36,11 @@ const props = defineProps<{
   canAdd: Record<PartKind, boolean>;
   /** The part whose properties show first: the cursor's. */
   current: string | null;
+  /**
+   * The phrase editor's: a phrase is one part, with no name, capo nor program of its own (docs/
+   * spec/phrases.md, section 5), so the panel has only its tuning or its clefs.
+   */
+  phrase?: boolean;
 }>();
 const emit = defineEmits<{
   add: [preset: PartPresetId, tuning: number[] | undefined];
@@ -176,7 +181,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
       <h2 class="part-panel__title">{{ text.panel }}</h2>
       <AppButton variant="ghost" size="sm" data-close-parts @click="emit('close')">{{ text.close }}</AppButton>
     </header>
-    <section class="part-panel__group">
+    <section v-if="!phrase" class="part-panel__group">
       <h3 class="part-panel__label">{{ text.list }}</h3>
       <ol class="part-panel__list">
         <li
@@ -205,7 +210,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
         </li>
       </ol>
     </section>
-    <form class="part-panel__group" data-add-part @submit.prevent="add">
+    <form v-if="!phrase" class="part-panel__group" data-add-part @submit.prevent="add">
       <h3 class="part-panel__label">{{ text.add }}</h3>
       <div class="part-panel__row">
         <label class="part-panel__field">
@@ -225,9 +230,9 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
       <AppButton type="submit" variant="primary" size="sm" :disabled="!canAdd[presetKind]">{{ text.add }}</AppButton>
     </form>
     <section v-if="edited" class="part-panel__group" data-part-properties :data-part-id="edited.id">
-      <h3 class="part-panel__label">{{ text.properties(edited.name) }}</h3>
+      <h3 v-if="!phrase" class="part-panel__label">{{ text.properties(edited.name) }}</h3>
       <p class="part-panel__note">{{ text.fixed }}</p>
-      <form class="part-panel__group" data-part-name @submit.prevent="applyName">
+      <form v-if="!phrase" class="part-panel__group" data-part-name @submit.prevent="applyName">
         <label class="part-panel__field">
           <span>{{ text.name }}</span>
           <input v-model="name" type="text" name="name" :maxlength="MAX_PART_NAME" required />
@@ -252,14 +257,14 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
         <p class="part-panel__note">{{ text.tuningHelp }}</p>
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
-      <form v-if="edited.kind === 'fretted'" class="part-panel__group" data-part-capo @submit.prevent="applyCapo">
+      <form v-if="edited.kind === 'fretted' && !phrase" class="part-panel__group" data-part-capo @submit.prevent="applyCapo">
         <label class="part-panel__field">
           <span>{{ text.capo }}</span>
           <input v-model.number="capo" class="part-panel__number" type="number" name="capo" :min="CAPO.min" :max="CAPO.max" step="1" required />
         </label>
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
-      <form v-if="edited.kind !== 'percussion'" class="part-panel__group" data-part-program @submit.prevent="applyProgram">
+      <form v-if="edited.kind !== 'percussion' && !phrase" class="part-panel__group" data-part-program @submit.prevent="applyProgram">
         <label class="part-panel__field">
           <span>{{ text.program }}</span>
           <input v-model.number="program" class="part-panel__number" type="number" name="program" :min="PROGRAM.min" :max="PROGRAM.max" step="1" required />

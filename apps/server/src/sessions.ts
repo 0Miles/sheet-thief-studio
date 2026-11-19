@@ -1,10 +1,10 @@
 // Sessions in Redis (docs/spec/security.md, section 1): `session:<id>` holds the account, and
 // `account-sessions:<accountId>` lists the ids of an account so that all of them can end at once.
 // Both slide: every use moves their expiry 30 days ahead.
-import { parsePlain } from "@studio/score-model";
 import type { Redis } from "ioredis";
 import { z } from "zod";
 
+import { readJson } from "./storedJson";
 import { isToken, newToken } from "./tokens";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -39,8 +39,11 @@ export type SessionsEnded = { accountId: string; sessionId: null } | { accountId
 
 export type SessionsEndedListener = (ended: SessionsEnded) => void | Promise<void>;
 
-/** One session, or every session of an account but the one it keeps (changing one's own password). */
-export type SessionsToEnd = { sessionId: string } | { accountId: string; except?: string };
+/**
+ * One session, or every session of an account but the one it keeps (changing one's own password),
+ * or only those that logged in one way (unbinding its Discord id).
+ */
+export type SessionsToEnd = { sessionId: string } | { accountId: string; except?: string; via?: LoginMethod };
 
 interface Logger {
   error(details: object, message: string): void;
@@ -114,8 +117,17 @@ export class Sessions {
       }
       return;
     }
-    const { accountId, except } = which;
+    const { accountId, except, via } = which;
     const ending = (await this.redis.smembers(accountKey(accountId))).filter((id) => id !== except);
+    if (via !== undefined) {
+      // Only those that logged in this way: each ends as one session does, closing its own connections only.
+      const stored = ending.length === 0 ? [] : await this.redis.mget(ending.map(sessionKey));
+      for (const [at, sessionId] of ending.entries()) {
+        const value = stored[at];
+        if (value != null && readJson(value, storedSession)?.via === via) await this.end({ sessionId });
+      }
+      return;
+    }
     const removal = this.redis.multi();
     for (const id of ending) removal.del(sessionKey(id));
     if (except === undefined) removal.del(accountKey(accountId));
@@ -149,16 +161,4 @@ export class Sessions {
       if (result.status === "rejected") this.log.error({ err: result.reason, ended }, "a listener to ended sessions failed");
     }
   }
-}
-
-/** What a stored string holds, read by the fields of its shape; null when it is not JSON or not of that shape. */
-function readJson<Schema extends z.ZodType>(stored: string, schema: Schema): z.output<Schema> | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(stored);
-  } catch {
-    return null;
-  }
-  const parsed = parsePlain(schema, value);
-  return parsed.success ? parsed.data : null;
 }

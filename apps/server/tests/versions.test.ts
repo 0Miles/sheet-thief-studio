@@ -15,7 +15,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { Score, Version } from "../src/db/models";
 import { AUTO_VERSIONS_KEPT, createVersion, MAX_VERSION_BYTES, VERSION_INTERVAL_MS, VersionTooLarge } from "../src/versions";
-import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, testConfig, ticketFor, warmPool } from "./support";
+import { createScore, freshDatabase, freshRedis, listen, nextSyncStatus, type OpenScore, openScore, sessionOf, storedScore, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -326,21 +326,23 @@ test("the same content is the same version however its keys are ordered, and a s
   const score = docToJson(doc);
   const reversed = Object.fromEntries(Object.entries(score).reverse()) as typeof score;
 
-  const made = await createVersion(id, () => score, "interval");
+  const made = await createVersion(id, { read: () => score, reason: "interval" });
   expect(made?.created).toBe(true);
-  expect(await createVersion(id, () => reversed, "last_disconnect")).toEqual({ id: made!.id, created: false });
-  expect((await createVersion(id, () => ({ ...score, title: "另一個標題" }), "last_disconnect"))?.created).toBe(true);
+  expect(await createVersion(id, { read: () => reversed, reason: "last_disconnect" })).toEqual({ id: made!.id, created: false });
+  expect((await createVersion(id, { read: () => ({ ...score, title: "另一個標題" }), reason: "last_disconnect" }))?.created).toBe(true);
   // Back to the first content: not the latest one any more, so a version again.
-  expect((await createVersion(id, () => score, "last_disconnect"))?.created).toBe(true);
+  expect((await createVersion(id, { read: () => score, reason: "last_disconnect" }))?.created).toBe(true);
   expect(await Version.count({ where: { scoreId: id } })).toBe(3);
 
   expect(
     await createVersion(
       "00000000-0000-4000-8000-000000000000",
-      () => {
-        throw new Error("no score: nothing to read");
+      {
+        read: () => {
+          throw new Error("no score: nothing to read");
+        },
+        reason: "interval",
       },
-      "interval",
     ),
   ).toBeNull();
 });
@@ -388,20 +390,13 @@ test("a version that cannot be made is logged, and the score is stored and unloa
   expect(await titlesOf(id)).toEqual(["沒有版本的修改"]);
 });
 
-/** The score as its row holds it. */
-async function storedScore(scoreId: string) {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, (await Score.findByPk(scoreId))!.docState);
-  return docToJson(doc);
-}
-
 test("two versions of the same content asked for at once make one", async () => {
   const started = await startApp();
   const id = await createScore(started.app, started.session, "同時建立");
   const score = await storedScore(id);
   await warmPool(sequelize);
 
-  const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, () => score, "interval")));
+  const made = await Promise.all(Array.from({ length: 4 }, () => createVersion(id, { read: () => score, reason: "interval" })));
 
   expect(await Version.count({ where: { scoreId: id } })).toBe(1);
   expect(made.filter((version) => version?.created)).toHaveLength(1);
@@ -426,7 +421,7 @@ test("versions made at once near the limit never leave more than 200 automatic o
   );
   await warmPool(sequelize);
 
-  const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, () => ({ ...score, title: `同時的第 ${index} 個` }), "interval")));
+  const made = await Promise.all(Array.from({ length: 5 }, (_, index) => createVersion(id, { read: () => ({ ...score, title: `同時的第 ${index} 個` }), reason: "interval" })));
 
   expect(made.map((version) => version?.created)).toEqual([true, true, true, true, true]);
   expect(await Version.count({ where: { scoreId: id } })).toBe(AUTO_VERSIONS_KEPT);
@@ -441,11 +436,11 @@ test("the database refuses a version with a reason it does not know", async () =
   const id = await createScore(started.app, started.session, "原因測試");
   const row = { scoreId: id, schemaVersion: SCHEMA_VERSION, content: Buffer.from("x"), contentHash: "0".repeat(64), byteSize: 1 };
 
-  await expect(Version.create({ ...row, reason: "manual" as never })).rejects.toThrow(/versions_reason_check/);
+  await expect(Version.create({ ...row, reason: "restored" as never })).rejects.toThrow(/versions_reason_check/);
 
   expect(await Version.count({ where: { scoreId: id } })).toBe(0);
-  for (const reason of ["last_disconnect", "interval", "before_restore"] as const) await Version.create({ ...row, reason });
-  expect(await Version.count({ where: { scoreId: id } })).toBe(3);
+  for (const reason of ["last_disconnect", "interval", "before_restore", "manual"] as const) await Version.create({ ...row, reason });
+  expect(await Version.count({ where: { scoreId: id } })).toBe(4);
 });
 
 test("content of more than 8 MB of JSON makes no version, and one of exactly as much does", async () => {
@@ -457,10 +452,10 @@ test("content of more than 8 MB of JSON makes no version, and one of exactly as 
     return { ...score, title: "a".repeat(bytes - empty) };
   };
 
-  await expect(createVersion(id, () => sized(MAX_VERSION_BYTES + 1), "interval")).rejects.toThrow(VersionTooLarge);
+  await expect(createVersion(id, { read: () => sized(MAX_VERSION_BYTES + 1), reason: "interval" })).rejects.toThrow(VersionTooLarge);
   expect(await Version.count({ where: { scoreId: id } })).toBe(0);
 
-  expect((await createVersion(id, () => sized(MAX_VERSION_BYTES), "interval"))?.created).toBe(true);
+  expect((await createVersion(id, { read: () => sized(MAX_VERSION_BYTES), reason: "interval" }))?.created).toBe(true);
   const [version] = await versionsOf(id);
   expect(version!.byteSize).toBe(MAX_VERSION_BYTES);
 });

@@ -6,6 +6,8 @@
 import * as Y from "yjs";
 import { z } from "zod";
 
+import { ownCopy, ownEntries, TOO_DEEP } from "./depth";
+
 /** Version of the document schema; a document written by a newer version opens read-only. */
 export const SCHEMA_VERSION = 1;
 
@@ -59,11 +61,33 @@ export type Harmonic = (typeof HARMONICS)[number];
 /** How far a bend goes, in semitones: 1 to 4, a new one 2 (docs/spec/schema.md, section 8). */
 export const BEND_SEMITONES = { min: 1, max: 4, initial: 2 } as const;
 
+/** Quarter notes per minute a bar may have (docs/spec/schema.md, section 3). */
+export const TEMPO_RANGE = { min: 20, max: 400 } as const;
+
+/** The most times a repeat is played in all. */
+export const MAX_REPEAT = 32;
+
+/** How many strings a fretted part has. */
+export const STRING_COUNTS = { min: 4, max: 7 } as const;
+
+/** The highest fret of a note, and of a capo. */
+export const MAX_FRET = 36;
+export const MAX_CAPO = 24;
+
+/** The most staves a pitched part has. */
+export const MAX_STAVES = 2;
+
 /** The longest text over a beat (docs/spec/schema.md, section 13). */
 export const MAX_BEAT_TEXT = 64;
 
+/** The longest syllable of a lyric (docs/spec/schema.md, section 13). */
+export const MAX_LYRIC = 32;
+
 /** An imported score, serialized as JSON in UTF-8. */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+/** The largest file an import reads at all (docs/spec/import-export.md, section 2), checked before it is read. */
+export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
  * A string of `min` to `max` characters, counted as JavaScript counts them (UTF-16 code units,
@@ -76,37 +100,25 @@ function text(min: number, max: number) {
 const midi = z.int().min(0).max(127);
 
 /**
- * How deep lists and objects go in a legal value of the document: a note with a bend, the staves
- * of a part (a list of objects), the fields of a beat with a tuplet.
+ * Check a value stored in the document against its schema: every read of one goes through here,
+ * so that all members read it alike. What zod is given is the value as every member holds it
+ * (`ownCopy`: its own fields, no __proto__ at any level, #78). A value nested deeper than
+ * `MAX_VALUE_DEPTH` cannot be read, whatever field holds the depth (#102); a shared type is not a
+ * value. Never throws, however deep the value.
  */
-const PLAIN_DEPTH = 2;
-
-/** What stands for a list or an object nested deeper than any legal value: no schema reads it. */
-const TOO_DEEP = Symbol("nested too deep");
-
-/**
- * A value of the document as every member holds it (#78): the fields it has of its own, but one
- * named __proto__. The member who writes such a field holds it as a field; the others decode it
- * as the prototype of the value (lib0's readAny), and zod would read the fields of a prototype.
- * Copied down to the depth of a legal value only, so that a value nested without end costs
- * nothing and cannot overflow the stack: fields no schema knows are dropped by zod whatever they
- * hold. A shared type is not a value.
- */
-function plain(value: unknown, depth = PLAIN_DEPTH): unknown {
-  if (typeof value !== "object" || value === null) return value;
-  if (depth === 0 || value instanceof Y.AbstractType) return TOO_DEEP;
-  if (Array.isArray(value)) return value.map((item) => plain(item, depth - 1));
-  const fields: [string, unknown][] = [];
-  for (const [name, field] of Object.entries(value)) if (name !== "__proto__") fields.push([name, plain(field, depth - 1)]);
-  return Object.fromEntries(fields);
+export function parsePlain<Schema extends z.ZodType>(schema: Schema, value: unknown): z.ZodSafeParseResult<z.output<Schema>> {
+  return schema.safeParse(ownCopy(value));
 }
 
 /**
- * Check a value stored in the document against its schema: every read of one goes through here,
- * so that all members read it alike (see `plain`). Never throws.
+ * Check fields gathered from a shared type (a beat's, but its notes) against a schema of them,
+ * as `parsePlain` checks a value: each field a value of its own, `MAX_VALUE_DEPTH` deep at most
+ * (gathering them is no level). One nested too deep makes them all unreadable; one holding a
+ * shared type is unreadable by itself, ignored when the schema does not know it.
  */
-export function parsePlain<Schema extends z.ZodType>(schema: Schema, value: unknown): z.ZodSafeParseResult<z.output<Schema>> {
-  return schema.safeParse(plain(value));
+export function parsePlainFields<Schema extends z.ZodType>(schema: Schema, fields: Record<string, unknown>): z.ZodSafeParseResult<z.output<Schema>> {
+  const copies = ownEntries(fields).map(([name, field]): [string, unknown] => [name, ownCopy(field)]);
+  return schema.safeParse(copies.some(([, copy]) => copy === TOO_DEEP) ? TOO_DEEP : Object.fromEntries(copies));
 }
 
 /**
@@ -160,11 +172,11 @@ export const barSchema = z.object({
   id: z.string().refine((id) => id !== "__proto__", "a bar id records cannot keep"),
   timeSig: timeSigSchema,
   /** Quarter notes per minute. */
-  tempo: z.number().min(20).max(400).optional(),
+  tempo: z.number().min(TEMPO_RANGE.min).max(TEMPO_RANGE.max).optional(),
   keySig: keySigSchema.optional(),
   repeatStart: z.literal(true).optional(),
   /** How many times the repeat is played in all. */
-  repeatEnd: z.int().min(2).max(32).optional(),
+  repeatEnd: z.int().min(2).max(MAX_REPEAT).optional(),
   /** The passes this bar is played on, in order. */
   voltas: z
     .array(z.int().min(1).max(8))
@@ -188,7 +200,7 @@ export const DEFAULT_KEY_SIG: Readonly<KeySignature> = Object.freeze({ fifths: 0
 /** Every field a note can have, whatever its part; `kindSchemas` says which ones each kind has. */
 export const noteSchema = z.object({
   /** Fretted parts: the fret on the string named by the key of the note; a dead note may have none. */
-  fret: z.int().min(0).max(36).optional(),
+  fret: z.int().min(0).max(MAX_FRET).optional(),
   dead: z.literal(true).optional(),
   /** The note continues the one before it on the same string or pitch. */
   tie: z.literal(true).optional(),
@@ -229,7 +241,7 @@ const beatFieldsSchema = z.object({
   /** Free text over the beat, such as a chord name: never read nor transposed. */
   text: text(1, MAX_BEAT_TEXT).optional(),
   /** One syllable; empty continues the syllable before it (melisma). */
-  lyric: text(0, 32).optional(),
+  lyric: text(0, MAX_LYRIC).optional(),
 });
 
 /** Every field a beat can have, whatever its part. */
@@ -364,8 +376,8 @@ export const partSchemas = {
     id: z.string(),
     name: partName,
     kind: z.literal("fretted"),
-    tuning: z.array(midi).min(4).max(7),
-    capo: z.int().min(0).max(24),
+    tuning: z.array(midi).min(STRING_COUNTS.min).max(STRING_COUNTS.max),
+    capo: z.int().min(0).max(MAX_CAPO),
     program: midi,
     staves: z.tuple([z.object({ clef: z.literal("tab") })]),
     content: contentSchema,
@@ -392,10 +404,13 @@ export const partSchemas = {
     staves: z
       .array(z.object({ clef: z.enum(["treble", "bass", "treble-8vb"]) }))
       .min(1)
-      .max(2),
+      .max(MAX_STAVES),
     content: contentSchema,
   }),
 };
+
+/** A clef a staff of a pitched part can have. */
+export type PitchedClef = z.output<typeof partSchemas.pitched.shape.staves>[number]["clef"];
 
 /**
  * Check beats against the kind of the part they belong to, one with `strings` strings: their own
@@ -479,7 +494,7 @@ export function keySigAt(score: ScoreJSON, barId: string): KeySignature | undefi
  * The key in force in each bar, in order: from the bar that changes it on, `DEFAULT_KEY_SIG` before
  * any does. Each a copy of its own: changing one changes neither the score nor another bar's.
  */
-export function keySigsOf(bars: readonly BarJSON[]): KeySignature[] {
+export function keySigsOf(bars: readonly Pick<BarJSON, "keySig">[]): KeySignature[] {
   let key: Readonly<KeySignature> = DEFAULT_KEY_SIG;
   return bars.map((bar) => {
     key = bar.keySig ?? key;
@@ -533,10 +548,12 @@ export function jsonBytes(value: unknown): number {
 
 /**
  * A score to import as a new one (section 13): a legal score within the limits on bars and
- * parts, of at most 5 MB once serialized.
+ * parts, of at most 5 MB once serialized, with a title of 1 to 100 characters that is not only
+ * white space, as a new score has (section 2).
  */
 export const importedScoreSchema = scoreSchema.superRefine((score, context) => {
   const issue = (message: string, path: string[]) => context.addIssue({ code: "custom", message, path });
+  if (score.title.trim() === "") issue("a title that is empty or only white space", ["title"]);
   if (score.bars.length > MAX_BARS) issue(`more than ${MAX_BARS} bars`, ["bars"]);
   if (score.parts.length > MAX_PARTS) issue(`more than ${MAX_PARTS} parts`, ["parts"]);
   if (score.parts.filter((part) => part.kind !== "percussion").length > MAX_NON_PERCUSSION_PARTS) issue(`more than ${MAX_NON_PERCUSSION_PARTS} parts that are not drums`, ["parts"]);
@@ -613,7 +630,7 @@ export type BeatDuration = Duration & { dots: 0 | 1 | 2 };
 
 /** The duration of a beat as stored; undefined when it cannot be read. */
 export function durationOf(beat: YBeat): BeatDuration | undefined {
-  const duration = parsePlain(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
+  const duration = parsePlainFields(durationSchema, { value: beat.get("value"), dots: beat.get("dots"), tuplet: beat.get("tuplet") });
   return duration.success ? duration.data : undefined;
 }
 

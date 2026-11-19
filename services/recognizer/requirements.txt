@@ -1,0 +1,16 @@
+# The recognition core (docs/spec/recognizer.md, section 2): Sheet Thief's requirements-worker.txt
+# without the web API, the database, the queue and PyGuitarPro (only its GP5 writer used it).
+pdfplumber==0.11.10
+pdfminer.six==20260107
+Pillow==12.3.0
+# Tab images (OCR): RapidOCR's text recogniser on ONNX Runtime. Its package declares Python <3.13
+# only, yet runs on newer ones, so it is installed apart from this file: requirements-ocr.txt,
+# with --no-deps --ignore-requires-python. Its dependencies:
+onnxruntime>=1.7.0
+opencv-python-headless>=4.5.1.48
+numpy>=1.19.5,<3.0.0
+pyclipper>=1.2.0
+Shapely>=1.7.1,!=2.0.4
+PyYAML
+six>=1.15.0
+tqdm

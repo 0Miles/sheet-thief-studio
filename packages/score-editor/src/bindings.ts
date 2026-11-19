@@ -1,7 +1,7 @@
 // The keymap as data (docs/spec/keymap.md): which keys have which effect, in which context, and the
 // keys each platform keeps for itself. A ticket that adds a key adds a row here; the platform
 // layer's tests then check it on both platforms (keymap.md, 1.3).
-import { ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
+import { type DrumPieceName, NOTE_LETTERS, type NoteLetter, ON_OFF_TECHNIQUES, type OnOffTechnique, type PartKind } from "@studio/score-model";
 
 import type { Chord, KeyPlatform } from "./keys";
 
@@ -37,6 +37,12 @@ export type SessionEffect =
   | "undo"
   | "redo"
   | "fret"
+  | "drum"
+  | "pitch"
+  | "sharpen"
+  | "flatten"
+  | "octaveUp"
+  | "octaveDown"
   | "tie"
   | "slideOut"
   | "slideIn"
@@ -48,7 +54,8 @@ export type SessionEffect =
   | "stroke"
   | "slapPop"
   | "dynamic"
-  | "text";
+  | "text"
+  | "lyrics";
 
 /**
  * What a key the browser handles does: it fires its `copy`, `cut` or `paste` event, where the
@@ -59,9 +66,10 @@ export type NativeEffect = "copy" | "cut" | "paste";
 /**
  * What a key the page handles does, outside the score: playing (docs/spec/playback.md, section 4),
  * going to the next flag, which the page computes from the score it draws (docs/spec/flags.md,
- * section 4), and opening or closing the panel of the cursor's bar (keymap.md, section 5).
+ * section 4), and opening or closing the panel of the cursor's bar and the phrase sidebar
+ * (keymap.md, section 5).
  */
-export type PageEffect = "playPause" | "nextFlag" | "barPanel";
+export type PageEffect = "playPause" | "nextFlag" | "barPanel" | "phraseSidebar";
 
 /**
  * What a key does in a text box of the score (keymap.md, section 6): the text of a beat, typed
@@ -70,14 +78,25 @@ export type PageEffect = "playPause" | "nextFlag" | "barPanel";
 export type TextEntryEffect = "saveEntry" | "cancelEntry";
 
 /**
- * Where a key works: on the score whatever the kind of the part, on parts of one kind only, or in
- * a text box of the score (`textEntryEffectOf`), where no key of the score works.
+ * What a key does in the box of lyrics mode (keymap.md, 6.2), besides Enter and Esc of every text
+ * box: the syllable typed is saved and the box goes on to the next sung beat, as it is (Space) or
+ * with a `-` at its end (the word goes on); in an empty box Delete takes the beat's lyric away.
  */
-export type KeyContext = "score" | PartKind | "textEntry";
+export type LyricEntryEffect = "nextSyllable" | "joinSyllable" | "removeSyllable";
+
+/**
+ * Where a key works: on the score whatever the kind of the part, on parts of one kind only, in
+ * a text box of the score (`textEntryEffectOf`), or in the box of lyrics mode, which has a text
+ * box's keys too (`lyricEntryEffectOf`). No key of the score works in either box.
+ */
+export type KeyContext = "score" | PartKind | EntryContext;
+
+/** The contexts of the boxes typed in over the score. */
+export type EntryContext = "textEntry" | "lyricEntry";
 
 interface BindingKeys {
-  /** Every binding but a text box's works on the score (`TextEntryBinding`). */
-  context: Exclude<KeyContext, "textEntry">;
+  /** Every binding but a box's works on the score (`TextEntryBinding`, `LyricEntryBinding`). */
+  context: Exclude<KeyContext, EntryContext>;
   /** The keys, on every platform unless `mac` says otherwise; the first is the one shown (`formatChord`). */
   keys: readonly Chord[];
   /**
@@ -100,8 +119,16 @@ interface SessionKeys extends BindingKeys {
   repeat?: true;
 }
 
-/** A key the session handles: the shell then calls `preventDefault`. A digit names the fret it writes. */
-export type SessionBinding = (SessionKeys & { effect: "fret"; fret: number }) | (SessionKeys & { effect: Exclude<SessionEffect, "fret">; fret?: undefined });
+/**
+ * A key the session handles: the shell then calls `preventDefault`. A digit names the fret it
+ * writes on a fretted part; a drum piece's key names the piece it turns on and off; a letter on a
+ * staff names the note it enters.
+ */
+export type SessionBinding =
+  | (SessionKeys & { effect: "fret"; fret: number; piece?: undefined; letter?: undefined })
+  | (SessionKeys & { effect: "drum"; piece: DrumPieceName; fret?: undefined; letter?: undefined })
+  | (SessionKeys & { effect: "pitch"; letter: NoteLetter; fret?: undefined; piece?: undefined })
+  | (SessionKeys & { effect: Exclude<SessionEffect, "fret" | "drum" | "pitch">; fret?: undefined; piece?: undefined; letter?: undefined });
 
 /** A key left to the browser: it is not `preventDefault`-ed, so that the browser fires its event. */
 export interface NativeBinding extends BindingKeys {
@@ -109,6 +136,8 @@ export interface NativeBinding extends BindingKeys {
   native: true;
   page?: undefined;
   fret?: undefined;
+  piece?: undefined;
+  letter?: undefined;
 }
 
 /** A key the session leaves to the page, which does what it is for (`pageEffectOf`). */
@@ -117,6 +146,8 @@ export interface PageBinding extends BindingKeys {
   native?: undefined;
   page: true;
   fret?: undefined;
+  piece?: undefined;
+  letter?: undefined;
 }
 
 /** A key of a text box of the score: the box does what it is for (`textEntryEffectOf`). */
@@ -126,9 +157,22 @@ export interface TextEntryBinding extends Omit<BindingKeys, "context"> {
   native?: undefined;
   page?: undefined;
   fret?: undefined;
+  piece?: undefined;
+  letter?: undefined;
 }
 
-export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding;
+/** A key of the box of lyrics mode: the page hands it to `EditorSession.pressLyric`. */
+export interface LyricEntryBinding extends Omit<BindingKeys, "context"> {
+  effect: LyricEntryEffect;
+  context: "lyricEntry";
+  native?: undefined;
+  page?: undefined;
+  fret?: undefined;
+  piece?: undefined;
+  letter?: undefined;
+}
+
+export type KeyBinding = SessionBinding | NativeBinding | PageBinding | TextEntryBinding | LyricEntryBinding;
 
 const DIGITS = [..."0123456789"];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -141,6 +185,31 @@ const ZOOM_KEYS = ["Equal", "Shift+Equal", "NumpadAdd", "Minus", "NumpadSubtract
 
 /** The same keys on both platforms. */
 const both = (...keys: string[]): Record<KeyPlatform, readonly string[]> => ({ other: keys, mac: keys });
+
+/**
+ * Section 4.2: the key of each of the 18 drum pieces, without a modifier; the toms are on the
+ * digits 1 to 4, of the row of digits and of the numeric keypad.
+ */
+const DRUM_KEYS: Record<DrumPieceName, readonly string[]> = {
+  kick: ["KeyK"],
+  snare: ["KeyS"],
+  sideStick: ["KeyD"],
+  rimShot: ["KeyF"],
+  hiHatClosed: ["KeyH"],
+  hiHatHalf: ["KeyJ"],
+  hiHatOpen: ["KeyO"],
+  hiHatPedal: ["KeyP"],
+  tomHigh: ["Digit1", "Numpad1"],
+  tomMid: ["Digit2", "Numpad2"],
+  tomLow: ["Digit3", "Numpad3"],
+  tomFloor: ["Digit4", "Numpad4"],
+  crash: ["KeyC"],
+  ride: ["KeyR"],
+  rideBell: ["KeyB"],
+  china: ["KeyN"],
+  splash: ["KeyM"],
+  cowbell: ["KeyW"],
+};
 
 /** Section 3: the letter, with Shift, of each technique a key turns on and off on a note of a fretted part. */
 const TECHNIQUE_KEYS: Record<OnOffTechnique, string> = {
@@ -208,20 +277,21 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { effect: "nextFlag", context: "score", keys: ["F8"], page: true, keymap: both("F8") },
   // Fn+F2 on a Mac, as F8: the toolbar has the same button (keymap.md, section 5).
   { effect: "barPanel", context: "score", keys: ["F2"], page: true, keymap: both("F2") },
+  // Fn+F4 on a Mac, as F2: the toolbar has the same button (keymap.md, sections 5 and 7).
+  { effect: "phraseSidebar", context: "score", keys: ["F4"], page: true, keymap: both("F4") },
   // Section 4.1: a digit on the row of digits or on the numeric keypad.
   ...DIGITS.map((digit): SessionBinding => {
     const keys = [`Digit${digit}`, `Numpad${digit}`];
     return { effect: "fret", fret: Number(digit), context: "fretted", keys, keymap: both(...keys) };
   }),
   // Section 3: Shift and a letter turns a technique on and off, on a Mac as well. Tie also takes
-  // the fret of the note before; on staves it waits, as the other techniques do, for their keys
-  // to name the notes drawn on a line (keymap.md, section 3).
+  // the fret of the note before (on staves, below with the staff's keys).
   { effect: "tie", context: "fretted", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
   // A slide out steps through its kinds, a slide in through its own, each back to none.
   { effect: "slideOut", context: "fretted", keys: ["Shift+KeyS"], keymap: both("Shift+KeyS") },
   { effect: "slideIn", context: "fretted", keys: ["Shift+KeyE"], keymap: both("Shift+KeyE") },
   // A bend steps through its preset shapes back to none; Shift with ↑ and ↓ takes it a semitone
-  // up and down. On a staff, Shift+↑ and Shift+↓ will be the octave (keymap.md, section 3).
+  // up and down. On a staff, Shift+↑ and Shift+↓ are the octave (keymap.md, section 4.3).
   { effect: "bend", context: "fretted", keys: ["Shift+KeyB"], keymap: both("Shift+KeyB") },
   { effect: "bendUp", context: "fretted", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
   { effect: "bendDown", context: "fretted", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
@@ -231,12 +301,38 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     const keys = [`Shift+${TECHNIQUE_KEYS[technique]}`];
     return { effect: technique, context: "fretted", keys, keymap: both(...keys) };
   }),
+  // Section 4.2: a drum piece's key turns it on and off at the cursor.
+  ...(Object.entries(DRUM_KEYS) as [DrumPieceName, readonly string[]][]).map(([piece, keys]): SessionBinding => ({ effect: "drum", piece, context: "percussion", keys, keymap: both(...keys) })),
+  // Section 3: ghost and accent on the pieces of the cursor's line (`noteKeysAt`).
+  { effect: "ghost", context: "percussion", keys: ["Shift+KeyG"], keymap: both("Shift+KeyG") },
+  { effect: "accent", context: "percussion", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
+  // Section 4.3: on a staff a letter enters its note; ] and [ move the notes of the cursor's line
+  // a semitone, Shift+↑ and Shift+↓ an octave (with the bend's keys of a fretted part: no clash, a
+  // binding works on parts of its kind only).
+  ...NOTE_LETTERS.map((letter): SessionBinding => ({ effect: "pitch", letter, context: "pitched", keys: [`Key${letter}`], keymap: both(`Key${letter}`) })),
+  { effect: "sharpen", context: "pitched", keys: ["BracketRight"], keymap: both("BracketRight") },
+  { effect: "flatten", context: "pitched", keys: ["BracketLeft"], keymap: both("BracketLeft") },
+  { effect: "octaveUp", context: "pitched", keys: ["Shift+ArrowUp"], keymap: both("Shift+ArrowUp") },
+  { effect: "octaveDown", context: "pitched", keys: ["Shift+ArrowDown"], keymap: both("Shift+ArrowDown") },
+  // Section 3 on a staff (#49): tie, accent and staccato on the notes drawn on the cursor's line;
+  // tie on an empty line makes the notes the beat before draws there (`tieKeysAt`).
+  { effect: "tie", context: "pitched", keys: ["Shift+KeyL"], keymap: both("Shift+KeyL") },
+  { effect: "accent", context: "pitched", keys: ["Shift+KeyA"], keymap: both("Shift+KeyA") },
+  { effect: "staccato", context: "pitched", keys: ["Shift+KeyC"], keymap: both("Shift+KeyC") },
+  // Section 5: lyrics mode, on a staff only, in a box the page opens (`EditorSession.onEditLyric`).
+  { effect: "lyrics", context: "pitched", keys: ["Shift+Enter"], keymap: both("Shift+Enter") },
   // Section 3: the markings of a beat a fretted part only has.
   { effect: "stroke", context: "fretted", keys: ["Shift+KeyU"], keymap: both("Shift+KeyU") },
   { effect: "slapPop", context: "fretted", keys: ["Shift+KeyJ"], keymap: both("Shift+KeyJ") },
   // Section 6: in a text box. Return, on a Mac, is the same key.
   { effect: "saveEntry", context: "textEntry", keys: ["Enter", "NumpadEnter"], keymap: both("Enter", "NumpadEnter") },
   { effect: "cancelEntry", context: "textEntry", keys: ["Escape"], keymap: both("Escape") },
+  // Section 6.2: in the box of lyrics mode, which has Enter and Esc as well. `-` on the row of
+  // digits or on the numeric keypad; Delete is Fn+delete on a Mac, whose delete key is the box's
+  // Backspace.
+  { effect: "nextSyllable", context: "lyricEntry", keys: ["Space"], keymap: both("Space") },
+  { effect: "joinSyllable", context: "lyricEntry", keys: ["Minus", "NumpadSubtract"], keymap: both("Minus", "NumpadSubtract") },
+  { effect: "removeSyllable", context: "lyricEntry", keys: ["Delete"], keymap: both("Delete") },
 ];
 
 /**

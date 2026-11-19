@@ -13,9 +13,10 @@ import * as Y from "yjs";
 
 import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
-import { Score, ScoreMember } from "../src/db/models";
+import { Account, Score, ScoreMember } from "../src/db/models";
 import { withoutLinkTokens } from "../src/links";
-import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor } from "./support";
+import { holdClock } from "./clock";
+import { apiCall, closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, warmPool } from "./support";
 
 const PASSWORD = "a password long enough";
 
@@ -166,6 +167,7 @@ test("a wrong token answers 404; right and wrong answers both say no referrer an
 });
 
 test("a guest's tickets are limited to 30 a minute from one IP", async () => {
+  holdClock();
   const { app } = await startApp();
   const statuses: number[] = [];
   for (let attempt = 0; attempt < 30; attempt += 1) statuses.push((await askAsGuest(app, "x".repeat(43), "10.0.0.7")).statusCode);
@@ -188,6 +190,100 @@ test("only the Owner manages the link: 403 to another member, 404 to anyone else
     expect((await link(app, method, outsider.id, benSession)).statusCode).toBe(404);
     expect((await app.inject({ method, url: `/api/scores/${id}/link`, headers: { origin: ORIGIN } })).statusCode).toBe(401);
   }
+});
+
+/** Hand Anna's score over to Ben, as the members page does. */
+function handToBen(app: FastifyInstance, scoreId: string, session: string) {
+  return apiCall(app, "POST", `/api/scores/${scoreId}/transfer`, session, { accountId: ben });
+}
+
+/**
+ * Resolves once another connection waits for a lock to read this score's row `FOR UPDATE`;
+ * throws when none does within 5 seconds.
+ */
+async function theScoreRowIsAwaited(scoreId: string): Promise<void> {
+  const until = Date.now() + 5000;
+  while (Date.now() < until) {
+    const [rows] = await sequelize.query(
+      `SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+          AND query LIKE 'SELECT % FROM "scores" %' AND query LIKE '%FOR UPDATE%' AND strpos(query, $1) > 0`,
+      { bind: [scoreId] },
+    );
+    if ((rows as { waiting: number }[])[0]!.waiting > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`no connection waited for the row of score ${scoreId}`);
+}
+
+test("an Owner who hands the score over as they make or revoke its link is refused once the transfer is committed", async () => {
+  const { app } = await startApp();
+  const benSession = await sessionOf(app, "ben", PASSWORD);
+  await warmPool(sequelize);
+  for (const method of ["POST", "DELETE"] as const) {
+    const { id, session } = await annasScore(app);
+    await ScoreMember.create({ scoreId: id, accountId: ben, role: "editor" });
+    const before = method === "DELETE" ? await makeLink(app, id, session) : null;
+
+    // The transfer holds the score's row (the receiver's account is read with it locked) until
+    // the link request waits for that row; then it goes on and is committed.
+    const read = Account.findByPk.bind(Account);
+    let transferHolds!: () => void;
+    const holding = new Promise<void>((resolve) => (transferHolds = resolve));
+    let goOn!: () => void;
+    const gate = new Promise<void>((resolve) => (goOn = resolve));
+    const spy = vi.spyOn(Account, "findByPk").mockImplementation(async (key, options) => {
+      if (options?.lock !== undefined) {
+        transferHolds();
+        await gate;
+      }
+      return read(key, options);
+    });
+    const transfer = handToBen(app, id, session);
+    let asked!: ReturnType<typeof link>;
+    try {
+      await holding;
+      asked = link(app, method, id, session);
+      await theScoreRowIsAwaited(id);
+    } finally {
+      goOn();
+      spy.mockRestore();
+    }
+
+    expect((await transfer).statusCode).toBe(204);
+    const answer = await asked;
+    // As if it had come after the transfer: Anna is an Editor by then, and nothing is written.
+    expect(answer.statusCode).toBe(403);
+    expect(answer.json()).toEqual({ code: "forbidden" });
+    expect((await link(app, "GET", id, benSession)).json()).toEqual({ token: before });
+    if (before !== null) expect((await askAsGuest(app, before)).statusCode).toBe(200);
+  }
+});
+
+test("the Owner of a moment ago, reading the link as the score is handed over, never reads the new Owner's link", async () => {
+  const { app } = await startApp();
+  const { id, session } = await annasScore(app);
+  await ScoreMember.create({ scoreId: id, accountId: ben, role: "editor" });
+  const benSession = await sessionOf(app, "ben", PASSWORD);
+  // Right after Anna's request finds her the Owner: the score handed to Ben, who makes a link.
+  const find = ScoreMember.findOne.bind(ScoreMember);
+  let bens: Promise<string> | null = null;
+  vi.spyOn(ScoreMember, "findOne").mockImplementation(async (options) => {
+    const found = await find(options);
+    if (bens === null) {
+      bens = handToBen(app, id, session).then(() => makeLink(app, id, benSession));
+      await bens;
+    }
+    return found;
+  });
+
+  const answer = await link(app, "GET", id, session);
+
+  const token = await bens!;
+  expect(answer.statusCode).toBe(200);
+  // What she could read as the Owner she was: no link yet.
+  expect(answer.json()).toEqual({ token: null });
+  expect((await link(app, "GET", id, benSession)).json()).toEqual({ token });
 });
 
 test("what a guest's provider sends does not change the score", async () => {

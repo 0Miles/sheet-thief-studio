@@ -3,25 +3,16 @@
 // once it is back; a reconnection that finds the member's rights changed drops the page's
 // document. Accounts of the test's own: their roles and sessions change, so every run, retry and
 // browser makes them anew.
-import { expect, type Page, test, type TestInfo } from "./test";
+import { expect, type Page, test } from "./test";
 
 import { strings } from "../src/strings";
-import { beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, type Refusal, scoreOf, seedAccount, seedScore, soundReady, typeBeats } from "./pages";
+import { accountsFor, beatsIn, cursorOf, drawn, loggedIn, openScore, pageErrors, type Refusal, scoreOf, seedScore, soundReady, typeBeats } from "./pages";
 
 const text = strings.score;
 
 /** An empty bar of a new score (the fourth), its first string: where the tests type. */
 const BAR = 3;
 
-function accountsFor(testInfo: TestInfo) {
-  const run = `${testInfo.project.name.slice(0, 4)}-${Date.now().toString(36)}`;
-  const account = (name: string, displayName: string) => {
-    const made = { username: `e2e-${name}-${run}`, displayName, password: "e2e reconnect password", isAdmin: false, mustChangePassword: false };
-    seedAccount(made);
-    return made;
-  };
-  return { run, account };
-}
 
 /** From where the edit view starts (the first string of the first bar), to the append slot of the empty fourth bar. */
 async function goToBar(page: Page): Promise<void> {

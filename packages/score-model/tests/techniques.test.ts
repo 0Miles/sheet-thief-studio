@@ -16,10 +16,11 @@ import {
   HARMONICS,
   harmonicCycle,
   insertBars,
+  insertBeat,
   type NoteJSON,
   type NotePlace,
   type NoteToggle,
-  noteKeyAt,
+  noteKeysAt,
   ON_OFF_TECHNIQUES,
   type OnOffTechnique,
   setFret,
@@ -197,13 +198,19 @@ test("at the cursor, a note reading leaves out is left alone: no technique key c
   expect(storedNotes(doc, cursor).get("s3")).toEqual({ fret: 99 });
 });
 
-test("the key of the note on the cursor's line is its string on a fretted part, and none yet on drums and staves", () => {
+test("the keys of the notes on the cursor's line: its string on a fretted part, the pieces drawn on that line on drums, none in a staff's append slot (staves: staff.test.ts)", () => {
   const { doc, cursor, barId } = guitar();
-  expect(noteKeyAt(doc, cursor)).toBe("s3");
+  expect(noteKeysAt(doc, cursor)).toEqual(["s3"]);
   const drums = addPart(doc, { name: "Drums", kind: "percussion" });
   const keys = addPart(doc, { name: "Keys", kind: "pitched" });
-  expect(noteKeyAt(doc, cursorAt(doc, drums, barId, 4))).toBeNull();
-  expect(noteKeyAt(doc, cursorAt(doc, keys, barId, 4))).toBeNull();
+  // Snare, rim shot and kick; and p35, a kick the interface does not offer, which has no line.
+  const hit = setNote(doc, insertBeat(doc, cursorAt(doc, drums, barId, 3)), "p38", {});
+  for (const key of ["p91", "p36", "p35"]) setNote(doc, hit, key, {});
+  expect(noteKeysAt(doc, hit).sort()).toEqual(["p38", "p91"]);
+  expect(noteKeysAt(doc, { ...hit, line: 7 })).toEqual(["p36"]);
+  expect(noteKeysAt(doc, { ...hit, line: 8 })).toEqual([]);
+  expect(noteKeysAt(doc, { ...hit, at: "after" })).toEqual([]);
+  expect(noteKeysAt(doc, cursorAt(doc, keys, barId, 4))).toEqual([]);
 });
 
 test("over a selection, a cycling technique takes every note to the one state decided for them all: the one after the first note's", () => {

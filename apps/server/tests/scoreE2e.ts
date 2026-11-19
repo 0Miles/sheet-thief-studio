@@ -8,7 +8,7 @@
 import { text } from "node:stream/consumers";
 
 import { createScoreRequest, type Role } from "@studio/contracts";
-import { addPart, type PartKind, SCHEMA_VERSION } from "@studio/score-model";
+import { addPart, metaOf, type NewPart, SCHEMA_VERSION } from "@studio/score-model";
 import * as Y from "yjs";
 
 import { connectDatabase } from "../src/db/database";
@@ -24,10 +24,12 @@ interface ScoreFixture {
   owner: string;
   members?: { username: string; role: Exclude<Role, "owner"> }[];
   bars?: number;
-  /** Parts after the first one every new score has. */
-  parts?: { name: string; kind: PartKind }[];
+  /** Parts after the first one every new score has, with their kind's staves unless told. */
+  parts?: Pick<NewPart, "name" | "kind" | "staves">[];
   /** The whole content instead, as a Yjs update in base64: `bars` and `parts` are then left out. */
   state?: string;
+  /** The schema version the score says it is of, in its document and its row: the current one when left out. */
+  schemaVersion?: number;
 }
 
 const fixture = JSON.parse(await text(process.stdin)) as ScoreFixture;
@@ -40,8 +42,10 @@ if (fixture.state !== undefined) {
   startContent(doc, createScoreRequest.parse({ title: fixture.title, bars: fixture.bars }));
   for (const part of fixture.parts ?? []) addPart(doc, part);
 }
+const schemaVersion = fixture.schemaVersion ?? SCHEMA_VERSION;
+if (fixture.schemaVersion !== undefined) metaOf(doc).set("schemaVersion", schemaVersion);
 const id = await sequelize.transaction(async (transaction) => {
-  const score = await Score.create({ title: fixture.title, docState: Buffer.from(Y.encodeStateAsUpdate(doc)), schemaVersion: SCHEMA_VERSION }, { transaction });
+  const score = await Score.create({ title: fixture.title, docState: Buffer.from(Y.encodeStateAsUpdate(doc)), schemaVersion }, { transaction });
   const members = [{ username: fixture.owner, role: "owner" as Role }, ...(fixture.members ?? [])];
   for (const { username, role } of members) {
     const account = await Account.findOne({ where: { username }, transaction });

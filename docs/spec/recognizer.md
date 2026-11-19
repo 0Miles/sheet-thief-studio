@@ -30,6 +30,12 @@
 - 測試：pytest，加上從舊 repo 複製的 fixture 圖片（`tests/fixtures/*.png` 與它的 `README.md`）。這些圖片是合成的 smoke 圖，README 自己寫明不是準確度基準。
 - **補充**：Python 3.12（前身 `Dockerfile` 的 `python:3.12-slim-bookworm`）。依賴從前身的 requirements 檔挑出核心需要的部分；不需要 PyGuitarPro（只有 `gp5_writer` 用到）。`requirements-ocr.txt` 要用 `pip install --no-deps --ignore-requires-python -r requirements-ocr.txt` 安裝。
 - 服務有自己的 `Dockerfile`，由 repo 的 Compose 建置。
+- **補充**（#60）副本的樣子：
+  - 前身的 `app/` 改名成套件 `services/recognizer/recognizer/`，模組之間照舊用相對 import；測試在 `services/recognizer/tests/`。`tests/test_copy.py` 檢查副本裡沒有不複製的模組、沒有對它們（或 `guitarpro`）的 import，也檢查 `LICENSE`、衍生聲明與第 4 節的限制。
+  - `convert_many` 回傳 `ConversionResult(scores, report)`：`scores` 是每個聲部的 `Score`（前身拿去寫 GP5 的那些），報告裡沒有 `preview`。`sandbox.run_isolated` 的子行程只回報告（JSON），回傳值是報告；前身的 `edit` 工作（`gp_edit`）刪掉。#61 在這之上加 JSON 出口。
+  - 前身讀 GP5 驗證辨識結果的測試，改讀 `ConversionResult.scores`（`tests/scores.py`，沿用前身 GP5 writer 的名稱，期望值不變）。刪掉的只有測 GP5 寫出（`test_gp5_writer`）、Guitar Pro 編輯（`test_gp_edit`）、API（`test_api`、`test_projects`）、資料庫遷移（`test_migrations`）與 setuptools 安裝設定（`test_packaging` 的套件清單；它的相對 import 檢查搬進 `test_copy.py`）的測試。前身 `test_worker.py` 裡測辨識與 sandbox 行為的部分（圖片辨識成功、失敗頁標頁碼、`invalid_image`、`image_too_large`）改成直接呼叫 `run_isolated(job="images")`，失敗的 code 與訊息改成直接呼叫 `recognition_error`，都放在 `tests/test_sandbox.py`（另加一個 `cancel` 的測試）；其餘測 API、資料庫、佇列、MusicXML 的部分刪掉。
+  - 第 4 節的限制在 `recognizer/config.py` 的 `Settings`，欄位名稱與預設值照前身 `app/config.py`，以大寫的同名環境變數覆寫（例如 `WORKER_MEMORY_MB`）。
+  - `Dockerfile` 有兩個 target：`test`（加裝 pytest、reportlab，設 `RECOGNIZER_REQUIRE_OCR=1`，標 `ocr` 的測試在缺 OCR 套件時失敗而不是略過；**補充**（#61）也帶 `contract/`，測試拿它檢查服務的 JSON）與最後的 `runtime`（`compose.dev.yaml` 建置的 target，跑第 3 節的 HTTP 服務，帶 `/healthz` 的 `HEALTHCHECK`）。CI 的 `recognizer` job 建 `test` 並在裡面跑 pytest，再建 `runtime`。
 
 ### 2.1 授權聲明
 
@@ -40,7 +46,7 @@
 
 ## 3. HTTP 介面（內部）
 
-服務只在 Compose 的內部網路上，不對外開 port（補充）。
+服務不對外開放。**補充**（#61）：`compose.dev.yaml` 的 `recognizer` 把 port 只綁在 `127.0.0.1:8000`，讓本機執行的 server 以 `RECOGNIZER_URL`（預設 `http://127.0.0.1:8000`）連到它。
 
 | 方法與路徑 | 說明 |
 |---|---|
@@ -49,6 +55,13 @@
 
 - 同步呼叫：一次只跑一件；正在跑的時候，新的請求立刻回 503，對應舊的 `busy` code。
 - **補充**：埠號 8000；Node 端呼叫的逾時是 930 秒（整體上限 900 秒加 30 秒餘裕）。
+- **補充**（#61）實作的細節：
+  - `recognizer/service.py`，用 Python 標準庫的 `http.server`（image 裡沒有 web 框架，也不為一個端點新增套件），`python -m recognizer.service` 啟動，聽 `0.0.0.0:8000`（`HOST` 可改）。
+  - 照上面「立刻回 503」：先搶那一件的位置，搶不到就回 503 `busy` 並關閉連線，body 不讀（忙碌時再多請求也不佔記憶體；回應後 client 還在送的資料最多丟棄 2 秒、不保留，免得連線被重設、client 讀不到 503）。搶到之後才讀 body、檢查請求，不合就回 400 並讓出位置。`/healthz` 在辨識進行中也照常回 200。
+  - 連線閒置 60 秒（每次讀寫 socket）就關閉；整個 body 要在 120 秒內送完，否則回 400 `bad_request` 並讓出位置。
+  - 400 的回應不在契約裡，形狀是 `{ code, params }`：`bad_request`（不是 `multipart/form-data`、body 不完整、沒有 `Content-Length` 或用 chunked）、`no_images`（沒有 `images` 欄位）、`too_many_images`（超過 15 張）、`empty_image` `{ page }`、`file_too_large` `{ page }`（超過 10 MB）、`unsupported_image` `{ page }`（以檔頭判斷不是 PNG、JPEG、WebP）、`upload_too_large`（合計超過 40 MB；`Content-Length` 超過 40 MB 加 64 KB 時不讀 body）。`page` 從 1 數起。server 收檔時就先擋同樣的東西，正常不會遇到；萬一遇到，server 當成 `unavailable`。
+  - 422 的 code：沙箱的 `ConversionTimeout` → `timeout`；`ConversionUnavailable` → `unavailable`；核心的 `ConversionError`（頁層級的原因放進 `pages`）與其他沒料到的例外 → `recognition_failed`。核心的句子只進 log，用英文（`i18n.use("en")`）。辨識跑在 forkserver 的子行程裡，那裡沒有設定 logging：子行程的 log（`recognizer` 底下的 logger，INFO 以上，最多 200 筆）隨結果或錯誤一起傳回父行程，由父行程以同一個 logger 寫出（前面加 `(recognition child)`）。
+  - 第 4 節的限制從 `config.get_settings()`（環境變數）取，傳給 `sandbox.run_isolated` 的 `recognize` 工作（圖片在子行程裡組成 PDF，再走出口）。前身的 `worker_concurrency` 刪掉：一次一件是介面的規則（503），不是設定。
 
 ## 4. 限制與逾時
 
@@ -69,6 +82,7 @@
 辨識服務回傳**它自己的中間模型 JSON**，帶版本號，以 JSON Schema 描述；Python 核心不認得 Studio 的 schema。
 
 - 新增的 JSON 出口放在 `_build_track` 之後、`_unify_bars` 之前（前身 `converter.py:558,738`）。理由：`_unify_bars` 會切掉超出拍號的音（前身 `converter.py:738-745`），違反 Studio「只標記、不改寫」的原則。
+- **補充**（#61）：出口在 `recognizer/contract.py` 的 `result_of_pdf`。`converter.build_tracks` 是從 `convert_many` 拆出來的前半（讀檔到每個聲部的 `_build_track`），`convert_many` 照舊接著做；出口只用 `build_tracks`。
 - JSON Schema 放在 `services/recognizer/contract/recognition.schema.json`（補充：路徑），版本號從 1 開始。形狀改了就升版本號。
 - Python 與 TypeScript 兩邊用同一批契約 fixture 測試（補充：放在 `services/recognizer/contract/fixtures/`，TypeScript 的測試直接讀這個目錄）。
 - **補充**（#59）：server 讀這份 JSON 用的 zod 形狀在 `packages/contracts/src/recognizer.ts`（`recognizerResponse`、`recognizerResult`、`recognizerFailure`）。`packages/contracts/tests/recognizer.test.ts` 用 Ajv（JSON Schema 2020-12）與 zod 驗證每一份 fixture，也驗證故意改壞的版本兩者都拒絕，並檢查 schema 的每個欄位都有 `description`。欄位的意思寫在 schema 的 `description` 裡；本節只寫大綱與跨欄位的規則。
@@ -117,7 +131,7 @@
 - `strings`：4–7。`tuning.midi`：第 1 弦（最高）在前。
 - `tuning.source`：`"detected"`（譜面或標題區印的調弦）或 `"default"`（該弦數的標準調弦）；`reason` 是讀不到時的原因代碼（例如 `"unrecognized"`）；`raw` 是讀不懂時保留的原文（前身 `tunings.py` 的 `TuningChoice`）。
 - `capo.source`：`"detected"` 或 `"default"`。
-- 每個小節的 `timeSignature` 是 `null` 時沿用前一個。
+- 每個小節的 `timeSignature` 是 `null` 時沿用前一個。**補充**（#61）：出口只在和當時生效的拍號不同時寫出（第一小節和整首的比），其他小節是 `null`。
 - `units` 是寫出來的長度，以 32 分音符為單位，一定能表示成一個音符加 0–2 個附點：1、2、3、4、6、7、8、12、14、16、24、28、32、48（第 7.2 節的表）；`tuplet` 為真表示三連音。
 - **補充**（#59）JSON Schema 與 zod 都檢查的規則（`packages/contracts/tests/recognizer.test.ts` 裡每一條都有改壞的版本）：
   - `tuning.midi` 的個數等於 `strings`；音符的 `string` 不超過 `strings`；同一個拍點上每條弦最多一個音符。
@@ -132,13 +146,13 @@
   - 拍點的時值總和可以和拍號不合：超出或不足的小節照樣輸出（只標記、不改寫）。
   - `sign`、`jump` 不用前身 Guitar Pro 的名稱；前身的 `"Da Coda"` 就是 `to_coda`。
   - 前身管線會產出、契約不收的值，由出口（#61）先處理：悶音的格號 0 寫成 `null`；跳房子讀到的 0（前身 `bar_signs.py` 的 `\d` 也吃得到 `0.`）不輸出。
-- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。
+- `warnings` 只有 code 與參數，也包含辨識時略過的項目。**補充**：舊核心給人看的警告句子，在副本裡逐一改成 code；還沒有對應 code 的，回報 `{ "code": "other", "params": {} }`，原文寫進 log。**補充**（#61）：有 code 的句子在副本裡是 `notices.Notice`（`str` 的子類別，句子不變，另帶 code 與參數），核心與它的測試照舊當字串用；調弦與「從圖片讀出」的句子標成不回報。每一句（有 code 的也是）都寫進 log。
 
 **補充**（#59）：版本 1 的 `warnings` code（前身產生這些句子的位置在括號裡）：
 
 | code | `params` | 意思 |
 |---|---|---|
-| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致。出口（#61）從 `_build_track` 的小節與 `report["rhythm_from_notation"]` 重新算，只在讀到印出的節奏（有不是 tie 的音、沒有估時值的小節）時才發；不沿用前身的 `_flag_estimated_rhythm`，因為它跑在 `_align_by_numbers`、`_unify_bars`、`_expand_repeats` 之後，小節號碼已經變了 |
+| `rhythm_estimated` | `{ bars }` | 這些小節（從 1 數起）的時值是從音符的間距估出來的，而同一個聲部的其他小節讀到了印出的節奏；和小節的 `rhythmEstimated` 一致。出口（#61）從 `_build_track` 的小節與 `report["rhythm_from_notation"]` 重新算，只在讀到印出的節奏時才發：前身的 `rhythm_from_notation` 大於 0，也就是有音符（只有 tie 的也算）、時值不是估的小節（休止小節、tie 穿過的空小節都不算）；不沿用前身的 `_flag_estimated_rhythm`，因為它跑在 `_align_by_numbers`、`_unify_bars`、`_expand_repeats` 之後，小節號碼已經變了 |
 | `overlapping_notes` | `{ page, count }` | 那一頁同一條弦上重疊的音符，略過了幾個（前身 `rhythm.py:81`） |
 | `staves_ignored` | `{ count }` | 弦數和多數不同的譜表，略過了幾行（前身 `converter.py` 的 `_main_staves`） |
 | `bar_too_dense` | `{ page, notes }` | 那一頁有個小節讀到的音多到超出拍號，這個小節的音都當成 32 分音符（前身 `rhythm.py:447`） |
@@ -195,6 +209,16 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 8. 讀取調弦行的判讀，回傳「(調弦音名, 讀不懂的原文)」的語意不變；報告的 `source`、`reason`、`raw` 照舊。
 9. 讀不懂時用標準調弦；審核頁顯示警告，並可以手動選調弦（[`phrases.md`](phrases.md) 第 7 節）。
 
+**補充**（#62，實作層的裁定；`recognizer/extract/metadata.py` 的 `_named_with_note`）：
+
+- 名稱比對不分大小寫，取最長的名稱（`E Standard` 是 `e standard`，不是 `standard` 之後接 `E`）。名稱後面只有分隔符號（`Standard -`）時照名稱讀。
+- 一組音名是 4–7 個，彼此之間是空白或直接連寫；音名後面必須接空白、分隔符號或行尾（`DADGAD on the intro` 的 `on` 不屬於白名單）。說明裡有兩組以上的音名，或音名不是 4–7 個（`Standard (Eb)`），整行 `unrecognized`。
+- 方向標籤只能寫在音名前面：`low to high`、`high to low`，後面可接 `:`。
+- 音名與名稱一致時，回傳名稱的調弦（以 `#` 拼寫，與只寫名稱時相同）；比較的是音高類別與弦數。
+- capo 只接受 `capo N`（可寫 `capo: N`，N 最多兩位數）與 `No capo`；其他寫法（`Capo on the 2nd fret`、羅馬數字）在這一行裡不屬於白名單。capo 的值仍由 `read_capo` 從標題區讀。
+- 調性：`Key D`、`Key: D`、`key of D`，音名後可接 `major`、`minor`、`maj`、`min`、`m`。標準音高：`A = ` 加三位數，可接 `Hz`。
+- 原文保留在 `tuning.raw`，照既有規則最多 40 個字元。
+
 ### 6.2 測試案例（照 #27 的驗收條件）
 
 讀成名稱所指的調弦：
@@ -230,6 +254,16 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 - 每個帳號同時最多一件；server 啟動時，把殘留的「執行中」標成失敗（code `interrupted`）。
 - 原圖以 `bytea` 存在 Postgres，跟著那筆辨識：存成樂句或捨棄時刪除，最多保留 7 天。**補充**：用子表 `recognition_images`（`recognition_id`、`page`、`mime`、`data bytea`，`ON DELETE CASCADE`），因為不確定 Sequelize 對 `bytea[]` 的支援；生命週期和「存在那一列」相同。超過 7 天的辨識整筆刪除，由每小時一次的定時工作處理（和刪除團譜的定時工作同一個）。
 - 只有發起辨識的帳號可以讀原圖與結果；其他人一律 404。
+- **補充**（#63）實作的細節：
+  - 辨識服務的網址是環境變數 `RECOGNIZER_URL`（開發時預設 `http://127.0.0.1:8000`，正式環境必填）。Node 端用 `node:http` 呼叫，不用 `fetch`：`fetch` 等回應標頭最多 300 秒，辨識可能跑到 900 秒。回應最多讀 32 MB（`limits.ts` 的 `RECOGNIZER_ANSWER_LIMIT`）。
+  - 上傳的 `multipart/form-data` 用 Node 內建的 `Response.formData()` 解析（lockfile 裡沒有 `@fastify/multipart`），只在 `POST /api/recognitions` 的封裝範圍裡註冊；body 上限是 40 MB 加 64 KB（`RECOGNITION_BODY_LIMIT`），照 Fastify 的做法先看 `Content-Length` 再累計。
+  - 檢查的順序：先看這個帳號（資料庫裡有它執行中的那一列，或這個行程已經接下它的一件、辨識服務還沒回答）→ 409；再看辨識服務是否正被別的帳號用 → 503。從資料庫回答到接下這一件之間沒有任何 `await`，所以同一個帳號同時到的兩個請求，一件 202、另一件 409（不是 503）。資料庫的部分唯一索引（`status = 'running'`）是最後一道保證，萬一兩件都通過，第二筆寫入失敗也回 409。
+  - 同樣的檢查在讀 body 之前（`preParsing`）先做一次：會被拒的請求不會先把最多 40 MB 讀進來。讀完、驗完圖片後再查一次，因為上傳的期間情況可能變了。
+  - 「伺服器上已經有一件在跑」指辨識服務還沒回答：服務一回答就讓出，不等結果寫進資料庫，所以看到上一件結束的人馬上可以再送一件。
+  - 失敗的 code：辨識服務回 503 → `busy`；回 422 → 它的 `error`；連不上、回其他狀態、或回答不符合契約 → `unavailable`（細節只進 log）；Node 端 930 秒沒有回答 → `timeout`；回答符合契約但轉出的片段過不了樂句的 zod（例如超過 1 MB）→ `recognition_failed`；server 關閉時正在跑的那件 → `interrupted`（和重新啟動時殘留的一樣）。
+  - 捨棄一件還在跑的辨識：那一列與原圖立刻刪除，辨識服務的回答到了也不寫回。
+  - 原圖的回應帶 `Cache-Control: private, no-store`：存成樂句或捨棄後就不存在，瀏覽器與中間的快取都不留。
+  - 測試與 e2e 用的假辨識服務在 `apps/server/tests/fakeRecognizer.ts`：同樣的 HTTP 介面，預設回契約 fixture；e2e 用 `pnpm --filter @studio/server recognizer:e2e` 啟動（`PORT` 預設 8000、`FIXTURE` 預設 `six-strings`）。
 
 ### 7.1 `recognitions` 表（補充：欄位草案）
 
@@ -237,6 +271,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 |---|---|
 | `id`、`account_id` | |
 | `status` | `'running'`、`'succeeded'`、`'failed'` |
+| `page_count` | 補充（#63）：原圖的張數，列表與審核頁不必讀子表 |
 | `error` | `jsonb`：`{ code, params, pages }`，失敗時才有 |
 | `fragment` | `jsonb`：轉換並以 zod 驗證過的 `PhraseFragment`（小節段） |
 | `report` | `jsonb`：偵測到的弦數、調弦（含來源、原因、原文）、capo，以及略過的項目 |
@@ -248,7 +283,7 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 
 | 中間模型 | `PhraseFragment` |
 |---|---|
-| `strings`、`tuning.midi` | `tuning`（第 1 弦在前）；讀不懂時是該弦數的標準調弦：4 弦 `[43, 38, 33, 28]`、5 弦 `[43, 38, 33, 28, 23]`、6 弦 `[64, 59, 55, 50, 45, 40]`、7 弦 `[64, 59, 55, 50, 45, 40, 35]`（補充：4、5 弦當成貝斯） |
+| `strings`、`tuning.midi` | `tuning`（第 1 弦在前）；讀不懂時（補充，#63：`source: "default"` 的兩種 `reason` 都算，不用辨識服務猜的值）是該弦數的標準調弦：4 弦 `[43, 38, 33, 28]`、5 弦 `[43, 38, 33, 28, 23]`、6 弦 `[64, 59, 55, 50, 45, 40]`、7 弦 `[64, 59, 55, 50, 45, 40, 35]`（補充：4、5 弦當成貝斯） |
 | 小節的 `timeSignature`（`null` 時沿用前一個；第一個用整首的） | `bars[].timeSig` |
 | `beats` | `voices["0:0"]` |
 | `units` | `value` 與 `dots`：1 → 32、2 → 16、3 → 16 加 1 個附點、4 → 8、6 → 8 加 1、7 → 8 加 2、8 → 4、12 → 4 加 1、14 → 4 加 2、16 → 2、24 → 2 加 1、28 → 2 加 2、32 → 1、48 → 1 加 1（補充：契約只接受這些值） |
@@ -260,15 +295,16 @@ Studio 的 server 另外用 `interrupted`：server 重新啟動時，殘留的�
 | `hammer` | `legato` |
 | `slide` | `slideOut: "legato"` |
 | `slideShift` | `slideOut: "shift"` |
-| `slideOut: "up"`、`"down"` | `slideOut: "outUp"`、`"outDown"`（補充：同時有 `slide`／`slideShift` 時，以後兩者為準） |
+| `slideOut: "up"`、`"down"` | `slideOut: "outUp"`、`"outDown"`（補充：同時有 `slide`／`slideShift` 時，以後兩者為準；`slide` 與 `slideShift` 同時為真時是 `shift`，#63） |
 | `slideIn: "below"`、`"above"` | `slideIn: "inBelow"`、`"inAbove"` |
 | `bendSemitones`、`bendRelease`、`bendPre` | `bend`：`bendSemitones` 是 0 就沒有；`bendPre` 加 `bendRelease` → `preBendRelease`，只有 `bendPre` → `preBend`，只有 `bendRelease` → `bendRelease`，都沒有 → `bend`。`semitones` 夾在 1–4，超過 4 時記一筆略過項目（補充） |
 | `graceFret`、`graceHammer` | 丟掉；數量列在略過項目裡（前身 `model.py:51-53`） |
 | 音符的 `stroke` | 聚合成拍點的 `stroke`（`down`、`up`） |
 | 音符的 `velocity` | 聚合成拍點的 `dynamic` |
 
-- 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。
+- 聚合（前身 `app/model.py:45-46,127-129`）：**補充**：取拍點上最多音符共有的值；平手時取弦號最小的那個音的值；全部是 `null` 就不寫。**補充**（#63）：`null` 的音不算票，有一個音有值就取那個值；力度先把每個音的 velocity 換成力度再聚合。
 - velocity → dynamic（補充，依前身 `app/extract/annotations.py:35` 的對照取最接近的）：≤ 39 → `pp`（含 ppp），40–55 → `p`，56–71 → `mp`，72–87 → `mf`，88–103 → `f`，≥ 104 → `ff`（含 fff）。
+- **補充**（#147）：辨識服務給每個音的 `velocity` 是當時生效的力度，而團譜的 `dynamic` 是「從這個拍點起」、寫著才畫記號（[`schema.md`](schema.md) 第 8 節的 #30 補充）。所以聚合出的力度只在和同一條聲線（片段只有 `"0:0"`）當時生效的不同時才寫：片段裡第一個聚合出力度的拍點一定寫；之後一樣的不寫，不同的才寫（回到更早的力度也寫）。生效的力度跨小節延續；休止、或音都沒有 `velocity` 的拍點不改變它。聲音不變，只是不在每個音上重複畫記號。
 - 小節層級的 `marker`、`tempo`、`repeatOpen`、`repeatTimes`、`endings`、`sign`、`jump` 不放進片段（樂句不帶這些），各自列在略過項目裡（補充）。
 - 略過項目（`report.skipped`，補充）：`{ code: "grace_notes", count }`、`{ code: "capo", fret }`（capo 不是 0 時）、`{ code: "tuning_unrecognized", raw }`、`{ code: "bend_clamped", count }`、`{ code: "sections" }`、`{ code: "tempo" }`、`{ code: "repeats" }`、`{ code: "jumps" }`。審核頁依 code 顯示。
 - 超出拍號的小節照樣放進片段，由 Flag 標出（不截斷）。

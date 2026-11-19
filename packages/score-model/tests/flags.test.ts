@@ -81,6 +81,38 @@ test("on a pitched part, a tie continues the same pitch on the beat before", () 
   expect(danglingTies(flagsOf(score(bass)))).toEqual([{ kind: "danglingTie", partId: "p", barId: "a", voice: "0:0", beatId: "a2", noteKey: "n62" }]);
 });
 
+test("on a keyboard part, a tie looks for the same pitch on the beat before in its own staff and voice, in its bar or the last of the bar before (#49)", () => {
+  const keys: PartJSON = {
+    id: "k",
+    name: "k",
+    kind: "pitched",
+    tuning: [],
+    capo: 0,
+    program: 0,
+    staves: [{ clef: "treble" }, { clef: "bass" }],
+    content: {
+      // C♯5 then D♭5, the same pitch spelled otherwise: it goes on. Then E5 tied to a chord without it.
+      a: {
+        "0:0": [quarter("a0", { n73: { spell: "C#" } }), quarter("a1", { n73: { spell: "Db", tie: true }, n76: { spell: "E" } }), quarter("a2", { n77: { spell: "F" }, n79: { spell: "G", tie: true } })],
+        "1:0": [quarter("l0", { n48: { spell: "C" } })],
+      },
+      // Across the bar line: F5 goes on from the F before; on the bass staff C3 goes on, D3 does not.
+      b: {
+        "0:0": [quarter("b0", { n77: { spell: "F", tie: true }, n74: { spell: "D", tie: true } })],
+        "1:0": [quarter("m0", { n48: { spell: "C", tie: true }, n50: { spell: "D", tie: true } })],
+        "1:1": [quarter("v0", { n48: { spell: "C", tie: true } })],
+      },
+    },
+  };
+  expect(danglingTies(flagsOf(score(keys))).map((flag) => "noteKey" in flag && [flag.barId, flag.voice, flag.beatId, flag.noteKey])).toEqual([
+    ["a", "0:0", "a2", "n79"],
+    ["b", "0:0", "b0", "n74"],
+    ["b", "1:0", "m0", "n50"],
+    // The second voice of the bass staff has nothing before it: the first voice's C does not count.
+    ["b", "1:1", "v0", "n48"],
+  ]);
+});
+
 test("a first bar that is a pickup is not underfull; it is still overfull, and a later bar is underfull", () => {
   const part = guitar("g", { a: [quarter("a0", { s3: { fret: 1 } })], b: [quarter("b0", { s3: { fret: 1 } })] });
   const pickup = score(part);

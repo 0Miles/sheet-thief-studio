@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { basePath } from "./served";
 import { useSessionStore } from "./stores/session";
 import HomeView from "./views/HomeView.vue";
 
@@ -13,7 +14,8 @@ declare module "vue-router" {
 }
 
 export const router = createRouter({
-  history: createWebHistory(),
+  // Under where the page is served: `/`, or `/plugin/<key>/` behind the karyl-chan bot.
+  history: createWebHistory(basePath()),
   routes: [
     { path: "/login", name: "login", component: () => import("./views/LoginView.vue"), meta: { public: true } },
     // Where an account with a temporary password is held until it has chosen its own.
@@ -22,7 +24,19 @@ export const router = createRouter({
     { path: "/admin", name: "admin", component: () => import("./views/AdminView.vue"), meta: { admin: true } },
     { path: "/", name: "home", component: HomeView },
     { path: "/phrases", name: "phrases", component: () => import("./views/PhrasesView.vue") },
-    { path: "/scores/:id", name: "score", component: () => import("./views/ScorePage.vue"), props: true },
+    { path: "/phrases/:id", name: "phrase", component: () => import("./views/PhrasePage.vue"), props: true },
+    { path: "/recognitions/:id", name: "recognition", component: () => import("./views/RecognitionView.vue"), props: true },
+    // The score's page holds the score open (its document and connection) under its versions
+    // page too, which restores a version in that document (docs/spec/collab.md, 8.5).
+    {
+      path: "/scores/:id",
+      component: () => import("./views/ScorePage.vue"),
+      props: true,
+      children: [
+        { path: "", name: "score", component: { render: () => null } },
+        { path: "versions", name: "score-versions", component: () => import("./views/VersionsView.vue"), props: true },
+      ],
+    },
     { path: "/scores/:id/settings", name: "score-settings", component: () => import("./views/SettingsView.vue"), props: true },
     // A guest's score, by its read-only link: no login, and the address stays the link's.
     { path: "/s/:token", name: "guest", component: () => import("./views/ScorePage.vue"), props: true, meta: { public: true } },

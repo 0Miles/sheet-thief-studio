@@ -22,9 +22,11 @@ const MODIFIER_FLAGS: ModifierFlag[] = ["ctrlKey", "altKey", "shiftKey", "metaKe
 
 /** Each key of a binding on a platform. */
 const combosOf = (binding: KeyBinding, platform: KeyPlatform): KeyCombo[] => chordsOf(binding, platform).map((chord) => resolveChord(chord, platform));
-const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""} (${binding.context})`;
-/** Two contexts that can be in force at once: the score's keys work on every kind of part, and none of them in a text box. */
-const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || ((a.context === "score" || b.context === "score") && a.context !== "textEntry" && b.context !== "textEntry");
+const nameOf = (binding: KeyBinding) => `${binding.effect}${binding.fret ?? ""}${binding.piece === undefined ? "" : ` ${binding.piece}`}${binding.letter ?? ""} (${binding.context})`;
+/** A box typed in over the score: the box of lyrics mode has a text box's keys too. */
+const inBox = (binding: KeyBinding) => binding.context === "textEntry" || binding.context === "lyricEntry";
+/** Two contexts that can be in force at once: the score's keys work on every kind of part, and none of them in a box. */
+const overlap = (a: KeyBinding, b: KeyBinding) => a.context === b.context || (inBox(a) ? inBox(b) : !inBox(b) && (a.context === "score" || b.context === "score"));
 
 test.each([
   [{ userAgentData: { platform: "macOS" } }],
@@ -83,6 +85,8 @@ test.each([
   ["triplet", undefined, "Shift+T", "⇧T"],
   ["dynamic", undefined, "Shift+F", "⇧F"],
   ["text", undefined, "Enter", "↩"],
+  ["lyrics", undefined, "Shift+Enter", "⇧↩"],
+  ["joinSyllable", undefined, "-", "-"],
   ["cancelEntry", undefined, "Esc", "Esc"],
   ["fret", 7, "7", "7"],
   ["copy", undefined, "Ctrl+C", "⌘C"],
@@ -91,6 +95,7 @@ test.each([
   ["insertBarAfter", undefined, "Ctrl+Shift+Insert", "⇧⌘↩"],
   ["deleteBars", undefined, "Ctrl+Delete", "⌘⌫"],
   ["barPanel", undefined, "F2", "F2"],
+  ["phraseSidebar", undefined, "F4", "F4"],
 ] as const)("the key of %s %s is shown as %s on Windows and Linux, %s on a Mac", (effect, fret, other, mac) => {
   expect(keyNameOf(effect, "other", fret)).toBe(other);
   expect(keyNameOf(effect, "mac", fret)).toBe(mac);

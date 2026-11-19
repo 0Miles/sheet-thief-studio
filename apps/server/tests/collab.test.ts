@@ -1,6 +1,7 @@
 // /collab: opening a score with a collab ticket, keeping its content in Postgres, and the server
 // closing only the connections an event concerns (docs/spec/collab.md; docs/adr/0005).
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import { Forbidden, Unauthorized } from "@hocuspocus/common";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -16,6 +17,7 @@ import { createAccount } from "../src/accounts";
 import { buildApp } from "../src/app";
 import { CollabTickets, TICKET_TTL_SECONDS } from "../src/collabTickets";
 import { Score, ScoreMember } from "../src/db/models";
+import { newToken } from "../src/tokens";
 import { closes, COOKIE, createScore, freshDatabase, freshRedis, insync, listen, nextSyncStatus, type OpenScore, openScore, ORIGIN, sessionOf, socketClosed, testConfig, ticketFor, whoAmI } from "./support";
 
 const PASSWORD = "a password long enough";
@@ -111,6 +113,12 @@ test("an expired, used or other score's ticket, and a score that does not exist 
   const accountId = (await whoAmI(app, session)).json().accountId as string;
   for (const nowhere of [randomUUID(), "not-a-score"]) {
     await refusal(nowhere, await new CollabTickets(redis).issue({ kind: "member", scoreId: nowhere, accountId, sessionId: session, role: "owner" }));
+  }
+  // What Redis holds is no ticket (an older server's, or changed by hand): refused as none.
+  for (const stored of ["not JSON", JSON.stringify({ kind: "member", scoreId: mine, accountId, role: "owner" })]) {
+    const unreadable = newToken();
+    await redis.set(`collab-ticket:${unreadable}`, stored, "EX", TICKET_TTL_SECONDS);
+    await refusal(mine, unreadable);
   }
   const beforeDeletion = await ticketFor(app, deleted, session);
   await Score.update({ deletedAt: new Date() }, { where: { id: deleted } });
@@ -238,25 +246,41 @@ test("a message of 7 MB is applied; one of 9 MB closes the connection that sent 
   expect(otherClosed()).toBe(false);
 });
 
+/**
+ * Run `during` inside the loading of the score's document from Postgres: after onAuthenticate's
+ * checks, before the connection is in the register. Loading is liveScore's query (src/scores.ts);
+ * returns how many times the document was loaded. Score.findOne has another caller in the same
+ * window: the connection closed as it is made leaves the document with no connection, and the
+ * version made then locks the score's row with it (createVersion in src/versions.ts). Whether
+ * that one runs before or after the client sees its socket close is a race, so it is not counted.
+ */
+function whileLoading(scoreId: string, during: () => Promise<unknown>): () => number {
+  const find = Score.findOne.bind(Score);
+  let loads = 0;
+  vi.spyOn(Score, "findOne").mockImplementation(async (options) => {
+    if (options?.lock === undefined && isDeepStrictEqual(options?.where, { id: scoreId, deletedAt: null })) {
+      loads += 1;
+      if (loads === 1) await during();
+    }
+    return find(options);
+  });
+  return () => loads;
+}
+
 test("a session that ends while the document is being loaded leaves no connection open", async () => {
   const { app, url } = await startApp();
   const session = await sessionOf(app, "anna", PASSWORD);
   const id = await createScore(app, session);
   const ticket = await ticketFor(app, id, session);
   // The ticket has passed onAuthenticate's checks; the session ends while the document comes
-  // from Postgres, before the connection is in the register. Loading a document is the one
-  // caller of Score.findOne (liveScore in src/scores.ts): the spy stands in that window.
-  const load = Score.findOne.bind(Score);
-  const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
-    await app.sessions.end({ sessionId: session });
-    return load(options);
-  });
+  // from Postgres, before the connection is in the register.
+  const loads = whileLoading(id, () => app.sessions.end({ sessionId: session }));
 
   const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
   opened.push({ provider, doc: provider.document });
   const closed = await socketClosed(provider);
 
-  expect(loading).toHaveBeenCalledOnce();
+  expect(loads()).toBe(1);
   expect(closed).toBe(4401);
 });
 
@@ -343,19 +367,15 @@ test("changing one's password while the kept session's document is being loaded 
   const session = await sessionOf(app, "dora", PASSWORD);
   const id = await createScore(app, session);
   const ticket = await ticketFor(app, id, session);
-  // As in the test of a session ending while its document loads: the spy stands in that window.
-  // Here the session stays, so only the event for the whole account can close the connection.
-  const load = Score.findOne.bind(Score);
-  const loading = vi.spyOn(Score, "findOne").mockImplementationOnce(async (options) => {
-    await changePassword(app, session, PASSWORD, "the password dora chose");
-    return load(options);
-  });
+  // As in the test of a session ending while its document loads. Here the session stays, so
+  // only the event for the whole account can close the connection.
+  const loads = whileLoading(id, () => changePassword(app, session, PASSWORD, "the password dora chose"));
 
   const provider = new HocuspocusProvider({ url, name: id, document: new Y.Doc(), token: async () => ticket });
   opened.push({ provider, doc: provider.document });
   const closed = await socketClosed(provider);
 
-  expect(loading).toHaveBeenCalledOnce();
+  expect(loads()).toBe(1);
   expect(closed).toBe(4401);
 });
 

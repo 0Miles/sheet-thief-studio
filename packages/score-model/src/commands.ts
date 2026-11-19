@@ -5,6 +5,7 @@ import { customAlphabet, nanoid } from "nanoid";
 import * as Y from "yjs";
 import type { z } from "zod";
 
+import { ownFields, writableCopy } from "./depth";
 import {
   BEND_SEMITONES,
   BEND_TYPES,
@@ -48,6 +49,7 @@ import {
   DYNAMICS,
   isVoiceKey,
   MAX_BEAT_TEXT,
+  MAX_LYRIC,
   MAX_TITLE,
   stringCountOf,
   contentMapOf,
@@ -62,7 +64,15 @@ import {
   type YVoice,
   voiceKeys,
   withinPartLimits,
+  DEFAULT_KEY_SIG,
+  lineRange,
+  type PitchedClef,
+  staffAndVoiceOf,
 } from "./schema";
+import { writeScore } from "./build";
+import { drumLineOf, drumLineOfKey } from "./drums";
+import { enteredPitch, lineOfPitch, type NoteLetter, semitoneSpelling } from "./pitch";
+import { type Migration, migrateJson, MIGRATIONS } from "./migrations";
 import { type BeatFields, readBeatFields, readsAsBeat } from "./read";
 import { selectedBars, selectedBeats } from "./selection";
 
@@ -123,8 +133,60 @@ export interface NewPart {
   staves?: Staff[];
 }
 
-/** Add a part after the last one, with a place for the content of every bar. */
+/**
+ * The values a command writes, each as a copy (`writableCopy`), null and undefined as they are
+ * (nothing there, or a field taken away); none at all when one of them nests deeper than
+ * `MAX_VALUE_DEPTH` or holds a shared type: the command then writes nothing (#102).
+ */
+function writable<T extends readonly unknown[]>(...values: T): T | undefined {
+  return writableAll(values) as T | undefined;
+}
+
+/** `writable` for a list of values of one type, as many as a command writes (no spread). */
+function writableAll<T>(values: readonly T[]): T[] | undefined {
+  const copies: T[] = [];
+  for (const value of values) {
+    const copy = value === null || value === undefined ? value : (writableCopy(value) as T | undefined);
+    if (copy === undefined && value !== undefined) return undefined;
+    copies.push(copy as T);
+  }
+  return copies;
+}
+
+/** A note a command changes: set to `next` at `key` of the notes of a beat, or removed (null). */
+interface NoteChange {
+  map: Y.Map<NoteJSON>;
+  key: string;
+  next: NoteJSON | null;
+}
+
+/**
+ * Make note changes, in order, one transaction: each note written as a copy (`writable`), every
+ * one or none (#102). False, nothing written, when one cannot be.
+ */
+function writeNoteChanges(doc: Y.Doc, changes: readonly NoteChange[]): boolean {
+  const copies = writableAll(changes.map(({ next }) => next));
+  if (copies === undefined) return false;
+  if (changes.length === 0) return true;
+  doc.transact(() => {
+    changes.forEach(({ map, key }, index) => {
+      const next = copies[index] ?? null;
+      if (next === null) map.delete(key);
+      else map.set(key, next);
+    });
+  }, LOCAL);
+  return true;
+}
+
+/**
+ * Add a part after the last one, with a place for the content of every bar. Its tuning and staves
+ * are written as copies (`writableCopy`); throws, adding nothing, for either nested deeper than
+ * `MAX_VALUE_DEPTH` (#102): no part of that shape is one the caller meant.
+ */
 export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KIND_DEFAULTS[kind].program, staves = KIND_DEFAULTS[kind].staves }: NewPart): string {
+  const written = writable(tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []), staves);
+  if (written === undefined) throw new RangeError("addPart: a tuning or staves nested deeper than a value of the document may be");
+  const [writtenTuning, writtenStaves] = written;
   const id = newId();
   doc.transact(() => {
     const parts = partsOf(doc);
@@ -133,10 +195,10 @@ export function addPart(doc: Y.Doc, { name, kind, tuning, capo = 0, program = KI
     part.set("order", keysAfter(parts, order, order.length - 1, 1)[0]);
     part.set("name", name);
     part.set("kind", kind);
-    part.set("tuning", tuning ?? (kind === "fretted" ? STANDARD_GUITAR : []));
+    part.set("tuning", writtenTuning);
     part.set("capo", capo);
     part.set("program", program);
-    part.set("staves", staves.map((staff) => ({ ...staff })));
+    part.set("staves", writtenStaves);
     const content = new Y.Map();
     for (const barId of barsOf(doc).keys()) content.set(barId, emptyBarContent(staves.length));
     part.set("content", content);
@@ -183,13 +245,33 @@ function withSuffix(key: string, upper: string | null): string {
  * of those.
  */
 function keysAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number, count: number): string[] {
+  const [lower, upper] = boundsAfter(map, order, index);
+  const keys = generateNKeysBetween(lower, upper, count);
+  return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
+}
+
+/** The keys items put right after the one at `index` of `order` (-1: first) go between, as `keysAfter` takes them. */
+function boundsAfter(map: Y.Map<Y.Map<unknown>>, order: readonly string[], index: number): [lower: string | null, upper: string | null] {
   const keyAt = (at: number) => orderOf(map.get(order[at] as string));
   const lower = index < 0 ? null : keyAt(index);
   let end = index + 1;
   while (lower !== null && end < order.length && keyAt(end) === lower) end++;
-  const upper = end < order.length ? keyAt(end) : null;
-  const keys = generateNKeysBetween(lower, upper, count);
-  return keys.map((key, i) => withSuffix(key, keys[i + 1] ?? upper));
+  return [lower, end < order.length ? keyAt(end) : null];
+}
+
+/**
+ * `count` ordering keys in a row, between `lower` and `upper` (none: from nothing), for items
+ * written all at once (a restore, bars inserted or appended), in an interval of their own: a stem
+ * made as `keysAfter` makes a first key (`withSuffix`: a key between the two and five random
+ * digits), each key the stem followed by the fraction a key between "a0" and "a1" has, in order.
+ * Every key of the run sorts after the stem and before any other stem, so two runs made at once
+ * at the same place never mix. `keysAfter` itself would not do: each of its keys has a suffix of
+ * its own, so two runs made at once would take turns (a0x, a0y, a1x, a1y…).
+ */
+function keysOfARun(count: number, lower: string | null = null, upper: string | null = null): string[] {
+  if (count === 0) return [];
+  const stem = withSuffix(generateKeyBetween(lower, upper), upper);
+  return generateNKeysBetween("a0", "a1", count).map((key) => stem + key.slice("a0".length));
 }
 
 /** The time signature of a bar as reading reads it (docs/spec/schema.md, section 11): 4/4 when it cannot be read. */
@@ -202,21 +284,24 @@ function timeSigOf(bar: YBar | undefined): TimeSignature {
  * Insert empty bars for every part; returns their ids in order. They take the time signature
  * given, else the one of the bar they follow, else (first) of the bar they precede, and nothing
  * else of it (docs/spec/commands.md, section 6). Put first, they take the pickup away from the bar
- * that was first. None, and nothing changes, when `after` is gone or the score would have more
- * than `MAX_BARS` bars.
+ * that was first. None, and nothing changes, when `after` is gone, the score would have more
+ * than `MAX_BARS` bars, or the time signature given nests deeper than `MAX_VALUE_DEPTH` (#102).
  */
 export function insertBars(doc: Y.Doc, { after, count, timeSig }: NewBars): string[] {
   const bars = barsOf(doc);
   const order = ordered(bars);
   const index = after === null ? -1 : order.indexOf(after);
+  const given = writable(timeSig);
+  if (given === undefined) return [];
   if ((after !== null && index < 0) || count < 1 || order.length + count > MAX_BARS) return [];
   const ids = Array.from({ length: count }, newId);
   doc.transact(() => {
     const before = index < 0 ? undefined : bars.get(order[index] as string);
     const nextId = order[index + 1];
     const next = nextId === undefined ? undefined : bars.get(nextId);
-    const keys = keysAfter(bars, order, index, count);
-    const signature = timeSig ?? timeSigOf(before ?? next);
+    // A run of their own: bars two members insert at one place at once each stay together (#58, after #56's review).
+    const keys = keysOfARun(count, ...boundsAfter(bars, order, index));
+    const signature = given[0] ?? timeSigOf(before ?? next);
     ids.forEach((id, i) => {
       const bar: YBar = new Y.Map();
       bar.set("order", keys[i]);
@@ -537,7 +622,7 @@ function beatAt(doc: Y.Doc, cursor: Cursor): YBeat | undefined {
 const QUARTER: BeatDuration = { value: 4, dots: 0 };
 
 /** Where a beat made at the cursor goes: its voice, its index there, and how long it lasts unless told otherwise. */
-interface BeatPlace {
+export interface BeatPlace {
   voice: YVoice;
   index: number;
   duration: BeatDuration;
@@ -552,9 +637,9 @@ function durationFrom(beat: YBeat | undefined): BeatDuration {
  * Where a beat made at the cursor goes: on a beat, just before it, as long as it; in the append
  * slot, just after the anchor, as long as the anchor (first and a quarter in an empty voice; when
  * the anchor is gone, after the last beat and as long as it, where the cursor settles).
- * Undefined when the cursor's beat or voice is gone.
+ * Undefined when the cursor's beat or voice is gone. Beats pasted there go the same place (`pasteBeats`).
  */
-function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
+export function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
   if (cursor.at === "on") {
     const found = beatIndexAt(doc, cursor);
     return found && { ...found, duration: durationFrom(found.voice.get(found.index)) };
@@ -569,9 +654,13 @@ function placeFor(doc: Y.Doc, cursor: Cursor): BeatPlace | undefined {
 
 /**
  * Make a beat at the cursor, in one transaction (one undo step), and move the cursor onto it: a
- * rest of `duration`, then `fill` puts its notes on it.
+ * rest of `duration`, then `fill` puts its notes on it. Its tuplet is written as a copy
+ * (`writableCopy`): none nested deeper than `MAX_VALUE_DEPTH`, which makes no beat (#102).
  */
 function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, tuplet }: BeatDuration, fill?: (notes: Y.Map<NoteJSON>) => void): Cursor {
+  const written = writable(tuplet);
+  if (written === undefined) return cursor;
+  const [writtenTuplet] = written;
   const id = newId();
   doc.transact(() => {
     const beat: YBeat = new Y.Map();
@@ -579,7 +668,7 @@ function makeBeat(doc: Y.Doc, cursor: Cursor, place: BeatPlace, { value, dots, t
     beat.set("id", id);
     beat.set("value", value);
     beat.set("dots", dots);
-    if (tuplet !== undefined) beat.set("tuplet", { ...tuplet });
+    if (writtenTuplet !== undefined) beat.set("tuplet", writtenTuplet);
     beat.set("notes", notes);
     place.voice.insert(place.index, [beat]);
     fill?.(notes);
@@ -599,27 +688,50 @@ export function insertBeat(doc: Y.Doc, cursor: Cursor, duration?: Duration): Cur
 }
 
 /**
+ * A note as the commands that rewrite it see it: its own fields (`ownFields`), so that every
+ * member decides and writes alike (#103); none for nothing stored.
+ */
+function ownNote(value: unknown): NoteJSON | undefined {
+  return value === undefined ? undefined : (ownFields(value) as NoteJSON);
+}
+
+/**
  * Write a note at the cursor, one command: on its beat, or in the append slot on a new beat made
  * there (as `insertBeat` makes it), the cursor then on that beat. `write` gets the note stored
- * at `key` and returns the new one, or null to remove it; removing makes no beat.
+ * at `key` (`ownNote`) and returns the new one, or null to remove it; removing makes no beat.
+ * The note is written as a copy (`writableCopy`); one nested deeper than `MAX_VALUE_DEPTH` is
+ * not written (#102).
  */
 function writeNote(doc: Y.Doc, cursor: Cursor, key: string, write: (stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
+  return writeNotes(doc, cursor, [key], (_, stored) => write(stored));
+}
+
+/**
+ * `writeNote` for the notes at several keys of the cursor's beat, one command: `write` gets each
+ * key and the note stored there (`ownNote`). In the append slot the notes made go on one new beat;
+ * none made, no beat. Every note is written as a copy (`writable`); when one of them nests deeper
+ * than `MAX_VALUE_DEPTH`, none is written (#102).
+ */
+function writeNotes(doc: Y.Doc, cursor: Cursor, keys: readonly string[], write: (key: string, stored: NoteJSON | undefined) => NoteJSON | null): Cursor {
   if (cursor.at === "after") {
-    const note = write(undefined);
+    const made = keys.flatMap((key) => {
+      const note = write(key, undefined);
+      return note === null ? [] : [{ key, note }];
+    });
+    const copies = writableAll(made.map(({ note }) => note));
     const place = placeFor(doc, cursor);
-    if (note === null || place === undefined) return cursor;
-    return makeBeat(doc, cursor, place, place.duration, (notes) => notes.set(key, note));
+    if (made.length === 0 || copies === undefined || place === undefined) return cursor;
+    return makeBeat(doc, cursor, place, place.duration, (notes) => made.forEach(({ key }, index) => notes.set(key, copies[index]!)));
   }
   const notes = notesOf(beatAt(doc, cursor));
   if (notes === undefined) return cursor;
-  const stored = notes.get(key);
-  const note = write(stored);
-  // Given back as stored, or nothing to remove: nothing is written.
-  if (note === stored || (note === null && stored === undefined)) return cursor;
-  doc.transact(() => {
-    if (note === null) notes.delete(key);
-    else notes.set(key, note);
-  }, LOCAL);
+  const changes = keys.flatMap((key) => {
+    const stored = ownNote(notes.get(key));
+    const note = write(key, stored);
+    // Given back as stored, or nothing to remove: nothing is written.
+    return note === stored || (note === null && stored === undefined) ? [] : [{ map: notes, key, next: note }];
+  });
+  writeNoteChanges(doc, changes);
   return cursor;
 }
 
@@ -664,9 +776,10 @@ export interface NotePlace {
 export interface NoteToggle<D> {
   decide(seen: readonly NoteJSON[]): D;
   /**
-   * The note at `place` once turned to `decided`, from the note as stored (fields this version
-   * does not know are kept; undefined where there is none): null for no note there, removing one
-   * stored; `stored` itself to leave it as it is, which writes nothing.
+   * The note at `place` once turned to `decided`, from the note as stored, its own fields
+   * (`ownFields`: fields this version does not know are kept, one named __proto__ is not; undefined
+   * where there is none): null for no note there, removing one stored; `stored` itself to leave it
+   * as it is, which writes nothing.
    */
   turn(stored: NoteJSON | undefined, decided: D, place: NotePlace): NoteJSON | null;
 }
@@ -790,12 +903,18 @@ export function techniqueToggle(technique: OnOffTechnique): NoteToggle<boolean> 
 }
 
 /**
- * The key of the note on the cursor's line, the one a technique key changes at the cursor: its
- * string on a fretted part. None on drums and staves until their keys name the notes drawn on a
- * line (docs/ROADMAP.md, M2 and M3), as with `deleteNote`.
+ * The keys of the notes on the cursor's line, those a technique key changes at the cursor
+ * (docs/spec/commands.md, 5.4): its string on a fretted part, whether a note is there or not;
+ * on drums, every piece of the cursor's beat drawn on that line (`drumLineOfKey`), none in the
+ * append slot; on staves, every note of the cursor's beat drawn on that line (`notesOnLine`, #48).
  */
-export function noteKeyAt(doc: Y.Doc, cursor: Cursor): string | null {
-  return partKindOf(partsOf(doc).get(cursor.partId)) === "fretted" ? `s${cursor.line}` : null;
+export function noteKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const kind = partKindOf(partsOf(doc).get(cursor.partId));
+  if (kind === "fretted") return [`s${cursor.line}`];
+  if (kind === "pitched") return staffKeysAt(doc, cursor);
+  if (kind !== "percussion") return [];
+  const notes = notesOf(beatAt(doc, cursor));
+  return [...(notes?.keys() ?? [])].filter((key) => drumLineOfKey(key) === cursor.line);
 }
 
 /** How the beats and notes of a part are read: by its kind and its strings. */
@@ -814,26 +933,33 @@ function readerOf(doc: Y.Doc, partId: string): PartReader | undefined {
   return { kind, note: (key, stored) => (stored === undefined ? undefined : readNote(kind, strings, key, stored)) };
 }
 
-/** The notes of the last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
-function lastReadNotes(reader: PartReader, voice: YVoice, end: number): Y.Map<NoteJSON> | undefined {
+/** The last beat before `end` in a voice that reading keeps (`readsAsBeat`). */
+function lastReadBeat(reader: PartReader, voice: YVoice, end: number): YBeat | undefined {
   for (let index = end - 1; index >= 0; index--) {
     const beat = voice.get(index);
-    if (readsAsBeat(reader.kind, beat)) return notesOf(beat);
+    if (readsAsBeat(reader.kind, beat)) return beat;
   }
   return undefined;
 }
 
 /**
- * The notes of the beat before `index` in a voice, as the members see it: the last beat before it
- * that reading keeps, else the last such beat of the same voice in the bar before.
+ * The beat before `index` in a voice, as the members see it, and the bar it is in: the last beat
+ * before it that reading keeps, else the last such beat of the same voice in the bar before.
  */
-function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
-  const own = lastReadNotes(reader, voice, index);
-  if (own !== undefined) return own;
+function beatBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): { beat: YBeat; barId: string } | undefined {
+  const own = lastReadBeat(reader, voice, index);
+  if (own !== undefined) return { beat: own, barId: address.barId };
   const bars = ordered(barsOf(doc));
   const previous = bars[bars.indexOf(address.barId) - 1];
-  const before = previous === undefined ? undefined : voiceIn(doc, { ...address, barId: previous });
-  return before && lastReadNotes(reader, before, before.length);
+  if (previous === undefined) return undefined;
+  const before = voiceIn(doc, { ...address, barId: previous });
+  const last = before && lastReadBeat(reader, before, before.length);
+  return last && { beat: last, barId: previous };
+}
+
+/** The notes of the beat before `index` in a voice (`beatBefore`). */
+function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voice: YVoice, index: number): Y.Map<NoteJSON> | undefined {
+  return notesOf(beatBefore(doc, reader, address, voice, index)?.beat);
 }
 
 /**
@@ -843,18 +969,216 @@ function notesBefore(doc: Y.Doc, reader: PartReader, address: VoiceAddress, voic
  * seen and is left alone (docs/spec/schema.md, section 11).
  */
 export function toggleAt<D>(doc: Y.Doc, cursor: Cursor, key: string, toggle: NoteToggle<D>): Cursor {
+  return toggleKeysAt(doc, cursor, [key], toggle);
+}
+
+/**
+ * `toggleAt` on the notes at several keys of the cursor's beat (the pieces on a drum line), one
+ * command: the toggle decides once from all of them, as over a selection, then turns each. A note
+ * reading leaves out is not seen and is left alone.
+ */
+export function toggleKeysAt<D>(doc: Y.Doc, cursor: Cursor, keys: readonly string[], toggle: NoteToggle<D>): Cursor {
   const reader = readerOf(doc, cursor.partId);
   const place = placeFor(doc, cursor);
   if (reader === undefined || place === undefined) return cursor;
   const beat = cursor.at === "on" ? place.voice.get(place.index) : undefined;
   if (beat !== undefined && !readsAsBeat(reader.kind, beat)) return cursor;
-  const stored = notesOf(beat)?.get(key);
-  const seen = reader.note(key, stored);
-  if (stored !== undefined && seen === undefined) return cursor;
+  const notes = notesOf(beat);
   // On a beat, the beat before it; in the append slot, the anchor the new beat goes after.
-  const before = reader.note(key, notesBefore(doc, reader, cursor, place.voice, place.index)?.get(key));
-  const decided = toggle.decide(seen === undefined ? [] : [seen]);
-  return writeNote(doc, cursor, key, (note) => toggle.turn(note, decided, { kind: reader.kind, key, before }));
+  const previous = notesBefore(doc, reader, cursor, place.voice, place.index);
+  const readable = keys.flatMap((key) => {
+    const stored = notes?.get(key);
+    const seen = reader.note(key, stored);
+    return stored !== undefined && seen === undefined ? [] : [{ key, seen, before: reader.note(key, previous?.get(key)) }];
+  });
+  if (readable.length === 0) return cursor;
+  const decided = toggle.decide(readable.flatMap(({ seen }) => (seen === undefined ? [] : [seen])));
+  const befores = new Map(readable.map(({ key, before }) => [key, before]));
+  return writeNotes(doc, cursor, [...befores.keys()], (key, note) => toggle.turn(note, decided, { kind: reader.kind, key, before: befores.get(key) }));
+}
+
+/**
+ * On or off, as a drum piece's key turns its piece (docs/spec/commands.md, 5.1): on where it is
+ * not, as a note with nothing else; off where it is, with whatever it holds.
+ */
+const pieceToggle: NoteToggle<boolean> = {
+  decide: (seen) => seen.length === 0,
+  turn: (stored, on) => (on ? (stored ?? {}) : null),
+};
+
+/**
+ * A drum piece's key (docs/spec/keymap.md, 4.2), one command: the piece `p<id>` on the cursor's
+ * beat, or off it when it is there; in the append slot on a new beat, the cursor then on it. The
+ * cursor goes to the line the piece is drawn on (schema.md, 7.1), and stays on its own for a piece
+ * the interface does not offer. A piece stored as something reading leaves out is left alone.
+ */
+export function toggleDrum(doc: Y.Doc, cursor: Cursor, id: number): Cursor {
+  const next = toggleAt(doc, cursor, `p${id}`, pieceToggle);
+  return { ...next, line: drumLineOf(id) ?? next.line };
+}
+
+// Staves (#48; docs/spec/commands.md, 5.1, 5.2 and 5.8) ----------------------------------------
+
+/** The key of a pitched note of a pitch ("n61"). */
+function pitchKey(pitch: number): string {
+  return `n${pitch}`;
+}
+
+/** The pitch a pitched note's key names ("n61" is 61); asked only of keys reading keeps. */
+function pitchOfKey(key: string): number {
+  return Number(key.slice(1));
+}
+
+/**
+ * The key in force in a bar of the document, as reading has it (`keySigsOf`: a key that cannot
+ * be read is no change); C major for a bar not in the score.
+ */
+function keySigIn(doc: Y.Doc, barId: string): KeySignature {
+  const bars = barsOf(doc);
+  const ids = ordered(bars);
+  // The last key read from that bar back, as `keySigsOf` carries it on; the bars after it are not read.
+  for (let index = ids.indexOf(barId); index >= 0; index--) {
+    const read = parsePlain(keySigSchema, bars.get(ids[index]!)?.get("keySig"));
+    if (read.success) return read.data;
+  }
+  return { ...DEFAULT_KEY_SIG };
+}
+
+/**
+ * Where the cursor stands on a staff: the clef of its staff, the key in force in its bar, how its
+ * part is read, and its beat (none in the append slot).
+ */
+interface StaffPlace {
+  clef: PitchedClef;
+  keySig: KeySignature;
+  reader: PartReader;
+  beat: YBeat | undefined;
+}
+
+/**
+ * Where the cursor stands on a staff (`StaffPlace`): the clef as reading has the staves (their
+ * default, a treble staff, when they cannot be read). None but on a pitched part, nor on a beat
+ * that is gone or that reading leaves out.
+ */
+function staffPlaceOf(doc: Y.Doc, cursor: Cursor): StaffPlace | undefined {
+  const reader = readerOf(doc, cursor.partId);
+  if (reader?.kind !== "pitched") return undefined;
+  const beat = beatAt(doc, cursor);
+  if (cursor.at === "on" && (beat === undefined || !readsAsBeat(reader.kind, beat))) return undefined;
+  const staves = parsePlain(pitchedStavesSchema, partsOf(doc).get(cursor.partId)?.get("staves"));
+  const [staff] = staffAndVoiceOf(cursor.voice);
+  const clef = staves.success ? staves.data[staff]?.clef : undefined;
+  return { clef: clef ?? "treble", keySig: keySigIn(doc, cursor.barId), reader, beat };
+}
+
+/** A note of the cursor's beat on a staff: its key, its pitch and its own fields (`ownNote`). */
+interface StaffNote {
+  key: string;
+  pitch: number;
+  stored: NoteJSON;
+}
+
+/**
+ * The notes of the beat of a place on a staff drawn on `line` (`lineOfPitch`: by the clef, and by
+ * their spelling, else the key's): C and C♯ share a line, D♭ is on D's. None in the append slot,
+ * nor a note reading leaves out, which is drawn nowhere.
+ */
+function notesOnLine(place: StaffPlace, line: number): StaffNote[] {
+  return [...(notesOf(place.beat)?.entries() ?? [])].flatMap(([key, value]) => {
+    const note = place.reader.note(key, value);
+    const pitch = pitchOfKey(key);
+    return note !== undefined && lineOfPitch(place.clef, pitch, note.spell, place.keySig) === line ? [{ key, pitch, stored: ownNote(value) as NoteJSON }] : [];
+  });
+}
+
+/** The keys of the notes drawn on the cursor's line of a staff (`notesOnLine`). */
+function staffKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const place = staffPlaceOf(doc, cursor);
+  return place === undefined ? [] : notesOnLine(place, cursor.line).map(({ key }) => key);
+}
+
+/**
+ * The keys of the notes a tie changes at the cursor (docs/spec/commands.md, 5.4; #49): those of
+ * the cursor's line (`noteKeysAt`). On a staff whose line holds no note at the cursor (or in the
+ * append slot), those of the notes the beat before draws on that line, by the clef of the staff and
+ * the key in force in the bar of that beat: the tie makes them there, of the same pitch and
+ * spelling (`tieToggle`). None when that beat draws none there.
+ */
+export function tieKeysAt(doc: Y.Doc, cursor: Cursor): string[] {
+  const keys = noteKeysAt(doc, cursor);
+  const place = keys.length === 0 ? staffPlaceOf(doc, cursor) : undefined;
+  const at = place && placeFor(doc, cursor);
+  if (place === undefined || at === undefined) return keys;
+  const before = beatBefore(doc, place.reader, cursor, at.voice, at.index);
+  if (before === undefined) return [];
+  const keySig = before.barId === cursor.barId ? place.keySig : keySigIn(doc, before.barId);
+  return notesOnLine({ ...place, keySig, beat: before.beat }, cursor.line).map(({ key }) => key);
+}
+
+/** A staff position held to those the cursor stands on (`lineRange`): a note may be drawn further out. */
+function staffLine(line: number): number {
+  const { first, last } = lineRange("pitched", 0);
+  return Math.min(last, Math.max(first, line));
+}
+
+/**
+ * A letter key on a staff (docs/spec/keymap.md, 4.3), one command: the note of that letter
+ * nearest the natural note of the cursor's position, with the sharp or flat of the key in force
+ * (`enteredPitch`), always spelled (docs/spec/schema.md, 8.1). On a beat with notes it joins the
+ * chord; a note of that pitch there is replaced by it, the later spelling winning (C♯ then D♭ is
+ * one note, D♭), what else it held kept (`ownFields`); spelled as it is already, nothing is
+ * written. In the append slot it goes on a new beat, the cursor then on it. The cursor goes to the
+ * position the note is drawn on, held to its range. A beat reading leaves out is left alone, as is
+ * a pitch out of 0 to 127.
+ */
+export function enterNote(doc: Y.Doc, cursor: Cursor, letter: NoteLetter): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const entered = place && enteredPitch(place.clef, cursor.line, letter, place.keySig);
+  if (place === undefined || entered === undefined) return cursor;
+  const key = pitchKey(entered.pitch);
+  const next = writeNote(doc, cursor, key, (stored) => {
+    // A note stored there that reading leaves out is not one to keep the fields of.
+    const kept = stored !== undefined && place.reader.note(key, stored) !== undefined ? stored : undefined;
+    return kept?.spell === entered.spell ? kept : { ...kept, spell: entered.spell };
+  });
+  return { ...next, line: staffLine(entered.line) };
+}
+
+/**
+ * Move every note of the cursor's line to another pitch, one command (docs/spec/commands.md, 5.8):
+ * `to` gives each its new pitch and spelling (undefined keeps its own). Its key is changed, what
+ * else it holds kept (`ownFields`); a note of the beat already at a new pitch is replaced, the note
+ * moved there winning. Nothing moves when any would leave 0 to 127, or when there is none on the
+ * line. The cursor follows the lowest moved note to its position, held to its range.
+ */
+function moveNotesOnLine(doc: Y.Doc, cursor: Cursor, to: (pitch: number) => { pitch: number; spell?: string }): Cursor {
+  const place = staffPlaceOf(doc, cursor);
+  const notes = notesOf(place?.beat);
+  if (place === undefined || notes === undefined) return cursor;
+  const moved = notesOnLine(place, cursor.line).map(({ key, pitch, stored }) => {
+    const next = to(pitch);
+    return { from: key, pitch: next.pitch, note: next.spell === undefined ? stored : { ...stored, spell: next.spell } };
+  });
+  if (moved.length === 0 || moved.some(({ pitch }) => pitch < 0 || pitch > 127)) return cursor;
+  const removed = moved.map(({ from }): NoteChange => ({ map: notes, key: from, next: null }));
+  const placed = moved.map(({ pitch, note }): NoteChange => ({ map: notes, key: pitchKey(pitch), next: note }));
+  if (!writeNoteChanges(doc, [...removed, ...placed])) return cursor;
+  const lowest = moved.reduce((low, each) => (each.pitch < low.pitch ? each : low));
+  return { ...cursor, line: staffLine(lineOfPitch(place.clef, lowest.pitch, lowest.note.spell, place.keySig)) };
+}
+
+/**
+ * `]` (`1`) and `[` (`-1`) on a staff: the notes of the cursor's line a semitone up or down, one
+ * command; on a black key spelled sharp going up, flat going down, on a white key natural
+ * (`semitoneSpelling`).
+ */
+export function moveNotesBySemitone(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + step, spell: semitoneSpelling(pitch + step, step) }));
+}
+
+/** Shift+↑ (`1`) and Shift+↓ (`-1`) on a staff: the notes of the cursor's line an octave up or down, one command, each keeping its spelling. */
+export function moveNotesByOctave(doc: Y.Doc, cursor: Cursor, step: 1 | -1): Cursor {
+  return moveNotesOnLine(doc, cursor, (pitch) => ({ pitch: pitch + 12 * step }));
 }
 
 /** The beats of one voice a selection holds, first to last, and where they are: to find the beat before each. */
@@ -917,9 +1241,9 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
   const reader = readerOf(doc, selection.partId);
   if (reader === undefined) return cursor;
   const beats = selectedBeatsOf(doc, reader, selection).map(({ address, voice, index, map }) => {
-    const notes = [...map.entries()].flatMap(([key, stored]) => {
-      const seen = reader.note(key, stored);
-      return seen ? [{ key, stored, seen }] : [];
+    const notes = [...map.entries()].flatMap(([key, value]) => {
+      const seen = reader.note(key, value);
+      return seen ? [{ key, stored: ownNote(value), seen }] : [];
     });
     return { address, voice, index, map, notes };
   });
@@ -928,7 +1252,7 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
   const decided = toggle.decide(seen);
   // What each note of the selection has become, by the notes of its beat: runs come in score order, beats in voice order.
   const turned = new Map<Y.Map<NoteJSON>, Map<string, NoteJSON | null>>();
-  const changes: { map: Y.Map<NoteJSON>; key: string; next: NoteJSON | null }[] = [];
+  const changes: NoteChange[] = [];
   for (const { address, voice, index, map, notes } of beats) {
     const before = notesBefore(doc, reader, address, voice, index);
     const earlier = before && turned.get(before);
@@ -942,14 +1266,7 @@ export function toggleOnSelection<D>(doc: Y.Doc, selection: Selection, cursor: C
     }
   }
   // Only the notes that change are written: the change and its undo step hold just those.
-  if (changes.length > 0) {
-    doc.transact(() => {
-      for (const { map, key, next } of changes) {
-        if (next === null) map.delete(key);
-        else map.set(key, next);
-      }
-    }, LOCAL);
-  }
+  writeNoteChanges(doc, changes);
   return cursor;
 }
 
@@ -980,13 +1297,14 @@ function afterRemoval(cursor: Cursor, voice: YVoice, index: number): Cursor {
 }
 
 /**
- * Remove the notes on the line of the cursor, from its beat: on a fretted part, the note on its
- * string. Drums and staves get theirs with the keys that enter their notes (docs/ROADMAP.md, M2
- * and M3): until then nothing is removed from them.
+ * Remove the notes on the line of the cursor, from its beat, one command: on a fretted part, the
+ * note on its string; on drums, every piece drawn on that line (`noteKeysAt`: several pieces share
+ * a line, so taking one off would be a guess, docs/spec/commands.md 5.2); on staves, every note
+ * drawn on that line (C and C♯ share one, #48).
  */
 export function deleteNote(doc: Y.Doc, cursor: Cursor): Cursor {
-  if (partKindOf(partsOf(doc).get(cursor.partId)) !== "fretted") return cursor;
-  return setFret(doc, cursor, null);
+  // Removing makes no beat in the append slot (`writeNotes`).
+  return writeNotes(doc, cursor, noteKeysAt(doc, cursor), () => null);
 }
 
 /**
@@ -1047,7 +1365,7 @@ export function setDuration(doc: Y.Doc, cursor: Cursor, { value, dots = 0 }: Omi
  * The markings of a beat a key sets, its duration and notes apart (docs/spec/commands.md, 5.4 and
  * 5.5): stored in the score, unlike a flag (CONTEXT.md).
  */
-export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text">;
+export type BeatMarkings = Pick<BeatFields, "stroke" | "slap" | "pop" | "dynamic" | "text" | "lyric">;
 
 /** A beat as a `BeatChange` sees it: how long it lasts, whether it is a rest, and its markings as read. */
 export interface SeenBeat {
@@ -1132,7 +1450,23 @@ function fits(write: BeatWrite, kind: PartKind): boolean {
   return Object.keys(write.set ?? {}).every((field) => beatFieldFits(field, kind));
 }
 
-/** Change beats as decided, in one transaction; none when nothing changes, or when it sets a field the kind of the part has not. */
+/**
+ * A write as it is written: its tuplet and markings as copies (`writableCopy`); undefined when one
+ * of them nests deeper than `MAX_VALUE_DEPTH` (#102).
+ */
+function writableWrite(write: BeatWrite): BeatWrite | undefined {
+  const fields = Object.entries(write.set ?? {});
+  const written = writable(write.tuplet, ...fields.map(([, value]) => value));
+  if (written === undefined) return undefined;
+  const [tuplet, ...values] = written;
+  const set = write.set && (Object.fromEntries(fields.map(([field], index) => [field, values[index]])) as BeatWrite["set"]);
+  return { ...write, tuplet: tuplet as BeatWrite["tuplet"], set };
+}
+
+/**
+ * Change beats as decided, in one transaction; none when nothing changes, when it sets a field the
+ * kind of the part has not, or when a write nests deeper than a value may (`writableWrite`).
+ */
 function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: BeatChange<D>): void {
   const seen = beats.flatMap((beat) => {
     const read = seenBeat(reader, beat);
@@ -1140,10 +1474,15 @@ function writeBeats<D>(doc: Y.Doc, beats: YBeat[], reader: PartReader, change: B
   });
   if (seen.length === 0) return;
   const decided = change.decide(seen.map(({ read }) => read));
-  const writes = seen.flatMap(({ beat, read }) => {
-    const write = change.turn(read, decided);
-    return write === null ? [] : [{ beat, write }];
-  });
+  const writes: { beat: YBeat; write: BeatWrite }[] = [];
+  for (const { beat, read } of seen) {
+    const turned = change.turn(read, decided);
+    if (turned === null) continue;
+    const write = writableWrite(turned);
+    // Every write or none.
+    if (write === undefined) return;
+    writes.push({ beat, write });
+  }
   if (writes.length === 0 || !writes.every(({ write }) => fits(write, reader.kind))) return;
   doc.transact(() => {
     for (const { beat, write } of writes) {
@@ -1233,10 +1572,68 @@ export function setText(doc: Y.Doc, cursor: Cursor, text: string): boolean {
 
 /** The text over the beat of the cursor, empty for none; null in the append slot, or on a beat reading leaves out. */
 export function textAt(doc: Y.Doc, cursor: Cursor): string | null {
+  return markingAt(doc, cursor, "text");
+}
+
+/** A text marking of the beat of the cursor, empty for none; null in the append slot, or on a beat reading leaves out. */
+function markingAt(doc: Y.Doc, cursor: Cursor, field: "text" | "lyric"): string | null {
   const reader = readerOf(doc, cursor.partId);
   const beat = beatAt(doc, cursor);
   const read = reader && beat && seenBeat(reader, beat);
-  return read ? (read.markings.text ?? "") : null;
+  return read ? (read.markings[field] ?? "") : null;
+}
+
+/** The syllable on a beat (docs/spec/commands.md, 5.5): this one, the empty one of a melisma, or none (null). */
+function beatLyric(lyric: string | null): BeatChange<void> {
+  return {
+    decide: () => undefined,
+    turn: ({ markings }) => ((markings.lyric ?? null) === lyric ? null : { set: { lyric } }),
+  };
+}
+
+/**
+ * Put a syllable on the beat of the cursor, one command (lyrics mode, docs/spec/keymap.md, 6.2):
+ * as typed, a `-` at its end too (the word goes on); an empty one is a melisma, the syllable before
+ * held on; null takes the lyric away. False, and nothing set, for one longer than `MAX_LYRIC`
+ * (docs/spec/schema.md, section 13). Only a pitched part's beats hold a lyric: nothing is written
+ * on another's, nor in the append slot. The same syllable again writes nothing.
+ */
+export function setLyric(doc: Y.Doc, cursor: Cursor, lyric: string | null): boolean {
+  if (lyric !== null && lyric.length > MAX_LYRIC) return false;
+  changeBeatAt(doc, cursor, beatLyric(lyric));
+  return true;
+}
+
+/** The syllable on the beat of the cursor, empty for none or a melisma; null in the append slot, or on a beat reading leaves out. */
+export function lyricAt(doc: Y.Doc, cursor: Cursor): string | null {
+  return markingAt(doc, cursor, "lyric");
+}
+
+/**
+ * Where lyrics mode goes from the cursor (docs/spec/keymap.md, 6.2): the next beat of its voice
+ * that is sung (not a rest), in its bar or a later one; with `from` `"here"`, the cursor's own beat
+ * when it is sung. From the append slot, the beats after its anchor. Beats reading leaves out are
+ * passed over. Null when there is none, or the cursor's part or bar is gone: lyrics mode ends.
+ */
+export function sungBeatFrom(doc: Y.Doc, cursor: Cursor, from: "here" | "next"): Cursor | null {
+  const reader = readerOf(doc, cursor.partId);
+  const bars = ordered(barsOf(doc));
+  const first = bars.indexOf(cursor.barId);
+  if (reader === undefined || first < 0) return null;
+  const own = voiceAt(doc, cursor);
+  const index = own === undefined ? -1 : indexOfBeat(own, cursor.beatId);
+  // A beat or an anchor gone: on from the next bar.
+  let start = index >= 0 ? index + (cursor.at === "on" && from === "here" ? 0 : 1) : cursor.beatId === null ? 0 : Infinity;
+  for (let bar = first; bar < bars.length; bar++) {
+    const barId = bars[bar]!;
+    const voice = bar === first ? own : voiceIn(doc, { ...cursor, barId });
+    for (let at = start; voice !== undefined && at < voice.length; at++) {
+      const beat = voice.get(at);
+      if (!isRest(beat) && readsAsBeat(reader.kind, beat)) return { ...cursor, barId, beatId: beat.get("id") as string, at: "on" };
+    }
+    start = 0;
+  }
+  return null;
 }
 
 /**
@@ -1259,6 +1656,20 @@ export function setArtist(doc: Y.Doc, artist: string): boolean {
   if (artist.length > MAX_TITLE) return false;
   writeField(metaOf(doc), "artist", artistSchema, artist === "" ? undefined : artist);
   return true;
+}
+
+/**
+ * Restore a version in place (docs/spec/collab.md, 8.5): one command, one transaction of this
+ * member's, that writes the version over the score as this document knows it (title, artist,
+ * every bar and part), its ids kept (`writeScore`). A version of an older schema is brought up to
+ * date first (`migrateJson`). Throws, changing nothing, when it cannot be: newer than this code,
+ * missing a step, or not a score. The bars and parts are put in a run of keys of their own
+ * (`keysOfARun`): bars or parts others add meanwhile, which this document has not seen and so
+ * cannot take away, stay beside the version's, never among them; so do those of another member
+ * restoring at the same time.
+ */
+export function replaceScore(doc: Y.Doc, version: unknown, migrations: readonly Migration[] = MIGRATIONS): void {
+  writeScore(doc, migrateJson(version, migrations), keysOfARun);
 }
 
 // Parts (docs/spec/commands.md, 7.1 and 7.2) ------------------------------------------------------
@@ -1379,9 +1790,6 @@ export function setProgram(doc: Y.Doc, partId: string, program: number): boolean
 }
 
 const pitchedStavesSchema = partSchemas.pitched.shape.staves;
-
-/** A clef a staff of a pitched part can have. */
-export type PitchedClef = z.output<typeof pitchedStavesSchema>[number]["clef"];
 
 /** The clefs a staff of a pitched part can have, in the order the panel offers them. */
 export const PITCHED_CLEFS: readonly PitchedClef[] = pitchedStavesSchema.element.shape.clef.options;

@@ -4,18 +4,17 @@
 import { Forbidden } from "@hocuspocus/common";
 import { DELETED_SCORE_DAYS, deletedScoreList } from "@studio/contracts";
 import type { FastifyInstance } from "fastify";
-import { literal, Op } from "sequelize";
+import { Op } from "sequelize";
 
 import type { Collab } from "./collab";
+import { daysAgo, NOW } from "./db/clock";
 import { Score, ScoreMember } from "./db/models";
 import { isUuid, notFound } from "./http";
 import { changeMembers, unlessRefused } from "./members";
+import { purgeExpiredRecognitions } from "./recognitions";
 
 /** How often the job that deletes for good runs; it also runs once as the server starts. */
 export const PURGE_INTERVAL_MS = 60 * 60 * 1000;
-
-/** The clock of the database, as a value of `deleted_at`. */
-const NOW = literal("now()") as unknown as Date;
 
 /**
  * The moment 30 days ago, by the clock of the database, which also says when a score is deleted:
@@ -23,7 +22,7 @@ const NOW = literal("now()") as unknown as Date;
  * decides it. A score deleted at this moment or later can still be restored; one deleted before
  * is to be deleted for good.
  */
-const RESTORABLE_SINCE = literal(`now() - make_interval(days => ${DELETED_SCORE_DAYS})`);
+const RESTORABLE_SINCE = daysAgo(DELETED_SCORE_DAYS);
 
 /** `deleted_at` of a score its Owner can still restore. */
 const RESTORABLE = { [Op.gte]: RESTORABLE_SINCE };
@@ -107,6 +106,13 @@ export function registerDeletion(app: FastifyInstance, { collab }: { collab: Col
     } catch (error) {
       // Tried again in an hour; the scores stay deleted meanwhile.
       app.log.error({ error }, "deleting for good the scores deleted more than 30 days ago failed");
+    }
+    // The same job deletes the recognitions kept 7 days (docs/spec/recognizer.md, section 7).
+    try {
+      const count = await purgeExpiredRecognitions();
+      if (count > 0) app.log.info({ count }, "deleted the recognitions started more than 7 days ago");
+    } catch (error) {
+      app.log.error({ error }, "deleting the recognitions started more than 7 days ago failed");
     }
   }
   app.addHook("onReady", async () => {

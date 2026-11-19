@@ -1,6 +1,6 @@
 // The platform layer of the keymap (docs/spec/keymap.md, 1.3): the keys are written as abstract
 // chords, which become the keys of Windows and Linux, or of macOS, here and nowhere else.
-import { KEY_BINDINGS, type KeyBinding, type KeyContext, type PageEffect, type TextEntryEffect } from "./bindings";
+import { KEY_BINDINGS, type KeyBinding, type KeyContext, type LyricEntryEffect, type PageEffect, type TextEntryEffect } from "./bindings";
 
 /** The keys of Windows and Linux (`"other"`), or of macOS and iPadOS (`"mac"`). */
 export type KeyPlatform = "mac" | "other";
@@ -216,9 +216,10 @@ function bindingsOn(platform: KeyPlatform): Map<string, KeyBinding[]> {
 export function matchKey(key: Key, platform: KeyPlatform, context: Exclude<KeyContext, "score"> | undefined): KeyBinding | undefined {
   if (key.isComposing === true || key.keyCode === 229) return undefined;
   const combo: KeyCombo = { code: key.code, ctrlKey: key.ctrlKey === true, altKey: key.altKey === true, shiftKey: key.shiftKey === true, metaKey: key.metaKey === true };
+  const inBox = context === "textEntry" || context === "lyricEntry";
   return bindingsOn(platform)
     .get(comboName(combo, platform))
-    ?.find((binding) => binding.context === context || (binding.context === "score" && context !== "textEntry"));
+    ?.find((binding) => binding.context === context || (binding.context === "score" && !inBox));
 }
 
 /**
@@ -238,4 +239,15 @@ export function pageEffectOf(key: Key, platform: KeyPlatform): PageEffect | null
 export function textEntryEffectOf(key: Key, platform: KeyPlatform): TextEntryEffect | null {
   const binding = matchKey(key, platform, "textEntry");
   return binding?.context === "textEntry" ? binding.effect : null;
+}
+
+/**
+ * What a key does in the box of lyrics mode (keymap.md, 6.2): Space, `-` and Delete there, and
+ * Enter and Esc as in every text box (`textEntryEffectOf`); null for every other key, which is the
+ * box's own. A key that goes to an input method is null too (`matchKey`): the Space with which a
+ * word of Zhuyin is chosen saves no syllable.
+ */
+export function lyricEntryEffectOf(key: Key, platform: KeyPlatform): LyricEntryEffect | TextEntryEffect | null {
+  const binding = matchKey(key, platform, "lyricEntry");
+  return binding?.context === "lyricEntry" ? binding.effect : textEntryEffectOf(key, platform);
 }

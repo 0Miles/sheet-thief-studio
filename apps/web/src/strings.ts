@@ -1,10 +1,53 @@
 // Every text of the interface, in Traditional Chinese (the only language of the app).
-import { accountLimits, DELETED_SCORE_DAYS, type ErrorCode } from "@studio/contracts";
+import {
+  accountLimits,
+  type ClosedNotice,
+  DELETED_SCORE_DAYS,
+  type ErrorCode,
+  type PhraseSummary,
+  type RecognitionError,
+  recognitionLimits,
+  type RecognitionSkipped,
+  type RecognitionStatus,
+  type RecognizerPageError,
+  type RecognizerWarning,
+  versionLimits,
+  type VersionReason,
+} from "@studio/contracts";
 import type { SessionHint } from "@studio/score-editor";
-import { type Flag, type KeySignature, MAX_BARS, MAX_NON_PERCUSSION_PARTS, MAX_PARTS, type PartKind, type PartPresetId, type PitchedClef, type TimeSignature, type TuningOption } from "@studio/score-model";
+import {
+  type DropHint,
+  type DropRefusal,
+  type Flag,
+  type KeySignature,
+  MAX_BARS,
+  MAX_BEAT_TEXT,
+  MAX_FRET,
+  MAX_IMPORT_BYTES,
+  MAX_IMPORT_FILE_BYTES,
+  MAX_LYRIC,
+  MAX_NON_PERCUSSION_PARTS,
+  MAX_PART_NAME,
+  MAX_PARTS,
+  MAX_REPEAT,
+  MAX_SECTION_NAME,
+  MAX_STAVES,
+  MAX_TITLE,
+  type PartKind,
+  type PartPresetId,
+  type PasteRefusal,
+  type PitchedClef,
+  STRING_COUNTS,
+  TEMPO_RANGE,
+  type TimeSignature,
+  type TuningOption,
+} from "@studio/score-model";
+import type { ImportFailure, ImportLoss } from "@studio/score-render";
 
 import type { ReadOnlyReason } from "./access";
+import type { ExportFormat } from "./exportFile";
 import type { WhilePlaying } from "./mixer";
+import type { SaveState } from "./phraseSaver";
 
 /** The tonic of each key, by the number of sharps (positive) or flats (negative) plus 7. */
 const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
@@ -15,9 +58,36 @@ const KEY_TONICS: Record<KeySignature["mode"], readonly string[]> = {
 // Texts said the same in more than one place.
 const DISPLAY_NAME_RULE = `顯示名稱長度 ${accountLimits.displayName.min}–${accountLimits.displayName.max} 個字元。`;
 const PASSWORD_RULE = `密碼長度 ${accountLimits.password.min}–${accountLimits.password.max} 個字元。`;
+const NOTHING_TO_PASTE = "剪貼簿裡沒有可以貼上的內容";
 const TOO_MANY_PARTS = `聲部最多 ${MAX_PARTS} 個，其中鼓以外最多 ${MAX_NON_PERCUSSION_PARTS} 個`;
+const TOO_MANY_BARS = `小節最多 ${MAX_BARS} 個`;
+/** What a drop tells, no dialog (docs/spec/commands.md, 5.7): of a phrase from the sidebar, or of bars pasted. */
+const DROP_HINTS = {
+  tuningDiffers: "調弦不同，格號照原樣放入",
+  barsAppended: "小節不夠，已在譜尾附加小節",
+} satisfies Record<DropHint, string>;
+const VERSIONS = "版本記錄";
+const BEFORE_RESTORE = "還原前";
 const barLabel = (bar: number) => `第 ${bar} 小節`;
 const barRangeLabel = (first: number, last: number) => `第 ${first}–${last} 小節`;
+/** Bars from one to another, one bar by its number alone. */
+const barsLabel = (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last));
+const SAVE_PHRASE = "存成樂句";
+const PHRASE_LIBRARY = "樂句庫";
+const NO_PHRASES = "還沒有樂句。";
+const NO_MATCHING_PHRASES = "沒有符合的樂句。";
+/** The images a recognition takes (docs/spec/recognizer.md, section 1), and how many at once. */
+const IMAGE_TYPES = "PNG、JPEG 或 WebP";
+const MOST_IMAGES = `一次最多 ${recognitionLimits.images.max} 張`;
+const RECOGNITION_FAILED = "辨識失敗";
+const NOT_SAVED = "沒有儲存";
+const SAVE_AS_NEW_PHRASE = "另存成新樂句";
+const VERSION_NAME_LENGTH = `名稱長度 ${versionLimits.name.min}–${versionLimits.name.max} 個字元`;
+const VERSION_NAME_REQUIRED = "手動存下的版本一定要有名稱。";
+const RATE_LIMITED = "嘗試太多次，請稍後再試。";
+const megabytes = (bytes: number) => bytes / (1024 * 1024);
+/** The bars an import report names, the first 8 of many and how many in all. */
+const importedBars = (bars: readonly number[]) => (bars.length <= 8 ? `第 ${bars.join("、")} 小節` : `第 ${bars.slice(0, 8).join("、")} 小節等 ${bars.length} 個小節`);
 
 export const strings = {
   app: {
@@ -26,8 +96,10 @@ export const strings = {
   home: {
     title: "我的團譜",
     newScore: "新增團譜",
-    empty: "還沒有團譜。按「新增團譜」建立第一份。",
-    phrases: "樂句庫",
+    importScore: "匯入",
+    importFile: "選擇要匯入的檔案",
+    empty: "還沒有團譜。按「新增團譜」建立第一份，或「匯入」一個檔案。",
+    phrases: PHRASE_LIBRARY,
     roles: { owner: "擁有者", editor: "編輯者", viewer: "檢視者" },
     // The scores I own and deleted, which I can still restore (docs/spec/accounts.md, section 8).
     deleted: {
@@ -59,6 +131,79 @@ export const strings = {
     cancel: "取消",
     close: "關閉",
   },
+  // Importing a file as a new score (docs/spec/import-export.md, section 2): what was read, the
+  // import report, and why a file makes no score.
+  importScore: {
+    title: "匯入檔案",
+    reading: (file: string) => `正在讀取「${file}」…`,
+    summary: (parts: number, bars: number) => `${parts} 個聲部，${bars} 個小節`,
+    reportTitle: "匯入報告",
+    reportHelp: "下列內容無法完整轉換，建立後會省略或改成最接近的寫法：",
+    nothingLost: "所有內容都能轉換。",
+    /** How many times a loss happens, and in which bars when it happens in some. */
+    times: (count: number, bars: readonly number[]) => (bars.length === 0 ? `${count} 處` : `${count} 處（${importedBars(bars)}）`),
+    create: "建立團譜",
+    cancel: "取消",
+    close: "關閉",
+    failures: {
+      fileTooLarge: `檔案超過 ${megabytes(MAX_IMPORT_FILE_BYTES)} MB，無法匯入。`,
+      unreadable: "讀不了這個檔案。只能匯入 Guitar Pro 或 MusicXML 檔案。",
+      tooManyParts: `聲部超過 ${MAX_PARTS} 個，無法匯入。`,
+      tooManyNonDrumParts: `鼓以外的聲部超過 ${MAX_NON_PERCUSSION_PARTS} 個，無法匯入。`,
+      tooManyBars: `小節超過 ${MAX_BARS} 個，無法匯入。`,
+      tooLarge: `轉換後的團譜超過 ${megabytes(MAX_IMPORT_BYTES)} MB，無法匯入。`,
+      invalid: "這個檔案轉換時出了問題，無法匯入。",
+    } satisfies Record<ImportFailure, string>,
+    losses: {
+      titleTruncated: `標題超過 ${MAX_TITLE} 字，已截斷`,
+      artistTruncated: `演出者超過 ${MAX_TITLE} 字，已截斷`,
+      partNameTruncated: `聲部名稱超過 ${MAX_PART_NAME} 字，已截斷`,
+      sectionTruncated: `段落名稱超過 ${MAX_SECTION_NAME} 字，已截斷`,
+      textTruncated: `拍點文字超過 ${MAX_BEAT_TEXT} 字，已截斷`,
+      lyricTruncated: `歌詞超過 ${MAX_LYRIC} 字，已截斷`,
+      jump: "D.S.、D.C.、Coda、Fine 等跳躍記號，已省略",
+      tempoInBar: "小節中途的速度變化，已省略",
+      tempoText: "速度文字，已省略",
+      tempoOutOfRange: `速度超出 ${TEMPO_RANGE.min}–${TEMPO_RANGE.max}，已改成範圍內最接近的值`,
+      timeSignature: "不支援的拍號，已改成 4/4",
+      swing: "Swing 等搖擺節奏，已省略",
+      fermata: "延長記號，已省略",
+      repeatCount: `反覆超過 ${MAX_REPEAT} 次，已改成 ${MAX_REPEAT} 次`,
+      strings: `弦數不在 ${STRING_COUNTS.min}–${STRING_COUNTS.max} 的弦樂器，已改成五線譜聲部`,
+      tablatureHidden: "只顯示五線譜的吉他或貝斯，已改成五線譜聲部，不保留調弦與格號",
+      capo: "移調夾超出範圍，已改成範圍內最接近的值",
+      clef: "不支援的譜號或中途換譜號，已改用第一個譜號或高音譜號",
+      staves: `超過 ${MAX_STAVES} 個譜表的聲部，只保留前 ${MAX_STAVES} 個`,
+      voices: "第 3 條以後的聲線，已省略",
+      transposition: "移調樂器的移調，已省略",
+      duration: "短於六十四分音符或長於全音符的拍點，已省略",
+      dots: "超過 2 個附點，已改成 2 個",
+      tuplet: "不支援的連音，已改成一般拍點",
+      grace: "裝飾音，已省略",
+      dynamic: "pppp、ffff、sf、fz 等力度，已改成最接近的力度或省略",
+      crescendo: "漸強、漸弱，已省略",
+      lyricLines: "第二行以後的歌詞，已省略",
+      lyricOnUnpitched: "TAB 或鼓聲部上的歌詞，已省略",
+      chord: "和弦名稱與和弦指法圖，已省略",
+      slashed: "斜線節奏譜，已省略",
+      ottava: "八度記號，已省略",
+      pedal: "踏板記號，已省略",
+      whammy: "搖桿，已省略",
+      tremolo: "Tremolo picking，已省略",
+      arpeggio: "琶音，已省略",
+      fret: `超過第 ${MAX_FRET} 格的音，已省略`,
+      pitch: "音高超出範圍或重複的音，已省略",
+      drum: "不認得的鼓件，已省略",
+      bend: "推弦曲線，已改成最接近的推弦",
+      harmonic: "不支援的泛音，已省略",
+      slide: "不支援的滑音，已省略",
+      trill: "Trill，已省略",
+      fingering: "指法，已省略",
+      ornament: "裝飾記號，已省略",
+      slur: "圓滑線，已省略",
+      technique: "這種聲部沒有、或不支援的技巧，已省略",
+    } satisfies Record<ImportLoss, string>,
+  },
   score: {
     unavailable: "無法開啟這份團譜",
     label: "譜面",
@@ -79,23 +224,55 @@ export const strings = {
     // What a reconnection found changed, said on the score opened anew (docs/spec/collab.md, section 7).
     roleChanged: (role: string) => `你的角色已改為${role}。`,
     // Why nobody may change the score here, whatever their role (docs/spec/views.md, section 10).
+    // Locked until the page is loaded again: each says so.
     readOnly: {
       newerSchema: "這份團譜由較新的版本建立，請重新整理頁面。",
-      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視。",
-      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視。",
+      missingMigration: "伺服器還不能讀這份團譜，暫時只能檢視；伺服器更新後請重新整理頁面。",
+      migrationFailed: "伺服器讀這份團譜時發生錯誤，暫時只能檢視；問題排除後請重新整理頁面。",
     } satisfies Record<ReadOnlyReason, string>,
+    // Locked while open for typing, the score opened anew from the server's document: what this
+    // tab wrote and the server never took went with the old one (docs/spec/collab.md, 2.1).
+    readOnlyDropped: (why: string) => `已改用伺服器上的版本，這個分頁沒同步到伺服器的修改已經丟掉。${why}`,
+    // The server closed this tab's connection for good (docs/spec/collab.md, section 9): what it
+    // holds would be refused again at every reconnection. Opening the score anew drops it.
+    closed: {
+      reasons: {
+        tooDeep: "這個分頁裡有伺服器不接受的內容（巢狀太深的資料），已停止同步，之後的修改也不會儲存。重新載入會改用伺服器上的版本，這個分頁還沒儲存的修改會全部丟掉。",
+      } satisfies Record<ClosedNotice["reason"], string>,
+      reload: "重新載入",
+      reloaded: "已重新載入伺服器上的版本，先前那個分頁沒儲存的修改已丟掉。",
+    },
     // The 404 page of a member removed from the score, or of a score deleted, while it was open.
     removed: "你已經不是這份團譜的成員，或團譜已被刪除。",
     // The box Enter opens for the text over a beat, such as a chord name.
     beatText: "拍點文字",
+    // The box of lyrics mode (Shift+Enter on a staff), and why a syllable with its - was not saved.
+    lyrics: "歌詞",
+    lyricTooLong: `一個音節最多 ${MAX_LYRIC} 個字元`,
     // What a key that did nothing tells the member (`SessionHint`).
     hints: {
       oneVoice: "弦樂聲部只有一條聲線",
-      tooManyBars: `小節最多 ${MAX_BARS} 個`,
+      tooManyBars: TOO_MANY_BARS,
       lastBar: "至少要留下一個小節",
       tooManyParts: TOO_MANY_PARTS,
       lastPart: "至少要留下一個聲部",
     } satisfies Record<SessionHint, string>,
+    // What a paste tells the member (docs/spec/phrases.md, section 2; docs/spec/commands.md, 5.6
+    // and 5.7): why nothing was pasted, or what was done besides (several are said together).
+    clipboard: {
+      refused: {
+        nothing: NOTHING_TO_PASTE,
+        gone: "游標所在的小節已經不在了",
+        // Not a fragment once the session checks it again: as good as none.
+        invalid: NOTHING_TO_PASTE,
+        otherKind: "只能貼進同一種聲部",
+        tooManyStrings: "貼上的內容用到這個聲部沒有的弦",
+        otherStaves: "貼上的內容用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+      } satisfies Record<PasteRefusal, string>,
+      hints: DROP_HINTS,
+      joiner: "；",
+    },
     // A title read as empty (co-editing can empty it; docs/spec/schema.md, section 2).
     untitled: "未命名",
     // The title and the artist, changed in the title bar of the editable view (docs/spec/commands.md, 7.3).
@@ -208,8 +385,12 @@ export const strings = {
     },
     dismiss: "關閉",
     settings: "設定",
+    versions: VERSIONS,
     player: {
       loading: "音色載入中…",
+      unavailable: "這個瀏覽器無法播放聲音",
+      failed: "音色載入失敗",
+      retry: "重試",
       play: "播放",
       pause: "暫停",
       stop: "停止",
@@ -232,7 +413,7 @@ export const strings = {
       speed: "播放速度",
       loop: "循環",
       loopNone: "沒有選取範圍（選取小節或拍點就會循環播放）",
-      loopBars: (first: number, last: number) => (first === last ? barLabel(first) : barRangeLabel(first, last)),
+      loopBars: barsLabel,
       loopBeats: (bar: number) => `第 ${bar} 小節裡選取的拍點`,
       metronome: "節拍器",
       countIn: "預備拍（一小節）",
@@ -257,6 +438,36 @@ export const strings = {
         invalidContent: "這裡有讀不懂的內容，已經略過",
       } satisfies Record<Flag["kind"], string>,
     },
+    // The phrase sidebar of the editable view (docs/spec/phrases.md, section 6): my phrases, those
+    // that fit the cursor's part unless all are asked for, a preview, and a drop on a bar.
+    phraseSidebar: {
+      open: "樂句側欄",
+      openKey: (key: string) => `開關樂句側欄（${key}）`,
+      title: "樂句",
+      close: "關閉",
+      search: "搜尋樂句",
+      showAll: "顯示全部，包含和游標所在聲部不相容的",
+      help: "拖到譜面上的小節放下，或選好樂句按 Enter 放到游標所在的小節。",
+      empty: NO_PHRASES,
+      noneFit: "沒有和游標所在聲部相容的樂句。",
+      noMatch: NO_MATCHING_PHRASES,
+      library: PHRASE_LIBRARY,
+      preview: (name: string) => `「${name}」的預覽`,
+      closePreview: "關閉預覽",
+      dropAtCursor: "放到游標所在的小節",
+      /** Over a part of another kind, while a phrase is dragged over it. */
+      cannotDrop: "不能放",
+      // What a drop tells, no dialog (docs/spec/commands.md, 5.7).
+      hints: DROP_HINTS,
+      refused: {
+        gone: "要放的小節或聲部已經不在了",
+        otherKind: "只能放進同一種聲部",
+        tooManyStrings: "樂句用到的弦超過這個聲部的弦數",
+        otherStaves: "樂句用到這個聲部沒有的譜表",
+        tooManyBars: TOO_MANY_BARS,
+        invalid: "這個樂句的內容讀不懂，沒有放入",
+      } satisfies Record<DropRefusal, string>,
+    },
     // Each member's own display options (docs/spec/views.md, section 6).
     display: {
       parts: "顯示聲部",
@@ -267,13 +478,19 @@ export const strings = {
       options: "選項",
       closeOptions: "收起選項",
     },
+    // Export to a file (docs/spec/import-export.md, section 3): any member, in any view; never a guest.
+    export: {
+      open: "匯出",
+      formats: { gp7: "Guitar Pro 7（.gp）", midi: "MIDI（.mid）" } satisfies Record<ExportFormat, string>,
+      failed: "匯出失敗，請再試一次",
+    },
   },
   // The phrase library (/phrases; docs/spec/phrases.md, section 4).
   phrases: {
-    title: "樂句庫",
+    title: PHRASE_LIBRARY,
     newPhrase: "新增樂句",
-    empty: "還沒有樂句。",
-    noMatch: "沒有符合的樂句。",
+    empty: NO_PHRASES,
+    noMatch: NO_MATCHING_PHRASES,
     kind: "種類",
     allKinds: "全部",
     kinds: { fretted: "弦樂 TAB", percussion: "鼓", pitched: "五線譜" } satisfies Record<PartKind, string>,
@@ -281,9 +498,130 @@ export const strings = {
     strings: (count: number) => `${count} 弦`,
     staves: (count: number) => `${count} 個譜表`,
     bars: (count: number) => `${count} 小節`,
+    /** What a list says of a phrase besides its name, in the library and in the sidebar: its kind, its strings or its staves (more than one), its bars. */
+    details: (phrase: Pick<PhraseSummary, "kind" | "stringCount" | "staffCount" | "barCount">) =>
+      [
+        strings.phrases.kinds[phrase.kind],
+        phrase.stringCount === null ? null : strings.phrases.strings(phrase.stringCount),
+        phrase.staffCount !== null && phrase.staffCount > 1 ? strings.phrases.staves(phrase.staffCount) : null,
+        strings.phrases.bars(phrase.barCount),
+      ]
+        .filter((part) => part !== null)
+        .join(" · "),
     rename: "改名",
     duplicate: "複製",
     delete: "刪除",
+    /** Recognizing images of a TAB (docs/spec/phrases.md, sections 4 and 7): on every device. */
+    recognize: "從圖片辨識",
+    recognizeHelp: `${IMAGE_TYPES}，${MOST_IMAGES}，依頁序選取。`,
+    uploading: "上傳中…",
+    tooManyImages: `${MOST_IMAGES}圖片。`,
+    /** Refused for an upload with no image in it (400 on `images`). */
+    noImages: "請至少選擇一張圖片。",
+    /** Refused for a body the server could not read as images (400 without fields): the files could not be sent as they are. */
+    uploadUnreadable: "無法讀取上傳的檔案，請重新選擇圖片再試一次。",
+    /** Refused for its size (413): the limits of docs/spec/recognizer.md, section 4. */
+    imagesTooLarge: `檔案太大：每張最多 ${megabytes(recognitionLimits.imageBytes)} MB，合計最多 ${megabytes(recognitionLimits.imagesBytes)} MB。`,
+    /** Refused for its type (415): which image, from 1. */
+    unsupportedImage: (page: number) => `第 ${page} 張不是 ${IMAGE_TYPES} 圖片（例如 HEIC 要先轉檔）。`,
+    /** The recognitions not yet saved nor discarded. */
+    pending: "待審核",
+    pendingItem: (pages: number, at: string) => `${at} · ${pages} 張圖片`,
+    pendingStatus: { running: "辨識中", succeeded: "可以審核", failed: RECOGNITION_FAILED } satisfies Record<RecognitionStatus, string>,
+  },
+  // The review page of a recognition (/recognitions/:id; docs/spec/phrases.md, section 7, and
+  // docs/spec/recognizer.md): progress, why it failed, and the result opened in the phrase editor.
+  recognition: {
+    title: "辨識結果",
+    library: PHRASE_LIBRARY,
+    running: "辨識中，完成後會自動顯示結果。辨識一份 TAB 可能要幾分鐘。",
+    /** The headline of a failure: that it failed, and why. */
+    failed: (reason: string) => `${RECOGNITION_FAILED}：${reason}`,
+    /** Why a recognition failed, and what to try (docs/spec/recognizer.md, 5.2). */
+    failures: {
+      recognition_failed: { reason: "沒有辨識出 TAB。", advice: "請確認圖片是吉他或貝斯的 TAB，拍得清楚、沒有歪斜，再試一次。" },
+      timeout: { reason: "辨識超過時間上限。", advice: "請減少一次上傳的張數，或把圖片裁成只有 TAB 的部分再試一次。" },
+      unavailable: { reason: "辨識服務暫時無法使用。", advice: "請稍後再試一次。" },
+      busy: { reason: "辨識服務正在處理別人的圖片。", advice: "請稍後再試一次。" },
+      interrupted: { reason: "伺服器在辨識途中重新啟動，這次辨識沒有完成。", advice: "請重新上傳一次。" },
+    } satisfies Record<RecognitionError["code"], { reason: string; advice: string }>,
+    /** A page's own reason (docs/spec/recognizer.md, 5.2). */
+    pageFailure: (page: number, code: RecognizerPageError["code"]) =>
+      `第 ${page} 張：${
+        {
+          no_staff: "找不到譜表的線，請確認這張是 TAB。",
+          no_notes: "找到譜表，但讀不到格號，請拍得更清楚一些。",
+          invalid_image: "圖片無法讀取，檔案可能損壞。",
+          image_too_large: "圖片太大（超過 40 百萬像素），請縮小後再試。",
+        }[code]
+      }`,
+    /** What the fragment leaves out of what was read (docs/spec/recognizer.md, 7.2). */
+    skippedTitle: "略過的項目",
+    noneSkipped: "沒有略過任何項目。",
+    skipped: (item: RecognitionSkipped): string => {
+      switch (item.code) {
+        case "grace_notes":
+          return `裝飾音 ${item.count} 個（樂句不帶裝飾音）`;
+        case "capo":
+          return `移調夾第 ${item.fret} 格（樂句不帶移調夾）`;
+        case "tuning_unrecognized":
+          return `讀不懂的調弦「${item.raw}」`;
+        case "bend_clamped":
+          return `超過 4 個半音的推弦 ${item.count} 個，改成 4 個半音`;
+        case "sections":
+          return "段落名稱";
+        case "tempo":
+          return "速度";
+        case "repeats":
+          return "反覆記號與跳房子";
+        case "jumps":
+          return "反覆指示（Segno、Coda 等）";
+      }
+    },
+    warningsTitle: "提醒",
+    warning: (item: RecognizerWarning): string => {
+      switch (item.code) {
+        case "rhythm_estimated":
+          return `${item.params.bars.map(barLabel).join("、")}的時值是從音符間距估出來的，請檢查`;
+        case "overlapping_notes":
+          return `第 ${item.params.page} 張有 ${item.params.count} 個同一條弦上重疊的音符被略過`;
+        case "staves_ignored":
+          return `${item.params.count} 行弦數和其他行不同的譜表被略過`;
+        case "bar_too_dense":
+          return `第 ${item.params.page} 張有個小節的音太多，這個小節的音都當成 32 分音符`;
+        case "fixed_durations":
+          return "不是每一行都有小節線，時值用固定長度，請檢查";
+        case "other":
+          return "辨識時有其他提醒，請仔細檢查結果";
+      }
+    },
+    /** The tuning as read (docs/spec/recognizer.md, section 6). */
+    tuningNotFound: "圖片上沒有讀到調弦，先用標準調弦。",
+    tuningUnrecognized: (raw: string) => `讀不懂圖片上的調弦「${raw}」，先用標準調弦。請確認調弦，需要時手動選擇。`,
+    chooseTuning: "選擇調弦",
+    images: "原圖",
+    imageAlt: (page: number) => `第 ${page} 張原圖`,
+    save: SAVE_PHRASE,
+    discard: "捨棄",
+    /** The name a phrase saved from a recognition starts with: the day it was recognized. */
+    defaultName: (day: string) => `辨識結果 ${day}`,
+    edited: `有修改尚未${SAVE_PHRASE}`,
+    /** On a phone or a tablet the result is only looked at and played (`canType`). */
+    desktopOnly: `請在電腦上審核並${SAVE_PHRASE}`,
+    saveDialog: { title: SAVE_PHRASE, name: "名稱", save: "儲存", cancel: "取消", close: "關閉" },
+    discardDialog: {
+      title: "捨棄辨識結果",
+      message: "要捨棄這次辨識嗎？辨識結果與原圖都會刪除，無法復原。",
+      confirm: "捨棄",
+      cancel: "取消",
+    },
+    /** Leaving for another page of the app with changes not saved as a phrase. */
+    leave: {
+      title: `修改還沒有${SAVE_PHRASE}`,
+      message: `辨識結果的修改還沒有${SAVE_PHRASE}，離開之後就沒有了（辨識結果本身會保留）。要離開嗎？`,
+      confirm: "離開",
+      cancel: "留下",
+    },
   },
   newPhrase: {
     title: "新增樂句",
@@ -307,6 +645,57 @@ export const strings = {
     confirm: "刪除",
     cancel: "取消",
   },
+  // The phrase editor (/phrases/:id; docs/spec/phrases.md, section 5). Changed elsewhere and too
+  // large are said with the texts of their error codes (`errors`).
+  phraseEditor: {
+    label: "樂句",
+    library: PHRASE_LIBRARY,
+    rename: "改名",
+    parts: "調弦與譜號",
+    save: { saved: "已儲存", waiting: "尚未儲存", saving: "儲存中…", conflict: NOT_SAVED, unchecked: NOT_SAVED, tooLarge: NOT_SAVED, failed: NOT_SAVED } satisfies Record<SaveState, string>,
+    reload: "重新載入",
+    saveAsNew: SAVE_AS_NEW_PHRASE,
+    /** The server could not be reached, or failed itself: saving is tried again by itself. */
+    retrying: "無法儲存，稍後會自動再試。",
+    /** Refused for its revision, and the phrase could not be read to tell why: nothing is sent until the member checks again. */
+    unchecked: "無法確認這個樂句是否在別處被修改過，修改先留在這一頁。",
+    /** Not saved, and not tried again by itself: what the server said, then this. */
+    notSaved: (said: string) => `${NOT_SAVED}：${said}`,
+    retry: "再試一次",
+    /** Leaving the editor for another page of the app with changes the server does not have. */
+    leave: {
+      title: "還有修改沒有儲存",
+      message: "這個樂句還有修改沒有存到伺服器，離開之後就沒有了。要離開嗎？",
+      confirm: "離開",
+      cancel: "留下",
+    },
+    /** On a phone or a tablet the phrase is only looked at and played (`canType`). */
+    desktopOnly: "請在電腦上編輯",
+  },
+  // A range of bars of a score saved as a phrase, from either edit view (docs/spec/phrases.md, section 3).
+  savePhrase: {
+    /** The toolbar's button, and the title of its dialog. */
+    open: SAVE_PHRASE,
+    openTitle: `把選取的小節存進${PHRASE_LIBRARY}`,
+    /** Why the button does nothing: no range of bars selected (a range of beats, or nothing). */
+    barsOnly: "請選取小節範圍",
+    name: "名稱",
+    /** The name offered: the score's title and the bars, one bar by its number alone. */
+    defaultName: (title: string, first: number, last: number) => `${title} ${barsLabel(first, last)}`,
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+    saved: (name: string) => `已${SAVE_PHRASE}「${name}」。`,
+    /** Saved, without what could not be read in those bars (it is flagged in the score). */
+    savedSkipping: (name: string) => `已${SAVE_PHRASE}「${name}」；讀不懂的內容已經略過，沒有存進去。`,
+  },
+  saveAsNewPhrase: {
+    title: SAVE_AS_NEW_PHRASE,
+    name: "名稱",
+    save: "儲存",
+    cancel: "取消",
+    close: "關閉",
+  },
   // The part presets (docs/spec/commands.md, section 10).
   presets: {
     guitar6: "吉他 6 弦",
@@ -317,6 +706,49 @@ export const strings = {
     keys: "鍵盤",
     vocals: "人聲",
   } satisfies Record<PartPresetId, string>,
+  // A score's versions (/scores/:id/versions; docs/spec/collab.md, section 8): every member looks
+  // at them, an Owner or an Editor names them.
+  versions: {
+    title: VERSIONS,
+    back: "回到團譜",
+    help: "系統會在所有人離開團譜時、以及編輯中每 10 分鐘自動存一個版本，最多保留 200 個自動版本。命名的版本不會被自動刪除。",
+    empty: "還沒有版本。",
+    list: "版本",
+    reasons: {
+      last_disconnect: "自動（所有人離開時）",
+      interval: "自動（每 10 分鐘）",
+      before_restore: BEFORE_RESTORE,
+      manual: "手動存下",
+    } satisfies Record<VersionReason, string>,
+    named: "已命名",
+    size: (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${megabytes(bytes).toFixed(1)} MB`),
+    preview: "預覽",
+    previewOf: (when: string) => `${when} 的版本`,
+    previewHelp: "預覽只供檢視與播放，不會改動團譜。",
+    choose: "選一個版本來預覽。",
+    name: "版本名稱",
+    nameRule: `${VERSION_NAME_LENGTH}；清空後儲存會取消命名，它就和自動版本一樣可能被刪除。`,
+    nameRuleManual: `${VERSION_NAME_LENGTH}。${VERSION_NAME_REQUIRED}`,
+    rename: "命名",
+    renameOf: (when: string) => `替 ${when} 的版本命名`,
+    saveName: "儲存",
+    cancel: "取消",
+    save: {
+      title: "把目前的內容存成版本",
+      help: "存下伺服器上目前的內容，並替它命名。",
+      submit: "存成版本",
+    },
+    // Restoring a version in place (docs/spec/collab.md, 8.5): Owners and Editors.
+    restore: {
+      action: "還原",
+      title: "還原這個版本",
+      message: (when: string, undoKey: string) =>
+        `這會以 ${when} 的版本取代你這個分頁目前看到的內容；伺服器上目前的內容會先存成一個版本（「${BEFORE_RESTORE}」）。其他人在同一時間所做的修改會被取代，需要時可以從那個版本找回；他們剛新增、還沒同步到這裡的小節與聲部則會保留下來。還原之後，可以在團譜頁按 ${undoKey} 復原這次還原。`,
+      confirm: "還原",
+      notOpen: "團譜還在載入，或你目前不能修改它，請稍候再試。",
+      notWritten: "這個版本沒辦法還原到目前的團譜。目前的內容已經存成一個版本。",
+    },
+  },
   // A guest's page, opened with a read-only link (/s/:token).
   guest: {
     sync: { syncing: "連線中…", synced: "已連線", offline: "已斷線" },
@@ -466,6 +898,21 @@ export const strings = {
     wasReset: (username: string) => `已重設 ${username} 的密碼。`,
     wasDisabled: (username: string) => `已停用 ${username}。`,
     wasEnabled: (username: string) => `已啟用 ${username}。`,
+    // Logging in from the karyl-chan bot: the Discord id bound to an account (docs/spec/karyl-login.md, section 4).
+    discord: {
+      bound: (discordId: string) => `Discord：${discordId}`,
+      bind: "綁定 Discord",
+      unbind: "解除綁定",
+      bindTitle: (username: string) => `為 ${username} 綁定 Discord`,
+      field: "Discord ID",
+      help: "成員的 Discord 使用者 ID，17–20 位數字。成員用 /studio 登入被拒時，登入頁會顯示自己的 ID。",
+      rule: "Discord ID 是 17–20 位數字。",
+      submit: "綁定",
+      unbindTitle: "解除 Discord 綁定",
+      unbindMessage: (username: string, discordId: string) => `要解除 ${username} 與 Discord ID ${discordId} 的綁定嗎？用 Discord 登入的裝置都會登出。`,
+      wasBound: (username: string, discordId: string) => `已把 Discord ID ${discordId} 綁定到 ${username}。`,
+      wasUnbound: (username: string) => `已解除 ${username} 的 Discord 綁定。`,
+    },
   },
   login: {
     username: "帳號名稱",
@@ -474,6 +921,14 @@ export const strings = {
     help: "帳號由管理者建立；忘記密碼時請找管理者重設。",
     // A page found the session ended (logged out elsewhere, a new password, an account disabled).
     expired: "登入已失效，請重新登入。",
+    // Behind the karyl-chan bot, logging in is by a link of its command (docs/spec/karyl-login.md, sections 1 and 7).
+    karyl: {
+      instructions: "在 Discord 的伺服器頻道輸入 /studio，打開 bot 回覆的連結就能登入。連結 2 分鐘內有效，只能用一次。",
+      unbound: (discordId: string) => `這個 Discord 帳號（ID：${discordId}）還沒有綁定帳號。請把這個 ID 交給管理者綁定。`,
+      disabled: "綁定的帳號已停用，請找管理者。",
+      invalid: "登入連結無效、已過期或已經用過。請在 Discord 重新輸入 /studio。",
+      rateLimited: RATE_LIMITED,
+    },
   },
   notFound: {
     title: "找不到這個頁面",
@@ -484,7 +939,7 @@ export const strings = {
   // one of its own shows `unknownError`.
   errors: {
     invalid_credentials: "帳號名稱或密碼錯誤。",
-    rate_limited: "嘗試太多次，請稍後再試。",
+    rate_limited: RATE_LIMITED,
     wrong_current_password: "目前的密碼不正確。",
     password_change_required: "請先設定新密碼。",
     forbidden: "你的角色不能做這件事。",
@@ -493,8 +948,16 @@ export const strings = {
     owner_cannot_leave: "擁有者要先轉移擁有權。",
     username_taken: "這個帳號名稱已經有人使用。",
     cannot_disable_self: "不能停用自己的帳號。",
+    identity_taken: "這個 Discord ID 已經綁定別的帳號，或這個帳號已經綁定了一個。",
     revision_conflict: "這個樂句在別處被修改過。",
     phrase_too_large: "樂句太大。",
+    score_read_only: "伺服器暫時不能讀這份團譜，無法存成版本。",
+    version_unreadable: "伺服器讀不了這個版本，無法預覽。",
+    version_name_required: VERSION_NAME_REQUIRED,
+    recognition_in_progress: "你已經有一件辨識在進行，請等它完成再上傳。",
+    recognizer_busy: "辨識服務正在處理別人的圖片，請稍後再試。",
+    recognition_not_succeeded: `這次辨識沒有結果可以${SAVE_PHRASE}。`,
+    unsupported_image: `只能上傳 ${IMAGE_TYPES} 圖片。`,
   } satisfies Partial<Record<ErrorCode, string>>,
   unknownError: "發生錯誤，請稍後再試。",
   loading: "載入中…",

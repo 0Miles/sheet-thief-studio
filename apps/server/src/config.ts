@@ -19,6 +19,20 @@ export interface Config {
   hsts: boolean;
   /** The directory of the web app's build, which the server then serves; null when something else does (Vite, in development). */
   webRoot: string | null;
+  /** The recognizer service on the internal network (docs/spec/recognizer.md, section 3). */
+  recognizerUrl: string;
+  /** Running as a karyl-chan plugin (docs/spec/karyl-login.md, section 3); null when deployed on its own. */
+  karyl: KarylSettings | null;
+}
+
+/** How the plugin finds the bot and tells the bot where it is (docs/spec/karyl-login.md, section 3). */
+export interface KarylSettings {
+  /** The per-plugin setup secret an admin of the bot issued. */
+  setupSecret: string;
+  /** The bot on the shared Docker network. */
+  botUrl: string;
+  /** This server as the bot reaches it: where it dispatches commands and proxies the pages to. */
+  pluginUrl: string;
 }
 
 /**
@@ -31,15 +45,17 @@ function sessionCookie(env: NodeJS.ProcessEnv): CookieSettings {
   return insecure ? { name: "studio_session", secure: false } : { name: "__Host-studio_session", secure: true };
 }
 
+/** The variable `name`, else in development `development`; production must set it (`when` says when it must). */
+function settingOf(env: NodeJS.ProcessEnv, name: string, development: string, when = ""): string {
+  const value = env[name];
+  if (value) return value;
+  if (env.NODE_ENV === "production") throw new Error(`${name} must be set in production${when}`);
+  return development;
+}
+
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const production = env.NODE_ENV === "production";
   // Development falls back to compose.dev.yaml and the Vite dev server; production must say.
-  const setting = (name: string, development: string): string => {
-    const value = env[name];
-    if (value) return value;
-    if (production) throw new Error(`${name} must be set in production`);
-    return development;
-  };
+  const setting = (name: string, development: string) => settingOf(env, name, development);
   return {
     host: env.HOST ?? "127.0.0.1",
     port: Number(env.PORT ?? 8031),
@@ -50,5 +66,18 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionCookie: sessionCookie(env),
     hsts: env.HSTS === "1",
     webRoot: env.WEB_ROOT || null,
+    recognizerUrl: setting("RECOGNIZER_URL", "http://127.0.0.1:8000"),
+    karyl: karylSettings(env),
   };
+}
+
+/**
+ * The plugin mode is on when the setup secret is set. The bot's and this server's addresses then
+ * have no default in production: a wrong guess would register a plugin the bot cannot reach.
+ */
+function karylSettings(env: NodeJS.ProcessEnv): KarylSettings | null {
+  const setupSecret = env.KARYL_PLUGIN_SETUP_SECRET?.trim();
+  if (!setupSecret) return null;
+  const address = (name: string, development: string) => settingOf(env, name, development, " when KARYL_PLUGIN_SETUP_SECRET is").replace(/\/+$/, "");
+  return { setupSecret, botUrl: address("BOT_URL", "http://localhost:3000"), pluginUrl: address("PLUGIN_URL", `http://localhost:${env.PORT ?? 8031}`) };
 }

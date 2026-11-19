@@ -107,7 +107,7 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 | 鍵 | `code` | 動作 | 適用的聲部 |
 |---|---|---|---|
-| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#36：目前只綁 fretted，見本節最後的補充） |
+| `Shift+L` | `KeyL` | tie | fretted、pitched（補充，#49：pitched 見本節最後的補充） |
 | `Shift+H` | `KeyH` | legato（搥弦、勾弦） | fretted |
 | `Shift+S` | `KeyS` | slideOut：legato → shift → outUp → outDown → 沒有 | fretted |
 | `Shift+E`（補充） | `KeyE` | slideIn：inBelow → inAbove → 沒有 | fretted |
@@ -130,17 +130,17 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 有選取時，這些鍵作用在整個選取範圍（[`commands.md`](commands.md) 5.4）。
 
-**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeyAt` 給出，只有 fretted 有；鼓的 ghost、accent 與五線譜的 accent、staccato，跟著它們「游標那條線上的音符」（可能不只一個，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`）在 M2、M3 加上；在那之前，這些鍵在鼓與五線譜聲部不動。
+**補充**（#26）：dead、ghost、accent、staccato、vibrato、palm mute、let ring、tap 的鍵目前只綁在 fretted 聲部（`bindings.ts` 的 `TECHNIQUE_KEYS`）。Command 以音符鍵為參數（`commands.ts` 的 `toggleAt`），目前游標那條線上的音符鍵由 `noteKeysAt` 給出。**補充**（#44）：鼓的 ghost、accent 已加上：`bindings.ts` 另有情境 `percussion` 的 `ghost`、`accent` 綁定，作用在畫在游標那條線上的**所有**鼓件（`noteKeysAt`，同 [`commands.md`](commands.md) 5.2 的 `deleteNote`），一次決定、一個 Command（`toggleKeysAt`）。**補充**（#49）：五線譜的 accent（`Shift+A`）、staccato（`Shift+C`）已加上：`bindings.ts` 另有情境 `pitched` 的 `accent`、`staccato` 綁定，作用在畫在游標那條線上的所有音（`noteKeysAt`，例如 C 與 C♯），一次決定、一個 Command；那條線上沒有音時不動。其他開關型技巧（dead、ghost、vibrato、palm mute、let ring、tap、legato）在五線譜聲部不是按鍵。鼓沒有 tie，`Shift+L` 在鼓聲部不是按鍵。
 
 **補充**（#30）：`Shift+U`（stroke）與 `Shift+J`（slap／pop）只綁在 fretted 聲部（`bindings.ts` 的 `stroke`、`slapPop`），在鼓與五線譜聲部不是按鍵，不動；`Shift+F`（dynamic）三種聲部都有。和鼓的 `F`（rim shot）、`J`（hi-hat half open）不衝突：修飾鍵要完全相符。三者有選取時都作用在整個範圍（[`commands.md`](commands.md) 5.4 的補充）。
 
 **補充**（#27）：`Shift+H`（legato）是 `bindings.ts` 的 `TECHNIQUE_KEYS` 裡的一項；`Shift+S`（slideOut）、`Shift+E`（slideIn）是 `slideOut`、`slideIn` 綁定。三者都只綁在 fretted 聲部（這些欄位只有 fretted 有）；有選取時作用在整個範圍，循環型的走到同一個狀態（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）跟著 M3 加上，綁在 pitched 情境，和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
+**補充**（#28）：`Shift+B` 是 `bindings.ts` 的 `bend` 綁定；`Shift+↑`、`Shift+↓` 是 `bendUp`、`bendDown`，比對 `ArrowUp`、`ArrowDown` 加 `shiftKey`，兩個平台相同。三者目前只綁在 fretted 聲部；五線譜的 `Shift+↑`／`Shift+↓`（移八度，[`commands.md`](commands.md) 5.8）綁在 pitched 情境（#48 加上，第 4.3 節的補充），和 fretted 的不衝突。和 `↑`、`↓`（換弦）不衝突：修飾鍵要完全相符，所以 `Shift+↑` 不移動游標。按住時不重複（第 1.1 節：只有移動與 `+`、`-` 重複）。
 
 **補充**（#29）：`Shift+N` 是 `bindings.ts` 的 `harmonic` 綁定，只綁在 fretted 聲部（這個欄位只有 fretted 有），兩個平台相同；有選取時作用在整個範圍，走到同一個泛音（[`commands.md`](commands.md) 5.4 的補充）。
 
-**補充**（#36）：tie（`Shift+L`）同樣目前只綁在 fretted 聲部（`bindings.ts` 的 `tie` 綁定，`commands.ts` 的 `tieToggle`）；五線譜的 tie 依「同一條線」找前一個音，跟著 M3 的音符鍵加上（[`commands.md`](commands.md) 5.4 的限制）。
+**補充**（#36）：tie（`Shift+L`）是 `bindings.ts` 的 `tie` 綁定（`commands.ts` 的 `tieToggle`）。**補充**（#49）：五線譜另有情境 `pitched` 的 `tie` 綁定，依「同一條線」找前一個音：鍵由 `tieKeysAt` 給出，那條線上沒有音時建立前一個拍點畫在那條線上的音（[`commands.md`](commands.md) 5.4 的 #49 補充）。和五線譜的 `L` 以外的字母鍵不衝突：修飾鍵要完全相符，`Shift+A`、`Shift+C` 也不會輸入 A、C。
 
 ## 4. 各聲部種類的輸入鍵
 
@@ -157,7 +157,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 - 字母鍵是切換：再按一次，就從拍點上移除該鼓件。
 - `Delete`：移除畫在游標那條線上的**所有**鼓件。理由：好幾個鼓件畫在同一條線上（`spike-report.md:287-301`），只刪一個會有歧義。
 - `↑` `↓`：移動譜表位置。
-- 18 個鼓件的對應如下；id 對照 `packages/score-render/src/drums.ts:15-34`，譜表位置見 [`schema.md`](schema.md) 7.1。
+- 18 個鼓件的對應如下；id 對照 `packages/score-model/src/drums.ts` 的 `DRUM_PIECES`，譜表位置見 [`schema.md`](schema.md) 7.1。
+- **補充**（#44）：鍵在 `bindings.ts` 的 `DRUM_KEYS`（`drum` 綁定，情境 `percussion`，帶 `piece`），指令是 `commands.ts` 的 `toggleDrum`。
 
 | 鍵 | `code` | 鼓件 | articulation id |
 |---|---|---|---|
@@ -189,6 +190,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 
 拼寫的規則見 [`schema.md`](schema.md) 8.1。
 
+**補充**（#48）：鍵在 `bindings.ts`：`A`–`G` 是 `pitch` 綁定（帶 `letter`，`KeyA`–`KeyG`，不帶修飾鍵），`]`、`[` 是 `sharpen`、`flatten`（`BracketRight`、`BracketLeft`），`Shift+↑`、`Shift+↓` 是 `octaveUp`、`octaveDown`；全部綁在情境 `pitched`，兩個平台相同，按住時不重複。和鼓的 `B`、`C`、`D`、`F`（情境 `percussion`）與 fretted 的 `Shift+↑`、`Shift+↓`（bend 的半音數）不衝突：綁定只作用在它那種聲部。指令是 `commands.ts` 的 `enterNote`、`moveNotesBySemitone`、`moveNotesByOctave`（[`commands.md`](commands.md) 5.1、5.8 的補充）。`Delete` 在五線譜刪掉畫在游標那條線上的所有音（5.2）。
+
 ## 5. 面板與模式的鍵
 
 | 鍵（Windows、Linux） | macOS | `code` | 動作 |
@@ -201,6 +204,8 @@ macOS 欄寫「同左」的，表示 Mac 按同一個鍵。`code` 欄裡的 `Mod
 | `F8` | `Fn+F8` | `F8` | 下一個 Flag（見第 2 節） |
 
 **補充**（#22）：`F2` 在譜面上開關面板，只有可編輯視圖有面板（唯讀編輯視圖按 `F2` 不動）。開啟時焦點進面板的第一個欄位；面板裡的鍵屬於欄位，只有 `Esc` 與 `F2` 關閉面板、焦點回到譜面，比對照第 1.1 節（`Esc` 用 `textEntryEffectOf` 的 `cancelEntry`，`F2` 用 `pageEffectOf`）。工具列的「小節屬性」按鈕同樣開關面板，開啟時焦點進面板，關閉時回到譜面。
+
+**補充**（#57）：`F4` 是 `bindings.ts` 的 page 鍵 `phraseSidebar`（由 `pageEffectOf` 判斷，唯讀編輯視圖與 Read view 按了不動）；工具列的「樂句側欄」按鈕提示是 `strings.score.phraseSidebar.openKey`，鍵名由 `keyNameOf("phraseSidebar", platform)` 產生。側欄裡的 `Enter` 與 `Esc` 用 `textEntryEffectOf` 比對（`saveEntry`、`cancelEntry`），所以組字中的 `Enter` 不會放置；焦點在樂句上按 `Enter` 是放置，不是按鈕的點擊（點擊是開預覽，焦點移進預覽）；焦點在預覽裡按 `Enter` 放置預覽中的樂句。側欄自己的按鈕、連結與輸入框（含預覽的「關閉預覽」、搜尋框）的 `Enter` 照它們自己的作用，不放置。`Esc` 先關預覽（焦點回到打開它的樂句），沒有預覽時關側欄。
 
 `F2`、`F4`、`F8` 在 Windows、Linux 的瀏覽器裡沒有預設功能。macOS 的功能鍵預設是系統功能（第 1.2 節），要按著 `Fn`，或在系統設定把 F1–F12 設成標準功能鍵；所以這三個鍵在工具列都有同功能的按鈕（第 7 節）。
 
@@ -229,6 +234,9 @@ Mac 上的 `Enter` 是 `Return`，`Delete` 是 `Fn+delete`（標著 `delete` 的
 - `Esc`：不存目前的輸入，離開歌詞模式。
 - **補充**：已經是最後一個非休止拍點時，存入後離開歌詞模式。
 - 每存一個音節是一個 Command。32 字元以內。
+- **補充**（#50）：`Shift+Enter` 是 `bindings.ts` 的 `lyrics` 綁定（情境 `pitched`），在鼓與 fretted 聲部不是按鍵。`EditorSession` 用 `sungBeatFrom(doc, cursor, "here")` 找開框的拍點（游標拍點是休止或在附加位置時，往後找同一聲線的下一個非休止拍點；讀不懂的拍點略過），先把游標移過去（選取結束），再以 `onEditLyric` 送出 `{ cursor, lyric }`（`lyricAt`：現有的音節，沒有或延長時是空字串）；從那裡往後都沒有非休止拍點時不送。唯讀時和 `Enter` 一樣被拒絕。
+- **補充**（#50）：框裡的鍵在綁定表上，情境是 `lyricEntry`：`nextSyllable`（`Space`）、`joinSyllable`（`Minus`、`NumpadSubtract`）、`removeSyllable`（`Delete`）；另外沿用 `textEntry` 的 `saveEntry`（`Enter`）與 `cancelEntry`（`Esc`）。由 `lyricEntryEffectOf(key, platform)` 判斷；比對照第 1.1 節，`isComposing` 為真、或 `keyCode` 是 229 的鍵都不算，所以注音選字的 `Space` 不會存入、也不會跳拍點。`Shift+-` 等其他鍵是輸入框自己的；輸入框裡有字時的 `Delete` 也是輸入框自己的（刪字）。
+- **補充**（#50）：殼把框裡的每個鍵連同輸入框的內容交給 `EditorSession.pressLyric(request, typed, key)`，回傳下一個 `LyricRequest`（框移到那個拍點，游標跟著過去）、`"leave"`（離開歌詞模式，焦點回到譜面）、`"stay"`（音節超過 32 字元被拒，例如 32 個字再按 `-`；框不動，提示 `strings.score.lyricTooLong`）或 `null`（輸入框自己的鍵）。框是 `apps/web/src/components/LyricEntry.vue`，由 `apps/web/src/lyricEntry.ts` 的 `useLyricEntry` 管理（編輯視圖與樂句編輯器共用）；開在拍點下方（`overlay.ts` 的 `entryRect`，避開保留區域，同 6.1），每次重畫後依拍點的新位置重新放。焦點離開輸入框時當成 `Esc`。
 
 ## 7. 介面上的對應按鈕
 

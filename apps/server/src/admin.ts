@@ -3,17 +3,18 @@
 // docs/spec/accounts.md, section 2). Admin is the flag on the account, nothing to do with a
 // score's Owner.
 import { ResetConnection } from "@hocuspocus/common";
-import { adminAccount, adminAccountList, createAccountRequest, orphanedScoreList, resetPasswordRequest, transferRequest } from "@studio/contracts";
+import { adminAccount, adminAccountList, bindIdentityRequest, createAccountRequest, orphanedScoreList, resetPasswordRequest, transferRequest } from "@studio/contracts";
 import type { FastifyInstance } from "fastify";
 import { Op, type WhereOptions } from "sequelize";
 
-import { createAccount, setDisabled, setTemporaryPassword, UsernameTaken } from "./accounts";
+import { bindKarylIdentity, createAccount, IdentityTaken, setDisabled, setTemporaryPassword, UsernameTaken } from "./accounts";
 import type { Collab } from "./collab";
 import { Account, Identity, Score, ScoreMember } from "./db/models";
 import { invalidRequest, isUuid, notFound } from "./http";
 import { changeMembers, closeFor, handOver, unlessRefused } from "./members";
 
 type AccountParams = { Params: { id: string } };
+type IdentityParams = { Params: { id: string; identityId: string } };
 
 function shown(account: Account, identities: Identity[]) {
   return {
@@ -22,7 +23,8 @@ function shown(account: Account, identities: Identity[]) {
     displayName: account.displayName,
     isAdmin: account.isAdmin,
     disabled: account.disabledAt !== null,
-    identities: identities.map(({ id, provider }) => ({ id, provider })),
+    // A binding's Discord id, for the admin to see whose it is; a password's subject is the account itself.
+    identities: identities.map(({ id, provider, subject }) => (provider === "karyl-chan" ? { id, provider, subject } : { id, provider })),
   };
 }
 
@@ -100,6 +102,35 @@ export function registerAdmin(app: FastifyInstance, { collab }: { collab: Collab
   app.post<AccountParams>("/api/admin/accounts/:id/enable", async (request, reply) => {
     const { id } = request.params;
     if (!isUuid(id) || !(await setDisabled(id, false))) return notFound(reply);
+    return reply.code(204).send();
+  });
+
+  // Binding a Discord id, for logging in from the karyl-chan bot (docs/spec/karyl-login.md, section 4).
+  app.post<AccountParams>("/api/admin/accounts/:id/identities", async (request, reply) => {
+    const { id } = request.params;
+    if (!isUuid(id) || !(await Account.findByPk(id))) return notFound(reply);
+    const body = bindIdentityRequest.safeParse(request.body);
+    if (!body.success) return invalidRequest(reply, body.error);
+    try {
+      if ((await bindKarylIdentity(id, body.data.subject)) === null) return notFound(reply);
+    } catch (error) {
+      if (error instanceof IdentityTaken) return reply.code(409).send({ code: "identity_taken" });
+      throw error;
+    }
+    const [account, identities] = await Promise.all([Account.findByPk(id), Identity.findAll({ where: { accountId: id } })]);
+    return reply.code(201).send(adminAccount.parse(shown(account!, identities)));
+  });
+
+  // Unbinding: the Discord id logs into nothing any more, and the sessions it logged in end. The
+  // password is not unbound: it is how the account logs in on its own.
+  app.delete<IdentityParams>("/api/admin/accounts/:id/identities/:identityId", async (request, reply) => {
+    const { id, identityId } = request.params;
+    if (!isUuid(id) || !isUuid(identityId)) return notFound(reply);
+    const identity = await Identity.findOne({ where: { id: identityId, accountId: id } });
+    if (identity === null) return notFound(reply);
+    if (identity.provider !== "karyl-chan") return reply.code(400).send({ code: "invalid_request" });
+    await identity.destroy();
+    await app.sessions.end({ accountId: id, via: "karyl-chan" });
     return reply.code(204).send();
   });
 

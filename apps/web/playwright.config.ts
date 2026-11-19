@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig, devices } from "@playwright/test";
 
-import { SERVER_ENV } from "./e2e/environment";
+import { RECOGNIZER_URL, SERVER_ENV } from "./e2e/environment";
 
 /**
  * The server, and the web app built with `env`: VITE_E2E=1 here, for `window.__studioTest`
@@ -10,6 +10,14 @@ import { SERVER_ENV } from "./e2e/environment";
  */
 export function webServers(env: Record<string, string>) {
   return [
+    // The stand-in recognizer the server calls (e2e/environment.ts).
+    {
+      command: "pnpm --filter @studio/server recognizer:e2e",
+      env: { PORT: new URL(RECOGNIZER_URL).port },
+      url: `${RECOGNIZER_URL}/healthz`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
     {
       command: "pnpm --filter @studio/server start",
       env: SERVER_ENV,
@@ -57,6 +65,41 @@ export const insecurePages = {
   url: `${INSECURE_ORIGIN}/healthz`,
 };
 
+/** Where the stand-in karyl-chan bot serves the plugin's pages (the `plugin` project). */
+export const BOT_ORIGIN = "http://localhost:8036";
+/** Where the server serves as the bot's plugin. */
+const PLUGIN_PORT = 8035;
+const PLUGIN_SETUP_SECRET = "e2e-setup-secret";
+
+/**
+ * The stand-in karyl-chan bot (apps/server/tests/botE2e.ts), and the server as its plugin on a
+ * port of its own, serving the build the preview has made: the bot proxies its pages under
+ * `/plugin/sheet-thief-studio/`, without cookies (docs/spec/karyl-login.md).
+ */
+const pluginPages = [
+  {
+    command: "pnpm --filter @studio/server bot:e2e",
+    env: { PORT: new URL(BOT_ORIGIN).port, SETUP_SECRET: PLUGIN_SETUP_SECRET },
+    url: `${BOT_ORIGIN}/healthz`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+  },
+  {
+    command: "pnpm --filter @studio/server start",
+    env: {
+      ...servedPages.env,
+      PORT: String(PLUGIN_PORT),
+      PUBLIC_ORIGIN: BOT_ORIGIN,
+      KARYL_PLUGIN_SETUP_SECRET: PLUGIN_SETUP_SECRET,
+      BOT_URL: `http://127.0.0.1:${new URL(BOT_ORIGIN).port}`,
+      PLUGIN_URL: `http://127.0.0.1:${PLUGIN_PORT}`,
+    },
+    url: `http://localhost:${PLUGIN_PORT}/healthz`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+  },
+];
+
 // End-to-end tests run against the real server and the built web app, on the ports the
 // project uses in development (8031 and 5183), and against the Postgres and Redis of
 // compose.dev.yaml in databases of their own (e2e/environment.ts). Both ports must be free: a dev
@@ -77,11 +120,14 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", testIgnore: ["**/measure/**", "**/served.spec.ts", "**/smoke/**"], use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", testIgnore: ["**/measure/**", "**/served.spec.ts", "**/plugin.spec.ts", "**/smoke/**"], use: { ...devices["Desktop Chrome"] } },
     { name: "served", testMatch: "**/served.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: SERVED_ORIGIN } },
-    // The whole suite runs in Chromium; the other browsers run smoke tests (docs/spec/testing.md, section 3).
-    { name: "firefox", testMatch: "**/smoke/typing.spec.ts", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", testMatch: "**/smoke/*.spec.ts", use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
+    // Behind the stand-in karyl-chan bot, under its /plugin/<key>/ (plugin.spec.ts).
+    { name: "plugin", testMatch: "**/plugin.spec.ts", use: { ...devices["Desktop Chrome"], baseURL: BOT_ORIGIN } },
+    // The whole suite runs in Chromium; the other browsers run smoke tests, and the clipboard check
+    // of #52, which is to pass in all three (docs/spec/testing.md, sections 3 and 5).
+    { name: "firefox", testMatch: ["**/smoke/typing.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", testMatch: ["**/smoke/*.spec.ts", "**/clipboard.spec.ts"], use: { ...devices["Desktop Safari"], baseURL: INSECURE_ORIGIN } },
   ],
-  webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages],
+  webServer: [...webServers({ VITE_E2E: "1" }), servedPages, insecurePages, ...pluginPages],
 });
