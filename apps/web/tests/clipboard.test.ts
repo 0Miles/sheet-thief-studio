@@ -29,7 +29,7 @@ function page(outcome: PasteOutcome = { hints: [] }) {
   } as unknown as EditorSession;
   const told: string[] = [];
   const stop = listenToClipboard({ scroller: () => scroller, session: () => session, tell: (said) => told.push(said) }, target);
-  return { target, calls, told, stop };
+  return { target, scroller, calls, told, stop };
 }
 
 test("with the score focused, copy writes the session's text instead of the browser's; a cut with nothing to write is left to the browser", () => {
@@ -53,20 +53,23 @@ test("a paste reads the text for the session and tells the member what it said",
 });
 
 test("while something else has the keyboard, or once stopped, the events are the browser's", () => {
-  const { target, calls, stop } = page();
+  const { target, scroller, calls, stop } = page();
   target.activeElement = null;
   for (const type of ["copy", "cut", "paste"] as const) {
     const event = clipboardEvent(type, "held");
     target.dispatchEvent(event.event);
     expect(event.event.defaultPrevented).toBe(false);
   }
-  target.activeElement = { tag: "other" } as unknown as Element;
+  target.activeElement = scroller;
   stop();
+  const copy = clipboardEvent("copy");
+  target.dispatchEvent(copy.event);
+  expect(copy.event.defaultPrevented).toBe(false);
   expect(calls).toEqual([]);
 });
 
 test("what a paste tells: why it was refused, what else it did together, or nothing", () => {
-  expect(pasteNotice("nothing")).toBe(strings.score.clipboard.refused.nothing);
+  expect(pasteNotice("nothing")).toBe(text.refused.nothing);
   expect(pasteNotice({ hints: ["tuningDiffers", "barsAppended"] })).toBe(`${text.hints.tuningDiffers}${text.joiner}${text.hints.barsAppended}`);
   expect(pasteNotice({ hints: [] })).toBeNull();
   expect(pasteNotice("gone")).toBe(text.refused.gone);

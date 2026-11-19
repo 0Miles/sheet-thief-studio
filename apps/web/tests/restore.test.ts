@@ -12,7 +12,7 @@ const VERSION_ID = "version-1";
 const VERSION: ScoreJSON = { schemaVersion: SCHEMA_VERSION, title: "那時候", bars: [{ id: "b", timeSig: { numerator: 4, denominator: 4 } }], parts: [] };
 
 /** What the server answers each call, by method and path; the calls made, in order. */
-function fakeServer(answers: Record<string, () => Response>) {
+function fakeServer(answers: Record<string, () => Response | Promise<Response>>) {
   const calls: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -72,7 +72,7 @@ test.each([
 });
 
 test("a network failure on the way is no restore either", async () => {
-  fakeServer({ [`POST /api/scores/${SCORE_ID}/versions`]: () => Promise.reject(new TypeError("Failed to fetch")) as never });
+  fakeServer({ [`POST /api/scores/${SCORE_ID}/versions`]: () => Promise.reject(new TypeError("Failed to fetch")) });
   const { restoreTarget, written } = target();
   await expect(restoreVersion(SCORE_ID, VERSION_ID, restoreTarget)).rejects.toThrow("Failed to fetch");
   expect(written).toEqual([]);
