@@ -1,0 +1,24 @@
+# The standalone mode (docs/DEPLOYMENT.md): on its own domain, behind the nginx of
+# nginx/studio.conf on this host, which handles TLS. Members log in with a password and a cookie.
+services:
+  server:
+    # On this host's loopback only: nginx is the one way in.
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-8031}:8031"
+    environment:
+      # nginx reaches the server through the published port, so the connection comes from the
+      # gateway of the `edge` network: that address is the only proxy the server trusts.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-${EDGE_GATEWAY:-172.31.73.1}}
+      # The site is served over https by nginx.
+      HSTS: ${HSTS:-1}
+    networks:
+      edge: {}
+
+networks:
+  # A fixed subnet so that its gateway, which TRUSTED_PROXIES names, does not change. Change both
+  # in .env when the subnet is taken on this host.
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.31.73.0/24}
+          gateway: ${EDGE_GATEWAY:-172.31.73.1}
