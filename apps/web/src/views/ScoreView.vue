@@ -746,7 +746,7 @@ function exportAs(format: ExportFormat): void {
     saveFile(exportedFile(score.value, format));
   } catch {
     // A projection alphaTab cannot write: nothing to save, and the member is told.
-    notice.value = text.export.failed;
+    say(text.export.failed);
   }
 }
 

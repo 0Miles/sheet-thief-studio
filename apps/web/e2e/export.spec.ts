@@ -10,7 +10,8 @@ import { type BrowserContextOptions, type Download, expect, type Page, test } fr
 
 import { strings } from "../src/strings";
 import { ADMIN, EDITOR, VIEWER } from "./environment";
-import { drawn, loggedIn, pageErrors, runName, scoreOf, seedScore, typeBeats } from "./pages";
+import type { ExportFormat } from "../src/exportFile";
+import { beatsIn, drawn, loggedIn, pageErrors, runName, scoreOf, seedScore, typeBeats } from "./pages";
 
 const text = strings.score.export;
 
@@ -37,7 +38,7 @@ function seed(title: string): string {
 }
 
 /** Choose a format in the export menu; returns the download the browser made of it. */
-async function exportAs(page: Page, format: "gp7" | "midi"): Promise<Download> {
+async function exportAs(page: Page, format: ExportFormat): Promise<Download> {
   const menu = page.locator("[data-export-menu]");
   if ((await menu.evaluate((element) => element.tagName)) === "DETAILS") await menu.getByText(text.open, { exact: true }).click();
   const downloading = page.waitForEvent("download");
@@ -50,8 +51,7 @@ async function exportAs(page: Page, format: "gp7" | "midi"): Promise<Download> {
  * projection fills what is left of a bar with rests, which a file read back holds as beats.
  */
 function frets(json: ScoreJSON): (number | undefined)[][] {
-  const beats = json.parts[0]!.content[json.bars[0]!.id]?.["0:0"] ?? [];
-  return beats.map((beat) => Object.values(beat.notes ?? {}).map((note) => note.fret)).filter((notes) => notes.length > 0);
+  return beatsIn(json, 0, 0).map((beat) => Object.values(beat.notes ?? {}).map((note) => note.fret)).filter((notes) => notes.length > 0);
 }
 
 async function bytesOf(download: Download): Promise<Uint8Array> {
