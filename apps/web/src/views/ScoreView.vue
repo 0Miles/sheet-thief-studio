@@ -56,6 +56,7 @@ import AppHeader from "../components/AppHeader.vue";
 import BarPanel from "../components/BarPanel.vue";
 import DisplayControls from "../components/DisplayControls.vue";
 import ExportMenu from "../components/ExportMenu.vue";
+import DrawFailed from "../components/DrawFailed.vue";
 import FlagControls from "../components/FlagControls.vue";
 import InlineTextEntry from "../components/InlineTextEntry.vue";
 import LyricEntry from "../components/LyricEntry.vue";
@@ -66,6 +67,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import SavePhraseDialog from "../components/SavePhraseDialog.vue";
 import TitleEditor from "../components/TitleEditor.vue";
 import { canType, isNarrow, keyPlatform } from "../device";
+import { drawFailure } from "../drawFailure";
 import { type DisplayOptions, loadDisplay, loadNarrowPart, saveDisplay, saveNarrowPart, shownParts } from "../display";
 import { type ExportFormat, exportedFile, saveFile } from "../exportFile";
 import { useLyricEntry } from "../lyricEntry";
@@ -95,6 +97,8 @@ const props = defineProps<{ id?: string; token?: string; notice?: string; readOn
 /** `closed`: the score is to be opened anew, or left; `stopped`: the server closed the connection for good, the page saying why. */
 const emit = defineEmits<{ closed: [closing: Closing]; stopped: [] }>();
 const text = strings.score;
+/** The score could not be drawn: the music font, or the worker of the Read view, could not be had (#151). */
+const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 const isGuest = props.token !== undefined;
 /** Who is logged in here: their own other tabs are not listed among the members present. */
 const account = useSessionStore();
@@ -1094,6 +1098,7 @@ onMounted(async () => {
     ready.value = true;
     updateOverlay();
   });
+  watchDrawing(engine.renderer);
   attachPlayer(engine);
   // After the page's own listeners: a drawing is measured once the cursor is drawn on it.
   measurement.watch(engine);
@@ -1326,6 +1331,7 @@ onBeforeUnmount(() => {
         @drop="onDrop"
       >
         <div class="score__page">
+          <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready" :data-parts="shown.join(',')"></div>
           <!-- Also in a score two members left with no bars, which the engine may not report drawn: +bar brings it back. -->
           <div v-if="view === 'editable' && (ready || score?.bars.length === 0)" class="score__end">

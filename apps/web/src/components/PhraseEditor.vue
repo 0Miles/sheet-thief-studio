@@ -37,6 +37,7 @@ import { barPanelOf } from "../barPanel";
 import { listenToClipboard } from "../clipboard";
 import { keyPlatform } from "../device";
 import { useLyricEntry } from "../lyricEntry";
+import { drawFailure } from "../drawFailure";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
 import { selectionBoxes } from "../presence";
 import { useNotice } from "../sayAnew";
@@ -45,6 +46,7 @@ import { type SoundUpdates, soundUpdates } from "../sound";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import BarPanel from "./BarPanel.vue";
+import DrawFailed from "./DrawFailed.vue";
 import InlineTextEntry from "./InlineTextEntry.vue";
 import LyricEntry from "./LyricEntry.vue";
 import PartPanel from "./PartPanel.vue";
@@ -68,6 +70,8 @@ const NO_PART_ADDED: Record<PartKind, boolean> = { fretted: false, percussion: f
 const started = ref(false);
 /** The phrase is drawn: e2e tests wait for `data-ready` (docs/spec/testing.md, section 2). */
 const ready = ref(false);
+/** The fragment could not be drawn: the music font, or the worker that lays it out, could not be had (#151). */
+const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 /** A notice for the member above the phrase (a key that did nothing); null when there is none. */
 const { notice, say } = useNotice();
 const host = ref<HTMLElement>();
@@ -307,6 +311,7 @@ function start(fragment: BarsFragment): void {
     ready.value = true;
     updateOverlay();
   });
+  watchDrawing(engine.renderer);
   attach(engine);
   draw({ kind: "structure" });
   stopObserving = observeScore(doc, onChange);
@@ -373,6 +378,7 @@ defineExpose({ focus, openParts });
     <div class="phrase__body">
       <div ref="scroller" class="phrase__scroller" data-scroller tabindex="0" :aria-label="text.label" @keydown="onKey" @pointerdown="onPointer" @scroll.passive="onScroll">
         <div class="phrase__page">
+          <DrawFailed v-if="drawFailed" @retry="onToolbar(retryDrawing)" />
           <div ref="host" :data-ready="ready"></div>
           <div v-if="editable && ready" class="phrase__end">
             <AppButton variant="ghost" size="sm" data-append-bar :title="strings.score.bars.appendTitle" @click="onToolbar(() => session?.appendBar())">{{ strings.score.bars.append }}</AppButton>
