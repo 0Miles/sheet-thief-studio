@@ -39,6 +39,7 @@ import { keyPlatform } from "../device";
 import { useLyricEntry } from "../lyricEntry";
 import { drawFailure } from "../drawFailure";
 import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf } from "../overlay";
+import { hasOwnKeys } from "../ownKeys";
 import { selectionBoxes } from "../presence";
 import { useNotice } from "../sayAnew";
 import { useScorePlayback } from "../scorePlayback";
@@ -186,6 +187,8 @@ function onToolbar(action: () => void): void {
 // Typing -----------------------------------------------------------------------------------------
 
 function onKey(event: KeyboardEvent): void {
+  // A button on the page (+bar, the retry) has its own keys.
+  if (hasOwnKeys(event)) return;
   const pageEffect = pageEffectOf(event, keyPlatform());
   if (pageEffect === "playPause") {
     event.preventDefault();
