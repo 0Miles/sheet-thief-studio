@@ -414,6 +414,8 @@ onBeforeUnmount(() => {
 .phrase-sidebar__preview-scroller {
   max-height: 50vh;
   overflow: auto;
+  /* Laid out as wide as it is before it is drawn: the room of the vertical scrollbar kept from the start. */
+  scrollbar-gutter: stable;
   background: var(--text-on-accent);
 }
 .phrase-sidebar__preview-page {

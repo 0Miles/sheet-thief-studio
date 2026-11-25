@@ -486,6 +486,9 @@ defineExpose({ focus, openParts });
   flex: 1;
   min-width: 0;
   overflow: auto;
+  /* The phrase is laid out as wide as the scroller is before it is drawn: the room of the
+     vertical scrollbar is kept from the start (as the score's own scroller does). */
+  scrollbar-gutter: stable;
   overflow-anchor: none;
   outline: none;
   /* The phrase is drawn in black: keep its page white in either theme. */
