@@ -234,15 +234,15 @@ function saveNow(): Promise<void> {
   <NotFoundView v-if="notFound" />
   <template v-else>
     <AppHeader />
-    <main class="versions">
+    <main class="versions page page--full">
       <Stack gap="5">
-        <Stack gap="1">
-          <RouterLink :to="{ name: 'score', params: { id } }">{{ text.back }}</RouterLink>
-          <h1>{{ text.title }}<span v-if="details" class="versions__score">{{ details.title || strings.score.untitled }}</span></h1>
+        <Stack gap="2">
+          <RouterLink :to="{ name: 'score', params: { id } }" class="page-back">{{ text.back }}</RouterLink>
+          <h1>{{ text.title }}<span v-if="details" class="page-head__of">{{ details.title || strings.score.untitled }}</span></h1>
           <p class="versions__muted">{{ text.help }}</p>
         </Stack>
         <p v-if="error" class="versions__error" role="alert">{{ error }}</p>
-        <p v-if="versions === null && error === null" class="versions__muted">{{ strings.loading }}</p>
+        <p v-if="versions === null && error === null" class="state-loading">{{ strings.loading }}</p>
         <form v-if="canWrite" class="versions__save" novalidate data-save-version @submit.prevent="saveNow">
           <Stack gap="2">
             <h2>{{ text.save.title }}</h2>
@@ -255,7 +255,7 @@ function saveNow(): Promise<void> {
         </form>
         <div v-if="versions" class="versions__body">
           <section class="versions__list" :aria-label="text.list">
-            <p v-if="versions.length === 0" class="versions__muted">{{ text.empty }}</p>
+            <p v-if="versions.length === 0" class="state-empty">{{ text.empty }}</p>
             <ul v-else>
               <li
                 v-for="version in versions"
@@ -326,24 +326,6 @@ function saveNow(): Promise<void> {
 </template>
 
 <style scoped>
-.versions {
-  max-width: 90rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
-.versions h1,
-.versions h2 {
-  margin: 0;
-}
-.versions h2 {
-  font-size: 1.125rem;
-}
-.versions__score {
-  margin-left: 0.75rem;
-  color: var(--text-muted);
-  font-size: 1rem;
-  font-weight: 400;
-}
 .versions__muted {
   margin: 0;
   color: var(--text-muted);
@@ -353,13 +335,13 @@ function saveNow(): Promise<void> {
   color: var(--danger);
 }
 .versions__save {
-  padding-top: 1rem;
+  padding-top: var(--space-5);
   border-top: 1px solid var(--border);
 }
 .versions__body {
   display: grid;
   grid-template-columns: minmax(18rem, 26rem) minmax(0, 1fr);
-  gap: 1.5rem;
+  gap: var(--space-5);
   align-items: start;
 }
 @media (max-width: 767px) {
@@ -372,14 +354,14 @@ function saveNow(): Promise<void> {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .versions__item {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
 }
 .versions__item--selected {
   border-color: var(--accent, var(--text));
@@ -387,7 +369,7 @@ function saveNow(): Promise<void> {
 .versions__line {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   font-variant-numeric: tabular-nums;
 }
 .versions__time {
@@ -397,16 +379,16 @@ function saveNow(): Promise<void> {
   overflow-wrap: anywhere;
 }
 .versions__tag {
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
   padding: 0 0.375rem;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 .versions__preview {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 .versions__score-host {
@@ -414,6 +396,6 @@ function saveNow(): Promise<void> {
   min-height: 12rem;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
 }
 </style>

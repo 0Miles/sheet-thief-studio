@@ -63,60 +63,53 @@ async function logoutAll(): Promise<void> {
 
 <template>
   <AppHeader />
-  <main v-if="session.me" class="account">
-    <RouterLink :to="{ name: 'home' }" class="account__back">{{ text.back }}</RouterLink>
-    <h1>{{ text.title }}</h1>
-    <p class="account__muted">{{ text.username(session.me.username) }}</p>
+  <main v-if="session.me" class="page page--narrow">
+    <Stack gap="6">
+      <Stack gap="2">
+        <RouterLink :to="{ name: 'home' }" class="page-back">{{ text.back }}</RouterLink>
+        <h1>{{ text.title }}</h1>
+        <p class="account__muted">{{ text.username(session.me.username) }}</p>
+      </Stack>
 
-    <section class="account__section">
-      <h2>{{ text.displayName.title }}</h2>
-      <form @submit.prevent="saveName">
+      <section class="page-section">
         <Stack gap="3">
-          <AppTextField v-model="name" :label="text.displayName.label" name="display-name" :maxlength="accountLimits.displayName.max" autocomplete="nickname" required />
-          <p v-if="nameError" class="account__error" role="alert">{{ nameError }}</p>
-          <p v-else-if="nameSaved" class="account__muted" role="status">{{ text.displayName.saved }}</p>
-          <div><AppButton type="submit" variant="primary" :loading="savingName">{{ text.displayName.save }}</AppButton></div>
+          <h2>{{ text.displayName.title }}</h2>
+          <form @submit.prevent="saveName">
+            <Stack gap="3">
+              <AppTextField v-model="name" :label="text.displayName.label" name="display-name" :maxlength="accountLimits.displayName.max" autocomplete="nickname" required />
+              <p v-if="nameError" class="account__error" role="alert">{{ nameError }}</p>
+              <p v-else-if="nameSaved" class="account__muted" role="status">{{ text.displayName.saved }}</p>
+              <div><AppButton type="submit" variant="primary" :loading="savingName">{{ text.displayName.save }}</AppButton></div>
+            </Stack>
+          </form>
         </Stack>
-      </form>
-    </section>
+      </section>
 
-    <section class="account__section">
-      <h2>{{ text.password.title }}</h2>
-      <p v-if="passwordChanged" class="account__muted" role="status">{{ text.password.changed }}</p>
-      <PasswordForm ask-current :submit-label="text.password.submit" @changed="passwordChanged = true" />
-    </section>
+      <section class="page-section">
+        <Stack gap="3">
+          <h2>{{ text.password.title }}</h2>
+          <p v-if="passwordChanged" class="account__muted" role="status">{{ text.password.changed }}</p>
+          <PasswordForm ask-current :submit-label="text.password.submit" @changed="passwordChanged = true" />
+        </Stack>
+      </section>
 
-    <section class="account__section">
-      <h2>{{ text.logoutAll.title }}</h2>
-      <p class="account__muted">{{ text.logoutAll.help }}</p>
-      <p v-if="leaveError" class="account__error" role="alert">{{ leaveError }}</p>
-      <AppButton variant="danger" :loading="leaving" @click="logoutAll">{{ text.logoutAll.submit }}</AppButton>
-    </section>
+      <section class="page-section">
+        <Stack gap="3">
+          <h2>{{ text.logoutAll.title }}</h2>
+          <p class="account__muted">{{ text.logoutAll.help }}</p>
+          <p v-if="leaveError" class="account__error" role="alert">{{ leaveError }}</p>
+          <div><AppButton variant="danger" :loading="leaving" @click="logoutAll">{{ text.logoutAll.submit }}</AppButton></div>
+        </Stack>
+      </section>
+    </Stack>
   </main>
 </template>
 
 <style scoped>
-.account {
-  max-width: 28rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
-.account__back {
-  color: var(--accent-text);
-}
-.account__section {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-.account__section h2 {
-  font-size: 1.1rem;
-}
 .account__muted {
   color: var(--text-muted);
 }
 .account__error {
-  margin: 0;
   color: var(--danger);
 }
 </style>

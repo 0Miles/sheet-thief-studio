@@ -4,7 +4,7 @@
 // karyl-chan bot (docs/spec/karyl-login.md, section 4); and beside a disabled account, the scores
 // it owns, which can be handed to a member who can log in. The router lets only an admin here; the server
 // answers anyone else as if there were no such thing.
-import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
+import { AppBadge, AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import {
   type AdminAccount,
   adminAccount,
@@ -165,26 +165,25 @@ function enable(account: AdminAccount): Promise<void> {
 
 <template>
   <AppHeader />
-  <main class="admin">
-    <Cluster gap="3">
-      <h1>{{ text.title }}</h1>
-      <Spacer />
+  <main class="admin page">
+    <Cluster gap="3" align="center" class="admin__head">
+      <h1 class="page-head__title">{{ text.title }}</h1>
       <AppButton variant="primary" @click="open('create')">{{ text.newAccount }}</AppButton>
     </Cluster>
     <!-- A refusal of a button that opens no dialog (enabling). -->
     <p v-if="error && dialog === null" class="admin__error" role="alert">{{ error }}</p>
     <p v-else-if="done" class="admin__muted" role="status">{{ done }}</p>
     <p v-if="loadError" class="admin__error" role="alert">{{ loadError }}</p>
-    <p v-else-if="accounts === null" class="admin__muted">{{ strings.loading }}</p>
+    <p v-else-if="accounts === null" class="state-loading">{{ strings.loading }}</p>
     <ul v-else class="admin__list" :aria-label="text.accounts">
       <li v-for="account in accounts" :key="account.accountId" class="admin__item" :data-account="account.username" :data-disabled="account.disabled">
         <span class="admin__name">
           <span class="admin__username">{{ account.username }}</span>
           <span>{{ account.displayName }}</span>
         </span>
-        <span v-if="account.isAdmin" class="admin__tag">{{ text.isAdmin }}</span>
-        <span v-if="account.disabled" class="admin__tag admin__tag--disabled">{{ text.disabled }}</span>
-        <span v-if="discordOf(account)" class="admin__tag" data-discord>{{ text.discord.bound(discordOf(account)!.subject) }}</span>
+        <AppBadge v-if="account.isAdmin" tone="accent">{{ text.isAdmin }}</AppBadge>
+        <AppBadge v-if="account.disabled" tone="danger">{{ text.disabled }}</AppBadge>
+        <AppBadge v-if="discordOf(account)" mono data-discord>{{ text.discord.bound(discordOf(account)!.subject) }}</AppBadge>
         <Cluster gap="1" :wrap="false">
           <!-- One's own too: behind the bot, an admin logs in by their Discord id like anyone. -->
           <AppButton v-if="discordOf(account)" variant="ghost" size="sm" @click="open('unbind', account)">{{ text.discord.unbind }}</AppButton>
@@ -244,7 +243,7 @@ function enable(account: AdminAccount): Promise<void> {
       <form novalidate @submit.prevent="transfer">
         <Stack gap="4">
           <p class="admin__muted admin__rule">{{ text.transfer.help(score?.owner.username ?? '') }}</p>
-          <label class="admin__field">
+          <label class="native-label">
             <span>{{ text.transfer.to }}</span>
             <select v-model="recipient" name="new-owner">
               <option v-for="member in score?.members ?? []" :key="member.accountId" :value="member.accountId">{{ text.transfer.option(member.displayName, member.username) }}</option>
@@ -301,33 +300,38 @@ function enable(account: AdminAccount): Promise<void> {
 </template>
 
 <style scoped>
-.admin {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+.admin__head {
+  margin-bottom: var(--space-5);
 }
+.admin > p {
+  margin-bottom: var(--space-4);
+}
+/* One list with hairlines between its rows, not a stack of separate cards. */
 .admin__list {
   list-style: none;
-  margin: 1.5rem 0 0;
+  margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 .admin__item {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
   align-items: center;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-4);
+}
+.admin__item + .admin__item {
+  border-top: 1px solid var(--border);
 }
 .admin__name {
   flex: 1;
   min-width: 8rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   overflow-wrap: anywhere;
 }
 .admin__username {
@@ -339,13 +343,13 @@ function enable(account: AdminAccount): Promise<void> {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .admin__score {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   justify-items: start;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border-left: 2px solid var(--border);
   overflow-wrap: anywhere;
 }
@@ -355,16 +359,6 @@ function enable(account: AdminAccount): Promise<void> {
 .admin__members {
   margin: 0;
   padding-left: 1.25rem;
-}
-.admin__field {
-  display: grid;
-  gap: 0.25rem;
-}
-.admin__tag {
-  color: var(--text-muted);
-}
-.admin__tag--disabled {
-  color: var(--danger);
 }
 .admin__muted {
   color: var(--text-muted);

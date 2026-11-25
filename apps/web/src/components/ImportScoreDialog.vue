@@ -118,19 +118,19 @@ async function create(): Promise<void> {
 }
 .import-score__heading {
   font-size: 1rem;
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-1);
 }
 .import-score__report {
-  margin: 0.5rem 0 0;
+  margin: var(--space-2) 0 0;
   padding-left: 1.25rem;
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 .import-score__report li {
   overflow-wrap: anywhere;
 }
 .import-score__report li span + span {
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
 }
 .import-score__muted {
   color: var(--text-muted);

@@ -84,12 +84,12 @@ async function submit(): Promise<void> {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  padding: 1.5rem;
+  padding: var(--space-5);
   box-sizing: border-box;
 }
 .login__form {
   width: min(22rem, 100%);
-  padding: 2rem;
+  padding: var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);

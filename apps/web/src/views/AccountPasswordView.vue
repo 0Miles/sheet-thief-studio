@@ -3,6 +3,8 @@
 // (docs/spec/routes.md, section 1): the router sends every other page here, and the header still logs out.
 import { useRoute, useRouter } from "vue-router";
 
+import { Stack } from "@karyl-chan/ui";
+
 import AppHeader from "../components/AppHeader.vue";
 import PasswordForm from "../components/PasswordForm.vue";
 import { afterLogin } from "../router";
@@ -20,19 +22,18 @@ function proceed(): Promise<unknown> {
 
 <template>
   <AppHeader />
-  <main class="forced">
-    <h1>{{ text.title }}</h1>
-    <p class="forced__help">{{ text.help }}</p>
-    <PasswordForm :ask-current="false" :submit-label="text.submit" @changed="proceed" />
+  <main class="page page--narrow">
+    <Stack gap="5">
+      <Stack gap="2">
+        <h1>{{ text.title }}</h1>
+        <p class="forced__help">{{ text.help }}</p>
+      </Stack>
+      <PasswordForm :ask-current="false" :submit-label="text.submit" @changed="proceed" />
+    </Stack>
   </main>
 </template>
 
 <style scoped>
-.forced {
-  max-width: 24rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
 .forced__help {
   color: var(--text-muted);
 }

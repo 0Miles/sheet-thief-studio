@@ -23,7 +23,7 @@ async function logout(): Promise<void> {
 
 <template>
   <header class="app-header">
-    <Cluster gap="3" :wrap="false">
+    <Cluster gap="3" align="center">
       <RouterLink class="app-header__name" to="/">{{ strings.app.name }}</RouterLink>
       <Spacer />
       <!-- Nobody to log out on a page open without logging in (a guest's). -->
@@ -42,16 +42,30 @@ async function logout(): Promise<void> {
 
 <style scoped>
 .app-header {
-  padding: 0.5rem 1.5rem;
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }
 .app-header__name {
   font-weight: 700;
-  color: var(--text);
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
   text-decoration: none;
+  white-space: nowrap;
 }
 .app-header__account {
   color: var(--text-muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.app-header__account:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+@media (max-width: 767px) {
+  .app-header {
+    padding: var(--space-2) var(--space-4);
+  }
 }
 </style>

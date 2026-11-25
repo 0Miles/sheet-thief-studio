@@ -208,6 +208,8 @@ export const strings = {
   score: {
     unavailable: "無法開啟這份團譜",
     label: "譜面",
+    // The groups of the score's toolbar, named for assistive technology.
+    toolbar: { playback: "播放", view: "檢視", edit: "編輯", flags: "標記" },
     sync: { syncing: "同步中…", synced: "已同步", offline: "離線" },
     // The banner while the connection is down (docs/spec/views.md, section 10): in the edit view
     // one types in, and in any other (a Viewer's, the Read view, a guest's).
@@ -821,7 +823,7 @@ export const strings = {
     back: "回到我的團譜",
     username: (username: string) => `帳號名稱：${username}`,
     displayName: {
-      title: "顯示名稱",
+      title: "個人資料",
       label: "顯示名稱",
       rule: DISPLAY_NAME_RULE,
       save: "儲存",

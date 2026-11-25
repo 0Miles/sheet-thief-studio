@@ -5,7 +5,7 @@
 // of every part.
 // Keys in its fields are theirs; Enter applies a field (the form's submit), Esc and F2 close the
 // panel, matched by the keymap's platform layer as every key is.
-import { AppButton } from "@karyl-chan/ui";
+import { AppButton, AppTextField } from "@karyl-chan/ui";
 import { type KeyPlatform, pageEffectOf, textEntryEffectOf } from "@studio/score-editor";
 import { barSchema, type KeySignature, keySigSchema, MAX_SECTION_NAME, type RepeatChange, type TimeSignature, timeSigSchema } from "@studio/score-model";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -173,11 +173,11 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     <form class="bar-panel__group" data-panel-time-sig @submit.prevent="applyTimeSig">
       <h3 class="bar-panel__label">{{ text.timeSig }}</h3>
       <div class="bar-panel__row">
-        <label class="bar-panel__field">
+        <label class="native-label">
           <span>{{ strings.newScore.beats }}</span>
-          <input ref="first" v-model.number="numerator" class="bar-panel__number" type="number" name="numerator" :min="BEATS.min" :max="BEATS.max" step="1" required />
+          <input ref="first" v-model.number="numerator" class="bar-panel__number native-input" type="number" name="numerator" :min="BEATS.min" :max="BEATS.max" step="1" required />
         </label>
-        <label class="bar-panel__field">
+        <label class="native-label">
           <span>{{ strings.newScore.beatUnit }}</span>
           <select v-model.number="denominator" name="denominator">
             <option v-for="item in DENOMINATORS" :key="item" :value="item">{{ strings.newScore.beatUnits[item] }}</option>
@@ -189,10 +189,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     </form>
     <template v-if="!phrase">
     <form class="bar-panel__group" data-panel-tempo @submit.prevent="applyTempo">
-      <label class="bar-panel__field">
-        <span>{{ text.tempo }}</span>
-        <input v-model.number="tempo" class="bar-panel__number" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="any" :placeholder="String(tempoInForce)" />
-      </label>
+      <AppTextField v-model.number="tempo" :label="text.tempo" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="any" :placeholder="String(tempoInForce)" />
       <p class="bar-panel__note">{{ props.tempo === undefined ? text.tempoInherited(tempoInForce) : text.tempoHere }}</p>
       <div class="bar-panel__row">
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
@@ -202,13 +199,13 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     <form class="bar-panel__group" data-panel-key-sig @submit.prevent="applyKeySig">
       <h3 class="bar-panel__label">{{ text.keySig }}</h3>
       <div class="bar-panel__row">
-        <label class="bar-panel__field">
+        <label class="native-label">
           <span>{{ text.keyMode }}</span>
           <select v-model="mode" name="mode">
             <option v-for="item in MODES" :key="item" :value="item">{{ text.keyModes[item] }}</option>
           </select>
         </label>
-        <label class="bar-panel__field">
+        <label class="native-label">
           <span>{{ text.key }}</span>
           <select v-model.number="fifths" name="fifths">
             <option v-for="item in FIFTHS" :key="item" :value="item">{{ text.keyName({ fifths: item, mode }) }}</option>
@@ -222,10 +219,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
       </div>
     </form>
     <form class="bar-panel__group" data-panel-section @submit.prevent="applySection">
-      <label class="bar-panel__field">
-        <span>{{ text.section }}</span>
-        <input v-model="section" type="text" name="section" :maxlength="MAX_SECTION_NAME" />
-      </label>
+      <AppTextField v-model="section" :label="text.section" name="section" :maxlength="MAX_SECTION_NAME" />
       <p class="bar-panel__note">{{ text.sectionHere(bar) }}</p>
       <div class="bar-panel__row">
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
@@ -234,10 +228,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
     </form>
     <form class="bar-panel__group" data-panel-repeat @submit.prevent="applyRepeat">
       <h3 class="bar-panel__label">{{ text.repeat }}</h3>
-      <label class="bar-panel__field">
-        <span>{{ text.repeatTimes }}</span>
-        <input v-model.number="repeatTimes" class="bar-panel__number" type="number" name="repeatTimes" :min="REPEAT.min" :max="REPEAT.max" step="1" required />
-      </label>
+      <AppTextField v-model.number="repeatTimes" class="bar-panel__number" :label="text.repeatTimes" type="number" name="repeatTimes" :min="REPEAT.min" :max="REPEAT.max" :step="1" required />
       <p class="bar-panel__note">{{ range ? text.repeatOnRange(range.first, range.last) : text.repeatOnBar }}</p>
       <p v-if="repeatStart" class="bar-panel__note" data-repeat-start>{{ text.repeatStartHere }}</p>
       <p v-if="repeatEnd !== undefined" class="bar-panel__note" data-repeat-end>{{ text.repeatEndHere(repeatEnd) }}</p>
@@ -277,10 +268,10 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 .bar-panel {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   width: 16rem;
   flex: none;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-y: auto;
@@ -296,13 +287,13 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 }
 .bar-panel__where {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   font-weight: 600;
 }
 .bar-panel__group {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .bar-panel__label {
   margin: 0;
@@ -312,12 +303,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.5rem;
-}
-.bar-panel__field {
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
+  gap: var(--space-2);
 }
 .bar-panel__number {
   width: 6rem;
@@ -330,20 +316,20 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 .bar-panel__passes {
   display: grid;
   grid-template-columns: repeat(4, auto);
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
   margin: 0;
   padding: 0;
   border: 0;
   font-size: 0.875rem;
 }
 .bar-panel__passes > legend {
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
 }
 .bar-panel__pass,
 .bar-panel__check {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: 0.875rem;
   white-space: nowrap;
 }

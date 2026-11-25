@@ -40,13 +40,13 @@ onMounted(() =>
 
 <template>
   <form class="title-editor" data-title-form :aria-label="text.editTitle" @submit.prevent="apply" @keydown="onKey">
-    <label class="title-editor__field">
+    <label class="native-label">
       <span>{{ text.title }}</span>
-      <input ref="first" v-model="title" type="text" name="title" :maxlength="MAX_TITLE" required />
+      <input ref="first" v-model="title" class="native-input" type="text" name="title" :maxlength="MAX_TITLE" required />
     </label>
-    <label class="title-editor__field">
+    <label class="native-label">
       <span>{{ text.artist }}</span>
-      <input v-model="artist" type="text" name="artist" :maxlength="MAX_TITLE" :placeholder="text.artistHelp" />
+      <input v-model="artist" class="native-input" type="text" name="artist" :maxlength="MAX_TITLE" :placeholder="text.artistHelp" />
     </label>
     <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
     <AppButton type="button" variant="ghost" size="sm" @click="emit('cancel')">{{ text.cancel }}</AppButton>
@@ -58,11 +58,6 @@ onMounted(() =>
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.5rem;
-}
-.title-editor__field {
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
+  gap: var(--space-2);
 }
 </style>

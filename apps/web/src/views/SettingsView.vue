@@ -183,15 +183,15 @@ async function copy(): Promise<void> {
   <NotFoundView v-if="notFound" />
   <template v-else>
     <AppHeader />
-    <main class="settings">
+    <main class="settings page page--narrow">
       <Stack gap="6">
-        <Stack gap="1">
-          <RouterLink :to="{ name: 'score', params: { id } }">{{ text.back }}</RouterLink>
-          <h1>{{ text.title }}<span v-if="details" class="settings__score">{{ details.title }}</span></h1>
+        <Stack gap="2">
+          <RouterLink :to="{ name: 'score', params: { id } }" class="page-back">{{ text.back }}</RouterLink>
+          <h1>{{ text.title }}<span v-if="details" class="page-head__of">{{ details.title }}</span></h1>
         </Stack>
         <p v-if="error" class="settings__error" role="alert">{{ error }}</p>
-        <p v-if="details === null && error === null" class="settings__muted">{{ strings.loading }}</p>
-        <section v-if="details && members" class="settings__section" :aria-label="text.members.title">
+        <p v-if="details === null && error === null" class="state-loading">{{ strings.loading }}</p>
+        <section v-if="details && members" class="page-section" :aria-label="text.members.title">
           <Stack gap="3">
             <h2>{{ text.members.title }}</h2>
             <ul class="settings__members">
@@ -219,7 +219,7 @@ async function copy(): Promise<void> {
                 <p class="settings__muted">{{ text.members.add.help }}</p>
                 <Cluster gap="2" align="end">
                   <AppTextField v-model="username" :label="text.members.add.username" name="member-username" :maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" required />
-                  <label class="settings__role">
+                  <label class="native-label">
                     <span>{{ text.members.add.role }}</span>
                     <select v-model="role" name="member-role">
                       <option v-for="option in ROLES" :key="option" :value="option">{{ strings.home.roles[option] }}</option>
@@ -234,7 +234,7 @@ async function copy(): Promise<void> {
             </Cluster>
           </Stack>
         </section>
-        <section v-if="token !== undefined" class="settings__section" :aria-label="text.link.title">
+        <section v-if="token !== undefined" class="page-section" :aria-label="text.link.title">
           <Stack gap="3">
             <h2>{{ text.link.title }}</h2>
             <p class="settings__muted">{{ text.link.help }}</p>
@@ -254,7 +254,7 @@ async function copy(): Promise<void> {
             </template>
           </Stack>
         </section>
-        <section v-if="details && isOwner" class="settings__section" :aria-label="text.delete.title">
+        <section v-if="details && isOwner" class="page-section" :aria-label="text.delete.title">
           <Stack gap="3">
             <h2>{{ text.delete.title }}</h2>
             <p class="settings__muted">{{ text.delete.help }}</p>
@@ -308,47 +308,32 @@ async function copy(): Promise<void> {
 </template>
 
 <style scoped>
-.settings {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
-.settings h1,
-.settings h2 {
-  margin: 0;
-}
-.settings__score {
-  margin-left: 0.75rem;
-  color: var(--text-muted);
-  font-size: 1rem;
-  font-weight: 400;
-}
-.settings__section {
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
+/* One list with hairlines between its rows, not a stack of separate cards. */
 .settings__members {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 .settings__member {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
   align-items: center;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-4);
+}
+.settings__member + .settings__member {
+  border-top: 1px solid var(--border);
 }
 .settings__name {
   flex: 1;
   min-width: 8rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   overflow-wrap: anywhere;
 }
 .settings__username {
@@ -356,10 +341,6 @@ async function copy(): Promise<void> {
 }
 .settings__disabled {
   color: var(--danger);
-}
-.settings__role {
-  display: grid;
-  gap: 0.25rem;
 }
 .settings__muted {
   margin: 0;
