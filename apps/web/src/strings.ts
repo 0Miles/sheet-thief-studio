@@ -821,7 +821,7 @@ export const strings = {
     back: "回到我的團譜",
     username: (username: string) => `帳號名稱：${username}`,
     displayName: {
-      title: "顯示名稱",
+      title: "個人資料",
       label: "顯示名稱",
       rule: DISPLAY_NAME_RULE,
       save: "儲存",

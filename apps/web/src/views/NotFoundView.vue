@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Stack } from "@karyl-chan/ui";
 import { RouterLink } from "vue-router";
 
 import AppHeader from "../components/AppHeader.vue";
@@ -10,18 +11,26 @@ defineProps<{ notice?: string }>();
 
 <template>
   <AppHeader />
-  <main class="not-found">
-    <h1>{{ strings.notFound.title }}</h1>
-    <p v-if="notice" role="status" data-notice>{{ notice }}</p>
-    <p>{{ strings.notFound.message }}</p>
-    <RouterLink to="/">{{ strings.notFound.home }}</RouterLink>
+  <main class="page page--narrow not-found">
+    <Stack gap="3">
+      <h1>{{ strings.notFound.title }}</h1>
+      <p v-if="notice" role="status" data-notice>{{ notice }}</p>
+      <p class="not-found__message">{{ strings.notFound.message }}</p>
+      <RouterLink to="/" class="not-found__home">{{ strings.notFound.home }}</RouterLink>
+    </Stack>
   </main>
 </template>
 
 <style scoped>
 .not-found {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 4rem 1.5rem;
+  padding-top: var(--space-8);
+}
+.not-found__message {
+  color: var(--text-muted);
+}
+.not-found__home {
+  align-self: flex-start;
+  color: var(--accent-text);
+  font-weight: 600;
 }
 </style>

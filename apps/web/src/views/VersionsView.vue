@@ -234,11 +234,11 @@ function saveNow(): Promise<void> {
   <NotFoundView v-if="notFound" />
   <template v-else>
     <AppHeader />
-    <main class="versions">
+    <main class="versions page page--full">
       <Stack gap="5">
-        <Stack gap="1">
-          <RouterLink :to="{ name: 'score', params: { id } }">{{ text.back }}</RouterLink>
-          <h1>{{ text.title }}<span v-if="details" class="versions__score">{{ details.title || strings.score.untitled }}</span></h1>
+        <Stack gap="2">
+          <RouterLink :to="{ name: 'score', params: { id } }" class="page-back">{{ text.back }}</RouterLink>
+          <h1>{{ text.title }}<span v-if="details" class="page-head__of">{{ details.title || strings.score.untitled }}</span></h1>
           <p class="versions__muted">{{ text.help }}</p>
         </Stack>
         <p v-if="error" class="versions__error" role="alert">{{ error }}</p>
@@ -326,24 +326,6 @@ function saveNow(): Promise<void> {
 </template>
 
 <style scoped>
-.versions {
-  max-width: 90rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
-.versions h1,
-.versions h2 {
-  margin: 0;
-}
-.versions h2 {
-  font-size: 1.125rem;
-}
-.versions__score {
-  margin-left: 0.75rem;
-  color: var(--text-muted);
-  font-size: 1rem;
-  font-weight: 400;
-}
 .versions__muted {
   margin: 0;
   color: var(--text-muted);
@@ -353,7 +335,7 @@ function saveNow(): Promise<void> {
   color: var(--danger);
 }
 .versions__save {
-  padding-top: 1rem;
+  padding-top: var(--space-5);
   border-top: 1px solid var(--border);
 }
 .versions__body {

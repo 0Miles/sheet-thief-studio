@@ -4,7 +4,7 @@
 // and deleting are for devices that can be typed on only (`canType`); a phone or a tablet lists,
 // filters and searches. Every device recognizes images: they are uploaded, and the review page
 // opens; the recognitions not yet saved nor discarded are listed above the phrases (待審核).
-import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Spacer, Stack } from "@karyl-chan/ui";
+import { AppButton, AppConfirmDialog, AppModal, AppTextField, Cluster, Stack } from "@karyl-chan/ui";
 import {
   createdPhrase,
   createdRecognition,
@@ -181,10 +181,9 @@ function remove(): Promise<void> {
 
 <template>
   <AppHeader />
-  <main class="phrases" :data-can-type="editable">
-    <Cluster gap="3">
-      <h1>{{ text.title }}</h1>
-      <Spacer />
+  <main class="phrases page" :data-can-type="editable">
+    <Cluster gap="3" align="center" class="phrases__head">
+      <h1 class="page-head__title">{{ text.title }}</h1>
       <AppButton variant="secondary" :loading="uploading" :title="text.recognizeHelp" data-recognize @click="picker?.click()">{{ text.recognize }}</AppButton>
       <!-- No capture: a phone offers its camera and its photos alike (docs/spec/phrases.md, section 4). -->
       <input ref="picker" class="phrases__picker" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-recognize-input @change="recognize" />
@@ -200,7 +199,7 @@ function remove(): Promise<void> {
         </li>
       </ul>
     </section>
-    <Cluster gap="3" class="phrases__filters">
+    <Cluster gap="3" align="end" class="phrases__filters">
       <label class="phrases__kind">
         <span>{{ text.kind }}</span>
         <select v-model="kind">
@@ -276,14 +275,14 @@ function remove(): Promise<void> {
 </template>
 
 <style scoped>
-.phrases {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+.phrases__head {
+  margin-bottom: var(--space-5);
+}
+.phrases > p {
+  margin-top: var(--space-4);
 }
 .phrases__filters {
-  margin-top: 1rem;
-  align-items: end;
+  margin-top: var(--space-4);
 }
 .phrases__kind,
 .phrases__preset {
@@ -294,27 +293,37 @@ function remove(): Promise<void> {
   flex: 1;
   min-width: 12rem;
 }
+/* One list with hairlines between its rows, not a stack of separate cards. */
 .phrases__list {
   list-style: none;
-  margin: 1.5rem 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
-  display: grid;
-  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 .phrases__item {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
   align-items: center;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-4);
+}
+.phrases__item + .phrases__item {
+  border-top: 1px solid var(--border);
 }
 .phrases__name {
   font-weight: 600;
   flex: 1;
   min-width: 8rem;
   overflow-wrap: anywhere;
+  color: var(--text);
+  text-decoration: none;
+}
+.phrases__name:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 .phrases__muted {
   color: var(--text-muted);
@@ -333,10 +342,6 @@ function remove(): Promise<void> {
   opacity: 0;
 }
 .phrases__pending {
-  margin-top: 1.5rem;
-}
-.phrases__pending h2 {
-  margin: 0;
-  font-size: 1.125rem;
+  margin-top: var(--space-5);
 }
 </style>

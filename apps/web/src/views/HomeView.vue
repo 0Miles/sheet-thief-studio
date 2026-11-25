@@ -3,7 +3,7 @@
 // first, creating a new one in its dialog or importing a file as one (docs/spec/import-export.md,
 // section 2); below them the scores I own and deleted in the
 // last 30 days, to restore (docs/spec/accounts.md, section 8), a block nobody else sees.
-import { AppButton, Cluster, Spacer } from "@karyl-chan/ui";
+import { AppButton, Cluster, Stack } from "@karyl-chan/ui";
 import { DELETED_SCORE_DAYS, type DeletedScore, deletedScoreList, type ScoreSummary, scoreList } from "@studio/contracts";
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
@@ -89,102 +89,106 @@ async function restore(score: DeletedScore): Promise<void> {
 
 <template>
   <AppHeader />
-  <main class="home">
-    <Cluster gap="3">
-      <h1>{{ text.title }}</h1>
-      <Spacer />
-      <RouterLink :to="{ name: 'phrases' }" class="home__link">{{ text.phrases }}</RouterLink>
-      <AppButton variant="secondary" @click="picker?.click()">{{ text.importScore }}</AppButton>
-      <input ref="picker" type="file" :accept="IMPORT_TYPES" :aria-label="text.importFile" hidden @change="chosen" />
-      <AppButton variant="primary" @click="creating = true">{{ text.newScore }}</AppButton>
-    </Cluster>
-    <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
-    <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
-    <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
-    <ul v-else class="home__scores">
-      <li v-for="score in scores" :key="score.id">
-        <RouterLink :to="{ name: 'score', params: { id: score.id } }" class="home__score">
-          <span class="home__title">{{ score.title }}</span>
-          <span v-if="score.artist" class="home__muted">{{ score.artist }}</span>
-          <span class="home__muted">{{ text.roles[score.role] }}</span>
-        </RouterLink>
-      </li>
-    </ul>
-    <p v-if="restoreError" class="home__error home__restore-error" role="alert">{{ restoreError }}</p>
-    <section v-if="deleted.length > 0" class="home__deleted" :aria-label="text.deleted.title">
-      <h2>{{ text.deleted.title }}</h2>
-      <p class="home__muted">{{ text.deleted.help }}</p>
-      <ul class="home__scores">
-        <li v-for="score in deleted" :key="score.id" class="home__score" :data-deleted="score.id">
-          <span class="home__title">{{ score.title }}</span>
-          <span v-if="score.artist" class="home__muted">{{ score.artist }}</span>
-          <span class="home__muted">{{ text.deleted.until(lastDay(score)) }}</span>
-          <AppButton variant="ghost" size="sm" :disabled="restoring" :aria-label="text.deleted.restoreOf(score.title)" @click="restore(score)">{{ text.deleted.restore }}</AppButton>
+  <main class="home page">
+    <Stack gap="5">
+      <Cluster gap="3" align="center">
+        <h1 class="page-head__title">{{ text.title }}</h1>
+        <Cluster gap="2" align="center">
+          <RouterLink :to="{ name: 'phrases' }" class="home__link">{{ text.phrases }}</RouterLink>
+          <AppButton variant="secondary" @click="picker?.click()">{{ text.importScore }}</AppButton>
+          <input ref="picker" type="file" :accept="IMPORT_TYPES" :aria-label="text.importFile" hidden @change="chosen" />
+          <AppButton variant="primary" @click="creating = true">{{ text.newScore }}</AppButton>
+        </Cluster>
+      </Cluster>
+      <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
+      <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
+      <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
+      <ul v-else class="home__scores">
+        <li v-for="score in scores" :key="score.id">
+          <RouterLink :to="{ name: 'score', params: { id: score.id } }" class="home__score">
+            <span class="home__title">{{ score.title }}</span>
+            <span v-if="score.artist" class="home__muted">{{ score.artist }}</span>
+            <span class="home__role">{{ text.roles[score.role] }}</span>
+          </RouterLink>
         </li>
       </ul>
-    </section>
+      <p v-if="restoreError" class="home__error" role="alert">{{ restoreError }}</p>
+      <section v-if="deleted.length > 0" class="page-section" :aria-label="text.deleted.title">
+        <Stack gap="3">
+          <Stack gap="1">
+            <h2>{{ text.deleted.title }}</h2>
+            <p class="home__muted">{{ text.deleted.help }}</p>
+          </Stack>
+          <ul class="home__scores">
+            <li v-for="score in deleted" :key="score.id" class="home__score home__score--deleted" :data-deleted="score.id">
+              <span class="home__title">{{ score.title }}</span>
+              <span v-if="score.artist" class="home__muted">{{ score.artist }}</span>
+              <span class="home__muted">{{ text.deleted.until(lastDay(score)) }}</span>
+              <AppButton variant="ghost" size="sm" :disabled="restoring" :aria-label="text.deleted.restoreOf(score.title)" @click="restore(score)">{{ text.deleted.restore }}</AppButton>
+            </li>
+          </ul>
+        </Stack>
+      </section>
+    </Stack>
     <NewScoreDialog :visible="creating" @close="creating = false" />
     <ImportScoreDialog :file="importing" @close="importing = null" />
   </main>
 </template>
 
 <style scoped>
-.home {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
+/* One list with hairlines between its rows, not a stack of separate cards. */
 .home__scores {
   list-style: none;
-  margin: 1.5rem 0 0;
+  margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.home__scores > li + li,
+.home__scores > .home__score + .home__score {
+  border-top: 1px solid var(--border);
 }
 .home__score {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-2) var(--space-4);
   align-items: baseline;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-4);
   color: var(--text);
   text-decoration: none;
 }
 a.home__score:hover {
-  background: var(--bg-surface);
+  background: var(--bg-surface-hover);
 }
-.home__deleted {
-  margin-top: 2.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-.home__restore-error {
-  margin-top: 1.5rem;
-}
-.home__deleted h2,
-.home__deleted p {
-  margin: 0;
-}
-.home__deleted .home__scores {
-  margin-top: 1rem;
-}
-.home__deleted .home__score {
+.home__score--deleted {
   flex-wrap: wrap;
   align-items: center;
 }
 .home__title {
-  font-weight: 600;
   flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .home__muted {
   color: var(--text-muted);
 }
+.home__role {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
 .home__link {
+  margin-right: var(--space-2);
   color: var(--accent-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.home__link:hover {
+  text-decoration: underline;
 }
 .home__error {
   color: var(--danger);
-  margin: 0;
 }
 </style>
