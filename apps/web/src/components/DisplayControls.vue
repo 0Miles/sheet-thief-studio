@@ -86,4 +86,8 @@ function onScale(event: Event): void {
   gap: 0.375rem;
   white-space: nowrap;
 }
+/* In the toolbar: as tall as the small buttons beside it. */
+.display__zoom select {
+  padding-block: 0;
+}
 </style>

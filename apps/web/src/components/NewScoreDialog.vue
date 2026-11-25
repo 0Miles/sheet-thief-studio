@@ -123,17 +123,14 @@ async function create(): Promise<void> {
           <Stack gap="3">
             <div v-for="row in rows" :key="row.key" class="new-score__row" data-part-row>
               <Cluster gap="2" align="end">
-                <label class="new-score__field">
+                <label class="native-label">
                   <span>{{ text.preset }}</span>
                   <select v-model="row.preset" name="preset" @change="choosePreset(row)">
                     <option v-for="item in PART_PRESET_IDS" :key="item" :value="item">{{ strings.presets[item] }}</option>
                   </select>
                 </label>
-                <label class="new-score__field">
-                  <span>{{ text.count }}</span>
-                  <input v-model.number="row.count" class="new-score__number" type="number" name="count" min="1" :max="MAX_PARTS" step="1" required />
-                </label>
-                <label v-if="isFretted(row)" class="new-score__field">
+                <AppTextField v-model.number="row.count" class="new-score__number" :label="text.count" type="number" name="count" :min="1" :max="MAX_PARTS" :step="1" required />
+                <label v-if="isFretted(row)" class="native-label">
                   <span>{{ text.tuning }}</span>
                   <select v-model="row.tuning" name="tuning">
                     <option v-for="item in TUNINGS" :key="item" :value="item">{{ text.tunings[item] }}</option>
@@ -142,7 +139,7 @@ async function create(): Promise<void> {
                 <AppButton v-if="rows.length > 1" type="button" variant="ghost" size="sm" @click="rows = rows.filter((other) => other !== row)">{{ text.removePart }}</AppButton>
               </Cluster>
               <Cluster v-if="isFretted(row) && row.tuning === 'custom'" gap="2" class="new-score__strings">
-                <label v-for="(_, index) in row.custom" :key="index" class="new-score__field">
+                <label v-for="(_, index) in row.custom" :key="index" class="native-label">
                   <span>{{ text.string(index + 1) }}</span>
                   <select v-model.number="row.custom[index]" :name="`string-${index + 1}`">
                     <option v-for="{ pitch, name } in PITCHES" :key="pitch" :value="pitch">{{ name }}</option>
@@ -157,20 +154,14 @@ async function create(): Promise<void> {
           </Stack>
         </fieldset>
         <Cluster gap="2" align="end">
-          <label class="new-score__field">
-            <span>{{ text.beats }}</span>
-            <input v-model.number="numerator" class="new-score__number" type="number" name="numerator" :min="BEATS.min" :max="BEATS.max" step="1" required />
-          </label>
-          <label class="new-score__field">
+          <AppTextField v-model.number="numerator" class="new-score__number" :label="text.beats" type="number" name="numerator" :min="BEATS.min" :max="BEATS.max" :step="1" required />
+          <label class="native-label">
             <span>{{ text.beatUnit }}</span>
             <select v-model.number="denominator" name="denominator">
               <option v-for="item in DENOMINATORS" :key="item" :value="item">{{ text.beatUnits[item] }}</option>
             </select>
           </label>
-          <label class="new-score__field">
-            <span>{{ text.tempo }}</span>
-            <input v-model.number="tempo" class="new-score__number" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="any" required />
-          </label>
+          <AppTextField v-model.number="tempo" class="new-score__tempo" :label="text.tempo" type="number" name="tempo" :min="TEMPO.min" :max="TEMPO.max" step="any" required />
         </Cluster>
         <p v-if="error" class="new-score__error" role="alert">{{ error }}</p>
         <Cluster gap="2" justify="end">
@@ -196,12 +187,11 @@ async function create(): Promise<void> {
 .new-score__strings {
   margin-top: 0.5rem;
 }
-.new-score__field {
-  display: grid;
-  gap: 0.25rem;
-}
 .new-score__number {
   width: 6rem;
+}
+.new-score__tempo {
+  width: 14rem;
 }
 .new-score__error {
   color: var(--danger);

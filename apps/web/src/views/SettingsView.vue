@@ -219,7 +219,7 @@ async function copy(): Promise<void> {
                 <p class="settings__muted">{{ text.members.add.help }}</p>
                 <Cluster gap="2" align="end">
                   <AppTextField v-model="username" :label="text.members.add.username" name="member-username" :maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" required />
-                  <label class="settings__role">
+                  <label class="native-label">
                     <span>{{ text.members.add.role }}</span>
                     <select v-model="role" name="member-role">
                       <option v-for="option in ROLES" :key="option" :value="option">{{ strings.home.roles[option] }}</option>
@@ -341,10 +341,6 @@ async function copy(): Promise<void> {
 }
 .settings__disabled {
   color: var(--danger);
-}
-.settings__role {
-  display: grid;
-  gap: 0.25rem;
 }
 .settings__muted {
   margin: 0;

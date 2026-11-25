@@ -200,7 +200,7 @@ function remove(): Promise<void> {
       </ul>
     </section>
     <Cluster gap="3" align="end" class="phrases__filters">
-      <label class="phrases__kind">
+      <label class="native-label">
         <span>{{ text.kind }}</span>
         <select v-model="kind">
           <option value="">{{ text.allKinds }}</option>
@@ -231,7 +231,7 @@ function remove(): Promise<void> {
         <form @submit.prevent="create">
           <Stack gap="4">
             <AppTextField v-model="name" :label="strings.newPhrase.name" name="name" :maxlength="phraseLimits.name.max" autofocus required />
-            <label class="phrases__preset">
+            <label class="native-label">
               <span>{{ strings.newPhrase.preset }}</span>
               <select v-model="preset" name="preset">
                 <option v-for="item in PART_PRESET_IDS" :key="item" :value="item">{{ strings.presets[item] }}</option>
@@ -283,11 +283,6 @@ function remove(): Promise<void> {
 }
 .phrases__filters {
   margin-top: var(--space-4);
-}
-.phrases__kind,
-.phrases__preset {
-  display: grid;
-  gap: 0.25rem;
 }
 .phrases__search {
   flex: 1;

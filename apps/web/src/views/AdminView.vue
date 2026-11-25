@@ -243,7 +243,7 @@ function enable(account: AdminAccount): Promise<void> {
       <form novalidate @submit.prevent="transfer">
         <Stack gap="4">
           <p class="admin__muted admin__rule">{{ text.transfer.help(score?.owner.username ?? '') }}</p>
-          <label class="admin__field">
+          <label class="native-label">
             <span>{{ text.transfer.to }}</span>
             <select v-model="recipient" name="new-owner">
               <option v-for="member in score?.members ?? []" :key="member.accountId" :value="member.accountId">{{ text.transfer.option(member.displayName, member.username) }}</option>
@@ -359,10 +359,6 @@ function enable(account: AdminAccount): Promise<void> {
 .admin__members {
   margin: 0;
   padding-left: 1.25rem;
-}
-.admin__field {
-  display: grid;
-  gap: 0.25rem;
 }
 .admin__muted {
   color: var(--text-muted);

@@ -1639,6 +1639,10 @@ onBeforeUnmount(() => {
   gap: 0.375rem;
   font-size: 0.875rem;
 }
+/* In the toolbar: as tall as the small buttons beside it. */
+.score__part select {
+  padding-block: 0;
+}
 .score__playbar {
   display: flex;
   align-items: center;

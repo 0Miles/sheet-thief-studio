@@ -6,7 +6,7 @@
 // part. Its kind, its number of strings and of staves never change. Each change is one command of
 // the session, the page's.
 // Keys in its fields are theirs; Esc closes the panel, matched by the keymap's platform layer.
-import { AppButton } from "@karyl-chan/ui";
+import { AppButton, AppTextField } from "@karyl-chan/ui";
 import { type KeyPlatform, textEntryEffectOf } from "@studio/score-editor";
 import {
   MAX_PART_NAME,
@@ -213,13 +213,13 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
     <form v-if="!phrase" class="part-panel__group" data-add-part @submit.prevent="add">
       <h3 class="part-panel__label">{{ text.add }}</h3>
       <div class="part-panel__row">
-        <label class="part-panel__field">
+        <label class="native-label">
           <span>{{ text.preset }}</span>
           <select ref="addFirst" v-model="preset" name="preset" @change="addTuning = 'standard'">
             <option v-for="item in PART_PRESET_IDS" :key="item" :value="item">{{ strings.presets[item] }}</option>
           </select>
         </label>
-        <label v-if="presetKind === 'fretted'" class="part-panel__field">
+        <label v-if="presetKind === 'fretted'" class="native-label">
           <span>{{ text.tuning }}</span>
           <select v-model="addTuning" name="tuning">
             <option v-for="item in TUNING_OPTIONS" :key="item" :value="item">{{ strings.newScore.tunings[item] }}</option>
@@ -233,21 +233,18 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
       <h3 v-if="!phrase" class="part-panel__label">{{ text.properties(edited.name) }}</h3>
       <p class="part-panel__note">{{ text.fixed }}</p>
       <form v-if="!phrase" class="part-panel__group" data-part-name @submit.prevent="applyName">
-        <label class="part-panel__field">
-          <span>{{ text.name }}</span>
-          <input v-model="name" type="text" name="name" :maxlength="MAX_PART_NAME" required />
-        </label>
+        <AppTextField v-model="name" :label="text.name" name="name" :maxlength="MAX_PART_NAME" required />
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
       <form v-if="edited.kind === 'fretted'" class="part-panel__group" data-part-tuning @submit.prevent="applyTuning">
-        <label class="part-panel__field">
+        <label class="native-label">
           <span>{{ text.tuning }}</span>
           <select v-model="tuningOption" name="tuning">
             <option v-for="item in TUNINGS" :key="item" :value="item">{{ strings.newScore.tunings[item] }}</option>
           </select>
         </label>
         <div v-if="tuningOption === 'custom'" class="part-panel__row">
-          <label v-for="(_, index) in custom" :key="index" class="part-panel__field">
+          <label v-for="(_, index) in custom" :key="index" class="native-label">
             <span>{{ strings.newScore.string(index + 1) }}</span>
             <select v-model.number="custom[index]" :name="`string-${index + 1}`">
               <option v-for="{ pitch, name: pitchLabel } in PITCHES" :key="pitch" :value="pitch">{{ pitchLabel }}</option>
@@ -258,21 +255,15 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
       <form v-if="edited.kind === 'fretted' && !phrase" class="part-panel__group" data-part-capo @submit.prevent="applyCapo">
-        <label class="part-panel__field">
-          <span>{{ text.capo }}</span>
-          <input v-model.number="capo" class="part-panel__number" type="number" name="capo" :min="CAPO.min" :max="CAPO.max" step="1" required />
-        </label>
+        <AppTextField v-model.number="capo" :label="text.capo" type="number" name="capo" :min="CAPO.min" :max="CAPO.max" :step="1" required />
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
       <form v-if="edited.kind !== 'percussion' && !phrase" class="part-panel__group" data-part-program @submit.prevent="applyProgram">
-        <label class="part-panel__field">
-          <span>{{ text.program }}</span>
-          <input v-model.number="program" class="part-panel__number" type="number" name="program" :min="PROGRAM.min" :max="PROGRAM.max" step="1" required />
-        </label>
+        <AppTextField v-model.number="program" :label="text.program" type="number" name="program" :min="PROGRAM.min" :max="PROGRAM.max" :step="1" required />
         <AppButton type="submit" variant="primary" size="sm">{{ text.apply }}</AppButton>
       </form>
       <form v-for="(_, staff) in edited.kind === 'pitched' ? clefs : []" :key="staff" class="part-panel__group" data-part-clef @submit.prevent="applyClef(staff)">
-        <label class="part-panel__field">
+        <label class="native-label">
           <span>{{ text.clef(staff + 1) }}</span>
           <select v-model="clefs[staff]" :name="`clef-${staff + 1}`">
             <option v-for="item in PITCHED_CLEFS" :key="item" :value="item">{{ text.clefs[item] }}</option>
@@ -355,14 +346,6 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
   flex-wrap: wrap;
   align-items: end;
   gap: 0.25rem 0.5rem;
-}
-.part-panel__field {
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-}
-.part-panel__number {
-  width: 6rem;
 }
 .part-panel__warning {
   margin: 0;
