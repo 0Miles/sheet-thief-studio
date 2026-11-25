@@ -23,6 +23,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import { keyPlatform } from "../device";
 import { drawFailure } from "../drawFailure";
 import { type RestoreTarget, restoreVersion } from "../restore";
+import { followTheme } from "../scoreColors";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -66,6 +67,8 @@ const drawnVersion = ref<string | null>(null);
 const { failed: drawFailed, watch: watchDrawing, retry: retryDrawing } = drawFailure();
 const host = ref<HTMLElement>();
 let engine: ScoreEngine | undefined;
+/** Stop drawing the score in the theme's colours as it changes. */
+let stopTheme: (() => void) | undefined;
 /** The version last handed to the renderer: drawn once it reports so. */
 let drawing: string | null = null;
 const playerState = ref<PlayerState>("loading");
@@ -108,6 +111,7 @@ onMounted(async () => {
   if (host.value === undefined) return;
   // As the Read view draws a score: in a worker, a click sending playback there.
   engine = createAlphaTabEngine(host.value, { fontDirectory: fontDirectory(), soundFont: soundFontUrl(), useWorkers: true, seekOnClick: true });
+  stopTheme = followTheme(engine.renderer, host.value);
   engine.renderer.onRendered(() => {
     drawnVersion.value = drawing;
   });
@@ -125,6 +129,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   hideFromTests();
+  stopTheme?.();
   engine?.destroy();
 });
 

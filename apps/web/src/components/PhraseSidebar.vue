@@ -22,6 +22,7 @@ import { get, refusal } from "../api";
 import { drawFailure } from "../drawFailure";
 import { STRUCTURE_STROKE, structureBoxesOf } from "../overlay";
 import { type PhraseContents, phrasesShown } from "../phraseSidebar";
+import { followTheme } from "../scoreColors";
 import { strings } from "../strings";
 import { fontDirectory } from "../served";
 import DrawFailed from "./DrawFailed.vue";
@@ -66,6 +67,8 @@ const previewBars = shallowRef<Rect[]>([]);
 let previewEnds: [string, string] | null = null;
 /** The one renderer every preview shares, made the first time one opens. */
 let engine: ScoreEngine | undefined;
+/** Stop drawing the score in the theme's colours as it changes. */
+let stopTheme: (() => void) | undefined;
 
 const listed = computed(() => (phrases.value === null ? [] : phrasesShown(phrases.value, props.part, showAll.value)));
 /** What the list says when it has nothing to list. */
@@ -145,6 +148,7 @@ async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise
   if (previewed.value !== phrase || previewHost.value === undefined) return;
   if (engine === undefined) {
     engine = createAlphaTabEngine(previewHost.value, { fontDirectory: fontDirectory(), soundFont: null, useWorkers: true, scale: 0.75 });
+    stopTheme = followTheme(engine.renderer, previewHost.value);
     engine.renderer.onRendered(() => {
       previewReady.value = true;
       placePreview();
@@ -228,6 +232,7 @@ function onDragStart(event: DragEvent, phrase: PhraseSummary): void {
 
 onBeforeUnmount(() => {
   clearTimeout(typing);
+  stopTheme?.();
   engine?.destroy();
 });
 </script>
@@ -416,7 +421,8 @@ onBeforeUnmount(() => {
   overflow: auto;
   /* Laid out as wide as it is before it is drawn: the room of the vertical scrollbar kept from the start. */
   scrollbar-gutter: stable;
-  background: var(--text-on-accent);
+  /* The phrase is drawn in the theme's colours (`followTheme`), on the theme's surface. */
+  background: var(--bg-surface);
 }
 .phrase-sidebar__preview-page {
   position: relative;

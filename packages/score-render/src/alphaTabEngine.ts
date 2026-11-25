@@ -7,7 +7,7 @@ import { barRangeRects, cursorAtPoint, cursorRect, type DrawnExtent, noteHeads, 
 import { playerUsable } from "./playerState";
 import { beatOf, type Projection, projectScore, replaceBars } from "./projection";
 import { barAtTick, placeAtTick, tickAtPlace } from "./ticks";
-import type { NoteHead, PlayedBar, PlayerPosition, PlayerSettings, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
+import type { NoteHead, PlayedBar, PlayerPosition, PlayerSettings, PlayerState, PlayRange, Rect, RenderedEvent, RenderTimings, ScoreColors, ScorePlayer, ScoreRenderer, Unsubscribe } from "./types";
 
 export interface EngineOptions {
   /** Where the music font is served from, with a trailing slash. */
@@ -59,6 +59,29 @@ const NO_TIMINGS: RenderTimings = { project: 0, finish: 0, render: 0 };
 
 /** The room above and below each system, at scale 1. */
 const SYSTEM_PADDING = 22;
+
+/** A CSS colour as alphaTab has it; null when alphaTab cannot read it. */
+function colorOf(css: string): alphaTab.model.Color | null {
+  try {
+    return alphaTab.model.Color.fromJson(css);
+  } catch {
+    return null;
+  }
+}
+
+/** Give alphaTab's resources the colours asked for; one it cannot read leaves the one it had. */
+function paint(resources: alphaTab.Settings["display"]["resources"], colors: ScoreColors): void {
+  resources.mainGlyphColor = colorOf(colors.notation) ?? resources.mainGlyphColor;
+  resources.scoreInfoColor = colorOf(colors.notation) ?? resources.scoreInfoColor;
+  resources.secondaryGlyphColor = colorOf(colors.secondary) ?? resources.secondaryGlyphColor;
+  resources.barNumberColor = colorOf(colors.secondary) ?? resources.barNumberColor;
+  resources.staffLineColor = colorOf(colors.staffLines) ?? resources.staffLineColor;
+  resources.barSeparatorColor = colorOf(colors.barLines) ?? resources.barSeparatorColor;
+}
+
+function sameColors(a: ScoreColors | null, b: ScoreColors): boolean {
+  return a !== null && a.notation === b.notation && a.secondary === b.secondary && a.staffLines === b.staffLines && a.barLines === b.barLines;
+}
 
 /** Where playback is before it has been anywhere; never changed in place. */
 const NO_POSITION: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
@@ -240,6 +263,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
    * way, or of the last one: the places on the page are measured with it until the next drawing starts.
    */
   private scale: number;
+  /** The colours asked for last; null leaves alphaTab's own. */
+  private colors: ScoreColors | null = null;
+  /** New colours asked for that alphaTab has not been given yet: it is, as the next drawing starts. */
+  private colorsPending = false;
   /** The drawing alphaTab is working on, and the change that arrived meanwhile. */
   private running: { partial: boolean; timings: RenderTimings; startedAt: number } | null = null;
   private waiting: Request | null = null;
@@ -268,7 +295,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
    * many sounds are being made, each reporting its own `midiLoaded`: the last one counts.
    */
   private reload: { loads: number; done: () => void } | null = null;
-  /** The parts shown or the scale changed while a drawing was under way: the whole score is drawn again after it. */
+  /** The parts shown, the scale or the colours changed while a drawing was under way: the whole score is drawn again after it. */
   private layoutChanged = false;
   /** `load()`s asked for while a change waited to be drawn: their sound is made once that is in the model. */
   private loadsAfterDrawing: (() => void)[] = [];
@@ -346,6 +373,9 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // the next begins reads at a glance, apart from the gap between two parts of the same system.
     settings.display.systemPaddingTop = SYSTEM_PADDING;
     settings.display.systemPaddingBottom = SYSTEM_PADDING;
+    // A new API after one that failed (`rebuild`) draws in the colours asked for last.
+    if (this.colors) paint(settings.display.resources, this.colors);
+    this.colorsPending = false;
     settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
     // `soundFont === null` is in `hasPlayer` already; tested again only so that TypeScript knows
     // it is a string below (it does not narrow through a field).
@@ -544,6 +574,13 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
   setScale(scale: number): void {
     if (this.scale === scale) return;
     this.scale = scale;
+    this.relayout();
+  }
+
+  setColors(colors: ScoreColors): void {
+    if (sameColors(this.colors, colors)) return;
+    this.colors = { ...colors };
+    this.colorsPending = true;
     this.relayout();
   }
 
@@ -953,10 +990,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
       timings: { project: projectionTimings.build, finish: projectionTimings.finish, render: 0 },
       startedAt: performance.now(),
     };
-    this.applyScale();
+    this.applySettings();
     if (projection.score === this.api.score) {
       this.soundStale = true;
-      // Other parts shown, or another scale, since the last drawing: nothing laid out before holds.
+      // Other parts shown, another scale or other colours since the last drawing: nothing drawn before holds.
       if (this.layoutChanged) this.drawAll();
       else this.api.render(hints);
       return;
@@ -993,7 +1030,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     this.tellRendered({ partial: false, timings: { ...NO_TIMINGS } });
   }
 
-  /** Draw the score again as it is, with the parts shown and at the scale asked for now; once alphaTab is free. */
+  /** Draw the score again as it is, with the parts shown, at the scale and in the colours asked for now; once alphaTab is free. */
   private relayout(): void {
     // Not drawn yet: the first drawing uses them.
     if (this.projection === null) return;
@@ -1005,15 +1042,17 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     const projection = this.projection as Projection;
     this.layoutChanged = false;
     this.running ??= { partial: false, timings: { ...NO_TIMINGS }, startedAt: performance.now() };
-    this.applyScale();
+    this.applySettings();
     this.api.renderTracks(this.trackIndexes(projection).map((index) => projection.score.tracks[index] as alphaTab.model.Track));
   }
 
-  /** A drawing starts: at the scale asked for last. */
-  private applyScale(): void {
+  /** A drawing starts: at the scale and in the colours asked for last. */
+  private applySettings(): void {
     const display = this.api.settings.display;
-    if (display.scale === this.scale) return;
+    if (display.scale === this.scale && !this.colorsPending) return;
     display.scale = this.scale;
+    if (this.colorsPending && this.colors) paint(display.resources, this.colors);
+    this.colorsPending = false;
     this.api.updateSettings();
   }
 

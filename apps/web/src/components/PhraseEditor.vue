@@ -43,6 +43,7 @@ import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf 
 import { hasOwnKeys } from "../ownKeys";
 import { selectionBoxes } from "../presence";
 import { useNotice } from "../sayAnew";
+import { followTheme } from "../scoreColors";
 import { useScorePlayback } from "../scorePlayback";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { strings } from "../strings";
@@ -111,6 +112,8 @@ const barKeys = { insert: keyNameOf("insertBarBefore", keyPlatform()), remove: k
 
 const doc = new Y.Doc();
 let engine: ScoreEngine | undefined;
+/** Stop drawing the score in the theme's colours as it changes. */
+let stopTheme: (() => void) | undefined;
 let session: EditorSession | undefined;
 let sound: SoundUpdates | undefined;
 let stopObserving: (() => void) | undefined;
@@ -321,6 +324,7 @@ function start(fragment: BarsFragment): void {
     seekOnClick: !props.editable,
     scale: 1,
   });
+  stopTheme = followTheme(engine.renderer, host.value);
   sound = soundUpdates(engine.player, "a", updateLoop);
   watchDrawn(engine.renderer);
   watchDrawing(engine.renderer);
@@ -350,6 +354,7 @@ onBeforeUnmount(() => {
   sound?.destroy();
   stopObserving?.();
   session?.destroy();
+  stopTheme?.();
   engine?.destroy();
   doc.destroy();
 });
@@ -491,8 +496,8 @@ defineExpose({ focus, openParts });
   scrollbar-gutter: stable;
   overflow-anchor: none;
   outline: none;
-  /* The phrase is drawn in black: keep its page white in either theme. */
-  background: var(--text-on-accent);
+  /* The phrase is drawn in the theme's colours (`followTheme`), on the theme's surface. */
+  background: var(--bg-surface);
 }
 /* Focused by the keys (or by the page as it opens): an accent line along its top says the keys
    now go to the phrase; quieter than a ring around the whole page of it. */

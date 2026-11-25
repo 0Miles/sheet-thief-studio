@@ -85,6 +85,7 @@ import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
 import type { RestoreTarget } from "../restore";
+import { followTheme } from "../scoreColors";
 import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -348,6 +349,8 @@ const doc = new Y.Doc();
 /** What this tab wrote that the server may not have: said when the score is opened anew without it. */
 const ownChanges = ownChangesOf(doc);
 let engine: ScoreEngine | undefined;
+/** Stop drawing the score in the theme's colours as it changes. */
+let stopTheme: (() => void) | undefined;
 let provider: HocuspocusProvider | undefined;
 let session: EditorSession | undefined;
 /** The versions page is shown over this score, hidden under it (ScorePage). */
@@ -1101,6 +1104,7 @@ onMounted(async () => {
     seekOnClick: reading.value,
     scale: display.value.scale,
   });
+  stopTheme = followTheme(engine.renderer, host.value);
   // The player starts with the member's settings of this score, and the mixer shows them.
   const started = startPlayback(scoreId, engine.player);
   mix.value = started.mix;
@@ -1219,6 +1223,7 @@ onBeforeUnmount(() => {
   stopObserving?.();
   session?.destroy();
   provider?.destroy();
+  stopTheme?.();
   engine?.destroy();
   doc.destroy();
 });
@@ -1757,8 +1762,8 @@ onBeforeUnmount(() => {
   /* The browser never scrolls on its own when the drawing changes size: any scroll the page did not make is the member's. */
   overflow-anchor: none;
   outline: none;
-  /* The score is drawn in black: keep its page white in either theme. */
-  background: var(--text-on-accent);
+  /* The score is drawn in the theme's colours (`followTheme`), on the theme's surface. */
+  background: var(--bg-surface);
 }
 /* Focused by the keys (or by the page as it opens): an accent line along its top says the keys
    now go to the score; quieter than a ring around the whole page of it. */
