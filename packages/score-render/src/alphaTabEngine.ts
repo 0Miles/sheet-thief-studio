@@ -57,6 +57,9 @@ class Listeners<T> {
 
 const NO_TIMINGS: RenderTimings = { project: 0, finish: 0, render: 0 };
 
+/** The room above and below each system, at scale 1. */
+const SYSTEM_PADDING = 22;
+
 /** Where playback is before it has been anywhere; never changed in place. */
 const NO_POSITION: PlayerPosition = { tick: 0, endTick: 0, milliseconds: 0, endMilliseconds: 0 };
 
@@ -339,6 +342,10 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     settings.display.layoutMode = alphaTab.LayoutMode.Page;
     settings.display.staveProfile = alphaTab.StaveProfile.Default;
     settings.display.scale = this.scale;
+    // Systems further apart than alphaTab's 10 + 10: with several parts, where one system ends and
+    // the next begins reads at a glance, apart from the gap between two parts of the same system.
+    settings.display.systemPaddingTop = SYSTEM_PADDING;
+    settings.display.systemPaddingBottom = SYSTEM_PADDING;
     settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
     // `soundFont === null` is in `hasPlayer` already; tested again only so that TypeScript knows
     // it is a string below (it does not narrow through a field).
