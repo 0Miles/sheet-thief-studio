@@ -1230,82 +1230,98 @@ onBeforeUnmount(() => {
     <AppHeader />
     <main class="score" :data-view="view" :data-layout="view && (narrow ? 'narrow' : 'wide')">
       <header class="score__toolbar">
-        <TitleEditor v-if="editingTitle && score && view === 'editable'" :platform="keyPlatform()" :title="score.title" :artist="score.artist" @apply="applyTitle" @cancel="cancelTitle" />
-        <template v-else>
-          <h1 class="score__title" data-title>{{ shownTitle }}</h1>
-          <span v-if="score?.artist" class="score__artist" data-artist>{{ score.artist }}</span>
-          <AppButton v-if="view === 'editable' && score" variant="ghost" size="sm" data-edit-title :title="text.heading.editTitle" @click="editingTitle = true">
-            {{ text.heading.edit }}
-          </AppButton>
-        </template>
-        <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
-        <template v-if="view && !narrow">
-          <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
-          <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
-          <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
-            {{ text.mixer.open }}
-          </AppButton>
-          <ExportMenu v-if="!isGuest && score" @export="onToolbar(() => exportAs($event))" />
-        </template>
-        <div v-if="view === 'editable'" class="score__bars">
-          <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
-            {{ text.bars.insert }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" data-delete-bars :title="text.bars.removeKey(barKeys.remove)" @click="onToolbar(() => session?.deleteBars())">
-            {{ text.bars.remove }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="toggleEditSide('bar')">
-            {{ text.bars.panel }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleEditSide('parts')">
-            {{ text.parts.panel }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleEditSide('phrases')">
-            {{ text.phraseSidebar.open }}
-          </AppButton>
+        <!-- Which score, and who is on it: the score's own line. -->
+        <div class="score__identity">
+          <TitleEditor v-if="editingTitle && score && view === 'editable'" :platform="keyPlatform()" :title="score.title" :artist="score.artist" @apply="applyTitle" @cancel="cancelTitle" />
+          <template v-else>
+            <h1 class="score__title" data-title>{{ shownTitle }}</h1>
+            <span v-if="score?.artist" class="score__artist" data-artist>{{ score.artist }}</span>
+            <AppButton v-if="view === 'editable' && score" variant="ghost" size="sm" data-edit-title :title="text.heading.editTitle" @click="editingTitle = true">
+              {{ text.heading.edit }}
+            </AppButton>
+          </template>
+          <span v-if="!loadError" class="score__sync" :data-sync="shownSync">{{ syncText[shownSync] }}</span>
+          <div class="score__around">
+            <ul v-if="members.length > 0" class="score__members" data-members :aria-label="text.presence.members">
+              <li v-for="member in members" :key="member.accountId" class="score__member" data-member :data-account="member.accountId" :data-mode="member.mode">
+                <span class="score__member-dot" :style="{ background: member.color }"></span>
+                <span>{{ member.displayName }}</span>
+                <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
+              </li>
+            </ul>
+            <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
+            <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
+          </div>
         </div>
-        <!--
-          Without a range of bars the button is disabled only to assistive technology (aria-disabled):
-          it stays in the keys' order, its description saying why, and a press does nothing.
-        -->
-        <template v-if="editing">
-          <AppButton
-            variant="ghost"
-            size="sm"
-            data-save-phrase
-            :class="{ score__unavailable: selectedBars === null }"
-            :aria-disabled="selectedBars === null"
-            :aria-describedby="selectedBars === null ? 'save-phrase-why' : undefined"
-            :title="selectedBars === null ? strings.savePhrase.barsOnly : strings.savePhrase.openTitle"
-            @click="openSavePhrase"
-          >
-            {{ strings.savePhrase.open }}
-          </AppButton>
-          <span id="save-phrase-why" hidden>{{ strings.savePhrase.barsOnly }}</span>
-        </template>
-        <FlagControls
-          v-if="view"
-          :count="flags.length"
-          :can-go="editing"
-          :shortcut="nextFlagKey"
-          :stopped-at="flagStop?.flag.kind ?? null"
-          @next="onToolbar(goToNextFlag)"
-        />
-        <label v-if="narrow && parts.length > 0" class="score__part">
-          {{ text.display.part }}
-          <select data-part-switcher :value="narrowPart ?? undefined" @change="onNarrowPart">
-            <option v-for="part in parts" :key="part.id" :value="part.id">{{ part.name }}</option>
-          </select>
-        </label>
-        <ul v-if="members.length > 0" class="score__members" data-members :aria-label="text.presence.members">
-          <li v-for="member in members" :key="member.accountId" class="score__member" data-member :data-account="member.accountId" :data-mode="member.mode">
-            <span class="score__member-dot" :style="{ background: member.color }"></span>
-            <span>{{ member.displayName }}</span>
-            <span v-if="member.mode === 'read'" class="score__member-mode">{{ text.presence.reading }}</span>
-          </li>
-        </ul>
-        <RouterLink v-if="opening && !isGuest" class="score__settings" data-versions-link :to="{ name: 'score-versions', params: { id: opening.scoreId } }">{{ text.versions }}</RouterLink>
-        <RouterLink v-if="opening && !isGuest" class="score__settings" :to="{ name: 'score-settings', params: { id: opening.scoreId } }">{{ text.settings }}</RouterLink>
+        <!-- What can be done with it, in groups: playing, how it is shown, editing, the flags. -->
+        <div v-if="view" class="score__tools">
+          <template v-if="!narrow">
+            <div class="score__group" role="group" :aria-label="text.toolbar.playback">
+              <PlayerControls :state="playerState" :stopped="stopped" :bar="playingBar" @toggle="onToolbar(togglePlay)" @stop="onToolbar(stop)" @retry="onToolbar(retrySound)" />
+            </div>
+            <div class="score__group" role="group" :aria-label="text.toolbar.view">
+              <DisplayControls :parts="parts" :hidden="display.hidden" :scale="display.scale" @hide="onHide" @scale="onScale" />
+              <AppButton variant="ghost" size="sm" data-toggle-mixer :aria-pressed="mixerOpen" :title="text.mixer.openTitle" @click="toggleMixer">
+                {{ text.mixer.open }}
+              </AppButton>
+              <ExportMenu v-if="!isGuest && score" @export="onToolbar(() => exportAs($event))" />
+            </div>
+          </template>
+          <div v-if="view === 'editable' || editing" class="score__group" role="group" :aria-label="text.toolbar.edit">
+            <div v-if="view === 'editable'" class="score__bars">
+              <AppButton variant="ghost" size="sm" data-insert-bar :title="text.bars.insertKey(barKeys.insert)" @click="onToolbar(() => session?.insertBar('before'))">
+                {{ text.bars.insert }}
+              </AppButton>
+              <AppButton variant="ghost" size="sm" data-delete-bars :title="text.bars.removeKey(barKeys.remove)" @click="onToolbar(() => session?.deleteBars())">
+                {{ text.bars.remove }}
+              </AppButton>
+              <AppButton variant="ghost" size="sm" data-toggle-panel :aria-pressed="panelOpen" :title="text.bars.panelKey(barKeys.panel)" @click="toggleEditSide('bar')">
+                {{ text.bars.panel }}
+              </AppButton>
+              <AppButton variant="ghost" size="sm" data-toggle-parts :aria-pressed="partsOpen" :title="text.parts.panelTitle" @click="toggleEditSide('parts')">
+                {{ text.parts.panel }}
+              </AppButton>
+              <AppButton variant="ghost" size="sm" data-toggle-phrases :aria-pressed="sidebarOpen" :title="text.phraseSidebar.openKey(barKeys.phrases)" @click="toggleEditSide('phrases')">
+                {{ text.phraseSidebar.open }}
+              </AppButton>
+            </div>
+            <!--
+              Without a range of bars the button is disabled only to assistive technology (aria-disabled):
+              it stays in the keys' order, its description saying why, and a press does nothing.
+            -->
+            <template v-if="editing">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                data-save-phrase
+                :class="{ score__unavailable: selectedBars === null }"
+                :aria-disabled="selectedBars === null"
+                :aria-describedby="selectedBars === null ? 'save-phrase-why' : undefined"
+                :title="selectedBars === null ? strings.savePhrase.barsOnly : strings.savePhrase.openTitle"
+                @click="openSavePhrase"
+              >
+                {{ strings.savePhrase.open }}
+              </AppButton>
+              <span id="save-phrase-why" hidden>{{ strings.savePhrase.barsOnly }}</span>
+            </template>
+          </div>
+          <div class="score__group" role="group" :aria-label="text.toolbar.flags">
+            <FlagControls
+              v-if="view"
+              :count="flags.length"
+              :can-go="editing"
+              :shortcut="nextFlagKey"
+              :stopped-at="flagStop?.flag.kind ?? null"
+              @next="onToolbar(goToNextFlag)"
+            />
+          </div>
+          <label v-if="narrow && parts.length > 0" class="score__part">
+            {{ text.display.part }}
+            <select data-part-switcher :value="narrowPart ?? undefined" @change="onNarrowPart">
+              <option v-for="part in parts" :key="part.id" :value="part.id">{{ part.name }}</option>
+            </select>
+          </label>
+        </div>
         <!--
           The live region is always in the page, only what is in it changes: one inserted with its
           words is not read out everywhere. The notice itself (`.score__notice`) is in it only while
@@ -1565,15 +1581,57 @@ onBeforeUnmount(() => {
   height: calc(100dvh - 3rem);
 }
 .score__toolbar {
+  display: grid;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+/* The score's own line: its title and state on the left, who is on it and where else to go on the right. */
+.score__identity {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1rem;
-  padding: 0.5rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5);
 }
-.score[data-layout="narrow"] .score__toolbar {
-  padding: 0.5rem 1rem;
+.score__around {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-left: auto;
+  font-size: 0.875rem;
+}
+.score__settings {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.score__settings:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+/* The tools, in groups set apart by a hairline: playing, showing, editing, the flags. */
+.score__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-page);
+}
+.score__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.score__group + .score__group {
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border);
+}
+.score[data-layout="narrow"] .score__identity,
+.score[data-layout="narrow"] .score__tools {
+  padding-inline: var(--space-4);
 }
 .score__part {
   display: flex;
@@ -1621,7 +1679,11 @@ onBeforeUnmount(() => {
 }
 .score__title {
   margin: 0;
-  font-size: 1.25rem;
+  color: var(--text-strong);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 .score__artist {
   color: var(--text-muted);
@@ -1633,8 +1695,9 @@ onBeforeUnmount(() => {
 .score__sync[data-sync="offline"] {
   color: var(--danger);
 }
-.score__status {
-  margin: 0 0 0 auto;
+.score__status:not(:empty) {
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--border);
 }
 .score__notice {
   display: flex;
@@ -1672,7 +1735,8 @@ onBeforeUnmount(() => {
 }
 .score__bars {
   display: flex;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 .score__end {
   display: flex;
