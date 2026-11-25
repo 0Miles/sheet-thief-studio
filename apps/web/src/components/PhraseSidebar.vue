@@ -309,11 +309,11 @@ onBeforeUnmount(() => {
 .phrase-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 22rem;
   flex: none;
   min-height: 0;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-y: auto;
@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
 .phrase-sidebar__header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .phrase-sidebar__title {
   margin: 0 auto 0 0;
@@ -333,10 +333,10 @@ onBeforeUnmount(() => {
 .phrase-sidebar__search {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
   color: inherit;
   font: inherit;
 }
@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
 .phrase-sidebar__list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -369,10 +369,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: flex-start;
   width: 100%;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -392,10 +392,10 @@ onBeforeUnmount(() => {
 .phrase-sidebar__preview {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-base);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   background: var(--bg-surface);
 }
@@ -403,7 +403,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .phrase-sidebar__preview-title {
   margin: 0;
@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
 .phrase-sidebar__preview-scroller {
   max-height: 50vh;
   overflow: auto;
-  background: #fff;
+  background: var(--text-on-accent);
 }
 .phrase-sidebar__preview-page {
   position: relative;

@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
     <AppHeader />
     <PhraseEditor ref="editor" :fragment="fragment" :editable="editable" :desktop-only="text.desktopOnly" @change="onChange">
       <template #lead>
-        <RouterLink class="phrase__library" :to="{ name: 'phrases' }">{{ text.library }}</RouterLink>
+        <RouterLink class="page-back" :to="{ name: 'phrases' }">{{ text.library }}</RouterLink>
         <h1 class="phrase__title" data-title>{{ name ?? (loadError ? strings.unknownError : strings.loading) }}</h1>
         <AppButton v-if="editable && name !== null" variant="ghost" size="sm" data-rename @click="openDialog('rename')">{{ text.rename }}</AppButton>
         <span v-if="editable && name !== null" class="phrase__save" :data-save="saveState">{{ text.save[saveState] }}</span>
@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
   font-size: 0.875rem;
 }
 .phrase__error {
-  margin: 1rem 1.5rem;
+  margin: var(--space-4) var(--space-5);
   color: var(--danger);
 }
 /* Above the phrase, never over it. */
@@ -258,9 +258,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
-  padding: 0.5rem 1.5rem;
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   color: var(--danger);

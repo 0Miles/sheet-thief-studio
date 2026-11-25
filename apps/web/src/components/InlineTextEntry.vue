@@ -71,8 +71,8 @@ onMounted(() => {
   margin: 0;
   padding: 0 0.375rem;
   border: 1px solid rgba(234, 88, 12, 0.8);
-  border-radius: 4px;
-  background: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--text-on-accent);
   color: #000;
   font: inherit;
   font-size: 0.875rem;

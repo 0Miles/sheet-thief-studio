@@ -58,6 +58,6 @@ onMounted(() =>
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 </style>

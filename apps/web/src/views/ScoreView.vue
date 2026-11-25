@@ -1330,7 +1330,7 @@ onBeforeUnmount(() => {
         <div class="score__status" role="status">
           <p v-if="notice" class="score__notice">
             <span>{{ notice }}</span>
-            <button type="button" class="score__dismiss" @click="dismissNotice">{{ text.dismiss }}</button>
+            <AppButton variant="ghost" size="sm" @click="dismissNotice">{{ text.dismiss }}</AppButton>
           </p>
         </div>
       </header>
@@ -1338,7 +1338,7 @@ onBeforeUnmount(() => {
       <p v-if="gone" class="score__error" role="alert">{{ strings.guest.gone }}</p>
       <p v-else-if="closedBecause" class="score__error" role="alert" data-closed>
         <span>{{ text.closed.reasons[closedBecause] }}</span>
-        <button type="button" class="score__dismiss" @click="reloadFromServer">{{ text.closed.reload }}</button>
+        <AppButton variant="ghost" size="sm" @click="reloadFromServer">{{ text.closed.reload }}</AppButton>
       </p>
       <!-- Once the score is open: before, there is nothing to keep editing. Typing goes on only in the edit view one types in. -->
       <p v-else-if="view && shownSync === 'offline'" class="score__banner" role="status" data-offline>
@@ -1647,27 +1647,27 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--border);
 }
 .score__drawer {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   /* The score keeps some room above it on a phone: the drawer scrolls instead. */
   max-height: 45vh;
   overflow-y: auto;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
 }
 /* The mixer at the side of the score, as the panels of the edit view are. */
 .score__side {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   width: 18rem;
   flex: none;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-y: auto;
@@ -1705,19 +1705,19 @@ onBeforeUnmount(() => {
 }
 .score__notice {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   font-size: 0.875rem;
 }
 .score__error {
-  margin: 1rem 1.5rem;
+  margin: var(--space-4) var(--space-5);
   color: var(--danger);
 }
 /* Above the score, never over it: the score moves down while it is there. */
 .score__banner {
   margin: 0;
-  padding: 0.5rem 1.5rem;
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   color: var(--danger);
@@ -1745,7 +1745,7 @@ onBeforeUnmount(() => {
 .score__end {
   display: flex;
   justify-content: center;
-  padding: 0.5rem 0 1.5rem;
+  padding: var(--space-2) 0 var(--space-5);
 }
 .score__scroller {
   flex: 1;
@@ -1755,12 +1755,18 @@ onBeforeUnmount(() => {
   overflow-anchor: none;
   outline: none;
   /* The score is drawn in black: keep its page white in either theme. */
-  background: #fff;
+  background: var(--text-on-accent);
 }
-/* Reached by Tab: a ring inside its edge says the keys now go to the score. */
+/* Focused by the keys (or by the page as it opens): an accent line along its top says the keys
+   now go to the score; quieter than a ring around the whole page of it. */
 .score__scroller:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+@media (forced-colors: active) {
+  .score__scroller:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .score__page {
   position: relative;
@@ -1824,10 +1830,10 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 5;
   overflow: hidden;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border-radius: 3px;
   background: rgba(220, 38, 38, 0.85);
-  color: #fff;
+  color: var(--text-on-accent);
   font-size: 0.75rem;
   white-space: nowrap;
   pointer-events: none;
@@ -1850,7 +1856,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 3px;
-  color: #fff;
+  color: var(--text-on-accent);
   white-space: nowrap;
   text-overflow: ellipsis;
   pointer-events: none;
@@ -1861,7 +1867,7 @@ onBeforeUnmount(() => {
 .score__members {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1870,7 +1876,7 @@ onBeforeUnmount(() => {
 .score__member {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 .score__member-dot {
   width: 0.625rem;

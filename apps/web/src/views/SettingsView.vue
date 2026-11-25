@@ -333,7 +333,7 @@ async function copy(): Promise<void> {
   min-width: 8rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   overflow-wrap: anywhere;
 }
 .settings__username {

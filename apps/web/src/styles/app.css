@@ -34,6 +34,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A link reads as one: the accent's text colour, its underline a little apart from the letters.
+   Links with a role of their own (back links, list titles, the header) set their own look. */
+a {
+  color: var(--accent-text);
+  text-underline-offset: 0.2em;
+}
+
 /* The page shell every page of lists and forms shares: one width for lists, one for forms. The
    editor, the phrase editor and the versions page use the whole width instead. */
 .page {

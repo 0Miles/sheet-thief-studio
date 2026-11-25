@@ -382,7 +382,7 @@ defineExpose({ focus, openParts });
       <div class="phrase__status" role="status">
         <p v-if="notice" class="phrase__notice">
           <span>{{ notice }}</span>
-          <button type="button" class="phrase__dismiss" @click="onToolbar(() => (notice = null))">{{ strings.score.dismiss }}</button>
+          <AppButton variant="ghost" size="sm" @click="onToolbar(() => (notice = null))">{{ strings.score.dismiss }}</AppButton>
         </p>
       </div>
     </header>
@@ -454,8 +454,8 @@ defineExpose({ focus, openParts });
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1rem;
-  padding: 0.5rem 1.5rem;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border);
 }
 .phrase__muted {
@@ -465,7 +465,7 @@ defineExpose({ focus, openParts });
 }
 .phrase__bars {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 .phrase__status {
   margin: 0 0 0 auto;
@@ -473,7 +473,7 @@ defineExpose({ focus, openParts });
 .phrase__notice {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
   font-size: 0.875rem;
 }
@@ -489,12 +489,18 @@ defineExpose({ focus, openParts });
   overflow-anchor: none;
   outline: none;
   /* The phrase is drawn in black: keep its page white in either theme. */
-  background: #fff;
+  background: var(--text-on-accent);
 }
-/* Reached by Tab: a ring inside its edge says the keys now go to the phrase. */
+/* Focused by the keys (or by the page as it opens): an accent line along its top says the keys
+   now go to the phrase; quieter than a ring around the whole page of it. */
 .phrase__scroller:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+@media (forced-colors: active) {
+  .phrase__scroller:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .phrase__page {
   position: relative;
@@ -502,7 +508,7 @@ defineExpose({ focus, openParts });
 .phrase__end {
   display: flex;
   justify-content: center;
-  padding: 0.5rem 0 1.5rem;
+  padding: var(--space-2) 0 var(--space-5);
 }
 .phrase__overlay {
   position: absolute;

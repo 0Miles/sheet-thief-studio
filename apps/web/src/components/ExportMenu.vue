@@ -49,7 +49,7 @@ function choose(format: ExportFormat): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .export__menu {
   position: absolute;
@@ -59,11 +59,11 @@ function choose(format: ExportFormat): void {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.25rem;
-  margin-top: 0.25rem;
-  padding: 0.5rem;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  padding: var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: var(--radius-base);
   background: var(--bg-page);
   white-space: nowrap;
 }

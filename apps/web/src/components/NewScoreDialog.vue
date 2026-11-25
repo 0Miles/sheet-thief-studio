@@ -176,16 +176,16 @@ async function create(): Promise<void> {
 <style scoped>
 .new-score__group {
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   margin: 0;
-  padding: 0.75rem 1rem 1rem;
+  padding: var(--space-3) var(--space-4) var(--space-4);
 }
 .new-score__row + .new-score__row {
   border-top: 1px solid var(--border);
-  padding-top: 0.75rem;
+  padding-top: var(--space-3);
 }
 .new-score__strings {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 .new-score__number {
   width: 6rem;

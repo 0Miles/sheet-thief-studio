@@ -45,7 +45,7 @@ const failed = computed(() => props.state === "failed");
 .player {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .player__status {
   /* 「音色載入中…」, 「音色載入失敗」 and 「第 1000 小節」, the most bars a score has; the

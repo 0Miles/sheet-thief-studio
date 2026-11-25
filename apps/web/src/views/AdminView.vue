@@ -331,7 +331,7 @@ function enable(account: AdminAccount): Promise<void> {
   min-width: 8rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   overflow-wrap: anywhere;
 }
 .admin__username {
@@ -343,13 +343,13 @@ function enable(account: AdminAccount): Promise<void> {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .admin__score {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   justify-items: start;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border-left: 2px solid var(--border);
   overflow-wrap: anywhere;
 }

@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
     <AppHeader />
     <PhraseEditor ref="editor" :fragment="fragment" :editable="editable" :desktop-only="text.desktopOnly" :data-status="details?.status ?? 'loading'" @change="onChange">
       <template #lead>
-        <RouterLink :to="{ name: 'phrases' }">{{ text.library }}</RouterLink>
+        <RouterLink class="page-back" :to="{ name: 'phrases' }">{{ text.library }}</RouterLink>
         <h1 class="review__title">{{ text.title }}</h1>
         <span v-if="editable && edited" class="review__muted" data-edited>{{ text.edited }}</span>
       </template>
@@ -278,9 +278,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
-  padding: 0.5rem 1.5rem;
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   font-size: 0.875rem;
@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
   color: var(--danger);
 }
 .review__banner--warning {
-  color: var(--warning, var(--danger));
+  color: var(--warn-text);
 }
 .review__list {
   margin: 0;
@@ -304,21 +304,21 @@ onBeforeUnmount(() => {
 .review__aside {
   display: grid;
   align-content: start;
-  gap: 1rem;
+  gap: var(--space-4);
   width: min(28rem, 40%);
-  padding: 1rem;
+  padding: var(--space-4);
   overflow: auto;
   border-left: 1px solid var(--border);
 }
 .review__heading {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-2);
   font-size: 1rem;
 }
 .review__image {
   display: block;
   max-width: 100%;
   height: auto;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
   border: 1px solid var(--border);
 }
 /* A phone: the images under the result, not beside it. */

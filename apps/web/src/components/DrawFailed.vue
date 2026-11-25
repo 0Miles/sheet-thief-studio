@@ -21,10 +21,10 @@ const text = strings.score.drawing;
 .draw-failed {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
   /* Clear of the edge of what holds it: the page's own gutter, unless the holder says another. */
-  padding: 1rem var(--draw-failed-inset, 1.5rem);
+  padding: var(--space-4) var(--draw-failed-inset, 1.5rem);
   color: var(--danger);
 }
 </style>

@@ -280,10 +280,10 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
 .part-panel {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   width: 18rem;
   flex: none;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-y: auto;
@@ -299,7 +299,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
 }
 .part-panel__group {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .part-panel__label {
   margin: 0;
@@ -307,7 +307,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
 }
 .part-panel__list {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -315,9 +315,9 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
 .part-panel__part {
   display: grid;
   gap: 0.125rem;
-  padding: 0.25rem 0.375rem;
+  padding: var(--space-1) 0.375rem;
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: var(--radius-base);
   background: var(--bg-page);
   cursor: grab;
 }
@@ -327,7 +327,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
 .part-panel__name {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   background: none;
@@ -345,7 +345,7 @@ onMounted(() => void nextTick(() => addFirst.value?.focus()));
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 .part-panel__warning {
   margin: 0;

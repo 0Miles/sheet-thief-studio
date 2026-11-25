@@ -89,12 +89,12 @@ const numberOf = (event: Event) => Number((event.target as HTMLInputElement | HT
 <style scoped>
 .mixer {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   font-size: 0.875rem;
 }
 .mixer__parts {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -103,7 +103,7 @@ const numberOf = (event: Event) => Number((event.target as HTMLInputElement | HT
   display: grid;
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 .mixer__name {
   grid-column: 1 / -1;

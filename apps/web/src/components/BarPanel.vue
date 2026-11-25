@@ -268,10 +268,10 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 .bar-panel {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   width: 16rem;
   flex: none;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-y: auto;
@@ -287,13 +287,13 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 }
 .bar-panel__where {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   font-weight: 600;
 }
 .bar-panel__group {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .bar-panel__label {
   margin: 0;
@@ -303,7 +303,7 @@ onMounted(() => void nextTick(() => first.value?.focus()));
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .bar-panel__number {
   width: 6rem;
@@ -316,20 +316,20 @@ onMounted(() => void nextTick(() => first.value?.focus()));
 .bar-panel__passes {
   display: grid;
   grid-template-columns: repeat(4, auto);
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
   margin: 0;
   padding: 0;
   border: 0;
   font-size: 0.875rem;
 }
 .bar-panel__passes > legend {
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
 }
 .bar-panel__pass,
 .bar-panel__check {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: 0.875rem;
   white-space: nowrap;
 }

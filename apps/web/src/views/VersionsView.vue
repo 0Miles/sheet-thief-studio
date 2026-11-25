@@ -341,7 +341,7 @@ function saveNow(): Promise<void> {
 .versions__body {
   display: grid;
   grid-template-columns: minmax(18rem, 26rem) minmax(0, 1fr);
-  gap: 1.5rem;
+  gap: var(--space-5);
   align-items: start;
 }
 @media (max-width: 767px) {
@@ -354,14 +354,14 @@ function saveNow(): Promise<void> {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .versions__item {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
 }
 .versions__item--selected {
   border-color: var(--accent, var(--text));
@@ -369,7 +369,7 @@ function saveNow(): Promise<void> {
 .versions__line {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   font-variant-numeric: tabular-nums;
 }
 .versions__time {
@@ -379,16 +379,16 @@ function saveNow(): Promise<void> {
   overflow-wrap: anywhere;
 }
 .versions__tag {
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
   padding: 0 0.375rem;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 .versions__preview {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 .versions__score-host {
@@ -396,6 +396,6 @@ function saveNow(): Promise<void> {
   min-height: 12rem;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
 }
 </style>

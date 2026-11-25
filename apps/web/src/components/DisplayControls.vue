@@ -55,7 +55,7 @@ function onScale(event: Event): void {
 .display {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-4);
   font-size: 0.875rem;
 }
 .display__parts {
@@ -71,12 +71,12 @@ function onScale(event: Event): void {
   left: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 10rem;
-  margin: 0.25rem 0 0;
-  padding: 0.5rem 0.75rem;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: var(--radius-base);
   background: var(--bg-page);
 }
 .display__part,
