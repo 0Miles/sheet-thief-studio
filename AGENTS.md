@@ -14,6 +14,10 @@ Use the default five-role triage vocabulary. See `docs/agents/triage-labels.md`.
 
 This is a single-context repository. See `docs/agents/domain.md`.
 
+### UI
+
+Component library `@karyl-chan/ui` (tokens from its `tokens.css`, themed by `apps/web/src/styles/app.css`); shared components live in `apps/web/src/components/`. See `docs/agents/ui.md`.
+
 ## Conventions
 
 - The interface is Traditional Chinese only; every text lives in `apps/web/src/strings.ts`.
