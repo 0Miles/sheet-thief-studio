@@ -43,7 +43,7 @@ import { clearOf, entryRect, STRUCTURE_STROKE, structuralEnds, structureBoxesOf 
 import { hasOwnKeys } from "../ownKeys";
 import { selectionBoxes } from "../presence";
 import { useNotice } from "../sayAnew";
-import { followTheme } from "../scoreColors";
+import { followTheme, scoreFontOf } from "../scoreColors";
 import { useScorePlayback } from "../scorePlayback";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { strings } from "../strings";
@@ -323,6 +323,7 @@ function start(fragment: BarsFragment): void {
     useWorkers: !props.editable,
     seekOnClick: !props.editable,
     scale: 1,
+    textFont: scoreFontOf(host.value),
   });
   stopTheme = followTheme(engine.renderer, host.value);
   sound = soundUpdates(engine.player, "a", updateLoop);

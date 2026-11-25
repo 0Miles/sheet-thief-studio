@@ -23,7 +23,7 @@ import PlayerControls from "../components/PlayerControls.vue";
 import { keyPlatform } from "../device";
 import { drawFailure } from "../drawFailure";
 import { type RestoreTarget, restoreVersion } from "../restore";
-import { followTheme } from "../scoreColors";
+import { followTheme, scoreFontOf } from "../scoreColors";
 import { strings } from "../strings";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -110,7 +110,7 @@ onMounted(async () => {
   await nextTick();
   if (host.value === undefined) return;
   // As the Read view draws a score: in a worker, a click sending playback there.
-  engine = createAlphaTabEngine(host.value, { fontDirectory: fontDirectory(), soundFont: soundFontUrl(), useWorkers: true, seekOnClick: true });
+  engine = createAlphaTabEngine(host.value, { fontDirectory: fontDirectory(), soundFont: soundFontUrl(), useWorkers: true, seekOnClick: true, textFont: scoreFontOf(host.value) });
   stopTheme = followTheme(engine.renderer, host.value);
   engine.renderer.onRendered(() => {
     drawnVersion.value = drawing;

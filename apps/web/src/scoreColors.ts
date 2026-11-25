@@ -1,6 +1,6 @@
 // The colours a score is drawn in, from the theme's tokens: dark on a light page, light on a dark
 // one. The engine draws them itself (docs/adr/0003), so the tokens are read here, as the page has
-// them now, and given to it again every time the theme changes.
+// them now, and given to it again every time the theme changes. And its text, in the page's typeface.
 import type { ScoreColors, ScoreRenderer } from "@studio/score-render";
 
 /** The token each colour of the score is drawn in. */
@@ -26,6 +26,11 @@ function resolved(element: HTMLElement, token: string): string {
 export function scoreColorsOf(element: HTMLElement): ScoreColors {
   const entries = Object.entries(TOKENS).map(([name, token]) => [name, resolved(element, token)]);
   return Object.fromEntries(entries) as ScoreColors;
+}
+
+/** The typeface of the page around `element` (`--font-sans`), for the score's text: its titles, names and numbers. */
+export function scoreFontOf(element: HTMLElement): string {
+  return getComputedStyle(element).fontFamily;
 }
 
 /**

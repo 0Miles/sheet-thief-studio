@@ -836,6 +836,18 @@ test("the same zoom again draws nothing", () => {
   expect(asked()).toEqual([]);
 });
 
+test("with a text font, every text of the score is in that family at its own size, style and weight; without one, alphaTab's own", () => {
+  const family = `"Noto Sans TC", system-ui, sans-serif`;
+  const { stand } = makeEngine({ textFont: family });
+  const resources = stand.settings.display.resources;
+  const fonts = [...resources.elementFonts.values(), resources.tablatureFont, resources.graceFont, resources.fingeringFont];
+  expect(new Set(fonts.map((font) => font.families.join("|")))).toEqual(new Set(["Noto Sans TC|system-ui|sans-serif"]));
+  const title = resources.elementFonts.get(alphaTab.NotationElement.ScoreTitle)!;
+  expect([title.size, title.isBold, title.isItalic]).toEqual([32, false, false]);
+  expect(resources.tablatureFont.size).toBe(14);
+  expect(api.settings.display.resources.elementFonts.get(alphaTab.NotationElement.ScoreTitle)!.families).toEqual(["Georgia", "serif"]);
+});
+
 /** The colours of a dark theme, as the page reads them. */
 const DARK: ScoreColors = { notation: "rgb(242, 243, 245)", secondary: "rgb(163, 166, 170)", staffLines: "rgb(163, 166, 171)", barLines: "#dbdee1" };
 

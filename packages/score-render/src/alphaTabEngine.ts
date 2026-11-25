@@ -24,6 +24,11 @@ export interface EngineOptions {
   /** Lay out and draw in a web worker (the default) or on the page's own thread. */
   useWorkers?: boolean;
   scale?: number;
+  /**
+   * The family list (as CSS `font-family` has it) of the score's text: its title, the parts' names,
+   * the tempo, techniques and tablature numbers. Left out, alphaTab's own: Georgia and Arial.
+   */
+  textFont?: string;
 }
 
 export interface ScoreEngine {
@@ -77,6 +82,21 @@ function paint(resources: alphaTab.Settings["display"]["resources"], colors: Sco
   resources.barNumberColor = colorOf(colors.secondary) ?? resources.barNumberColor;
   resources.staffLineColor = colorOf(colors.staffLines) ?? resources.staffLineColor;
   resources.barSeparatorColor = colorOf(colors.barLines) ?? resources.barSeparatorColor;
+}
+
+/**
+ * Every text of the score in this family list, each at its own size, style and weight. The music's
+ * own symbols (note heads, clefs, dynamics) are the music font's, and stay so.
+ */
+function setTextFont(resources: alphaTab.Settings["display"]["resources"], family: string): void {
+  const inFamily = (font: alphaTab.model.Font) => new alphaTab.model.Font(family, font.size, font.style, font.weight);
+  for (const [element, font] of resources.elementFonts) resources.elementFonts.set(element, inFamily(font));
+  resources.fingeringFont = inFamily(resources.fingeringFont);
+  resources.inlineFingeringFont = inFamily(resources.inlineFingeringFont);
+  resources.tablatureFont = inFamily(resources.tablatureFont);
+  resources.graceFont = inFamily(resources.graceFont);
+  resources.numberedNotationFont = inFamily(resources.numberedNotationFont);
+  resources.numberedNotationGraceFont = inFamily(resources.numberedNotationGraceFont);
 }
 
 function sameColors(a: ScoreColors | null, b: ScoreColors): boolean {
@@ -373,6 +393,7 @@ class AlphaTabEngine implements ScoreRenderer, ScorePlayer {
     // the next begins reads at a glance, apart from the gap between two parts of the same system.
     settings.display.systemPaddingTop = SYSTEM_PADDING;
     settings.display.systemPaddingBottom = SYSTEM_PADDING;
+    if (options.textFont) setTextFont(settings.display.resources, options.textFont);
     // A new API after one that failed (`rebuild`) draws in the colours asked for last.
     if (this.colors) paint(settings.display.resources, this.colors);
     this.colorsPending = false;

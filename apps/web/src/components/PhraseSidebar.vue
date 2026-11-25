@@ -22,7 +22,7 @@ import { get, refusal } from "../api";
 import { drawFailure } from "../drawFailure";
 import { STRUCTURE_STROKE, structureBoxesOf } from "../overlay";
 import { type PhraseContents, phrasesShown } from "../phraseSidebar";
-import { followTheme } from "../scoreColors";
+import { followTheme, scoreFontOf } from "../scoreColors";
 import { strings } from "../strings";
 import { fontDirectory } from "../served";
 import DrawFailed from "./DrawFailed.vue";
@@ -147,7 +147,7 @@ async function preview(phrase: PhraseSummary, from: EventTarget | null): Promise
   await nextTick();
   if (previewed.value !== phrase || previewHost.value === undefined) return;
   if (engine === undefined) {
-    engine = createAlphaTabEngine(previewHost.value, { fontDirectory: fontDirectory(), soundFont: null, useWorkers: true, scale: 0.75 });
+    engine = createAlphaTabEngine(previewHost.value, { fontDirectory: fontDirectory(), soundFont: null, useWorkers: true, scale: 0.75, textFont: scoreFontOf(previewHost.value) });
     stopTheme = followTheme(engine.renderer, previewHost.value);
     engine.renderer.onRendered(() => {
       previewReady.value = true;

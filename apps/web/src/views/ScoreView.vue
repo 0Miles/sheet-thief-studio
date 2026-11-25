@@ -85,7 +85,7 @@ import { strings } from "../strings";
 import { type SoundUpdates, soundUpdates } from "../sound";
 import { useSessionStore } from "../stores/session";
 import type { RestoreTarget } from "../restore";
-import { followTheme } from "../scoreColors";
+import { followTheme, scoreFontOf } from "../scoreColors";
 import { useScorePlayback } from "../scorePlayback";
 import { exposeForTests } from "../testHook";
 import NotFoundView from "./NotFoundView.vue";
@@ -1103,6 +1103,7 @@ onMounted(async () => {
     useWorkers: reading.value,
     seekOnClick: reading.value,
     scale: display.value.scale,
+    textFont: scoreFontOf(host.value),
   });
   stopTheme = followTheme(engine.renderer, host.value);
   // The player starts with the member's settings of this score, and the mixer shows them.
