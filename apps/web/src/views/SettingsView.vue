@@ -190,7 +190,7 @@ async function copy(): Promise<void> {
           <h1>{{ text.title }}<span v-if="details" class="page-head__of">{{ details.title }}</span></h1>
         </Stack>
         <p v-if="error" class="settings__error" role="alert">{{ error }}</p>
-        <p v-if="details === null && error === null" class="settings__muted">{{ strings.loading }}</p>
+        <p v-if="details === null && error === null" class="state-loading">{{ strings.loading }}</p>
         <section v-if="details && members" class="page-section" :aria-label="text.members.title">
           <Stack gap="3">
             <h2>{{ text.members.title }}</h2>

@@ -212,8 +212,8 @@ function remove(): Promise<void> {
     <!-- A refusal of a button that opens no dialog (copying). -->
     <p v-if="error && dialog === null" class="phrases__error" role="alert">{{ error }}</p>
     <p v-if="loadError" class="phrases__error" role="alert">{{ loadError }}</p>
-    <p v-else-if="phrases === null" class="phrases__muted">{{ strings.loading }}</p>
-    <p v-else-if="phrases.length === 0" class="phrases__muted">{{ kind === "" && search.trim() === "" ? text.empty : text.noMatch }}</p>
+    <p v-else-if="phrases === null" class="state-loading">{{ strings.loading }}</p>
+    <p v-else-if="phrases.length === 0" class="state-empty">{{ kind === "" && search.trim() === "" ? text.empty : text.noMatch }}</p>
     <ul v-else class="phrases__list">
       <li v-for="phrase in phrases" :key="phrase.id" class="phrases__item" :data-phrase="phrase.id">
         <RouterLink class="phrases__name" :to="{ name: 'phrase', params: { id: phrase.id } }">{{ phrase.name }}</RouterLink>

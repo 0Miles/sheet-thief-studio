@@ -491,6 +491,11 @@ defineExpose({ focus, openParts });
   /* The phrase is drawn in black: keep its page white in either theme. */
   background: #fff;
 }
+/* Reached by Tab: a ring inside its edge says the keys now go to the phrase. */
+.phrase__scroller:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .phrase__page {
   position: relative;
 }

@@ -1753,6 +1753,11 @@ onBeforeUnmount(() => {
   /* The score is drawn in black: keep its page white in either theme. */
   background: #fff;
 }
+/* Reached by Tab: a ring inside its edge says the keys now go to the score. */
+.score__scroller:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .score__page {
   position: relative;
 }

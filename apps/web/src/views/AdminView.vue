@@ -174,7 +174,7 @@ function enable(account: AdminAccount): Promise<void> {
     <p v-if="error && dialog === null" class="admin__error" role="alert">{{ error }}</p>
     <p v-else-if="done" class="admin__muted" role="status">{{ done }}</p>
     <p v-if="loadError" class="admin__error" role="alert">{{ loadError }}</p>
-    <p v-else-if="accounts === null" class="admin__muted">{{ strings.loading }}</p>
+    <p v-else-if="accounts === null" class="state-loading">{{ strings.loading }}</p>
     <ul v-else class="admin__list" :aria-label="text.accounts">
       <li v-for="account in accounts" :key="account.accountId" class="admin__item" :data-account="account.username" :data-disabled="account.disabled">
         <span class="admin__name">

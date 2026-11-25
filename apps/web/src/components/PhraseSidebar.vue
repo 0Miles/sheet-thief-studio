@@ -246,7 +246,7 @@ onBeforeUnmount(() => {
     </label>
     <p class="phrase-sidebar__help">{{ text.help }}</p>
     <p v-if="loadError" class="phrase-sidebar__error" role="alert">{{ loadError }}</p>
-    <p v-else-if="phrases === null" class="phrase-sidebar__help">{{ strings.loading }}</p>
+    <p v-else-if="phrases === null" class="phrase-sidebar__help state-loading">{{ strings.loading }}</p>
     <p v-else-if="emptyText" class="phrase-sidebar__help" data-phrases-empty>{{ emptyText }}</p>
     <ul class="phrase-sidebar__list">
       <li v-for="phrase in listed" :key="phrase.id">

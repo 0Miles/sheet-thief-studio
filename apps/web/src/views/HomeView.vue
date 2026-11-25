@@ -101,8 +101,8 @@ async function restore(score: DeletedScore): Promise<void> {
         </Cluster>
       </Cluster>
       <p v-if="loadError" class="home__error" role="alert">{{ loadError }}</p>
-      <p v-else-if="scores === null" class="home__muted">{{ strings.loading }}</p>
-      <p v-else-if="scores.length === 0" class="home__muted">{{ text.empty }}</p>
+      <p v-else-if="scores === null" class="state-loading">{{ strings.loading }}</p>
+      <p v-else-if="scores.length === 0" class="state-empty">{{ text.empty }}</p>
       <ul v-else class="home__scores">
         <li v-for="score in scores" :key="score.id">
           <RouterLink :to="{ name: 'score', params: { id: score.id } }" class="home__score">

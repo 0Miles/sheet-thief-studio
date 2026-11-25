@@ -242,7 +242,7 @@ function saveNow(): Promise<void> {
           <p class="versions__muted">{{ text.help }}</p>
         </Stack>
         <p v-if="error" class="versions__error" role="alert">{{ error }}</p>
-        <p v-if="versions === null && error === null" class="versions__muted">{{ strings.loading }}</p>
+        <p v-if="versions === null && error === null" class="state-loading">{{ strings.loading }}</p>
         <form v-if="canWrite" class="versions__save" novalidate data-save-version @submit.prevent="saveNow">
           <Stack gap="2">
             <h2>{{ text.save.title }}</h2>
@@ -255,7 +255,7 @@ function saveNow(): Promise<void> {
         </form>
         <div v-if="versions" class="versions__body">
           <section class="versions__list" :aria-label="text.list">
-            <p v-if="versions.length === 0" class="versions__muted">{{ text.empty }}</p>
+            <p v-if="versions.length === 0" class="state-empty">{{ text.empty }}</p>
             <ul v-else>
               <li
                 v-for="version in versions"
