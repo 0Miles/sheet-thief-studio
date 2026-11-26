@@ -419,8 +419,6 @@ onBeforeUnmount(() => {
 .phrase-sidebar__preview-scroller {
   max-height: 50vh;
   overflow: auto;
-  /* Laid out as wide as it is before it is drawn: the room of the vertical scrollbar kept from the start. */
-  scrollbar-gutter: stable;
   /* The phrase is drawn in the theme's colours (`followTheme`), on the theme's surface. */
   background: var(--bg-surface);
 }
