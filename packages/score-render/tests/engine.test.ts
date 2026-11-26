@@ -9,7 +9,7 @@ import { addPart, createScore, type Cursor, docToJson, insertBars, type PartKind
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAlphaTabEngine, type EngineOptions, type PlayerState, type ScoreEngine } from "../src/index";
+import { createAlphaTabEngine, type EngineOptions, type PlayerState, type ScoreColors, type ScoreEngine } from "../src/index";
 
 const { PlayerState: AtState } = alphaTab.synth;
 /** A bar of 4/4, in ticks. */
@@ -836,6 +836,73 @@ test("the same zoom again draws nothing", () => {
   expect(asked()).toEqual([]);
 });
 
+test("with a text font, every text of the score is in that family at its own size, style and weight; without one, alphaTab's own", () => {
+  const family = `"Noto Sans TC", system-ui, sans-serif`;
+  const { stand } = makeEngine({ textFont: family });
+  const resources = stand.settings.display.resources;
+  const fonts = [...resources.elementFonts.values(), resources.tablatureFont, resources.graceFont, resources.fingeringFont];
+  expect(new Set(fonts.map((font) => font.families.join("|")))).toEqual(new Set(["Noto Sans TC|system-ui|sans-serif"]));
+  const title = resources.elementFonts.get(alphaTab.NotationElement.ScoreTitle)!;
+  expect([title.size, title.isBold, title.isItalic]).toEqual([32, false, false]);
+  expect(resources.tablatureFont.size).toBe(14);
+  expect(api.settings.display.resources.elementFonts.get(alphaTab.NotationElement.ScoreTitle)!.families).toEqual(["Georgia", "serif"]);
+});
+
+/** The colours of a dark theme, as the page reads them. */
+const DARK: ScoreColors = { notation: "rgb(242, 243, 245)", secondary: "rgb(163, 166, 170)", staffLines: "rgb(163, 166, 171)", barLines: "#dbdee1" };
+
+/** The colours alphaTab draws in, as `r,g,b` each. */
+function drawnColors(): Record<string, string> {
+  const resources = api.settings.display.resources;
+  const rgb = (color: alphaTab.model.Color) => `${color.r},${color.g},${color.b}`;
+  return {
+    notes: rgb(resources.mainGlyphColor),
+    title: rgb(resources.scoreInfoColor),
+    voices: rgb(resources.secondaryGlyphColor),
+    barNumbers: rgb(resources.barNumberColor),
+    staffLines: rgb(resources.staffLineColor),
+    barLines: rgb(resources.barSeparatorColor),
+  };
+}
+
+const DARK_DRAWN = { notes: "242,243,245", title: "242,243,245", voices: "163,166,170", barNumbers: "163,166,170", staffLines: "163,166,171", barLines: "219,222,225" };
+
+test("new colours: the score is drawn again in them, each part of the notation in its own", () => {
+  engine.renderer.setColors(DARK);
+  expect(asked()).toEqual(["updateSettings:1", "renderTracks:0"]);
+  expect(drawnColors()).toEqual(DARK_DRAWN);
+  api.postRenderFinished.emit();
+  // The same colours again: nothing to draw.
+  engine.renderer.setColors({ ...DARK });
+  expect(asked()).toEqual([]);
+});
+
+test("new colours asked for while a change is drawn: the score is drawn again in them after it", () => {
+  engine.renderer.patchBars(score, [score.bars[1]!.id]);
+  engine.renderer.setColors(DARK);
+  // The drawing under way keeps the colours it started with.
+  expect(asked()).toEqual(["render"]);
+  expect(drawnColors().notes).toBe("0,0,0");
+  api.postRenderFinished.emit();
+  expect(asked()).toEqual(["updateSettings:1", "renderTracks:0"]);
+  expect(drawnColors()).toEqual(DARK_DRAWN);
+});
+
+test("a colour alphaTab cannot read leaves the one it had; the others are drawn", () => {
+  engine.renderer.setColors({ ...DARK, staffLines: "oklch(70% 0 0)", barLines: "rgb(1, 2)" });
+  expect(drawnColors()).toEqual({ ...DARK_DRAWN, staffLines: "165,165,165", barLines: "34,34,17" });
+});
+
+test("colours asked for before the score is drawn: its first drawing is in them", () => {
+  browserWith();
+  ({ made: engine, stand: api } = makeEngine({ useWorkers: false }));
+  engine.renderer.setColors(DARK);
+  expect(api.calls).toEqual([]);
+  engine.renderer.setScore(scoreOf(4));
+  expect(api.calls).toEqual(["updateSettings:1", "renderScore"]);
+  expect(drawnColors()).toEqual(DARK_DRAWN);
+});
+
 test("with seekOnClick, a click on a beat sends playback to it; while a new sound is made, there once it is in", () => {
   start({ seekOnClick: true });
   api.beatMouseUp.emit(beatIn(2));
@@ -1371,6 +1438,16 @@ test("retried, the score asked for last is drawn with the parts shown and at the
   expect(painted).toEqual([[two.bars[0]!.id, two.bars[1]!.id]]);
   firstSound();
   expect(states).toEqual(["loading", "paused"]);
+});
+
+test("retried, the new API draws in the colours asked for last", () => {
+  engine.renderer.setColors(DARK);
+  api.postRenderFinished.emit();
+  fonts.failed(api.fontFamily);
+  engine.renderer.retry();
+  newApi();
+  expect(drawnColors()).toEqual(DARK_DRAWN);
+  expect(asked()).toEqual(["renderScore"]);
 });
 
 test("the player's worker failed: the score's retry makes the new API too", () => {

@@ -72,8 +72,9 @@ onMounted(() => {
   padding: 0 0.375rem;
   border: 1px solid rgba(234, 88, 12, 0.8);
   border-radius: var(--radius-sm);
-  background: var(--text-on-accent);
-  color: #000;
+  /* On the score, in the theme's colours as the score is. */
+  background: var(--bg-surface);
+  color: var(--text);
   font: inherit;
   font-size: 0.875rem;
 }

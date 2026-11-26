@@ -36,6 +36,19 @@ export interface RenderedEvent {
 
 export type Unsubscribe = () => void;
 
+/**
+ * The colours a score is drawn in, each a CSS colour as `#rgb`, `#rrggbb`, `rgb()` or `rgba()`:
+ * the page gives the theme's, so that the score reads on a light page and on a dark one.
+ */
+export interface ScoreColors {
+  /** Notes, rests, clefs, beams, techniques, the score's title and the parts' names. */
+  notation: string;
+  /** Voices after the first, and bar numbers: quieter than the notation. */
+  secondary: string;
+  staffLines: string;
+  barLines: string;
+}
+
 export interface ScoreRenderer {
   /** Draw a score from scratch. `partIds` are the parts to show; left out, all of them. */
   setScore(score: ScoreJSON, partIds?: readonly string[]): void;
@@ -48,6 +61,8 @@ export interface ScoreRenderer {
   showParts(partIds: readonly string[]): void;
   /** Draw the score bigger or smaller: 1 is its own size. */
   setScale(scale: number): void;
+  /** Draw the score in these colours, from the next drawing on; drawn again at once when they changed. */
+  setColors(colors: ScoreColors): void;
   /** Where the cursor is on the page, or null when its place is not drawn (yet). */
   boundsOf(cursor: Cursor): Rect | null;
   /**
