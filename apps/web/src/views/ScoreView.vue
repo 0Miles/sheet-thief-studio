@@ -1757,9 +1757,6 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   overflow: auto;
-  /* The score is laid out as wide as the scroller is before it is drawn: the room of the vertical
-     scrollbar is kept from the start, or the drawing ends up that much wider than the scroller. */
-  scrollbar-gutter: stable;
   /* The browser never scrolls on its own when the drawing changes size: any scroll the page did not make is the member's. */
   overflow-anchor: none;
   outline: none;
